@@ -199,6 +199,13 @@ argument. The old text dialects — a bare word, a backticked word, a fenced blo
 a `{"type":"string","value":"accept"}` schema echo — were readings a final MESSAGE
 forced on the runtime, and they disappeared with that transport. A submission that
 is not a declared member is a mismatch and is corrected in the same session.
+The child sees each valid `{ value: ... }` tool argument for its declared choices.
+It submits one exact string without a `{ choice, reason }` object, explanation, or
+Markdown. The kickoff prompt for a shaped call directs the child to the return
+tool; its final message is not the accepted result. Plain-text calls still use
+their final message. Changing this choice instruction changes the recorded
+request key, so an older choice answer is a replay `key-mismatch` and needs fresh
+execution rather than being silently reused.
 
 ## Standard dynamic decomposition — `agent({ handoffs })`
 

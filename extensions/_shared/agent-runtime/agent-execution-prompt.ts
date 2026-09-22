@@ -112,7 +112,10 @@ export function assembleParentContext(
   return parts.join("\n---\n");
 }
 
-export function formatAgentKickoffPrompt(capsule: AgentExecutionPromptCapsule): string {
+export function formatAgentKickoffPrompt(
+  capsule: AgentExecutionPromptCapsule,
+  responseMode: "text" | "tool" = "text",
+): string {
   const lines = [
     "Run the requested sub-agent task in this child session.",
     "",
@@ -122,10 +125,19 @@ export function formatAgentKickoffPrompt(capsule: AgentExecutionPromptCapsule): 
   if (capsule.parentContext !== undefined) {
     lines.push("", "Parent-provided context (explicit, read-only):", capsule.parentContext);
   }
+  lines.push("");
+  if (responseMode === "tool") {
+    lines.push(
+      "Do the work, then submit the result through the return tool specified in the prompt capsule. Your final message is not the result.",
+      "Finish normally after the return tool accepts the value.",
+    );
+  } else {
+    lines.push(
+      "Do the work, then reply to the parent runtime in plain text. Your exact final non-empty message is the result.",
+      "Do not wrap the result in JSON and do not add a machine-readable result envelope.",
+    );
+  }
   lines.push(
-    "",
-    "Do the work, then reply to the parent runtime in plain text. Your exact final non-empty message is the result.",
-    "Do not wrap the result in JSON and do not add a machine-readable result envelope.",
     "If the prompt capsule includes agentSystemPrompt, treat it as this child agent's operating instructions.",
   );
   return lines.join("\n");
