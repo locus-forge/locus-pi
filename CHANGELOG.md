@@ -4,6 +4,21 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+### Changed
+
+- Pi `enabledModels` is no longer a hard execution allowlist. It again only
+  scopes choosing and cycling the main model. An explicit `--model` and workflow
+  child routes resolve against Pi's model registry, including custom models from
+  `models.json` and provider extensions. This reverses the 0.6.1 behavior and
+  removes the direct `minimatch` dependency.
+
+### Fixed
+
+- A child agent whose prompt is absorbed before model dispatch, for example by
+  an extension `input` handler that returns `handled`, now fails with
+  `failureCause: "prompt-not-dispatched"` instead of waiting indefinitely for
+  `agent_end`. The result records no executed model and is not retried.
+
 ## [0.9.1] - 2026-09-22
 
 ### Changed

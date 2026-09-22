@@ -92,9 +92,8 @@ interface FakeSessionConfig {
   lastAssistantText: string | undefined;
   sessionId?: string;
   /**
-   * When set, prompt() resolves but the terminal `agent_end` event is NEVER
-   * emitted, so the only way out of the turn is the timeout (or an abort). Used
-   * to prove the executor cannot hang waiting for a completion that never comes.
+   * prompt() dispatches (emits `agent_start`) but `agent_end` NEVER fires, so only the timeout
+   * or an abort ends the turn. Proves the executor cannot hang on a completion that never comes.
    */
   neverEnds?: boolean;
   /** When set, prompt() rejects with this message (simulates a transport failure). */
@@ -135,6 +134,7 @@ function fakeSession(config: FakeSessionConfig): FakeSession {
     async prompt(text) {
       config.onPrompt?.(text);
       if (config.promptError !== undefined) throw new Error(config.promptError);
+      if (config.neverEnds === true) listener?.({ type: "agent_start" });
       for (const event of config.events ?? []) listener?.(event);
       // Drive the terminal event synchronously unless the fake never completes.
       if (config.neverEnds !== true) listener?.({ type: "agent_end", willRetry: false });
