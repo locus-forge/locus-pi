@@ -13,6 +13,69 @@ tags: [workflows, authoring]
 
 Create a readable graph of agents for a real task. The default implementation style works through reviewable slices and revises the remaining plan after each slice. [Run and inspect workflows](workflows.md) covers commands, evidence and recovery.
 
+## Your first workflow
+
+A workflow is a JavaScript module that coordinates agents. You can write it
+by hand or ask Pi to create it with the installed workflow-create skill.
+The same saved source can run repeatedly; its stages can branch on agent results
+or create parallel work when the task calls for it.
+
+This small example reads a project from two angles in parallel, then asks a
+third agent to combine the notes. Use a project containing `README.md` and
+`package.json`; adapt the prompts for other projects.
+
+Create `.locus-pi/workflows/project-tour/project-tour.workflow.mjs`:
+
+```js
+export const meta = {
+  name: "project-tour",
+  description: "Read a project from two angles and summarize where to start.",
+  profile: "standard",
+};
+
+export default async function run({ agent, parallel, phase }) {
+  phase("explore");
+  const notes = await parallel([
+    () =>
+      agent("Read README.md and summarize what this project does. Do not modify files.", {
+        label: "project-purpose",
+        title: "Read project purpose",
+      }),
+    () =>
+      agent("Read package.json and summarize its development commands. Do not modify files.", {
+        label: "project-commands",
+        title: "Read development commands",
+      }),
+  ]);
+  phase("summarize");
+  return await agent(
+    `Combine these notes into a short getting-started guide. Do not modify files.\n${notes.join("\n\n")}`,
+    {
+      label: "getting-started",
+      title: "Write getting-started guide",
+    },
+  );
+}
+```
+
+`agent()` gives each child its own task. `parallel()` waits for both notes, in
+their declared order, before the final agent starts. The workflow passes those
+notes to the final agent unchanged. Titles describe the work in the live panel; labels identify calls for replay.
+No agent profiles or model assignments are required for this example.
+
+Before running, ask Pi to check the file with `workflow_check_source`:
+
+```json
+{
+  "path": ".locus-pi/workflows/project-tour/project-tour.workflow.mjs",
+  "mode": "orchestration-only"
+}
+```
+
+Read the source and resolve any diagnostics. Then follow
+[run, inspect, and rerun](workflows.md#run-a-saved-workflow). For optional stage
+routing, see [model roles](workflows/models.md#use-model-roles).
+
 ## Create a workflow
 
 Ask Pi to author a workflow for a task directory:

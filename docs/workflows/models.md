@@ -10,6 +10,33 @@ description: "Organize the installed workflow contract by reader task."
 
 [Workflow documentation](index.md) · [Authoring guide](../locus-pi-workflows.md) · [Operator guide](../workflows.md)
 
+## Use model roles
+
+Model roles keep workflow source independent of the models you have configured.
+For example, assign a fast model to `smol` and a model for more demanding work to
+`slow` through `/model-roles`. The [model extension guide](../../extensions/model/README.md)
+explains the selector and effort controls.
+
+A stage can then request a role:
+
+```js
+await agent("Read README.md and summarize the project. Do not modify files.", {
+  label: "project-purpose",
+  modelRole: "smol",
+});
+```
+
+Assignments are saved globally in `~/.pi/agent/model-roles/config.json`; project-local
+role files are not read. The package supplies role names, but no model assignments.
+An unassigned role inherits the current Pi model and records that fallback. Add
+`requireModelRole: true` when the stage must refuse to start without an assigned
+role. An invalid existing assignment is an error, not fallback.
+
+The role selects a model; the prompt says what the agent should do. A named agent
+profile is a separate, optional way to reuse instructions. For ordinary authoring,
+omit selectors unless you need routing. A concrete `model` override still takes
+precedence, as described below.
+
 ## Agent catalog
 
 Workflow stage prompts own their role. A catalog profile is optional:

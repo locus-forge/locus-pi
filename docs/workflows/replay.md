@@ -198,11 +198,13 @@ A replayed call reports **no** token usage, so the run budget shown by
   fabricated and every surface marks it `replayed` — but if an early stage's
   answer must reflect your edit, change that stage's prompt or resume from
   further back.
-- **`parallel()` wider than the scheduler is a cache miss, not a wrong answer.**
-  Ordinals are assigned as calls start, and a group with more branches than the
-  scheduler width (4) may start them in a different order on the second run. That
-  breaks the prefix and the remaining calls run for real. Sequential pipelines —
-  the case this feature exists for — are fully deterministic.
+- **Parallel calls can miss the cache.** Replay matches recorded calls by
+  position as well as request. Concurrent calls can be recorded in a different
+  order from the next attempt's lookups, even with two branches. A mismatch
+  makes that call and the remaining calls fresh; it does not reuse a different
+  agent's answer. Check the new run's replay counts rather than assuming an
+  unchanged parallel workflow will reuse its results. Sequential pipelines have
+  a stable call order.
 - **Resume is not Pi session continuation.** The child session is not resumed;
   only the workflow-level answer is reused.
 - **A recorded failure is not replayed.** It keeps its ordinal so the prefix

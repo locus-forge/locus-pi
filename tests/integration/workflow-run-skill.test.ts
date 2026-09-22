@@ -78,8 +78,9 @@ describe("shipped workflow run skill", () => {
       "`freshCalls` alone proves nothing",
       // Resume is bound to the source workspace.
       "A resume runs in the workspace of the source run",
-      "repeat it with `outputDir`",
-      "fails closed instead of creating a new\nworkspace silently",
+      "repeat the original `outputDir` or `runName`",
+      "`--output-dir <path>` or `--run-name <name>`, respectively",
+      "fails closed instead of creating a new workspace",
       // The seven named refusals.
       "A missing result requires the explicit interrupted-recovery checks",
       "The source journal says `replay: not recorded`",

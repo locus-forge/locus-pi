@@ -64,6 +64,16 @@ const NUMBER_WORDS = [
   "twenty",
 ];
 
+// User-facing catalog copy lives with its renderer; manifests retain the machine contract.
+const EXTENSION_PURPOSES: Readonly<Record<string, string>> = {
+  agents: "Launch child agents and inspect their progress and results.",
+  "ask-user-question": "Let an agent ask you a question when it needs a decision.",
+  "ast-structural-edit": "Find code by structure, preview edits, and apply or discard them.",
+  model: "Assign models to reusable roles and adjust thinking effort.",
+  "status-line": "See the active model, context use, and working directory at a glance.",
+  workflows: "Save and run multi-agent workflows, inspect results, and resume runs.",
+};
+
 /**
  * One activated extension, projected from its manifest.
  */
@@ -264,20 +274,15 @@ function extensionTableFragment({ catalogs, manuals }: CatalogSources, docFile: 
   const rows = catalogs.extensions.map((entry) => {
     const manual = manuals.get(entry.id);
     if (manual === undefined) throw new Error(`Extension ${entry.id} has no docsPath to link`);
-    return row([
-      code(entry.id),
-      codeList(entry.tools),
-      codeList(entry.commands),
-      codeList(entry.hooks),
-      cell(entry.risk),
-      `[${code(manual)}](${relativeLink(docFile, manual)})`,
-    ]);
+    const purpose = EXTENSION_PURPOSES[entry.id];
+    if (!purpose) throw new Error(`Extension ${entry.id} needs a purpose in EXTENSION_PURPOSES`);
+    return row([code(entry.id), cell(purpose), `[Guide](${relativeLink(docFile, manual)})`]);
   });
   return [
     GENERATED_NOTICE,
     "",
-    row(["Extension", "Tools", "Commands", "Hooks", "Risk", "Manual"]),
-    row(["---", "---", "---", "---", "---", "---"]),
+    row(["Extension", "What it adds", "Learn more"]),
+    row(["---", "---", "---"]),
     ...rows,
   ].join("\n");
 }
@@ -347,11 +352,6 @@ function code(value: string): string {
 
 function cell(value: string): string {
   return value.split("|").join("\\|");
-}
-
-/** An em dash for an empty surface, matching how the reference tables have always read. */
-function codeList(values: string[]): string {
-  return values.length === 0 ? "—" : values.map(code).join(", ");
 }
 
 /** Published prose spells small counts; anything larger reads better as a numeral than as a word chain. */

@@ -84,6 +84,29 @@ describe("generated public catalogs", () => {
     expect(catalogs.extensions.map(({ id }) => id)).toEqual(defaultExtensionManifests().map(({ id }) => id));
   });
 
+  it("gives every active extension a purpose and a link to its manual", async () => {
+    const files = contentByPath(await generatedPublicCatalogFiles(root));
+    const document = files.get("docs/extensions.md") ?? "";
+    for (const { id, manifest } of defaultExtensionManifests()) {
+      const line = document.split("\n").find((line) => line.startsWith(`| \`${id}\``));
+      expect(line, id).toBeDefined();
+      const cells = line!.split("|").map((part) => part.trim());
+      expect(cells[2], id).not.toBe("");
+      expect(cells[3], id).toContain(`../${manifest.docsPath}`);
+    }
+  });
+
+  it("refuses a new extension without a user-facing purpose", async () => {
+    const fixture = fixtureRoot();
+    const manifestFile = path.join(fixture, "extensions/agents/manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestFile, "utf8"));
+    manifest.id = "new-feature";
+    writeFileSync(manifestFile, JSON.stringify(manifest));
+    await expect(generatedPublicCatalogFiles(fixture)).rejects.toThrow(
+      "Extension new-feature needs a purpose in EXTENSION_PURPOSES",
+    );
+  });
+
   it("keeps the workflow catalog internally consistent with the packaged registry on disk", async () => {
     const [catalogFile] = await generatedPublicCatalogFiles(root);
     const { workflows } = JSON.parse(catalogFile?.content ?? "") as {

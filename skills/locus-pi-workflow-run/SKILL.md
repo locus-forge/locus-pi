@@ -50,8 +50,9 @@ recovery path.
    installed, use [external-locus-pi](../external-locus-pi/SKILL.md) for an
    interactive session the user can inspect. Use the JSON path below only when
    non-interactive execution is explicitly requested.
-4. Otherwise stop with the missing prerequisite and the install command:
-   `pi install npm:@locus-forge/locus-pi`.
+4. Otherwise report the missing prerequisite and follow
+   [Getting started](../../docs/getting-started.md) for the available Git or npm
+   installation route. Do not assume the npm package is already published.
 
 Tool availability wins; do not guess from the host product name. Require one
 exact saved workflow name or project-relative `.workflow.mjs` path. A request to
@@ -367,11 +368,11 @@ return contract changed in this release`) and that call plus its tail run
   `tests/extensions/workflows/runtime/workflow-fusion.test.ts`.
 
 A resume runs in the workspace of the source run. When that workspace was
-selected explicitly, repeat it with `outputDir` (operator surface:
-`--run-name <name>` for a stable `.locus-pi/workspaces/<name>` workspace; a
-legacy-only `.locus-pi/plans/<name>` stays bound in place). Omitting
-it or passing a different path fails closed instead of creating a new
-workspace silently.
+selected explicitly, repeat the original `outputDir` or `runName` (operator
+surface: `--output-dir <path>` or `--run-name <name>`, respectively). Named
+workspaces live at `.locus-pi/workspaces/<name>`; a legacy-only
+`.locus-pi/plans/<name>` stays bound in place. Omitting an explicit output directory
+or passing a different workspace fails closed instead of creating a new workspace.
 
 ### Prove the outcome after the run
 
