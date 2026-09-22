@@ -1,18 +1,34 @@
-# locus-pi
+# locus-pi — Dynamic Workflows for Pi
 
-`locus-pi` adds agent tools, workflow execution, model controls, and status views to [Pi](https://github.com/earendil-works/pi). The package includes six extensions, curated workflows, and three workflow skills. Named agent profiles stay in your project or home catalog.
-
-Requires Node.js `>=22.19.0`, Pi `>=0.83.0`, and trusted project and workflow sources.
+Build reusable workflows that coordinate agents in [Pi](https://github.com/earendil-works/pi). Describe a task, save its workflow, and run it again when you need it. A workflow can run agents in parallel, choose its next steps from their results, and reuse recorded steps when resuming a run. Model roles let you choose models in settings without rewriting the workflow.
 
 ## Install
+
+Requires Node.js `>=22.19.0` and Pi `>=0.83.0` with a configured model provider.
+
+**From Git** — the available installation route while the npm package is unpublished:
+
+```bash
+git clone https://github.com/locus-forge/locus-pi.git
+cd locus-pi
+npm ci --ignore-scripts
+pi install .
+```
+
+**From npm** — once `@locus-forge/locus-pi` is published:
 
 ```bash
 pi install npm:@locus-forge/locus-pi
 ```
 
-Start a new Pi session and try `/workflows list`, then `/workflows run live-smoke`.
+Start a new Pi session in your project. If locus-pi is already registered, replace its existing source instead of adding a second copy; preserve your other packages. [Getting started](docs/getting-started.md) covers source replacement, `git pull` updates, scopes, and removal.
 
-To load only Workflow and no package skills, replace the existing locus-pi entry in `~/.pi/agent/settings.json` or `.pi/settings.json`. Keep your other package entries:
+<details>
+<summary>Install only Workflow</summary>
+
+Edit only the locus-pi entry in `~/.pi/agent/settings.json` or `.pi/settings.json`.
+For Git, keep its existing checkout path as `source` and add the two filters below.
+The npm source in this example applies after publication:
 
 ```json
 {
@@ -26,14 +42,41 @@ To load only Workflow and no package skills, replace the existing locus-pi entry
 }
 ```
 
-The example shows the `packages` array; edit only its locus-pi entry in existing settings. The filter limits what Pi loads; it does not reduce the installed npm package. See [Getting started](docs/getting-started.md) for updates, removal, and first-run help.
+Keep the rest of your settings and other package entries. `skills: []` disables package skills; omitting it leaves them enabled. The filter controls what Pi loads, not the contents of the installed package. See [package filters](docs/getting-started.md#load-only-selected-extensions).
+
+</details>
+
+## Create, save, run
+
+Ask Pi to create a workflow, for example:
+
+```text
+Create a project-tour workflow: two agents read README.md and package.json in parallel,
+then a third combines their notes into a short getting-started guide.
+Do not modify project files during the run. Build and check the workflow, but do not run it yet.
+```
+
+Review the source saved under `.locus-pi/workflows/project-tour/project-tour.workflow.mjs`. The [first-workflow guide](docs/locus-pi-workflows.md#your-first-workflow) includes a complete copyable example if you prefer to write it yourself.
+
+```text
+/workflows run project-tour
+/ps
+/workflows result last
+```
+
+The live panel shows agents as they work. In `/ps`, select an agent and press Enter to inspect its output; Esc returns to Pi. Run `/workflows run project-tour` again for a fresh run. Use `--resume <runId>` to reuse eligible recorded steps; [the operator guide](docs/workflows.md#run-again-or-resume) explains when to choose each.
+
+## Choose models through roles
+
+A stage can use `modelRole: "smol"` instead of a concrete model ID. Assign that role through `/model-roles`; the same workflow can then use different models on different machines. Roles are optional, and the package ships no assignments. See [model-role setup](docs/workflows/models.md#use-model-roles).
 
 ## Guides
 
-- [Extensions catalog](docs/extensions.md)
+- [Install, update, or remove](docs/getting-started.md)
 - [Create workflows](docs/locus-pi-workflows.md) · [Run and inspect workflows](docs/workflows.md)
-- [Workflow reference by topic](docs/workflows/index.md) · [External-agent skill links](skills/README.md)
+- [What each extension adds](docs/extensions.md)
+- [Workflow reference by topic](docs/workflows/index.md) · [Use skills from Codex or Claude Code](skills/README.md)
 
-Extensions and workflow scripts run with the trusted Pi and Node.js host, without a sandbox. Review local workflow sources before running them. Report vulnerabilities through GitHub private vulnerability reporting; use Issues for ordinary defects.
+## License and security
 
-Licensed under the [MIT License](LICENSE).
+Licensed under the [MIT License](LICENSE). Run workflows from sources you trust; see the [workflow trust guide](docs/workflows/trust.md). Report vulnerabilities through GitHub private vulnerability reporting; use Issues for ordinary defects.

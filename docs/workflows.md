@@ -16,6 +16,44 @@ The `workflows` extension discovers trusted JavaScript workflow modules, runs th
 
 To create or revise a workflow, start with [Locus Pi workflows: authoring and styles](locus-pi-workflows.md).
 
+## Run a saved workflow
+
+After [creating and checking project-tour](locus-pi-workflows.md#your-first-workflow),
+start Pi in that project and run:
+
+```text
+/workflows run project-tour
+```
+
+Wait for Pi to finish its current response before launching. The command returns
+to the editor while the agents work. The live panel shows their progress and the
+run ID; two exploration agents run together, followed by the summary agent.
+
+- Open `/ps`, select an agent with Up/Down, and press Enter to read its output.
+  Esc returns without stopping the run. This viewer is available with the full
+  package; a Workflow-only installation still has workflow status and results.
+- Use `/workflows status` to find a run, then `/workflows status <runId>` for details.
+- Read the completed answer with `/workflows result last` or `/workflows result <runId>`.
+- Stop active work with `/workflows stop <runId>`.
+
+## Run again or resume
+
+| What you want                       | Command                                        | What happens                                                                        |
+| ----------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Read the current project again      | `/workflows run project-tour`                  | A fresh run with a new workspace; agents execute again.                             |
+| Reuse eligible recorded steps       | `/workflows run project-tour --resume <runId>` | A new attempt in the original workspace; matching recorded answers can be reused.   |
+| Answer a workflow's pending handoff | `/workflows continue <runId>`                  | Opens an actionable operator handoff; after your answer, starts a continuation run. |
+
+Use the full run ID from the run directory name (for example,
+`20260922-120027-07ef`), not the short `#07ef` badge shown in the panel.
+
+Resume reuses answers, not file changes or a fresh reading of the project. Use a
+fresh run when you want new observations. After repairing a workflow, check the
+replay markers to see what was actually reused. Parallel calls can change order
+and cause an attempt to execute fresh even when the source is unchanged. If the original run selected a
+workspace with `--run-name` or `--output-dir`, repeat that same selector and value.
+See [replay details](workflows/replay.md) and [operator handoffs](workflows/recovery-and-continuation.md#human-continuation).
+
 ## Package catalog
 
 `extensions/workflows/examples/` is the shipped registry.
@@ -117,7 +155,7 @@ A workflow that stopped at some node is repaired in the same file and continued 
 
 **Continue the stopped run.** Fix the wrong node in the same `.workflow.mjs`, then run `/workflows run <target> --resume <runId>`. The nodes that already completed return their recorded answers and do not execute again; the repaired node and the tail after it run fresh. Each recorded agent line carries a `node` name — `[phase, label, occurrence]` — so `runtime/replay.ndjson` answers "which nodes finished" on its own, and the `replay` envelope of the new run's `result.json` reports `divergedAtNode`, the node where continuation became fresh.
 
-The precondition is binding: the workspace and project tree must still hold the files the replayed calls produced, because replay reuses answer text only. A resume runs in the source run's workspace. When that workspace was chosen explicitly, repeat it with `--run-name <name>` (or `outputDir` on the tool path); omitting it or passing another path fails closed rather than starting somewhere new.
+The precondition is binding: the workspace and project tree must still hold the files the replayed calls produced, because replay reuses answer text only. A resume runs in the source run's workspace. When that workspace was chosen explicitly, repeat its original `--run-name <name>` or `--output-dir <path>` (respectively `runName` or `outputDir` on the tool path); omitting it or passing another path fails closed rather than starting somewhere new.
 
 Reuse ends at the first changed, failed, unnamed or otherwise ineligible recorded
 call. That call and the suffix execute fresh; accepted answers before it remain

@@ -1,9 +1,8 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   defaultExtensionManifests,
-  extensionDocs,
   featureDependencyGraph,
   publicCatalogs,
   root,
@@ -37,6 +36,6 @@ describe("extension reference contract", () => {
   it("keeps the documented feature dependency graph equal to the source imports", () => {
     const sourceGraph = featureDependencyGraph(publicCatalogs.extensions.map(({ id }) => id));
     expect([...sourceGraph].filter(([, dependencies]) => dependencies.length > 0)).toEqual([["agents", ["workflows"]]]);
-    expect(extensionDocs).toContain("`agents → workflows`");
+    expect(readFileSync(path.join(root, "docs/architecture.md"), "utf8")).toContain("`agents → workflows`");
   });
 });
