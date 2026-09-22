@@ -9,16 +9,10 @@ Keep stable stage option groups together near the top. Keep prompts, calls,
 branches, and handoffs visible at their execution edges. Stage prompts own their
 roles; package agent names are never required.
 
-Give an agent its task, relevant context and completion condition, each stated
-once in a coherent brief rather than a mandatory set of headings. Let it choose
-the work steps; prescribe a procedure only for a real repository constraint or
-known failure. Reports and narrative handoffs use ordinary `agent()` text.
-Reserve `choice` for routing and `handoffs` for discovered work
-units, sequential or independent. Do not wrap a report in a singleton list or guess a response-length cap.
-An author-selected bound must come from an explicit user requirement, actual
-consumer contract or measured failure. The runtime adds no size policy of its
-own. Use the canonical [budget policy](../../../docs/workflows/budgets.md#run-budget)
-for approved launch defaults; other undeclared axes stay unbounded.
+Use the create skill's consumer rule: narrative stays whole; only a real branch or work queue
+needs a shaped result. The [structured-results guide](structured-results.md) explains the distinction.
+Keep chosen bounds with their consuming edge and their reason in the design; the
+[budget policy](../../../docs/workflows/budgets.md#run-budget) owns launch defaults.
 
 ```js
 export const meta = {
@@ -91,7 +85,7 @@ and usually preferable durable root: `.tasks/<task>/artifacts/<stage>/` keeps
 stage reports beside the task text a human already reads, and later stages read
 earlier ones from there instead of receiving them again as prompt text.
 `--output-dir .tasks/<task>/artifacts` is accepted by the operator surface (see
-[REFERENCE](../../../docs/workflows/index.md)); the runtime places its own lock and run marker inside
+[workflow manual](../../../docs/workflows/index.md)); the runtime places its own lock and run marker inside
 whatever root is selected. Nothing changes for disposable output: environments,
 dependency caches, test basetemp and staging stay in ordinary OS or tool
 temporary and cache locations, never beside evidence.

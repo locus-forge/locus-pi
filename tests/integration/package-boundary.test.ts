@@ -355,7 +355,8 @@ describe("npm public package boundary", () => {
     ]);
     // Directory-owned means the dotfiles inside a listed directory ship with it:
     // `skills/.ignore` rides along under `skills/` and is counted here.
-    expect(dryRun.files).toHaveLength(261);
+    // Retired eleven redundant docs; recovery has one conditionally loaded owner.
+    expect(dryRun.files).toHaveLength(251);
   });
 
   it("ships every prompt resource a curated workflow renders", () => {
@@ -404,7 +405,7 @@ describe("npm public package boundary", () => {
     // workflow present here and missing from `package.json#files` would work in
     // this repository and be gone after `npm i`, which is the one way "the
     // folder is the registry" could lie to an operator.
-    expect(packedPaths).toContain("examples/README.md");
+    expect(packedPaths).not.toContain("examples/README.md");
     expect(packedPaths).toContain("examples/workflows/README.md");
     expect(packedPaths.some((file) => file.startsWith("extensions/workflows/examples/"))).toBe(false);
     expect(
@@ -414,25 +415,6 @@ describe("npm public package boundary", () => {
     expect(packagedWorkflowNames().sort()).toEqual([...EXPECTED_PACKAGE_WORKFLOW_NAMES].sort());
     expect(packedPaths.filter((file) => forbiddenPackedPaths.some((pattern) => pattern.test(file)))).toEqual([]);
     expect(pkg.bin).toBeUndefined();
-  });
-
-  it("keeps every pattern-catalog link resolvable inside the installed package", () => {
-    // The catalog is the one `references/` file an install ships (OD3, T-130: the
-    // consilium reference stays tracked in this repository and runs by path, exactly like
-    // `excalidraw-pipeline`). So a relative link from the catalog into a sibling under
-    // `references/` renders as a link in the npm tarball and resolves to nothing — for a
-    // reader who has only the tarball, which is the audience the catalog exists for.
-    // Naming the repository path in prose is the shape that stays honest in both places.
-    const packedPaths = new Set(dryRun.files.map((file) => file.path));
-    const catalog = "extensions/workflows/references/patterns.md";
-    expect(packedPaths.has(catalog)).toBe(true);
-    const directory = path.posix.dirname(catalog);
-    const unresolvable: string[] = [];
-    for (const match of readFileSync(path.join(root, catalog), "utf8").matchAll(/\]\((\.[^)\s#]+)\)/gu)) {
-      const target = path.posix.normalize(path.posix.join(directory, match[1]!));
-      if (!packedPaths.has(target)) unresolvable.push(`${match[1]!} → ${target}`);
-    }
-    expect(unresolvable).toEqual([]);
   });
 
   it("ships every declared skill, and every document a skill sends the reader to", () => {

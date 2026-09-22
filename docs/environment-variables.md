@@ -1,3 +1,14 @@
+---
+title: Environment variables
+type: guide
+status: active
+updated: "2026-09-22T17:02:15Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
+---
+
 # Environment variables
 
 `locus-pi` keeps operator environment controls narrow. Set these before starting

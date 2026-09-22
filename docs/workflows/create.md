@@ -4,11 +4,11 @@ type: guide
 status: active
 owner: locus-pi maintainers
 tags: [workflows, authoring]
-updated: "2026-09-22T16:20:58Z"
-source_commit: "54dea11dbe11"
-update_event: "user_request"
-context: "changes=XL files=71 task=T-101"
-description: "Explain how to use the create skill, inspect the saved workflow, and find the DSL reference."
+updated: "2026-09-22T17:02:16Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
 # Create a workflow with an agent
@@ -151,28 +151,12 @@ result by dropping a report.
 
 ### Build generated source in complete slices
 
-`task/plan` applies the same pattern to source authoring so a weaker model never
-has to produce the whole workflow module in one answer. It first records a reviewed
-node-and-edge ledger, then creates a minimal runnable `workflow.mjs` in the workflow
-workspace. An owner repeatedly reads that actual file, returns a source-free queue
-of remaining complete graph nodes or branches, and re-cuts the queue after each
-accepted slice.
-
-Each seed, slice, and correction leaves the whole module Node-parseable and valid
-under `workflow_check_source` in orchestration-only mode. Source bytes stay in the
-workspace: model answers carry only reports, paths, and source-free requirement
-briefs. An independent queue assessment preserves outstanding identities and fails
-closed on an irreconcilable transition. Mechanical failures always use the slice's
-single correction before an independent recheck; design conformance is reviewed on
-a separate route. The workflow accepts at most six slices and returns the full
-remaining queue when that allowance is exhausted.
-
-An empty queue alone is not success. Final whole-file mechanical and design gates
-must pass before the host publishes the exact file through
-`publishPrimaryFile("workflow.mjs")`. Failures retain the current file and named
-diagnostics without publishing a primary artifact. Replay reuses answers but not
-file edits, so Repair + Continue requires the original workspace to remain intact;
-fresh suffix checks must reject a cleaned or drifted workspace.
+The Package `task/plan` workflow builds one workspace `workflow.mjs` in complete,
+checked graph-node slices. It re-cuts the remaining queue after each accepted
+slice, keeps source bytes in the workspace, and publishes the file only after
+final whole-file checks. The [task authoring manual](../../examples/workflows/task/README.md)
+owns its slice/correction allowances, mechanical and design gates, terminal reasons,
+and replay requirements. Use that manual when running or repairing `task/plan`.
 
 Use a **fixed graph** for known, unchanging work or ask for it explicitly.
 Choose **procedural briefs** only when an exact sequence is required by a tool or

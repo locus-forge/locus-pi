@@ -2,11 +2,11 @@
 title: Workflow source contract
 type: guide
 status: active
-updated: "2026-09-22T16:18:29Z"
-source_commit: "54dea11dbe11"
-update_event: "user_request"
-context: "changes=XL files=70"
-description: "Distinguish runtime capability, standard compatibility grammar, and orchestration-only authoring rules."
+updated: "2026-09-22T17:02:17Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
 # Workflow source contract
@@ -41,15 +41,10 @@ const route = await agent("Choose the next step.", {
 });
 ```
 
-The runtime desugars `choice` to its existing string-enum shape path. It owns
-format instructions, parsing, validation, corrective re-ask, journal evidence,
-replay, and budgets. A child that answers with the bare member text or echoes the
-schema as `{"type":"string","value":"…"}` is read as that member and the journal
-records the reading; anything else is re-asked once. By default exhaustion fails
-closed. A design may declare
-`choiceFallback` as one of the listed choices when a deterministic degraded route
-is safer; the runtime uses it only after both invalid answers and records the
-fallback in the journal. Workflow code does none of that recovery itself.
+The child submits one exact declared string through `workflow_return`; workflow
+source receives the accepted value. The [agent result contract](agent-results.md#standard-exact-choice--agent-choice)
+owns same-session correction, optional `choiceFallback`, journal evidence and
+failure behavior. Workflow code neither parses an answer nor implements format repair.
 
 When discovery determines the work units at runtime, use text handoffs:
 
@@ -109,7 +104,7 @@ would invalidate a fresh run. Replay starts no child and follows the recorded
 evidence contract.
 
 Standard generated source also omits `ask: true`. Live operator questions
-(`agent({ ask: true })`, REFERENCE "Live operator questions") are an
+([`agent({ ask: true })`](running.md#live-operator-questions--agent-ask-true)) are an
 interactive capability for operator-attended workflows: the child asks through
 `workflow_ask` and continues with the answer in the same session. Declare it
 only when the approved Design names the stage that may ask and why an

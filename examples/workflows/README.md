@@ -1,4 +1,4 @@
-# Shipped workflows
+# Workflow examples
 
 These workflows ship with locus-pi and are ready to run after
 [installation](../../docs/getting-started.md). Open `/workflows list`, select the
@@ -120,7 +120,51 @@ children declared by that design. Explicit design-only wording may pause after
 design. `Build design: <path>` and `Build approved design: <path>` remain
 Build-only compatibility forms.
 
+To ask an agent for your own workflow, follow [Create a workflow](../../docs/workflows/create.md).
 The detailed source-shape contract lives in [source contract](../../docs/workflows/source-shape.md#machine-enforced-standard-source-shape).
-The [complete DSL reference](../../docs/workflows/dsl.md) describes the available
-operations. [Teaching patterns](../../extensions/workflows/references/patterns.md)
-are separate from this registry and run only by explicit path.
+The [complete DSL reference](../../docs/workflows/dsl.md) describes the available operations.
+
+## Patterns to adapt
+
+The [authoring pattern index](../../skills/locus-pi-workflow-create/references/INDEX.md)
+helps choose a graph before writing source. The teaching modules under
+`extensions/workflows/references/examples/` ship with the package but are separate
+from the saved Package registry. Read and adapt them, or run a reviewed module by
+explicit path; their filenames do not register runnable Package names.
+
+| Teaching source                                                                                      | What it demonstrates                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Fixed graph](../../extensions/workflows/references/examples/fixed.workflow.mjs)                     | One declared worker and one primary result.                                                                                                                |
+| [Refinement](../../extensions/workflows/references/examples/refinement.workflow.mjs)                 | Bounded work and independent review, with explicit completion, failure, and no-progress exits.                                                             |
+| [Decomposition](../../extensions/workflows/references/examples/decomposition.workflow.mjs)           | Discover complete work handoffs, run bounded parallel workers, and combine ordered results.                                                                |
+| [Adaptive design](../../extensions/workflows/references/examples/adaptive-design.workflow.mjs)       | Refine a specification and preserve review decisions before a separate implementation request.                                                             |
+| [Adaptive slices](../../extensions/workflows/references/examples/adaptive-slices.workflow.mjs)       | Revise the remaining work after each accepted implementation slice, then verify the complete result.                                                       |
+| [Human continuation](../../extensions/workflows/references/examples/human-continuation.workflow.mjs) | Join two runs through an operator handoff and host-verified artifacts. This is a reviewed compatibility example, outside the standard opaque-text profile. |
+
+### Councils and judge panels
+
+A council gives advisors different jobs, preserves their independent evidence and
+disagreements, and asks a synthesizer to write one document. A fresh verifier checks
+that document against the advisor texts. Publish the terminal document only after
+acceptance so rejection leaves no final artifact; acceptance publishes the exact
+verified synthesis. The repository-only reference at
+`extensions/workflows/references/consilium/consilium.workflow.mjs` demonstrates this
+sequence. It runs by path from a checkout and is excluded from npm.
+
+A judge panel instead combines declared decisions under an explicit majority or
+unanimity rule. Decide whether partial panels are acceptable; otherwise a failed
+judge fails the group. Vote aggregation is not [Fusion](../../docs/workflows/fusion.md):
+Fusion preserves proposals and reasoning for a synthesizer to resolve. Use
+[runtime-validated choices](../../docs/workflows/agent-results.md#standard-exact-choice--agent-choice-)
+for control flow rather than scanning model prose.
+
+### Bounded loops and replay
+
+Loops need a measured completion condition and a hard round cap, with a result that
+names which exit was taken. Use the runtime clock
+[`now()`](../../docs/workflows/dsl.md#now) for replayable deadline checks; runtime
+[`random()`](../../docs/workflows/dsl.md#random) likewise records choices for replay.
+These are runtime capabilities: their availability does not expand the
+[standard source profile](../../docs/workflows/source-shape.md). Follow its supported
+bounded-loop form when generating standard source, and consult
+[replay](../../docs/workflows/replay.md) before relying on resumed control flow.

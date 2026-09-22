@@ -2,11 +2,11 @@
 title: Workflow DSL reference
 type: guide
 status: active
-updated: "2026-09-22T16:21:47Z"
-source_commit: "54dea11dbe11"
-update_event: "user_request"
-context: "changes=XL files=72"
-description: "Document the complete DSL with checker-tested examples and separate source admission from authoring policy."
+updated: "2026-09-22T17:05:40Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=47"
+description: "Correct handoff contracts and keep operator and Fusion details with their owning guides."
 ---
 
 # Workflow DSL reference
@@ -52,15 +52,15 @@ Entries describe ordinary runtime behavior; a custom host that omits a required 
 
 **Signature:** `agent(prompt: string, options?) -> Promise<string>`; output-mode overloads below change the result to an exact choice, `string[]`, or validated `unknown`. Run a clean child by default, or select a catalog persona with `agent`. Prompt must be nonblank task text; no implicit answer length limit exists. Ordinary success returns the exact non-empty final answer. Execution failures throw `WorkflowAgentExecutionError`; invalid declarations fail before a child starts.
 
-| Output mode / options                                 | Result and defaults                                                                                  | Availability and important constraints                                                                                       |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Omit shape options                                    | Exact final text, `Promise<string>`                                                                  | All three modes; no parsing or truncation                                                                                    |
-| `choice: ["accept", "revise"]`                        | One exact member; a TypeScript readonly tuple infers its member union, dynamic lists return `string` | All three; at least two unique nonblank strings; no option-count or text-length ceiling                                      |
-| `choiceFallback: "revise"` with `choice`              | Declared member after invalid answers exhaust repair                                                 | Must belong to `choice`; never substitutes for transport or host failure                                                     |
-| `handoffs: { minItems?, maxItems? }`                  | Complete unique nonblank text units, `Promise<string[]>`; minimum 0, no default maximum              | All three; nonnegative integer bounds describe downstream capacity; `maxItemChars` is refused by name                        |
-| `result: "report"`                                    | Opaque host-rendered observation, `Promise<string>`                                                  | All three; accepted answer or eligible terminal failure, not semantic approval; excludes every shape/repair/returnVia option |
-| `output: { type: "string", singleLine?, maxLength? }` | Accepted nonblank string; multiline allowed and no length bound by default                           | All three; an explicit maximum must be a positive safe integer required by a consumer                                        |
-| `schema: { … }, validate?`                            | Validated untransformed JSON value, `Promise<unknown>`                                               | Runtime compatibility only; raw `schema` and `validate` are rejected by both source-check modes                              |
+| Output mode / options                                 | Result and defaults                                                                                    | Availability and important constraints                                                                                                              |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Omit shape options                                    | Exact final text, `Promise<string>`                                                                    | All three modes; no parsing or truncation                                                                                                           |
+| `choice: ["accept", "revise"]`                        | One exact member; a TypeScript readonly tuple infers its member union, dynamic lists return `string`   | All three; at least two unique nonblank strings; no option-count or text-length ceiling                                                             |
+| `choiceFallback: "revise"` with `choice`              | Declared member after invalid answers exhaust repair                                                   | Must belong to `choice`; never substitutes for transport or host failure                                                                            |
+| `handoffs: { minItems?, maxItems? }`                  | Complete nonblank text units; duplicates preserved, `Promise<string[]>`; minimum 0, no default maximum | All three; `minItems` is a nonnegative safe integer; optional `maxItems` is a positive safe integer ≥ `minItems`; `maxItemChars` is refused by name |
+| `result: "report"`                                    | Opaque host-rendered observation, `Promise<string>`                                                    | All three; accepted answer or eligible terminal failure, not semantic approval; excludes every shape/repair/returnVia option                        |
+| `output: { type: "string", singleLine?, maxLength? }` | Accepted nonblank string; multiline allowed and no length bound by default                             | All three; an explicit maximum must be a positive safe integer required by a consumer                                                               |
+| `schema: { … }, validate?`                            | Validated untransformed JSON value, `Promise<unknown>`                                                 | Runtime compatibility only; raw `schema` and `validate` are rejected by both source-check modes                                                     |
 
 Declare exactly one of `choice`, `handoffs`, `output`, or `schema`. Those modes use `workflow_return` inside the same child session. `repair: { maxAttempts, clarification? }` defaults to two submissions, including the first: one proposal plus one same-session correction. Exhaustion throws `SchemaValidationError` unless an exact choice fallback applies. `validate(value) -> readonly string[]` requires `schema`, must be pure/synchronous/deterministic, returns violations rather than throwing, and cannot call the DSL. A transport without the required return tool capability fails closed. See [acceptance, schema keywords, repair, and report eligibility](agent-results.md).
 
@@ -242,7 +242,7 @@ export default async function run({ continuationArtifacts, parallel, agent }) {
 
 ### awaitOperator
 
-**Signature:** `awaitOperator({ reason: string }) -> void`. Declare a successful operator handoff after durable artifacts exist, then return the unchanged handoff payload. Accepts exactly one nonblank reason, no length bound. It does not suspend JavaScript or change the result; cancellation/failure still wins finalization. Missing/extra fields, empty reason, unavailable callback, and no-operator mode fail at the call site. **Example:** `publishPrimaryArtifact("handoff.md", handoff); awaitOperator({ reason: "Choose the deployment window." }); return handoff;`. See [operator continuation behavior](#operator-handoff-behavior).
+**Signature:** `awaitOperator({ reason: string, operatorHandoff?: { title, questions, continuationArtifactRefs } }) -> void`. Declare an `awaiting_operator` disposition after durable artifacts exist, then return the unchanged handoff payload. The reason must be nonblank and has no length bound. A reason alone explains the stop; it does not create an actionable question. The optional `operatorHandoff` binds a title, at least one uniquely identified text/select question, and published continuation artifact references. It does not suspend JavaScript or change the returned value; cancellation/failure still wins finalization. Unknown fields, invalid reason or handoff, unavailable callback, and no-operator mode fail at the call site. **Example — reason-only stop:** `publishPrimaryArtifact("handoff.md", handoff); awaitOperator({ reason: "Choose the deployment window." }); return handoff;`. For a complete bound question and its next run, see [operator handoff and continuation](recovery-and-continuation.md#human-continuation) and the [compatibility example](../../extensions/workflows/references/examples/human-continuation.workflow.mjs).
 
 ## Workspace, resources, and replay values
 
@@ -394,61 +394,13 @@ an approved workflow that needs stronger drift behavior must state it explicitly
 
 ## Operator handoff behavior
 
-`awaitOperator()` accepts exactly one non-empty reason, of any length. It is a
-control declaration, not model output and not a thrown
-pause. Call it only after durable handoff artifacts exist, immediately before
-returning the unchanged handoff payload. An abort or semantic/infrastructure
-failure still wins at finalization. Under the run-level no-operator mode
-(`--no-operator`, the tool's `noOperator`) the call does not declare anything:
-it fails the run closed at the call site with a named reason — see [no-operator mode](running.md).
+A declaration does not pause JavaScript. Finalization records `awaiting_operator` only after a successful return; an abort or semantic/infrastructure failure wins. In [no-operator mode](running.md#no-operator-mode----no-operator----operator), the call fails closed at its callsite. A bound question and its published references are distinct from a reason-only stop.
 
-If the operator answers the question, the workflow's continuation run receives
-their answer text. If they press Escape, it receives a plain-text refusal
-instead — the same questions, each with whatever was answered before the
-refusal, under the line `The operator declined to answer this workflow's
-questions.` — delivered through the same channel and the same continuation. It
-is not a status and the runtime attaches no handling contract to it: what a
-declined question means is the workflow author's decision, exactly as it would
-be for any other answer text.
-
-A question opens on its own only for a run the current Pi session started, or a
-continuation that run spawned. Nothing an earlier session left unanswered
-interrupts a new one — not at session start and not on its first settled turn.
-Those questions stay in their run's evidence and reopen on request: the
-`/workflows` menu's `continue` entry takes the oldest pending one project-wide,
-and `/workflows continue <runId>` takes a named run.
+See [operator handoff and continuation](recovery-and-continuation.md#human-continuation) for the declaration and [answering a pending handoff](recovery-and-continuation.md#answer-a-pending-handoff) for interactive questions, declined answers, and reopening earlier runs.
 
 ## Fusion execution details
 
-`fusion()` requires `mode: "tool-free" | "agent"`; every member and the judge
-use that same mode. Each selector still requires `model` or `modelRole` and may
-also name an existing catalog `agent`. Tool-free legs retain the selected
-catalog persona and ordinary execution metadata, but the package supplies their
-complete system prompt, disables extension, skill, prompt-template, theme, and
-context-file discovery, and starts them with no active tools. The host reads the
-active tool registry before the first prompt and fails the leg without prompting
-if that readback is missing or non-empty. Agent-mode legs keep the existing
-catalog-agent tool and parent-permission behavior. Ordinary `agent()` calls are
-unchanged.
-
-Fusion defaults to prompt-only context and never reads ambient chat history.
-Explicit `context: { mode: "provided", text }` is copied verbatim into the
-Fusion packet artifact. When reconnaissance is needed, run it as an ordinary
-visible `agent()` or child-workflow stage and pass its bounded text through this
-explicit context field; Fusion does not discover it automatically. No character
-cap applies to a member answer, to the judge answer, or to the assembled judge
-prompt: a panel returns what its members wrote. A panel declares at least two
-members. All declared members are required; a member failure stops before the
-judge runs. The production runner resolves
-all declared model selectors before the first child, and overlapping Fusion
-calls reserve their complete worst-case invocation counts atomically. A resume
-tries recorded answers without requiring the old models to remain configured;
-Fusion fails before any fresh child if one of its recorded legs is missing or
-divergent. The mode is part of the replay key. Replayed legs retain the declared
-mode but do not claim a fresh host active-tool readback. Fresh results persist
-the declared mode and exact host readback in per-call evidence, the workflow
-journal, and the readable run report. Run without `--resume` to execute a new
-panel.
+See [Fusion execution details](fusion.md#fusion-execution-details) for isolation, context, preflight, accounting and replay.
 
 ## Existing parallel with explicit options
 

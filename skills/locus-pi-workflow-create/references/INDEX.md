@@ -1,6 +1,7 @@
 # Choose a workflow shape
 
-First resolve specification creation, specification revision or implementation; ask only if the request is ambiguous. Author implementation after the user examines the actual specification and asks for it. Default substantive implementation to adaptive slices. Choose by the required control decision, not by agent count. Read one card, then [design-and-build.md](design-and-build.md).
+Choose by the control decision the task needs, not agent count. Read only the selected card;
+the create skill owns deliverable clarification and the Design → review → Build sequence.
 
 | Form                                        | When                                   | Default call cost                                  |
 | ------------------------------------------- | -------------------------------------- | -------------------------------------------------- |
@@ -18,6 +19,6 @@ Crash replay is a runtime capability, not another graph pattern. Generated sourc
 
 [Repair + Continue](repair-and-continue.md) is the first card for a failed or stopped graph that needs a source fix. Keep the matching completed prefix instead of recreating the workflow.
 
-Large fan-out runs are owned by [locus-pi-workflow-run](../../locus-pi-workflow-run/SKILL.md#large-runs-observe-and-let-the-operator-decide). Authoring adds no total-call cap and no token budget API.
+Large fan-out runs are owned by [locus-pi-workflow-run](../../locus-pi-workflow-run/SKILL.md#observe-and-report). Authoring adds no total-call cap and no token budget API.
 
 [Authoring styles](authoring-styles.md) separates graph choice, outcome-led/procedural briefs, advisory size, and executor budgets.

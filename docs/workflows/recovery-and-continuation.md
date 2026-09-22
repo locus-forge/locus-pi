@@ -2,11 +2,11 @@
 title: Recovery and operator continuation
 type: guide
 status: active
-updated: "2026-09-22T16:21:00Z"
-source_commit: "54dea11dbe11"
-update_event: "user_request"
-context: "changes=XL files=71 task=T-101"
-description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
+updated: "2026-09-22T17:02:16Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
 # Recovery and operator continuation
@@ -116,3 +116,55 @@ contract itself.
 `awaitOperator({ reason, operatorHandoff? })` declares a terminal disposition and does not pause the JavaScript stack. Return immediately. A resumable handoff places references under `operatorHandoff.continuationArtifactRefs`, not a top-level `artifactRefs` property. The handoff service validates claims, target/workspace identity and artifact digests, then starts a new run with the real operator answer. It does not synthesize approval.
 
 `continuation` and `resumeFromRunId` remain mutually exclusive. In `noOperator` mode the gate fails closed. A reason-only awaiting_operator stop explains the blocker but is not automatically a fully bound handoff. See the [compatibility example](../../extensions/workflows/references/examples/human-continuation.workflow.mjs); standard source must not claim permission to inspect arbitrary artifact objects.
+
+### Answer a pending handoff
+
+An actionable `awaiting_operator` handoff opens directly in the primary editor
+after Pi becomes idle — automatically only for runs this session launched,
+their continuations included. A question left by an earlier session stays in
+its run's evidence until asked for: open the `/workflows` menu and choose
+`continue` for the oldest pending one project-wide, or type
+`/workflows continue <runId>` for a named one. The menu provides contextual
+workflow/run selection for `info`, `result`, `run`, `continue`, and `stop`, not
+one combined picker. Multiple handoffs are oldest-first and show
+`Question 1 of N`; answering launches one integrity-checked continuation before
+the next item opens. Escape is an answer, not a postponement: the continuation
+receives the question list with an operator-declined note, keeping any answers
+given before the refusal. A retryable handoff — one whose continuation consumed
+an answer and then failed — never reopens unprompted; the idle pump prints a
+one-line notice (once per session) naming the run; `/workflows` then opens the
+menu so `continue` can reopen it.
+
+A question may bind one published continuation artifact as
+`detailArtifactRef`. Before the question becomes actionable, the runtime proves
+that the reference belongs to the source run and is one of its continuation
+artifacts. The question service then re-reads and digest-verifies the indexed
+text, redacts secrets, bounds it to 4096 bytes and 12 lines, and renders it above
+the choices. Select questions retain the workflow/run context line and may show
+declared options plus the built-in custom-answer row; workflow JavaScript never
+parses or interpolates the artifact text into UI strings.
+
+Only `/workflows stop` cancels a workflow; flat `/workflow-stop` remains a
+compatibility alias for the same cancellation owner.
+
+`/workflows continue <runId>` collects answers interactively in TUI and RPC.
+`--answer` is the
+explicit non-interactive path and accepts exactly one
+question: closed selections require an exact label, while custom-enabled
+questions accept other non-empty text. Multi-question handoffs fail closed
+instead of guessing how one string should be distributed.
+
+Mode behavior stays explicit:
+
+| Pi mode            | Question projection                            | Answer collection                          |
+| ------------------ | ---------------------------------------------- | ------------------------------------------ |
+| TUI                | Automatic primary-editor select/text component | Arrows, Enter, or inline custom text       |
+| RPC                | Command/static projection                      | Native bidirectional extension UI requests |
+| JSON/print         | Readable one-way lifecycle output              | `/workflows continue … --answer …` only    |
+| Embedded child SDK | Existing `session.subscribe(...)` observation  | Not applicable                             |
+
+The minimum supported host floor for automatic questions is Pi 0.83.0. The exact tested Pi version is pinned in the development dependencies and may be newer. Locus
+serializes its own inline components and rechecks the current idle session before
+mounting. Pi exposes no global custom-UI lock for unrelated third-party
+extensions, so `/workflows` opens the recovery menu if another extension
+displaces the question.

@@ -2,11 +2,11 @@
 title: Launch and operate a workflow
 type: guide
 status: active
-updated: "2026-09-22T16:21:01Z"
-source_commit: "54dea11dbe11"
-update_event: "user_request"
-context: "changes=XL files=71 task=T-101"
-description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
+updated: "2026-09-22T17:02:17Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
 # Launch and operate a workflow
@@ -36,6 +36,35 @@ run ID; two exploration agents run together, followed by the summary agent.
 - Use `/workflows status` to find a run, then `/workflows status <runId>` for details.
 - Read the completed answer with `/workflows result last` or `/workflows result <runId>`.
 - Stop active work with `/workflows stop <runId>`.
+
+## Read the full result
+
+Every finished-run surface is bounded on purpose: the chat digest caps a line at
+160 characters because it enters model context, and the live panel clips to the
+terminal width. So a run whose result **is** prose — a review, a plan, an answer —
+writes that text verbatim to `outputs/workflow-result.md`, and both the digest
+and the panel name that file plus the command that opens it. `/workflows result`
+opens the full text in a scrollable read-only screen:
+`↑/↓` and PageUp/PageDown scroll, Home/End jump, Esc closes. A host without custom
+UI gets a bounded preview plus the exact path, which is the copy that is never
+truncated. The native workflow tool's operator card also renders this exact text
+without clipping, while its model-facing content remains bounded. Structured
+(non-text) results stay in `runtime/result.json`, which already pretty-prints them.
+
+A run that ends badly and produced **no** prose result — a script returning a
+structured `{ ok: false }` is the common case — gets the same treatment against a
+different command. Its verdict line carries the failure summary and is clipped
+like any other, so the digest and the panel add
+`read the full reason: /workflows status <runId>`, which prints the structured
+result the reason actually lives in. `/workflows result` is deliberately not
+offered there: it refuses a non-prose result, so pointing at it would send the
+operator to a dead end.
+
+`/workflows result` and `/workflows status` accept the short run suffix every
+surface prints (`run #98cc` → `/workflows result 98cc`), `last` for the newest run,
+or a full run id. A short suffix matching more than one run is refused with the real
+match count and the listed candidates — never opened as the wrong run, and never
+reported as missing when runs were found.
 
 ## Run again or resume
 
@@ -111,6 +140,22 @@ If either option is repeated, the last supplied value wins. Use the conventional
 after the delimiter is forwarded byte-for-byte as semantic input. The delimiter
 works the same way for `/workflows run`.
 
+Direct typed `/workflows <subcommand>` forms retain argument completion for
+workflow names, persisted run ids, `last`, and replay ids. Completion does not
+scan persisted handoffs while the operator types the root command or any
+subcommand other than `continue`; this keeps ordinary input responsive on slow
+mounted filesystems. Catalog queries, paths, and semantic input remain free text.
+
+`/workflows run` adapts to the host's run mode. In `tui` and `rpc` the session
+outlives the turn, so the run is detached: the command returns immediately, the
+live panel streams it, and `/workflows stop` can cancel it. `/workflow-stop`
+remains the emergency compatibility alias. In the one-shot output
+modes (`pi -p`, `--mode json`) the host disposes the session when the turn ends —
+a detached run would lose the ctx its child sessions need — so the command holds
+the turn open until the run settles and its result is persisted. A headless
+invocation therefore blocks for the whole run and there is no concurrent
+`/workflows stop`; cancel it with the host's own interrupt.
+
 ### No-operator mode — `--no-operator` / `--operator`
 
 `--no-operator` (value-less, composable with the other run options) turns one
@@ -171,7 +216,10 @@ Pi or translate the request into shell text.
 and the structured tool is unavailable, the caller stops as unsupported; it
 does not route through the slash command and silently drop the field.
 
-An agent outside Pi invokes the registered command directly in JSON print mode:
+An agent outside Pi defaults to the [external-locus-pi skill](../../skills/external-locus-pi/SKILL.md),
+which starts a retained interactive Pi session the operator can attach to and inspect.
+It dispatches the registered workflow command directly and leaves the terminal open.
+Use the following JSON print route only when non-interactive execution is explicitly requested:
 
 ```bash
 pi --mode json -p --no-session --approve \
@@ -240,8 +288,8 @@ a named pre-pipeline guard. The human `/workflows run` grammar exposes the same
 workspace choice through `--output-dir <safe-project-relative-path>` before the
 optional semantic input.
 Cross-run state is a
-separate closed `continuation` control with one origin and 1–8 complete artifact
-refs. `continuation` and replay-only `resumeFromRunId` are mutually exclusive.
+separate closed `continuation` control with one origin and one or more complete
+artifact refs, with no package upper count limit. `continuation` and replay-only `resumeFromRunId` are mutually exclusive.
 
 Legacy compatibility still accepts `script`, but it only maps to saved names or
 project-relative paths.

@@ -7,9 +7,9 @@ document against the advisor texts before anything is published.
 It is **not** a Package workflow. It lives under `references/` rather than in the
 scanned `examples/` directory, so it is unreachable by name and runs by path only —
 the same construction `excalidraw-pipeline` uses. It is also not in
-`package.json#files`, so an `npm i` of the package does not ship it. The consilium
-_pattern_ still reaches a foreign author, because
-[`../patterns.md`](../patterns.md) is packed.
+`package.json#files`, so an `npm i` of the package does not ship it. The
+[council technique](../../../../examples/workflows/README.md#councils-and-judge-panels)
+is explained in the shipped examples guide.
 
 ```
 extensions/workflows/references/consilium/
@@ -64,8 +64,8 @@ synthesizer then has nothing to synthesize. Evidence, risk and alternative are t
 genuinely different jobs, so three _weak_ advisors still produce three genuinely
 different texts. That is the entire reason to have several.
 
-**Why `verify` is an agent and not a vote count.** The shipped "Judge panel" pattern
-counts votes in JavaScript, which is legal — it branches on a runtime-validated
+**Why `verify` is an agent and not a vote count.** The shipped judge-panel guidance
+combines declared decisions, which is legal — it branches on a runtime-validated
 declared value, not on model prose — but it is the wrong shape here. The deliverable
 is a document, and a document's quality is not a tally. The expected failure of a weak
 synthesizer is manufacturing consensus: dropping the advisor who disagreed, or

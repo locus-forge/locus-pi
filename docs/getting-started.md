@@ -4,11 +4,11 @@ type: guide
 status: active
 owner: locus-pi maintainers
 tags: [installation, getting-started]
-updated: "2026-09-22T16:20:56Z"
-source_commit: "54dea11dbe11"
-update_event: "user_request"
-context: "changes=XL files=71 task=T-101"
-description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
+updated: "2026-09-22T17:02:15Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
 # Getting started
@@ -17,7 +17,7 @@ Requires Node.js `>=22.19.0`, Pi `>=0.83.0`, and a configured model provider.
 Choose one installation source. The new npm package is not published yet; use
 Git for now. Both routes provide the same extensions, workflows, and skills.
 
-[Documentation](index.md) · [Create a workflow](workflows/create.md) · [Examples](../examples/README.md)
+[Documentation](index.md) · [Create a workflow](workflows/create.md) · [Examples](../examples/workflows/README.md)
 
 ## Windows: use WSL 2
 

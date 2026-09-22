@@ -7,7 +7,7 @@ Workflows can run agents in parallel, discover more work, and choose the next st
 from their results. Save the workflow as a readable JavaScript file and run it again
 when you need it. Model roles let you change models without rewriting the workflow.
 
-[Documentation](docs/index.md) · [DSL reference](docs/workflows/dsl.md) · [Examples](examples/README.md)
+[Documentation](docs/index.md) · [DSL reference](docs/workflows/dsl.md) · [Examples](examples/workflows/README.md)
 
 ## Install
 
@@ -119,7 +119,7 @@ Save it as `.locus-pi/workflows/project-summary/project-summary.workflow.mjs` an
 - [DSL reference](docs/workflows/dsl.md) — every method, arguments, return values, examples, and availability.
 - [Workflow file format](docs/workflows/authoring.md) — metadata, input, and the exported function.
 - [Source rules](docs/workflows/source-shape.md) — what the creator may generate and what the checker rejects.
-- [Examples](examples/README.md) — installed workflows under `examples/workflows/` and patterns to adapt.
+- [Examples](examples/workflows/README.md) — installed workflows under `examples/workflows/` and patterns to adapt.
 - [Documentation](docs/index.md) — the entry point for installation, authoring, operation, and deeper topics.
 
 ## License and security

@@ -2,16 +2,16 @@
 title: Workflow documentation
 type: index
 status: active
-updated: "2026-09-22T16:20:59Z"
-source_commit: "54dea11dbe11"
-update_event: "user_request"
-context: "changes=XL files=71 task=T-101"
-description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
+updated: "2026-09-22T17:02:16Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
 # Workflow documentation
 
-[Documentation home](../index.md) · [DSL reference](dsl.md) · [Examples](../../examples/README.md)
+[Documentation home](../index.md) · [DSL reference](dsl.md) · [Examples](../../examples/workflows/README.md)
 
 <a id="what-it-is"></a>
 
@@ -23,16 +23,16 @@ while it runs. The workflow-create skill can write the module for you.
 
 ## Create and understand
 
-| Question                                           | Read                                                                                                                          |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| How do I ask an agent to build a workflow?         | [Create a workflow](create.md) and the [create skill](../../skills/locus-pi-workflow-create/SKILL.md)                         |
-| Which methods can I call, and what do they return? | [DSL reference](dsl.md)                                                                                                       |
-| What belongs in the file?                          | [File format, metadata, and input](authoring.md)                                                                              |
-| What may generated source do?                      | [Source rules](source-shape.md)                                                                                               |
-| Where can I find working examples?                 | [Installed workflows](../../examples/workflows/README.md) and [patterns to adapt](../../examples/README.md#patterns-to-adapt) |
-| How do names resolve and namespaces get copied?    | [Catalog and source resolution](catalog.md)                                                                                   |
-| Which model will an agent use?                     | [Model roles and agent profiles](models.md)                                                                                   |
-| How do text, decisions, and work units return?     | [Agent results](agent-results.md)                                                                                             |
+| Question                                           | Read                                                                                                                                    |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| How do I ask an agent to build a workflow?         | [Create a workflow](create.md) and the [create skill](../../skills/locus-pi-workflow-create/SKILL.md)                                   |
+| Which methods can I call, and what do they return? | [DSL reference](dsl.md)                                                                                                                 |
+| What belongs in the file?                          | [File format, metadata, and input](authoring.md)                                                                                        |
+| What may generated source do?                      | [Source rules](source-shape.md)                                                                                                         |
+| Where can I find working examples?                 | [Installed workflows](../../examples/workflows/README.md) and [patterns to adapt](../../examples/workflows/README.md#patterns-to-adapt) |
+| How do names resolve and namespaces get copied?    | [Catalog and source resolution](catalog.md)                                                                                             |
+| Which model will an agent use?                     | [Model roles and agent profiles](models.md)                                                                                             |
+| How do text, decisions, and work units return?     | [Agent results](agent-results.md)                                                                                                       |
 
 ## Run and operate
 
@@ -72,6 +72,5 @@ explains finding it from Pi or external agent skill links. No separate download 
 
 <a id="maintain-this-manual"></a>
 
-Old guide addresses remain navigation pointers. Update the canonical topic alongside
-behavior, keep examples accepted by their declared source mode, and verify links in
-both the repository and the installed tarball.
+Update the canonical topic alongside behavior, keep examples accepted by their
+declared source mode, and verify links in both the repository and the installed tarball.

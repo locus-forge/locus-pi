@@ -3,18 +3,46 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = process.cwd();
+const runPath = "skills/locus-pi-workflow-run/SKILL.md";
+const createPath = "skills/locus-pi-workflow-create/SKILL.md";
+const read = (relativePath: string): string => readFileSync(path.join(root, relativePath), "utf8");
 
-describe("shipped workflow run skill", () => {
-  it("routes by host capability and treats typed receipts as workflow truth", () => {
-    const runSkill = readFileSync(path.join(root, "skills/locus-pi-workflow-run/SKILL.md"), "utf8");
-    const authoringSkill = readFileSync(path.join(root, "skills/locus-pi-workflow-create/SKILL.md"), "utf8");
+/** Follow the actual entrypoint link, so an unlinked reference cannot satisfy a routing contract. */
+function linkedText(from: string, target: string): string {
+  const link = [...read(from).matchAll(/\]\(([^)]+)\)/gu)].find((match) => match[1] === target);
+  expect(link, `${from} must route to ${target}`).toBeDefined();
+  const [file] = target.split("#");
+  return read(path.posix.normalize(path.posix.join(path.posix.dirname(from), file!)));
+}
 
-    for (const contract of [
-      "If a structured tool named `workflow` is available",
+function containsAll(text: string, contracts: string[]): void {
+  for (const contract of contracts) expect(text, contract).toContain(contract);
+}
+
+describe("shipped workflow skill routes", () => {
+  it("selects native execution or an inspectable external session without losing structured fields", () => {
+    const run = read(runPath);
+    containsAll(run, [
       "If the request supplies `items` or `continuation`",
-      "[external-locus-pi](../external-locus-pi/SKILL.md)",
-      "non-interactive execution is explicitly requested",
       "stop as unsupported when that tool is unavailable",
+      "If a structured tool named `workflow` is available",
+      "non-interactive execution is explicitly requested",
+      "Supply exactly one of `name` or `scriptPath`",
+      "Do not spawn Pi or translate the request into a slash command",
+      "is not sandboxed",
+      "create-and-run needs no repeat approval",
+      "physical file before following relative links",
+    ]);
+    const external = linkedText(runPath, "../external-locus-pi/SKILL.md");
+    containsAll(external, ["interactive Pi terminal retained by tmux", "Keep the", "terminal open"]);
+    linkedText(runPath, "../../docs/workflows/running.md#workflow-tool-programmatic");
+    expect(run).not.toContain("otherwise send the literal");
+  });
+
+  it("requires the explicit JSON protocol and persisted evidence rather than process success", () => {
+    const run = read(runPath);
+    containsAll(run, [
+      "Only for an explicit non-interactive request",
       '"pi", "--mode", "json", "-p", "--no-session", "--approve", prompt',
       "`target`, `runName`, `outputDir`, and `resumeFromRunId`",
       "Reject a command-token value",
@@ -25,99 +53,100 @@ describe("shipped workflow run skill", () => {
       "workflow_end",
       "journalPath",
       "resultPersisted",
-      "process exit code alone as semantic success",
-      "not sandboxed",
-    ]) {
-      expect(runSkill, contract).toContain(contract);
-    }
-    expect(runSkill).not.toContain("locus-pi workflow run");
-    expect(runSkill).not.toContain("monitor, or inspect");
-    expect(authoringSkill).toContain("Do not use merely to run an existing workflow");
-    expect(authoringSkill).toContain("`locus-pi-workflow-run` skill");
+      "actual persisted result",
+      "process exit code alone are not semantic success",
+    ]);
+    const protocol = linkedText(runPath, "../../docs/workflows/running.md#run-from-an-agent-without-a-wrapper");
+    containsAll(protocol, ["message_end", "workflow_rejected", "workflow_end", "resultPersisted"]);
+    const lifecycle = linkedText(runPath, "references/external-lifecycle.md");
+    containsAll(lifecycle, ["Never start a second writer", "Disable automatic restart"]);
   });
 
-  it("owns the stopped-run recovery procedure and routes to it", () => {
-    const runSkill = readFileSync(path.join(root, "skills/locus-pi-workflow-run/SKILL.md"), "utf8");
-
-    // Without the description the skill is never selected for "the run stopped",
-    // and the procedure below is unreachable however complete it is.
-    expect(runSkill).toContain("recover a run that stopped, failed, or was interrupted when only its run id is known");
-    expect(runSkill).toContain("## Recover a stopped run");
-
-    for (const contract of [
-      // Evidence path an agent can walk on its own: files, not an operator command.
+  it("loads the stopped-run procedure before launch and preserves evidence-based continuation", () => {
+    const run = read(runPath);
+    containsAll(run, ["stopped run known only by its run id", "## Recover a stopped run", "before\nlaunching"]);
+    const recovery = linkedText(runPath, "references/recovery.md");
+    containsAll(recovery, [
       "The `workflow` tool schema has no `status` operation",
-      ".locus-pi/runs/<runId>/runtime/result.json",
-      "`failureDiagnostic` inside that file",
-      "The child result, transcript or answer at `evidencePath`",
-      ".locus-pi/runs/<runId>/runtime/journal.ndjson",
-      "`replay: not recorded reason=…` means no later run can resume from it",
-      // The completed prefix is readable from the record by node name alone.
-      "carries a `node` naming the call as `[phase, label, occurrence]`",
-      "without reading the workflow source",
-      // Outcome declared before launch, then proven from the new run.
-      "Name `continue` or `refuse` before starting anything",
-      "prove that outcome\nfrom the new run's evidence afterwards",
-      // Replay reuses answer text only; a cleaned workspace is a false green.
-      "It does not re-create files, re-read\n  the project, or repeat any child side effect",
-      'cleaned workspace turns a replayed "checks passed" answer into a false green',
-      // Repair is the expected reason to edit, not a reason to lose the prefix.
-      "Editing the stopped workflow first is allowed and\n  expected",
-      "Changed source bytes no longer\n  end a resume",
-      "The first fresh call ends reuse for the whole run",
-      // The fusion boundary is named, and what it refuses is a MIXED panel: a whole
-      // fresh panel after the divergence point is ordinary work, not a terminal error.
-      "runs as an ordinary fresh panel",
-      "What stays refused is a MIXED panel",
-      "`fusion resume cannot mix recorded and fresh agent calls`",
-      "A fully replayed panel is not charged against `totalAgents`",
-      // The real replay boundary of this release, plain-text calls included.
-      "re-runs from its first\n  agent call, whatever that call is",
-      // Reuse is proven from the new run, and a fresh-call count proves nothing.
-      "`divergedAtNode` names the node",
+      "Resolve the actual `runDir`",
+      "`children/<runId>/` and `attempts/<runId>/`",
+      "Confirm the requested id",
+      "does not establish missing evidence",
+      "<runDir>/runtime/result.json",
+      "`failureDiagnostic`",
+      "`evidencePath`",
+      "<runDir>/runtime/journal.ndjson",
+      "<runDir>/runtime/replay.ndjson",
+      "`[phase, label, occurrence]`",
+      "Name `continue` or `refuse`",
+      "exact original semantic input and source workspace",
+      "an explicit `outputDir` or `runName`",
+      "Source edits are allowed and expected",
+      "needs no new approval ritual",
+      "does not recreate files",
+      "first fresh call makes the whole suffix fresh",
+      "`replay: not recorded`",
+      "Original semantic input is unavailable",
+      "Status is `awaiting_operator`",
+      "recorded calls have no node names/labels",
+      "Never manufacture `result.json`",
+      "Name that ancestor and the orphan separately",
+      "NEW run's `runtime/result.json`",
+      "`replayedCalls`, `divergedAtCall` and `divergedAtNode`",
       "`freshCalls` alone proves nothing",
-      // Resume is bound to the source workspace.
-      "A resume runs in the workspace of the source run",
-      "repeat the original `outputDir` or `runName`",
-      "`--output-dir <path>` or `--run-name <name>`, respectively",
-      "fails closed instead of creating a new workspace",
-      // The seven named refusals.
-      "A missing result requires the explicit interrupted-recovery checks",
-      "The source journal says `replay: not recorded`",
-      "`scriptPath` resolves outside the current `projectRoot`",
-      "The original semantic input is unavailable",
-      "The terminal status is `awaiting_operator`",
-      "The workspace or project prerequisites needed by replayed calls are no longer",
-      "Resume was requested without the source workspace, or with a different one",
-      "recorded before node names existed",
-      // Source edits belong to the authoring skill; operator answers are never invented.
-      "belongs to the `locus-pi-workflow-create` skill",
-      "every\n`agent()` call carries a unique literal `label`",
-      "the answer must never be synthesized",
-    ]) {
-      expect(runSkill, contract).toContain(contract);
-    }
-
-    // One answer to "the run stopped" per file: the broad retry promise is gone.
-    expect(runSkill).not.toContain("retry a failed run through `resumeFromRunId`");
-    expect(runSkill).toContain('it is not a general "retry the failed run" switch');
-    // The rejected route must not survive as a name anywhere in the procedure.
-    expect(runSkill).not.toContain("repair-then-fresh");
-    expect(runSkill).not.toContain("script-changed");
+    ]);
+    const replay = linkedText(
+      "skills/locus-pi-workflow-run/references/recovery.md",
+      "../../../docs/workflows/replay.md#resume-and-replay",
+    );
+    containsAll(replay, ["return-contract-changed", "unnamed-node", "fusion resume cannot mix"]);
+    const interruption = linkedText(
+      "skills/locus-pi-workflow-run/references/recovery.md",
+      "../../../docs/workflows/recovery-and-continuation.md#explicit-interrupted-run-recovery",
+    );
+    containsAll(interruption, ["recoverInterrupted: true", "started-but-unconfirmed", "workspace lease"]);
   });
 
-  it("keeps provider, model, and role selection operator-owned", () => {
-    const runSkill = readFileSync(path.join(root, "skills/locus-pi-workflow-run/SKILL.md"), "utf8");
+  it("keeps model and budget details reachable under their actual selection conditions", () => {
+    const run = read(runPath);
+    containsAll(run, [
+      "Model choice belongs to the operator",
+      "Preserve the current Pi session and its configured defaults",
+      "Before an explicit selector or role override",
+      "Never invent an agent-count cap",
+      "automatic budget increase",
+      "other undeclared axes are unbounded",
+    ]);
+    const models = linkedText(runPath, "../../docs/workflows/models.md#inspect-model-configuration");
+    containsAll(models, [
+      "pi --list-models",
+      "pi --list-models <provider>",
+      "defaultProvider, defaultModel, defaultThinkingLevel, enabledModels",
+      "~/.pi/agent/model-roles/config.json",
+      "must be permitted by `enabledModels`",
+    ]);
+    linkedText(runPath, "../../docs/workflows/budgets.md#run-budget");
+    expect(run).not.toContain("openai-codex");
+    expect(run).not.toContain("gpt-5.6");
+  });
 
-    expect(runSkill).toContain("Model choice belongs to the operator");
-    expect(runSkill).toContain("pi --list-models");
-    expect(runSkill).toContain("pi --list-models <provider>");
-    expect(runSkill).toContain("defaultProvider, defaultModel, defaultThinkingLevel, enabledModels");
-    expect(runSkill).toContain("~/.pi/agent/model-roles/config.json");
-    expect(runSkill).not.toContain("settings.json#modelRoles` as an input");
-    expect(runSkill).toContain("must be permitted by `enabledModels`");
-    expect(runSkill).toMatch(/preserve the current Pi\s+session and its configured defaults/);
-    expect(runSkill).not.toContain("openai-codex");
-    expect(runSkill).not.toContain("gpt-5.6");
+  it("routes authoring through method documentation, selected examples and the exact-source gate", () => {
+    const create = read(createPath);
+    containsAll(create, [
+      "Do not use merely to run an existing workflow",
+      "Before writing source, read the",
+      "only the sections for methods and agent options this graph uses",
+      "When adapting an example, read its exact source and adjacent guide",
+      "unique literal `label`",
+      "workflow_check_source",
+      'mode: "orchestration-only"',
+      "node --check <exact-path>",
+      "npm run check:workflow-source -- --mode orchestration-only <exact-path>",
+      "Never import unchecked source",
+      "unavailable or failed gate means Build failed",
+    ]);
+    linkedText(createPath, "../../docs/workflows/dsl.md#dsl-surface-v0");
+    linkedText(createPath, "../../examples/workflows/README.md");
+    linkedText(createPath, "../locus-pi-workflow-run/SKILL.md");
   });
 });

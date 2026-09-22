@@ -2,11 +2,11 @@
 title: locus-pi documentation
 type: index
 status: active
-updated: "2026-09-22T16:20:56Z"
-source_commit: "54dea11dbe11"
-update_event: "user_request"
-context: "changes=XL files=71 task=T-101"
-description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
+updated: "2026-09-22T17:02:15Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
 # locus-pi documentation
@@ -23,7 +23,7 @@ Start with the action you want to take.
 | Ask an agent to create a workflow              | [Create a workflow](workflows/create.md) and the [workflow-create skill](../skills/locus-pi-workflow-create/SKILL.md) |
 | Find a DSL method and understand its arguments | [DSL reference](workflows/dsl.md)                                                                                     |
 | Understand what a workflow file can contain    | [File format](workflows/authoring.md) and [source rules](workflows/source-shape.md)                                   |
-| Start from a working example                   | [Examples](../examples/README.md)                                                                                     |
+| Start from a working example                   | [Examples](../examples/workflows/README.md)                                                                           |
 | Run a workflow and inspect the result          | [Run and inspect](workflows/running.md)                                                                               |
 
 ## Core capabilities

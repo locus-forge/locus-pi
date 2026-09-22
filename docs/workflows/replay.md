@@ -2,11 +2,11 @@
 title: Replay recorded workflow calls
 type: guide
 status: active
-updated: "2026-09-22T16:21:01Z"
-source_commit: "54dea11dbe11"
-update_event: "user_request"
-context: "changes=XL files=71 task=T-101"
-description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
+updated: "2026-09-22T17:02:17Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
 # Replay recorded workflow calls
@@ -213,15 +213,9 @@ A replayed call reports **no** token usage, so the run budget shown by
 - **A recorded failure is not replayed.** It keeps its ordinal so the prefix
   before it still replays, and the call itself runs again — which is what
   "resume to fix the stage that failed" means.
-- **The prefix latch fires on key mismatch, not on a changed outcome.** A call
-  that re-runs at a matching key — a recorded failure that now succeeds, or a
-  worktree stage that is never replayed — does _not_ break the prefix. Its
-  successors, if their own keys still match, keep replaying. So a stage whose
-  recorded answer was produced in a run where its predecessor had failed can be
-  replayed into a run where that predecessor succeeded. Nothing is fabricated:
-  the text is a real child answer to a byte-identical request, and the run is
-  marked `replayed`. But "the prefix before the divergence replays" is only half
-  the rule — the prefix _after_ an outcome change replays too, and only a
-  changed request key stops it.
+- **Every replay miss ends prefix reuse.** A recorded failure or a side-effecting
+  worktree call executes fresh even when its request key still matches. That miss
+  also makes every later call fresh, so later answers cannot be reused across a
+  predecessor that executed again.
 - Recording is skipped entirely for `unproven` and `entry-only` scripts, so those
   runs write no `replay.ndjson` and cannot be resumed.
