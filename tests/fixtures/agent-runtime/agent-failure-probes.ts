@@ -68,8 +68,10 @@ export interface FakeSessionConfig {
   lastAssistantText: string | undefined;
   toolCalls?: number;
   toolResults?: number;
-  /** prompt() resolves but the terminal turn event never fires: only the fuse ends the turn. */
+  /** prompt() dispatches (agent_start) but the terminal turn event never fires: only the fuse ends the turn. */
   neverEnds?: boolean;
+  /** prompt() settles with no child event, as Pi does when an input handler returns `handled`. */
+  absorbsPrompt?: boolean;
   /** prompt() rejects, which lands in the catch around the whole turn. */
   promptError?: string;
   messages?: readonly unknown[];
@@ -90,6 +92,9 @@ export function fakeSession(config: FakeSessionConfig): SdkAgentSessionLike {
     },
     async prompt() {
       if (config.promptError !== undefined) throw new Error(config.promptError);
+      if (config.absorbsPrompt === true) return;
+      // A dispatched turn that never ends still started: Pi emits agent_start before prompt() settles.
+      if (config.neverEnds === true) listener?.({ type: "agent_start" });
       for (const event of config.events ?? []) listener?.(event);
       if (config.neverEnds !== true) listener?.({ type: "agent_end", willRetry: false });
     },

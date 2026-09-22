@@ -51,7 +51,7 @@ unless the user or project requests a provider, model, thinking level or role ov
 The native tool has no per-run model field: use `/model` and `/effort` for an authorized session change.
 Before an explicit selector or role override, read
 [model configuration](../../docs/workflows/models.md#inspect-model-configuration).
-Verify resolution, the `enabledModels` allowlist and actual child routing; do not change them silently.
+Verify resolution and actual child routing; do not change them silently.
 An external `--model` / `--thinking` changes the main process, not explicit child roles.
 For subscription-backed execution, verify each required role's provider, adapter and authentication mode.
 A role name or parent model proves no child transport; never silently substitute an API key or other route.

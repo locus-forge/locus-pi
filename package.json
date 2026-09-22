@@ -1,6 +1,6 @@
 {
   "name": "@locus-forge/locus-pi",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "type": "module",
   "description": "Dynamic workflows for Pi: reusable multi-agent workflows with configurable model roles.",
   "license": "MIT",
@@ -67,8 +67,7 @@
   "dependencies": {
     "@ast-grep/lang-python": "^0.0.6",
     "@ast-grep/napi": "^0.43.0",
-    "@sinclair/typebox": "^0.34.41",
-    "minimatch": "^10.2.5"
+    "@sinclair/typebox": "^0.34.41"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": ">=0.83.0",

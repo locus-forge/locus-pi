@@ -65,19 +65,21 @@ pi --list-models
 pi --list-models <provider>
 ```
 
-Pi's persistent main-model settings and hard allowlist live in
-`~/.pi/agent/settings.json`. When `jq` is available, inspect the relevant
-values without changing them:
+Pi's persistent main-model settings live in `~/.pi/agent/settings.json`. When
+`jq` is available, inspect the relevant values without changing them:
 
 ```bash
 jq '{defaultProvider, defaultModel, defaultThinkingLevel, enabledModels}' \
   ~/.pi/agent/settings.json
 ```
 
-An explicit `--model <provider/model>` must resolve in `pi --list-models` and
-must be permitted by `enabledModels` when that allowlist is configured. Never
-remove, add, or replace an allowlist entry unless the operator requested that
-exact configuration change.
+An explicit `--model <provider/model>` and an explicit workflow child route must
+resolve in `pi --list-models`, which includes custom models from `models.json`
+and provider extensions. `enabledModels` keeps its Pi meaning: the scope for
+choosing and cycling the main model. It does not block an explicit `--model` or
+a workflow child route, and a child whose route resolves outside that list still
+runs. Never change `enabledModels` unless the operator requested that exact
+configuration change.
 
 Workflow child roles have one persistent source:
 `~/.pi/agent/model-roles/config.json`. A role assignment uses

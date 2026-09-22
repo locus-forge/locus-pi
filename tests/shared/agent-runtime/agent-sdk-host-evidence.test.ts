@@ -77,7 +77,7 @@ function fakeSession(config: {
     async prompt() {
       if (config.promptError !== undefined) throw new Error(config.promptError);
       for (const event of config.events ?? []) listener?.(event);
-      if (config.neverEnds !== true) listener?.({ type: "agent_end", willRetry: false });
+      listener?.(config.neverEnds === true ? { type: "agent_start" } : { type: "agent_end", willRetry: false });
     },
     getSessionStats() {
       return { sessionId: "sdk-child", toolCalls: config.toolCalls, toolResults: config.toolResults };

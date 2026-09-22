@@ -3,7 +3,6 @@
   "runtimeRequirements": [
     "Pi setModel/getThinkingLevel/setThinkingLevel APIs",
     "Pi model registry with reasoning/thinkingLevelMap capability metadata",
-    "global enabledModels is enforced as a hard pre-agent allowlist, including explicit --model selections; configured empty, malformed, or unreadable policy fails closed without an LLM request",
     "Pi custom/select UI",
     "Global user model role config",
     "Locus model-settings role resolver",
@@ -12,7 +11,6 @@
   ],
   "stateUsed": [
     "Pi defaultProvider/defaultModel",
-    "read-only ~/.pi/agent/settings.json enabledModels policy",
     "global ~/.pi/agent/model-roles/config.json",
     "optional project .locus/runtime/session-state.jsonl runtime event",
     "optional session custom entry evidence"
@@ -44,7 +42,7 @@
   },
   "permissions": {
     "filesystem": {
-      "read": ["~/.pi/agent/settings.json", "~/.pi/agent/model-roles/config.json"],
+      "read": ["~/.pi/agent/model-roles/config.json"],
       "write": [
         "~/.pi/agent/model-roles/config.json",
         "~/.pi/agent/model-roles/config.json.lock",
@@ -63,7 +61,6 @@
   "tests": [
     "tests/extensions/model/model.test.ts",
     "tests/extensions/model/model-persistence.test.ts",
-    "tests/extensions/model/model-allowlist.test.ts",
     "tests/contracts/extensions/runtime-registration.test.ts",
     "tests/shared/operator/operator-interaction-slot.test.ts"
   ]

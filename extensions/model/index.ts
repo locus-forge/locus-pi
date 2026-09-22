@@ -11,20 +11,10 @@ import { registerCommandWithUiLifecycle } from "../_shared/operator/command-ui.j
 import type { ExtensionAPI } from "../_shared/host/pi-api.js";
 import { getCommandText } from "../_shared/host/pi-api.js";
 import { runEffortCommand } from "./effort-command.js";
-import { checkEnabledModel } from "./model-allowlist.js";
 import { updateModelRoleStatus } from "./operator-surface.js";
 import { runModelUi } from "./role-command.js";
 
 export default function model(pi: ExtensionAPI): void {
-  pi.on("input", async (_event, ctx) => {
-    const decision = await checkEnabledModel(ctx);
-    if (decision.allowed) return { action: "continue" };
-
-    const reason = decision.reason ?? "model_not_enabled";
-    ctx.ui.notify(reason, "error");
-    return { action: "handled" };
-  });
-
   registerCommandWithUiLifecycle(
     pi,
     {
