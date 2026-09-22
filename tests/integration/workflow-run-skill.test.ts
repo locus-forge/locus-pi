@@ -123,7 +123,7 @@ describe("shipped workflow skill routes", () => {
       "pi --list-models <provider>",
       "defaultProvider, defaultModel, defaultThinkingLevel, enabledModels",
       "~/.pi/agent/model-roles/config.json",
-      "must be permitted by `enabledModels`",
+      "`enabledModels` keeps its Pi meaning",
     ]);
     linkedText(runPath, "../../docs/workflows/budgets.md#run-budget");
     expect(run).not.toContain("openai-codex");

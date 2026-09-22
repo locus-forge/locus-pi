@@ -170,6 +170,7 @@ answer — there is no answer to reject.
 | `provider-error`                                                           | no      | provider-side, not a lost channel; classified, never guessed at                                       |
 | `unparseable-answer`, `empty-answer`, `answer-too-long`, `script-rejected` | no      | the child **answered**; an empty or oversized answer is a decomposition signal, not a dropped channel |
 | `unknown-agent`, `workspace-allocation`, `run-policy-blocked`              | no      | author or environment errors a retry would hide                                                       |
+| `prompt-not-dispatched`                                                    | no      | the child session absorbed its prompt before dispatch; the same setup would absorb a re-ask           |
 | `unclassified`                                                             | no      | nothing has shown this cause to be transient                                                          |
 
 The cause is a machine-readable field on `agent_end`, set where each cause is known and

@@ -58,6 +58,10 @@ export const AGENT_FAILURE_CAUSES = [
   "assistant-turn-budget",
   /** The run request was refused before any child existed (policy, no executor). */
   "run-policy-blocked",
+  /** The child session absorbed its prompt before model dispatch (an input handler or
+   *  extension command handled it). No model ran; the same session setup would absorb a
+   *  re-ask too, so it is never retried. */
+  "prompt-not-dispatched",
   /** The requested catalog agent does not exist. An author error, not a transport one. */
   "unknown-agent",
   /** A workspace or worktree could not be allocated or resolved. */

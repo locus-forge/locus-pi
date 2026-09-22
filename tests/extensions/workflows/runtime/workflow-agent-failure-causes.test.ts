@@ -37,16 +37,10 @@ import {
 /**
  * T-130 W1 — the machine-readable failure cause, as an EXECUTABLE matrix.
  *
- * `status` tells a reader "failed" and nothing else: a turn timeout, a tool-call budget
- * breach, a provider error and a mid-turn throw all arrive as one status plus an English
- * sentence, and everything that must tell those apart would otherwise match on prose.
- *
- * So every member of the closed list has ONE entry below that drives a real path and
- * RETURNS the cause that path produced; the `it.each` over `AGENT_FAILURE_CAUSES` asserts
- * the returned value is the member it was asked for. The claim is therefore "this member
- * was obtained", not "this member was mentioned", and it holds for this file run alone —
- * the previous shape accumulated causes into a module-level set that sibling suites pushed
- * into, so the gate answered according to which tests had already run.
+ * Every member of the closed list has ONE entry below that drives a real path and RETURNS
+ * the cause that path produced; the `it.each` over `AGENT_FAILURE_CAUSES` asserts it is the
+ * member it was asked for — "obtained", not "mentioned" — for this file run alone, with no
+ * module-level set that sibling suites could fill first.
  *
  * `Record<AgentFailureCause, CauseCase>` makes the table total at compile time; the last
  * case refuses a leftover entry for a cause the list no longer declares.
@@ -348,6 +342,11 @@ const CAUSE_MATRIX: Record<AgentFailureCause, CauseCase> = {
       expect(result.status).toBe("blocked");
       return result.failureCause;
     },
+  },
+
+  "prompt-not-dispatched": {
+    what: "the child session absorbs its prompt before dispatch; the host fails instead of awaiting agent_end",
+    produce: async () => (await runHost({ lastAssistantText: "never sent", absorbsPrompt: true })).failureCause,
   },
 
   "unknown-agent": {

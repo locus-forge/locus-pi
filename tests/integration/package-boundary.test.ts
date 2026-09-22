@@ -355,8 +355,8 @@ describe("npm public package boundary", () => {
     ]);
     // Directory-owned means the dotfiles inside a listed directory ship with it:
     // `skills/.ignore` rides along under `skills/` and is counted here.
-    // Retired eleven redundant docs; recovery has one conditionally loaded owner.
-    expect(dryRun.files).toHaveLength(251);
+    // Retired eleven redundant docs; recovery has one conditionally loaded owner; the enabledModels gate is gone.
+    expect(dryRun.files).toHaveLength(250);
   });
 
   it("ships every prompt resource a curated workflow renders", () => {

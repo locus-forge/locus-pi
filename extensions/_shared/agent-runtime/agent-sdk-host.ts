@@ -823,17 +823,23 @@ async function runChildSession(
       }
     }
     if (signal.aborted) turn = { ...turn, settlement: "aborted" };
+    if (turn.settlement === "not_dispatched") {
+      const reason =
+        "Child prompt was absorbed before model dispatch: an input handler or extension command handled it, " +
+        "so no model ran and no agent_end will follow.";
+      patchTerminalRow({ status: "error", errors: [reason], finalAnswer: reason });
+      await preserveChildTrace();
+      return withChildTrace(
+        failedResult(request, reason, "prompt-not-dispatched", [...diagnostics, reason], undefined, childSession),
+        childTrace,
+      );
+    }
 
-    // THIS is the first point at which "executed" is a true word, so it is the first
-    // point the evidence may say it. Everything above returns without it: a session
-    // built and then cancelled, or built on the wrong model, executed nothing — and
-    // neither does one whose `prompt()` was REJECTED by the transport (no credentials,
-    // no route) or whose subscription threw, both of which leave `driveChildTurn` by
-    // exception and skip this line entirely. `promptAccepted` is the narrower gate for
-    // the case that still returns normally: an abort or a timeout that lands while the
-    // prompt is still in flight and no child event has ever arrived. A turn that was
-    // dispatched and then timed out DID execute, which is why promotion sits here
-    // rather than after the settlement branches.
+    // THIS is the first point at which "executed" is a true word. Everything above returns
+    // without it: a cancelled or wrong-model session, an absorbed prompt, and a `prompt()`
+    // REJECTED by the transport (which leaves `driveChildTurn` by exception) ran nothing.
+    // `promptAccepted` also gates an abort or timeout that won before any child event. A
+    // dispatched turn that then timed out DID execute, so promotion precedes those branches.
     if (turn.promptAccepted) {
       observed.executedModel = sessionModelSelector;
       if (sessionThinkingLevel !== undefined) observed.executedThinking = sessionThinkingLevel;
@@ -1003,7 +1009,7 @@ async function runChildSession(
   }
 }
 
-type ChildTurnSettlement = "completed" | "aborted" | "timed_out" | "tool_limit" | "turn_limit";
+type ChildTurnSettlement = "completed" | "not_dispatched" | "aborted" | "timed_out" | "tool_limit" | "turn_limit";
 interface ChildTurnLedger {
   toolCalls: number;
   /**
@@ -1022,26 +1028,18 @@ interface ChildTurnObservation {
   settlement: ChildTurnSettlement;
   recordedToolNames: string[];
   /**
-   * Whether the child was actually dispatched: `prompt()` resolved (the SDK settles it
-   * once the turn is QUEUED, not when it finishes) or the child emitted its first
-   * event. Either one is proof the transport took the turn.
-   *
-   * A `prompt()` that REJECTS — no credentials, no route to the provider — leaves this
-   * function by exception and never returns an observation at all, which is the
-   * stronger half of the same rule. This flag covers what still returns normally: an
-   * abort or a timeout that wins the race while the prompt is in flight and no child
-   * event has ever arrived. Nothing ran then, and the caller must not record a model
-   * as executed.
+   * Whether the child was actually dispatched: it emitted at least one event. A `prompt()`
+   * that REJECTS (no credentials, no route) leaves by exception instead. This flag covers
+   * what returns normally — an abort or timeout that wins while nothing has arrived, or a
+   * prompt absorbed before dispatch. Nothing ran then, so no model may be recorded as executed.
    */
   promptAccepted: boolean;
 }
 
 /**
- * Prompt the child and wait for its `agent_end`, racing against the abort signal
- * and a wall-clock timeout so neither a hung `prompt()` nor a missing `agent_end`
- * can pin the tool forever. The `prompt()` promise is part of the race because it
- * only resolves once the turn is queued, not when the turn finishes — completion
- * is signalled exclusively by the `agent_end` event.
+ * Prompt the child and wait for its `agent_end`, racing against the abort signal and a
+ * wall-clock timeout so neither a hung `prompt()` nor a missing `agent_end` can pin the
+ * tool forever.
  */
 async function driveChildTurn(
   session: SdkAgentSessionLike,
@@ -1147,11 +1145,11 @@ async function driveChildTurn(
         cancelTimer = scheduleLongTimeout(turnBudgetMs, () => resolve("timed_out"), "childTimeoutMs");
       }
     });
-    // A turn is "complete" only when agent_end fires; prompt() racing here means a
-    // hung prompt() cannot block the abort/timeout branches from winning.
-    const completed = (async (): Promise<"completed"> => {
+    // Pi settles prompt() only after the whole agent run. Settling with no child event means an
+    // input handler or extension command absorbed the prompt, and agent_end will never come.
+    const completed = (async (): Promise<"completed" | "not_dispatched"> => {
       await session.prompt(kickoff, { source: "locus-pi-agent-sdk-host" });
-      promptAccepted = true;
+      if (!promptAccepted) return "not_dispatched";
       await ended;
       return "completed";
     })();
