@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentExecutor, AgentRunRequest } from "../../../../../extensions/_shared/agent-runtime/agent-runner.js";
-import runPlanWorkflow from "../../../../../extensions/workflows/examples/task/plan.workflow.mjs";
+import runPlanWorkflow from "../../../../../examples/workflows/task/plan.workflow.mjs";
 import { runWorkflowScript } from "../../../../../extensions/workflows/runtime/workflow-runner.js";
 import { createHarness } from "../../../../test-harness.js";
 

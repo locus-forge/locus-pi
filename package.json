@@ -92,6 +92,7 @@
   "files": [
     "dist/public-catalogs.json",
     "docs/",
+    "examples/",
     "extensions/",
     "!extensions/workflows/references/consilium/",
     "!extensions/workflows/references/excalidraw-pipeline/",

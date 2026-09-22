@@ -13,7 +13,7 @@
 // is to read the synthesis against the sources.
 //
 // This is a REFERENCE, not a Package workflow. It lives under `references/` rather
-// than in the scanned `examples/` directory, so it is unreachable by name and runs by
+// than in the scanned `examples/workflows/` directory, so it is unreachable by name and runs by
 // path only:
 //
 //   /workflows run extensions/workflows/references/consilium/consilium.workflow.mjs <question>

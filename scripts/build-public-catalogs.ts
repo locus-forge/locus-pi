@@ -2,10 +2,9 @@
  * scripts/build-public-catalogs.ts — one machine-owned source for the two public catalogs.
  *
  * The package publishes two enumerable sets: the extensions `package.json#pi.extensions` activates,
- * and the workflow names `extensions/workflows/examples/` resolves. Both were transcribed by hand into
- * docs/extensions.md, docs/workflows.md and two contract tests, and every copy could drift
- * independently — the published "five namespaces" against six on disk was exactly that failure. This
- * script resolves both catalogs from the same readers the runtime uses and writes them once:
+ * and the workflow names `examples/workflows/` resolves. This script resolves both catalogs
+ * from the same readers the runtime uses, preventing hand-maintained documentation and tests
+ * from drifting away from the installed package. It writes the shared data and catalog regions:
  *
  *   dist/public-catalogs.json   checked-in data; contract tests compare reality against it
  *   the fenced regions below    generated Markdown fragments inside published documentation
@@ -126,7 +125,7 @@ interface DocumentTarget {
  */
 const DOCUMENT_TARGETS: DocumentTarget[] = [
   { file: "docs/extensions.md", regions: [{ kind: "extensions", render: extensionTableFragment }] },
-  { file: "docs/workflows.md", regions: [{ kind: "workflows", render: workflowCatalogFragment }] },
+  { file: "examples/workflows/README.md", regions: [{ kind: "workflows", render: workflowCatalogFragment }] },
 ];
 
 /** Which catalog regions each published document is expected to carry. Read by the golden test. */
@@ -246,7 +245,7 @@ export function publicCatalogs(
   assertUnique(
     "packaged workflow name",
     workflows.map((entry) => entry.name),
-    "rename the colliding entry under extensions/workflows/examples/",
+    "rename the colliding entry under examples/workflows/",
   );
   return { extensions, workflows };
 }

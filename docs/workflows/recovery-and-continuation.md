@@ -2,13 +2,16 @@
 title: Recovery and operator continuation
 type: guide
 status: active
-updated: "2026-09-13T00:12:21Z"
-description: "Organize the installed workflow contract by reader task."
+updated: "2026-09-22T16:21:00Z"
+source_commit: "54dea11dbe11"
+update_event: "user_request"
+context: "changes=XL files=71 task=T-101"
+description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
 ---
 
 # Recovery and operator continuation
 
-[Workflow documentation](index.md) · [Authoring guide](../locus-pi-workflows.md) · [Operator guide](../workflows.md)
+[Workflow documentation](index.md) · [Authoring guide](create.md) · [Operator guide](running.md)
 
 Audience: operators recovering a run and authors selecting a handoff. Ordinary Repair + Continue remains owned by [Resume and replay](replay.md#resume-and-replay); this file owns the conservative explicit interrupted-run extension.
 

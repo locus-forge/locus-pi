@@ -2,13 +2,16 @@
 title: Agent results and output acceptance
 type: guide
 status: active
-updated: "2026-09-13T00:12:23Z"
-description: "Organize the installed workflow contract by reader task."
+updated: "2026-09-22T16:20:57Z"
+source_commit: "54dea11dbe11"
+update_event: "user_request"
+context: "changes=XL files=71 task=T-101"
+description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
 ---
 
 # Agent results and output acceptance
 
-[Workflow documentation](index.md) · [Authoring guide](../locus-pi-workflows.md) · [Operator guide](../workflows.md)
+[Workflow documentation](index.md) · [Authoring guide](create.md) · [Operator guide](running.md)
 
 Audience: authors using a strict scalar or shaped result and bridge/host maintainers. This file owns the output API. It is no longer opt-in: same-session acceptance is the ONLY way a shaped value reaches workflow code. The text-parsed transport — a shape block appended to the prompt, the final message parsed as JSON, a fresh child spawned to repair the format — has been deleted. Plain `agent(prompt)` still returns the child's exact full text and is untouched.
 

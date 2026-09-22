@@ -2,13 +2,58 @@
 title: Launch and operate a workflow
 type: guide
 status: active
-updated: "2026-09-13T00:12:22Z"
-description: "Organize the installed workflow contract by reader task."
+updated: "2026-09-22T16:21:01Z"
+source_commit: "54dea11dbe11"
+update_event: "user_request"
+context: "changes=XL files=71 task=T-101"
+description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
 ---
 
 # Launch and operate a workflow
 
-[Workflow documentation](index.md) · [Authoring guide](../locus-pi-workflows.md) · [Operator guide](../workflows.md)
+[Documentation](../index.md) · [Create a workflow](create.md) · [DSL reference](dsl.md) · [Workflow topics](index.md)
+
+Start with a [checked workflow](create.md) or choose an [installed example](../../examples/workflows/README.md).
+Use this page to launch it, inspect agents and results, and choose a fresh run,
+recorded-call replay, or operator continuation.
+
+## Run a saved workflow
+
+After [creating and checking project-tour](create.md#your-first-workflow),
+start Pi in that project and run:
+
+```text
+/workflows run project-tour
+```
+
+Wait for Pi to finish its current response before launching. The command returns
+to the editor while the agents work. The live panel shows their progress and the
+run ID; two exploration agents run together, followed by the summary agent.
+
+- Open `/ps`, select an agent with Up/Down, and press Enter to read its output.
+  Esc returns without stopping the run. This viewer is available with the full
+  package; a Workflow-only installation still has workflow status and results.
+- Use `/workflows status` to find a run, then `/workflows status <runId>` for details.
+- Read the completed answer with `/workflows result last` or `/workflows result <runId>`.
+- Stop active work with `/workflows stop <runId>`.
+
+## Run again or resume
+
+| What you want                       | Command                                        | What happens                                                                        |
+| ----------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Read the current project again      | `/workflows run project-tour`                  | A fresh run with a new workspace; agents execute again.                             |
+| Reuse eligible recorded steps       | `/workflows run project-tour --resume <runId>` | A new attempt in the original workspace; matching recorded answers can be reused.   |
+| Answer a workflow's pending handoff | `/workflows continue <runId>`                  | Opens an actionable operator handoff; after your answer, starts a continuation run. |
+
+Use the full run ID from the run directory name (for example,
+`20260922-120027-07ef`), not the short `#07ef` badge shown in the panel.
+
+Resume reuses answers, not file changes or a fresh reading of the project. Use a
+fresh run when you want new observations. After repairing a workflow, check the
+replay markers to see what was actually reused. Parallel calls can change order
+and cause an attempt to execute fresh even when the source is unchanged. If the original run selected a
+workspace with `--run-name` or `--output-dir`, repeat that same selector and value.
+See [replay details](replay.md) and [operator handoffs](recovery-and-continuation.md#human-continuation).
 
 ## How to run
 
@@ -288,3 +333,54 @@ against the call deadline`), so a call that dies on its deadline while someone w
   `workflow` tool's `noOperator`), an `ask: true` stage is refused before any
   child is spawned, with the same closed `ask-unavailable` cause. See
   "No-operator mode" above.
+
+## Run evidence
+
+Open the group README: it links the original launch, workspace, saved children, and resume attempts.
+
+```text
+.locus-pi/runs/<storageRootRunId>/
+  README.md   links to the workspace and all execution types
+  outputs/    human-readable host projection
+  runtime/    machine evidence and continuation authority
+    journal.ndjson         append-only lifecycle evidence
+    result.json            terminal result, run metadata, and bounded finalization errors
+    replay.ndjson          replay records when the source is eligible
+    script-<sha256>.workflow.mjs
+    artifacts/             answers, transcripts, result envelopes, inputs, and publications
+  children/<runId>/         separate outputs/ and runtime/ for each saved child
+  attempts/<runId>/         separate outputs/ and runtime/ for each resume attempt
+```
+
+Workflow-owned working files live separately under a unique `.locus-pi/workspaces/<generated-run-name>/` directory by default or in an explicit confined output directory. Independent root launches receive different groups even in one session; resume uses the original workspace but writes its own receipt. The workflow workspace and run-evidence directory must never resolve to the same directory. Loose `.locus-pi/plans/*.md` files are plan documents left by the removed `plan` extension: user data, not workflow workspaces.
+
+The workflow workspace is the durable location for handoffs, final results,
+review evidence, and explicit resume inputs. Keep disposable environments,
+dependency caches, test basetemp, transient renderer output, and staging in
+ordinary OS or tool temporary and cache locations. If renderer output is the
+final deliverable, write or promote it into the workflow workspace. Promote any
+scratch output needed for review or resume before its temporary or cache location
+expires. This guidance reduces accidental mixing; an authored prompt that
+explicitly requests another placement remains authoritative.
+
+Workspace `.workflow-runs.md` contains backlinks. It is a reserved runtime file: a user file with this name is never overwritten, and the launch explicitly rejects. The group README and backlink are replaced with complete durable content through temp+rename and parent-directory sync. An incomplete runtime-owned README is restored from root metadata; an incomplete backlink returns an explicit recovery error so earlier links are not lost. The shared pages contain permanent links, not the “latest status”; see each execution's current state in its `runtime/result.json` and journal. They are written only by the root under the workspace lease, never after it is released.
+
+Old flat runs remain readable and resumable in place. Each runId is resolved through the shared confined lookup; symlink paths and ambiguous IDs are never selected arbitrarily. A safely located resume adds `attempts/<newRunId>/`; an early unsafe or missing source stores a separate rejected receipt. Runs and workspaces are never migrated or deleted automatically.
+
+`runtime/journal.ndjson` is the chronological event authority. New `runtime/result.json` envelopes do not repeat the full journal. They retain only typed bounded finalization errors that must survive an independent best-effort journal write failure. Older envelopes with an embedded journal remain readable.
+
+`.locus-pi/workflow-state/v1/<hash>/` is active runtime state. It holds the workspace lease namespace and saved-child checkpoints. A workflow with no saved children can leave this directory empty after its temporary lock is released; that empty directory is not legacy run evidence.
+
+Use `/workflows result` for complete prose output and `/workflows status` for stages, evidence, replay markers, and actionable handoffs.
+
+Root results and direct `parallel()`/`pipeline()` returns share one terminal-outcome rule. A JSON object is semantic failure when `ok === false`, `partial === true`, or `status` is `"failed"`, `"blocked"`, or `"cancelled"`. The original result remains in evidence, but the durable workflow disposition is `failed`. Other JSON-safe shapes retain legacy success semantics.
+
+## Recovery and further controls
+
+For a stopped run, follow [recovery and continuation](recovery-and-continuation.md)
+and the [replay contract](replay.md#continuing-a-repaired-workflow). Replayed answers
+do not re-create files: preserve the source workspace and inspect what was actually reused.
+
+[Model roles](models.md#use-model-roles) select models independently of source.
+[Fusion](fusion.md) describes multi-model panels and their separate opt-in tool.
+[Trust and approvals](trust.md) explains execution permissions and source identity.

@@ -17,7 +17,7 @@ import { assertWorkflowSavedName, isWorkflowSavedName, workflowSavedNameParts } 
 import { WORKFLOW_ROOT_DIRNAME, WORKFLOW_SAVED_SOURCE_DIRNAME } from "./workflow-run-layout.js";
 
 export const WORKFLOW_ENTRY_SUFFIX = ".workflow.mjs";
-const PACKAGED_EXAMPLES_DIR = fileURLToPath(new URL("../examples/", import.meta.url));
+const PACKAGED_EXAMPLES_DIR = fileURLToPath(new URL("../../../examples/workflows/", import.meta.url));
 const PROJECT_WORKFLOW_DIRS: readonly [string, string][] = [[WORKFLOW_ROOT_DIRNAME, WORKFLOW_SAVED_SOURCE_DIRNAME]];
 
 export type WorkflowTargetKind = "name" | "scriptPath";

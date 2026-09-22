@@ -11,7 +11,7 @@ copy under project `.locus-pi/workflows/` or user `~/.locus-pi/workflows/` befor
 running it. Workflow JavaScript executes with full Node.js host access and is not
 sandboxed.
 
-The Package workflows are whatever `extensions/workflows/examples/` holds —
+The Package workflows are whatever `examples/workflows/` holds —
 currently `live-smoke`, `post-code-review` and its children, `stage-loop`, plus `task/draft`
 and `task/plan`. A skeleton copied out of this catalog becomes one by being
 saved there, with the package-surface review that implies; saved anywhere else
@@ -234,7 +234,7 @@ Rules that make the shape work:
 The old runnable examples are no longer shipped. For the same shape with loops inside it — an
 operator clarification round that pauses the run, and a draft/critique loop that
 exits on a shaped verdict — read the tracked pair
-`extensions/workflows/examples/task/`.
+`examples/workflows/task/`.
 
 ## Writing one stage task
 

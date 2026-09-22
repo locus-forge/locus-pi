@@ -25,7 +25,7 @@ extensions/workflows/references/consilium/
 ```
 
 `/workflows run consilium` does **not** resolve, and that is the design:
-`PACKAGED_EXAMPLES_DIR` is `extensions/workflows/examples/`, scanned one level deep,
+`PACKAGED_EXAMPLES_DIR` is `examples/workflows/`, scanned one level deep,
 and a workflow is registered by the existence of its entry file in that one
 directory. `references/` is never visited. Placement is the mechanism — there is no
 allowlist to edit and nothing to forget.

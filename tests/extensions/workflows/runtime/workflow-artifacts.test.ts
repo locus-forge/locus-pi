@@ -304,7 +304,7 @@ describe("workflow run artifact store", () => {
         scriptIdentity: {
           schemaVersion: 2,
           identityPolicy: "static-node-only-v1",
-          sourcePath: path.resolve("extensions/workflows/examples/task/plan.workflow.mjs"),
+          sourcePath: path.resolve("examples/workflows/task/plan.workflow.mjs"),
           snapshotPath,
           scriptSha256: identitySha256,
           identityCoverage: "self-contained-static",
@@ -343,7 +343,7 @@ describe("workflow run artifact store", () => {
       scriptIdentity: {
         schemaVersion: 2,
         identityPolicy: "static-node-only-v1",
-        sourcePath: path.resolve("extensions/workflows/examples/task/plan.workflow.mjs"),
+        sourcePath: path.resolve("examples/workflows/task/plan.workflow.mjs"),
         snapshotPath: path.join(workflowRunRuntimeDir(sourceRunDir), `script-${snapshotSha256}.workflow.mjs`),
         scriptSha256: snapshotSha256,
         identityCoverage: "self-contained-static",
@@ -386,7 +386,7 @@ describe("workflow run artifact store", () => {
         scriptIdentity: {
           schemaVersion: 2,
           identityPolicy: "static-node-only-v1",
-          sourcePath: path.resolve("extensions/workflows/examples/task/plan.workflow.mjs"),
+          sourcePath: path.resolve("examples/workflows/task/plan.workflow.mjs"),
           snapshotPath,
           scriptSha256: snapshotSha256,
           identityCoverage: "self-contained-static",
@@ -446,7 +446,7 @@ describe("workflow run artifact store", () => {
     const present = parseWorkflowPersistedBinding(
       {
         target: { kind: "name", ref: "task/plan", source: "package" },
-        scriptIdentity: identity(path.resolve("extensions/workflows/examples/task/plan.workflow.mjs")),
+        scriptIdentity: identity(path.resolve("examples/workflows/task/plan.workflow.mjs")),
       },
       root,
       runId,
@@ -456,7 +456,7 @@ describe("workflow run artifact store", () => {
     const removedPackage = parseWorkflowPersistedBinding(
       {
         target: { kind: "name", ref: "plan", source: "package" },
-        scriptIdentity: identity(path.resolve("extensions/workflows/examples/removed/deep/plan.workflow.mjs")),
+        scriptIdentity: identity(path.resolve("examples/workflows/removed/deep/plan.workflow.mjs")),
       },
       root,
       runId,
@@ -483,7 +483,7 @@ describe("workflow run artifact store", () => {
         record.scriptIdentity = {
           schemaVersion: 2,
           identityPolicy: "static-node-only-v1",
-          sourcePath: path.join(process.cwd(), "extensions/workflows/examples/task/plan.workflow.mjs"),
+          sourcePath: path.join(process.cwd(), "examples/workflows/task/plan.workflow.mjs"),
           snapshotPath: "/tmp/script-a.workflow.mjs",
           scriptSha256: "a".repeat(64),
           identityCoverage: "self-contained-static",

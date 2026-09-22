@@ -45,7 +45,7 @@ describe("readable workflow authoring references", () => {
     "docs/workflows/authoring.md",
     "extensions/workflows/tool/workflow-tool.ts",
     "extensions/workflows/manifest.json",
-    "extensions/workflows/examples/README.md",
+    "examples/workflows/README.md",
   ];
 
   it.each(authoringSurfaces)("keeps Design -> review -> Build continuous by default on %s", (relativePath) => {
@@ -57,7 +57,7 @@ describe("readable workflow authoring references", () => {
   });
 
   it("documents the draft to concrete workflow source contract", () => {
-    const text = source("extensions/workflows/examples/task/README.md");
+    const text = source("examples/workflows/task/README.md");
     expect(text).toContain("`task` is a group-only Package namespace");
     expect(text).toContain("`task/draft` turns a raw request into `draft.md`");
     expect(text).toContain("Copy and edit this text when needed");
@@ -78,12 +78,10 @@ describe("readable workflow authoring references", () => {
       expect(source(relativePath)).toContain(canonical);
     }
     expect(source("docs/workflows/running.md")).not.toContain("/workflow-run <name|path>");
-    for (const relativePath of ["docs/workflows/running.md", "docs/workflows.md"]) {
-      const text = source(relativePath);
-      expect(text).toContain("--run-name <name>");
-      expect(text).toContain("--output-dir <path>");
-      expect(text).not.toContain("/workflows run --output-dir <path>");
-    }
+    const running = source("docs/workflows/running.md");
+    expect(running).toContain("--run-name <name>");
+    expect(running).toContain("--output-dir <path>");
+    expect(running).not.toContain("/workflows run --output-dir <path>");
   });
 
   it.each([
@@ -115,7 +113,7 @@ describe("readable workflow authoring references", () => {
       "skills/locus-pi-workflow-create/references/source-boundary.md",
       "skills/locus-pi-workflow-create/SKILL.md",
       ...readdirSync(path.join(root, "docs/workflows")).map((name) => `docs/workflows/${name}`),
-      "extensions/workflows/examples/README.md",
+      "examples/workflows/README.md",
       "README.md",
     ];
     const snippets = documents.flatMap((relativePath) =>
@@ -133,7 +131,7 @@ describe("readable workflow authoring references", () => {
       "skills/locus-pi-workflow-create/references/source-boundary.md",
       "skills/locus-pi-workflow-create/SKILL.md",
       ...readdirSync(path.join(root, "docs/workflows")).map((name) => `docs/workflows/${name}`),
-      "extensions/workflows/examples/README.md",
+      "examples/workflows/README.md",
       "README.md",
     ];
     const snippets = documents.flatMap((relativePath) => declaredStandardDocSnippets(relativePath));
@@ -144,7 +142,10 @@ describe("readable workflow authoring references", () => {
   });
 
   it("teaches one project-local workflow workspace separate from two-zone run evidence", () => {
-    for (const relativePath of ["skills/locus-pi-workflow-create/references/source-boundary.md", "docs/workflows.md"]) {
+    for (const relativePath of [
+      "skills/locus-pi-workflow-create/references/source-boundary.md",
+      "docs/workflows/running.md",
+    ]) {
       const text = source(relativePath);
       expect(text).toContain(".locus-pi/workspaces/<generated-run-name>");
       expect(text).not.toContain("outputs/<workflow-name>");
@@ -152,7 +153,7 @@ describe("readable workflow authoring references", () => {
     expect(source("skills/locus-pi-workflow-create/SKILL.md")).not.toContain(
       ".locus-pi/workspaces/<generated-run-name>",
     );
-    const storage = source("docs/workflows.md");
+    const storage = source("docs/workflows/running.md");
     expect(storage).toContain("runs/<storageRootRunId>/");
     expect(storage).toContain("outputs/    human-readable host projection");
     expect(storage).toContain("runtime/    machine evidence and continuation authority");
@@ -166,7 +167,7 @@ describe("readable workflow authoring references", () => {
       "skills/locus-pi-workflow-create/SKILL.md",
       "skills/locus-pi-workflow-create/references/source-boundary.md",
       "docs/workflows/dsl.md",
-      "docs/workflows.md",
+      "docs/workflows/running.md",
     ]) {
       const text = source(relativePath);
       expect(text).toMatch(/durable (?:handoffs|location)/iu);

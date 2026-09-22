@@ -2,10 +2,13 @@
 title: Architecture and repository boundaries
 type: overview
 status: active
-updated: 2026-08-19T22:43:06Z
-description: Document architecture and repository boundaries.
 owner: locus-pi maintainers
 tags: [architecture, repository]
+updated: "2026-09-22T16:20:55Z"
+source_commit: "54dea11dbe11"
+update_event: "user_request"
+context: "changes=XL files=71 task=T-101"
+description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
 ---
 
 # Architecture and repository boundaries
@@ -17,7 +20,7 @@ Public behavior is defined by the intersection of:
 1. `package.json#pi.extensions` — the extension entrypoints Pi loads;
 2. `extensions/<name>/manifest.json` — declared tools, commands, hooks, permissions, risk, tests, and manual;
 3. extension source and focused tests;
-4. the shipped workflow registry under `extensions/workflows/examples/`;
+4. the shipped workflow registry under `examples/workflows/`;
 5. the npm allowlist in `package.json#files`.
 
 A file merely existing in the repository does not make it a default extension, supported workflow, or npm package surface.
@@ -27,7 +30,8 @@ A file merely existing in the repository does not make it a default extension, s
 ```text
 extensions/              extension implementations
 extensions/_shared/      shared host, operator, runtime, model, and agent-runtime layers
-extensions/workflows/    workflow runtime, authoring guide, and packaged examples
+extensions/workflows/    workflow runtime and co-located extension manual
+examples/workflows/      installed reusable workflows and their guides
 skills/                  bundled Pi skills
 scripts/                 validation and public-repository materialization
 tests/                   focused and integration tests

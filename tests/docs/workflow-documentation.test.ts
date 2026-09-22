@@ -8,6 +8,7 @@ const chapters = [
   "authoring.md",
   "budgets.md",
   "catalog.md",
+  "create.md",
   "dsl.md",
   "error-diagnostics.md",
   "evidence.md",

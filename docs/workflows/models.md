@@ -2,13 +2,16 @@
 title: Agent catalog and model selection
 type: guide
 status: active
-updated: "2026-09-13T00:12:23Z"
-description: "Organize the installed workflow contract by reader task."
+updated: "2026-09-22T16:21:00Z"
+source_commit: "54dea11dbe11"
+update_event: "user_request"
+context: "changes=XL files=71 task=T-101"
+description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
 ---
 
 # Agent catalog and model selection
 
-[Workflow documentation](index.md) · [Authoring guide](../locus-pi-workflows.md) · [Operator guide](../workflows.md)
+[Workflow documentation](index.md) · [Authoring guide](create.md) · [Operator guide](running.md)
 
 ## Use model roles
 

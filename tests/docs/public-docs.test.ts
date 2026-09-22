@@ -8,6 +8,7 @@ const expectedDocs = [
   "environment-variables.md",
   "extensions.md",
   "getting-started.md",
+  "index.md",
   "locus-pi-workflows.md",
   "tui-design.md",
   "workflows",
@@ -35,7 +36,7 @@ describe("public documentation topology", () => {
   });
 
   it("exposes authoring from the public guide and retires the hidden omnibus manual", () => {
-    const guide = readFileSync(path.join(root, "docs/locus-pi-workflows.md"), "utf8");
+    const guide = readFileSync(path.join(root, "docs/workflows/create.md"), "utf8");
     expect(guide).toContain("skills/locus-pi-workflow-create/SKILL.md");
     expect(guide).toContain("source-boundary.md");
     expect(guide).toContain("source-shape.md");
@@ -56,9 +57,13 @@ describe("public documentation topology", () => {
     for (const relativePath of [
       "docs/getting-started.md",
       "docs/extensions.md",
-      "docs/workflows.md",
-      "docs/workflows/index.md",
-      "docs/locus-pi-workflows.md",
+      "docs/index.md",
+      "docs/workflows/dsl.md",
+      "docs/workflows/running.md",
+      "examples/README.md",
+      "skills/locus-pi-workflow-create/SKILL.md",
+
+      "docs/workflows/create.md",
       "skills/README.md",
     ]) {
       expect(readme).toContain(relativePath);

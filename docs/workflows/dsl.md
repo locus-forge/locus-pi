@@ -1,111 +1,292 @@
 ---
-title: Workflow DSL and saved children
+title: Workflow DSL reference
 type: guide
 status: active
-updated: "2026-09-13T00:12:23Z"
-description: "Organize the installed workflow contract by reader task."
+updated: "2026-09-22T16:21:47Z"
+source_commit: "54dea11dbe11"
+update_event: "user_request"
+context: "changes=XL files=72"
+description: "Document the complete DSL with checker-tested examples and separate source admission from authoring policy."
 ---
 
-# Workflow DSL and saved children
+# Workflow DSL reference
 
-[Workflow documentation](index.md) · [Authoring guide](../locus-pi-workflows.md) · [Operator guide](../workflows.md)
+[Workflow documentation](index.md) · [Create a workflow](create.md) · [Run a workflow](running.md) · [Runnable examples](../../examples/workflows/README.md)
+
+A workflow receives `dsl` and optional exact text `input` in its default async function. Destructure the methods you need; the examples below use that form. `Promise<T>` means await the result. The runtime has 22 method names, including the removed `runWorkspaceDir()` compatibility trap.
 
 ## DSL surface (v0)
 
-```ts
-items()                      // Exact caller-provided text units; see workflow input
-agent(prompt, opts?)          // Run a catalog/local agent; returns exact child text
-agent(prompt, {choice, …})    // Standard machine route; returns one declared exact string
-agent(prompt, {handoffs, …})  // Standard dynamic decomposition; returns bounded text units
-agent(prompt, {schema, …})    // Advanced compatibility; returns the validated shaped value
-fusion(question, options)     // Required homogeneous mode + 2+ isolated answers -> separate judge
-fusion(question, {schema, …}) // Same panel; validates only the judge's final answer
-publishArtifact(name, text)   // Persist workflow-authored text; return full digest-bound reference
-publishPrimaryArtifact(name, text) // Publish the run's one primary semantic document
-outputDir()                   // Project-relative workflow workspace selected by the host
-invokeWorkflow(declaration)   // Run one saved child level with durable item checkpointing
-publishPrimaryFile(path)      // Validate/reference one non-empty workflow workspace file
-consumeTextArtifact(ref)      // Verify/copy prior-run text; return current ref + exact text
-awaitOperator({reason})       // Declare a successful operator handoff without changing result
-promptFile(path, variables?)  // Render a neighboring .prompt.md resource
-workspace(label, ref)         // Allocate one retained workspace; returns opaque handle
-projectRoot()                 // Absolute launch project root
-parallel(thunks)              // Full barrier; success returns ordered T[], ordinary failed branches reject typed evidence
-pipeline(items, ...stages)    // Per-item staged chains; a failed item stops before its later stages, then typed reject
-phase(name)                   // Progress grouping + journal line
-log(msg)                      // Journal line
-now()                         // Recorded wall clock (ms); replayed on --resume
-random()                      // Recorded randomness in [0,1); replayed on --resume
+**Runtime support and authoring permission are different.** Runtime means trusted JavaScript can call the method; standard means `meta.profile: "standard"` passes the compatibility source grammar; orchestration-only is the stricter checker mode used by the create skill. The table describes method admission, not permission to inspect every returned value: standard source still treats host results as opaque. A method's presence in `WorkflowDsl` does not make it legal in generated source. Read [the source contract](source-shape.md) for grammar, opaque model text, literal call labels, and permitted control flow.
+
+| Method                                              | Runtime       | Standard                        | Orchestration-only                              |
+| --------------------------------------------------- | ------------- | ------------------------------- | ----------------------------------------------- |
+| [`agent`](#agent)                                   | Yes           | Yes, except raw schema/validate | Same; unique literal label per callsite         |
+| [`fusion`](#fusion)                                 | Yes           | No                              | No                                              |
+| [`items`](#items)                                   | Yes           | Yes                             | Yes                                             |
+| [`parallel`](#parallel)                             | Yes           | Yes                             | Yes                                             |
+| [`pipeline`](#pipeline)                             | Yes           | Yes                             | Yes                                             |
+| [`workflow`](#workflow)                             | Yes           | Yes                             | Yes                                             |
+| [`invokeWorkflow`](#invokeworkflow)                 | Yes           | Yes                             | Method admitted; see workspace constraint below |
+| [`phase`](#phase)                                   | Yes           | Yes                             | Yes                                             |
+| [`log`](#log)                                       | Yes           | Yes                             | Yes                                             |
+| [`publishArtifact`](#publishartifact)               | Yes           | Yes                             | Yes, in-memory text                             |
+| [`publishPrimaryArtifact`](#publishprimaryartifact) | Yes           | Yes, both overloads             | Both admitted; create skill uses in-memory text |
+| [`awaitOperator`](#awaitoperator)                   | Yes           | Yes                             | Yes; requires operator-capable launch           |
+| [`outputDir`](#outputdir)                           | Yes           | Yes                             | No                                              |
+| [`projectRoot`](#projectroot)                       | Yes           | Yes                             | No                                              |
+| [`promptFile`](#promptfile)                         | Yes           | Yes                             | No                                              |
+| [`workspace`](#workspace)                           | Yes           | Yes                             | No                                              |
+| [`publishPrimaryFile`](#publishprimaryfile)         | Yes           | Yes                             | No                                              |
+| [`consumeTextArtifact`](#consumetextartifact)       | Yes           | Yes; result remains opaque      | No                                              |
+| [`continuationArtifacts`](#continuationartifacts)   | Yes           | Yes; entries remain opaque      | No                                              |
+| [`now`](#now)                                       | Yes           | Yes                             | No                                              |
+| [`random`](#random)                                 | Yes           | Yes                             | No                                              |
+| [`runWorkspaceDir`](#runworkspacedir)               | Always throws | No                              | No                                              |
+
+Entries describe ordinary runtime behavior; a custom host that omits a required artifact store, resource loader, workspace manager, child runner, or operator callback fails with a named “not configured” error. Static checking proves source shape, not semantic correctness or successful execution.
+
+## Agent calls
+
+### agent
+
+**Signature:** `agent(prompt: string, options?) -> Promise<string>`; output-mode overloads below change the result to an exact choice, `string[]`, or validated `unknown`. Run a clean child by default, or select a catalog persona with `agent`. Prompt must be nonblank task text; no implicit answer length limit exists. Ordinary success returns the exact non-empty final answer. Execution failures throw `WorkflowAgentExecutionError`; invalid declarations fail before a child starts.
+
+| Output mode / options                                 | Result and defaults                                                                                  | Availability and important constraints                                                                                       |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Omit shape options                                    | Exact final text, `Promise<string>`                                                                  | All three modes; no parsing or truncation                                                                                    |
+| `choice: ["accept", "revise"]`                        | One exact member; a TypeScript readonly tuple infers its member union, dynamic lists return `string` | All three; at least two unique nonblank strings; no option-count or text-length ceiling                                      |
+| `choiceFallback: "revise"` with `choice`              | Declared member after invalid answers exhaust repair                                                 | Must belong to `choice`; never substitutes for transport or host failure                                                     |
+| `handoffs: { minItems?, maxItems? }`                  | Complete unique nonblank text units, `Promise<string[]>`; minimum 0, no default maximum              | All three; nonnegative integer bounds describe downstream capacity; `maxItemChars` is refused by name                        |
+| `result: "report"`                                    | Opaque host-rendered observation, `Promise<string>`                                                  | All three; accepted answer or eligible terminal failure, not semantic approval; excludes every shape/repair/returnVia option |
+| `output: { type: "string", singleLine?, maxLength? }` | Accepted nonblank string; multiline allowed and no length bound by default                           | All three; an explicit maximum must be a positive safe integer required by a consumer                                        |
+| `schema: { … }, validate?`                            | Validated untransformed JSON value, `Promise<unknown>`                                               | Runtime compatibility only; raw `schema` and `validate` are rejected by both source-check modes                              |
+
+Declare exactly one of `choice`, `handoffs`, `output`, or `schema`. Those modes use `workflow_return` inside the same child session. `repair: { maxAttempts, clarification? }` defaults to two submissions, including the first: one proposal plus one same-session correction. Exhaustion throws `SchemaValidationError` unless an exact choice fallback applies. `validate(value) -> readonly string[]` requires `schema`, must be pure/synchronous/deterministic, returns violations rather than throwing, and cannot call the DSL. A transport without the required return tool capability fails closed. See [acceptance, schema keywords, repair, and report eligibility](agent-results.md).
+
+**Example — orchestration-only:** a complete module; every agent edge has a distinct literal label. Handoff strings go unchanged to each worker, reports stay opaque, and only the exact choice controls the branch.
+
+<!-- dsl-example: orchestration-only -->
+
+```js
+export const meta = { name: "review-units", profile: "standard" };
+export default async function run({ agent, parallel, publishPrimaryArtifact }, input) {
+  const units = await agent(input, { label: "discover", handoffs: { minItems: 1 } });
+  const reports = await parallel(units.map((unit) => () => agent(unit, { label: "review-unit", result: "report" })));
+  const decision = await agent(`Choose the next action from these reports:\n${reports.join("\n\n")}`, {
+    label: "decide",
+    choice: ["accept", "revise"],
+    choiceFallback: "revise",
+  });
+  if (decision === "revise") {
+    return agent(`Explain the required corrections:\n${reports.join("\n\n")}`, { label: "corrections" });
+  }
+  const summary = await agent(`Write the final review:\n${reports.join("\n\n")}`, { label: "summarize" });
+  publishPrimaryArtifact("review.md", summary);
+  return summary;
+}
 ```
 
-`task/plan` performs its mechanical and design gates, then calls
-`publishPrimaryFile("workflow.mjs")`. The host validates the confined regular,
-non-symlink, non-empty workspace file and returns `primaryFile` with its relative
-path, absolute path, byte count, and SHA-256 digest. It neither copies the file into
-run `outputs/` nor parses it at publication time; the validated workspace path is
-the create-to-run handoff. See the [task authoring contract](../../extensions/workflows/examples/task/README.md).
+**Example — constrained string:** `await agent("Return a single-line heading.", { label: "heading", output: { type: "string", singleLine: true } })`.
 
-`publishPrimaryArtifact(name, { workflowSource: "workflow.mjs" })` remains the
-compatibility checked-source artifact form. It reads a confined UTF-8 workspace
-file up to 512 KiB, checks Node syntax and orchestration-only shape, and retains
-those exact bytes through the artifact store. That API returns an artifact
-reference and output path; it is not the current `task/plan` publication path.
-Static validation does not prove semantic correctness or successful execution.
+**Example — runtime schema, rejected by standard and orchestration-only:** the profile is deliberately present to demonstrate the checker refusal; do not copy this declaration into generated source.
 
-`fusion()` requires `mode: "tool-free" | "agent"`; every member and the judge
-use that same mode. Each selector still requires `model` or `modelRole` and may
-also name an existing catalog `agent`. Tool-free legs retain the selected
-catalog persona and ordinary execution metadata, but the package supplies their
-complete system prompt, disables extension, skill, prompt-template, theme, and
-context-file discovery, and starts them with no active tools. The host reads the
-active tool registry before the first prompt and fails the leg without prompting
-if that readback is missing or non-empty. Agent-mode legs keep the existing
-catalog-agent tool and parent-permission behavior. Ordinary `agent()` calls are
-unchanged.
+<!-- dsl-example: rejected-schema -->
 
-Fusion defaults to prompt-only context and never reads ambient chat history.
-Explicit `context: { mode: "provided", text }` is copied verbatim into the
-Fusion packet artifact. When reconnaissance is needed, run it as an ordinary
-visible `agent()` or child-workflow stage and pass its bounded text through this
-explicit context field; Fusion does not discover it automatically. No character
-cap applies to a member answer, to the judge answer, or to the assembled judge
-prompt: a panel returns what its members wrote. A panel declares at least two
-members. All declared members are required; a member failure stops before the
-judge runs. The production runner resolves
-all declared model selectors before the first child, and overlapping Fusion
-calls reserve their complete worst-case invocation counts atomically. A resume
-tries recorded answers without requiring the old models to remain configured;
-Fusion fails before any fresh child if one of its recorded legs is missing or
-divergent. The mode is part of the replay key. Replayed legs retain the declared
-mode but do not claim a fresh host active-tool readback. Fresh results persist
-the declared mode and exact host readback in per-call evidence, the workflow
-journal, and the readable run report. Run without `--resume` to execute a new
-panel.
+```js expect-error
+export const meta = { name: "schema-compatibility", profile: "standard" };
+export default async function run({ agent }, input) {
+  return agent(input, { label: "classify", schema: { type: "boolean" } });
+}
+```
 
-`awaitOperator()` accepts exactly one non-empty reason, of any length. It is a
-control declaration, not model output and not a thrown
-pause. Call it only after durable handoff artifacts exist, immediately before
-returning the unchanged handoff payload. An abort or semantic/infrastructure
-failure still wins at finalization. Under the run-level no-operator mode
-(`--no-operator`, the tool's `noOperator`) the call does not declare anything:
-it fails the run closed at the call site with a named reason — see
-"No-operator mode" in the run section.
+## Agent options
 
-If the operator answers the question, the workflow's continuation run receives
-their answer text. If they press Escape, it receives a plain-text refusal
-instead — the same questions, each with whatever was answered before the
-refusal, under the line `The operator declined to answer this workflow's
-questions.` — delivered through the same channel and the same continuation. It
-is not a status and the runtime attaches no handling contract to it: what a
-declined question means is the workflow author's decision, exactly as it would
-be for any other answer text.
+Output fields and their combinations are covered above. Additional call options:
 
-A question opens on its own only for a run the current Pi session started, or a
-continuation that run spawned. Nothing an earlier session left unanswered
-interrupts a new one — not at session start and not on its first settled turn.
-Those questions stay in their run's evidence and reopen on request: the
-`/workflows` menu's `continue` entry takes the oldest pending one project-wide,
-and `/workflows continue <runId>` takes a named run.
+| Field                                     | Default                                            | Meaning / refusal                                                                                                                                                                                |
+| ----------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `agent: string`                           | Clean child                                        | Catalog persona; [catalog lookup](catalog.md)                                                                                                                                                    |
+| `model: string`                           | Effective configured model, otherwise parent model | Concrete `provider/id` selector with optional `:off\|minimal\|low\|medium\|high\|xhigh`; unresolved selector fails before dispatch                                                               |
+| `modelRole: string`                       | Effective configured model, otherwise parent model | Portable tier name; unassigned role falls back with recorded evidence; assigned malformed selector fails; [model precedence](models.md)                                                          |
+| `requireModelRole: true`                  | Off                                                | Requires explicit `modelRole`, refuses missing assignment, cannot combine with `model`; replay may reuse recorded evidence                                                                       |
+| `label: string`, `title: string`          | Unset                                              | Literal label identifies callsite; title is display only and may use author-owned records. Orchestration-only requires unique nonblank literal labels                                            |
+| `artifact: string`                        | Safe derived label/agent name                      | Logical automatic-answer artifact name; nonempty display label, no path separators/control characters                                                                                            |
+| `phase: string`                           | Current phase                                      | Override the call's journal/UI phase                                                                                                                                                             |
+| `ask: true`                               | Off                                                | Inject live `workflow_ask` only for this child; interactive parents only; unavailable/no-operator hosts fail closed; [live questions](running.md#live-operator-questions--agent-ask-true)        |
+| `timeoutMs`, `maxTurns`, `maxToolCalls`   | Unbounded unless run supplied a default            | Positive safe integer per-child-attempt limits: wall clock (including operator waits), SDK model cycles, tool starts. Expiry aborts rather than returning partial success; [budgets](budgets.md) |
+| `attempts: number`                        | 1                                                  | Positive safe integer physical transport attempts; only named retryable transport failures retry, never a weak answer. Values above 1 are refused for worktree modes or workspace handles        |
+| `workspaceMode`                           | `"project"`                                        | `"project"`, `"worktree"`, or `"temporary-worktree"`; isolation for file review, not security                                                                                                    |
+| `workspaceHandle: string`                 | Unset                                              | Opaque retained worktree handle from `workspace()`; reuse across stages                                                                                                                          |
+| `repair: { maxAttempts, clarification? }` | 2 submissions                                      | Shaped-output correction in the same session; positive safe integer and optional nonblank clarification; distinct from transport `attempts`                                                      |
+| `readOnly`, `tools`, `permissionMode`     | Ignored compatibility fields                       | Children inherit parent permissions and receive all tools; these cannot restrict them                                                                                                            |
+| `sandbox`                                 | Unset                                              | Deprecated workspace alias: `"read-only"` → project, `"workspace-write"` → worktree; explicit `workspaceMode` wins; no security boundary                                                         |
+| `returnVia: "tool"`                       | Unset                                              | Redundant compatibility option, ignored with deprecation evidence; `"text"` is refused                                                                                                           |
+
+### fusion
+
+**Signatures:** `fusion(question: string, options) -> Promise<string>`; `fusion(question, { …options, schema, validate? }) -> Promise<unknown>`. **Runtime only:** neither checker permits `fusion`. Ask at least two isolated members, then a separately selected judge; return the judge's exact text or validate only its final value. Required `mode` is `"tool-free"` or `"agent"`; required `members` and `judge` each select exactly one `model` or `modelRole`, optionally a catalog `agent`. Member labels and selectors must be unique, and the judge cannot repeat a member selector. Invalid declarations, unresolvable selectors, failed member legs, unavailable capability readback, or insufficient run budget fail before a judge result.
+
+`strategy` defaults to `"replicate"`; `"roles"` requires a nonblank `lens` per member. `context` defaults to `{ mode: "prompt-only" }`; `{ mode: "provided", text }` passes explicit nonblank context. Optional `output` is an instruction for the judge only, defaulting to a direct answer in the question's format. `memberLimits` and `judgeLimits` accept `timeoutMs`, `maxTurns`, and `attempts` (1 by default), not answer length caps. Judge label defaults to `"judge"`. See [Fusion](fusion.md) for complete isolation and evidence behavior.
+
+**Example — runtime API, rejected by both source-check modes:** configure these three role names in the host before executing; this profile intentionally demonstrates the checker boundary.
+
+<!-- dsl-example: rejected-fusion -->
+
+```js expect-error
+export const meta = { name: "panel-compatibility", profile: "standard" };
+export default async function run({ fusion }, input) {
+  return fusion(input, {
+    mode: "tool-free",
+    members: [
+      { label: "first", modelRole: "first" },
+      { label: "second", modelRole: "second" },
+    ],
+    judge: { modelRole: "judge" },
+  });
+}
+```
+
+## Control flow and input
+
+### items
+
+**Signature:** `items() -> readonly string[]`. Return an immutable snapshot of exact caller-provided text work units; absent items become `[]`. No parsing, splitting, or default work discovery. Invalid items are rejected by the launch boundary. **Example:** `const units = items();` then `await parallel(units.map((unit) => () => agent(unit, { label: "worker" })))`. See [input and host continuation](authoring.md#workflow-input-and-host-continuation).
+
+### parallel
+
+**Signature:** `parallel<T>(thunks: Array<() => Promise<T>>, options?: { concurrency?, keys?, title? }) -> Promise<T[]>`. Run independent branches behind a full barrier; successful results retain input order. Local concurrency defaults to the run's concurrency and still shares its global child limit. `keys` optionally assigns a complete ordered set of unique nonblank business identities; `title` is display text. Invalid options fail before branches start. Ordinary failed branches let successful siblings finish, then throw `WorkflowGroupFailureError` with ordered slots, failures, and partial results; run-level abort/deadline failures can stop the group. **Example:** `await parallel([() => agent("Review code", { label: "code" }), () => agent("Review tests", { label: "tests" })], { concurrency: 2 })`. See [group details](#existing-parallel-with-explicit-options) and [outcomes](outcomes.md).
+
+### pipeline
+
+**Signature:** `pipeline<T>(items: readonly T[], ...stages: Array<(item, index) => Promise<unknown>>) -> Promise<unknown[]>`. Each item's result feeds its next fixed stage; different items can progress concurrently. The callback index is `itemIndex * stages.length + stageIndex`, not just the item index. Returns final values in input order. With no stages, values pass through; empty input returns `[]`. A failed item skips its later stages while other items finish, then throws `WorkflowGroupFailureError`; run-level failures still propagate. **Example:** `await pipeline(items(), (unit) => agent(unit, { label: "draft" }), (draft) => agent(draft, { label: "review" }))`.
+
+### workflow
+
+**Signature:** `workflow<T>(subFn: (dsl, input?: string) => Promise<T>, input?: string) -> Promise<T>`. Invoke an inline nested function with the same DSL and return its result; omitted nested input is `undefined`, not automatically the root input. Journals enter/exit but creates no saved child run, independent checkpoint, or new budget. Invalid non-text input and callback errors propagate. **Example:** `await workflow(async ({ agent }, request) => agent(request, { label: "nested-review" }), input)`. Keep the callback inline for standard source.
+
+### invokeWorkflow
+
+**Signature:** `invokeWorkflow({ child | name | scriptPath | packageName, input?, items?, key, keys, outputDir }) -> Promise<{ status: "completed" | "skipped", key, outputDir, runId?, sourceRunId?, primaryFile? }>`. Exactly one target selector is required. `child` binds a sibling to the current root source; `name` uses saved-name precedence; `scriptPath` is project-relative; `packageName` requires the exact Package source. `input` is optional semantic text; `items` carries exact work units. `key` identifies this unit, `keys` is the complete frozen unique set, and `outputDir` must match the tree's selected workspace. Completion returns a child run ID; a matching checkpoint returns `skipped` with `sourceRunId`.
+
+**Example — standard compatibility:** `await invokeWorkflow({ child: "review", input, key: "review", keys: ["review"], outputDir: outputDir() })`. The method is grammar-admitted in orchestration-only, but `outputDir()` is forbidden there: this example requires standard mode. Do not invent a workspace path or derive resumable keys from fresh model output. Missing selectors, invalid keys, workspace mismatch, grandchildren, and source cycles fail closed. [Saved-child details](#workspace-and-saved-child-contract) explain checkpointing and shared execution.
+
+### phase
+
+**Signature:** `phase(name: string) -> void`. Set the current branch's progress phase and append a journal line. A grouped sibling cannot overwrite another branch or root phase. If nonempty `meta.phases` is declared, literal calls must use those exact unique titles; mismatch is a source-check error. **Example:** `phase("Review");`. See [phase declarations](authoring.md#declared-phases--metaphases).
+
+### log
+
+**Signature:** `log(message: string) -> void`. Append a script-owned journal message tagged with the current phase. No return value or text transformation. Host event callbacks cannot throw into this method. **Example:** `log("Review started");`. [Inspection](inspection.md) shows the journal and live progress surfaces.
+
+## Artifacts and operator handoff
+
+### publishArtifact
+
+**Signature:** `publishArtifact(name: string, text: string) -> WorkflowArtifactRef`. Persist exact workflow-authored text as supporting evidence and project readable output into `outputs/`. Reference has `{ runId, artifactId, name, sha256 }`; name is a display label, not a path, and repeated names are allowed. No implicit text-size limit. Unsafe names, changed artifact indexes, path escapes, or storage errors fail closed. **Example:** `const ref = publishArtifact("review.md", review);`. See [artifact identity and publication](evidence.md#publish-and-consume-artifacts).
+
+### publishPrimaryArtifact
+
+**Signatures:** `publishPrimaryArtifact(name: string, text: string, stage?: string) -> WorkflowArtifactRef`; compatibility form `publishPrimaryArtifact(name, { workflowSource: relativePath }, stage?) -> WorkflowArtifactRef`. Publish the run's one primary semantic document. Optional stage defaults to current phase. A second primary-artifact declaration fails. Names and returned reference match `publishArtifact`. **Example:** `publishPrimaryArtifact("decision.md", decision);`.
+
+The compatibility file form reads a confined UTF-8 workspace file up to 512 KiB, checks Node syntax and orchestration-only shape, then retains those exact bytes. Both source-check modes admit this overload; the create skill's authoring policy uses in-memory text instead of workflow-side file reads. Checker acceptance does not enforce that policy or supply the required configured host. Static validation does not prove semantic correctness. `task/plan` currently uses `publishPrimaryFile("workflow.mjs")` after its mechanical/design gates; see [task authoring](../../examples/workflows/task/README.md).
+
+**Example — checked-source publication admitted by both grammars, outside the create skill's in-memory publication policy:**
+
+<!-- dsl-example: checked-source-publication -->
+
+```js
+export const meta = { name: "publish-source", profile: "standard" };
+export default async function run({ publishPrimaryArtifact }) {
+  return publishPrimaryArtifact("workflow.mjs", { workflowSource: "workflow.mjs" });
+}
+```
+
+### publishPrimaryFile
+
+**Signature:** `publishPrimaryFile(relativePath: string) -> { relativePath, absolutePath, bytes, sha256 }`. Standard compatibility only. Validate one nonempty regular non-symlink file beneath the workflow workspace and return its reference without copying or parsing the content. A second primary-file declaration, missing/empty file, or confinement failure throws. **Example:** `const primary = publishPrimaryFile("report.md");`. Files survive failed runs; the digest is a point-in-time non-atomic observation, not protection against hostile concurrent filesystem replacement.
+
+### consumeTextArtifact
+
+**Signature:** `consumeTextArtifact(ref: WorkflowArtifactRef) -> { ref, text, source }`. The method is admitted by standard compatibility, but its returned object remains opaque there: extracting `prior.text` requires trusted runtime source outside that profile. Verify a full prior-run reference and copy exact text into this run; return the new current-run reference, text, and source target/artifact/terminal provenance. Source run must have `ok: true`. Self-reference, missing index membership, wrong media type/size/digest, or unsafe paths fail closed. References come from verified host/caller evidence, not a guessed filename. See [consumption rules](evidence.md#publish-and-consume-artifacts).
+
+**Example — trusted runtime property access, rejected by both grammars:** the profile deliberately demonstrates refusal; replace the four reference placeholders with one verified prior-run reference before runtime use.
+
+<!-- dsl-example: rejected-consumed-text -->
+
+```js expect-error
+export const meta = { name: "consume-text", profile: "standard" };
+export default async function run({ consumeTextArtifact, agent }) {
+  const sourceRef = { runId: "<run-id>", artifactId: "<artifact-id>", name: "review.md", sha256: "<sha256>" };
+  const prior = consumeTextArtifact(sourceRef);
+  return agent(prior.text, { label: "continue-review" });
+}
+```
+
+### continuationArtifacts
+
+**Signature:** `continuationArtifacts() -> readonly { sourceRef, consumedArtifact: { ref, text, source } }[]`. The method is admitted by standard compatibility, but property extraction from its entries requires trusted runtime source outside that profile. Read the immutable artifacts the host already verified and copied before trusted workflow code started; absent continuation returns `[]`. Invalid provenance fails at launch rather than becoming unverified content here. See [host continuation input](authoring.md#workflow-input-and-host-continuation) and [human continuation](recovery-and-continuation.md#human-continuation).
+
+**Example — trusted runtime property access, rejected by both grammars:** the profile deliberately demonstrates refusal.
+
+<!-- dsl-example: rejected-continuation-text -->
+
+```js expect-error
+export const meta = { name: "continue-text", profile: "standard" };
+export default async function run({ continuationArtifacts, parallel, agent }) {
+  return parallel(
+    continuationArtifacts().map((entry) => () => agent(entry.consumedArtifact.text, { label: "continue-review" })),
+  );
+}
+```
+
+### awaitOperator
+
+**Signature:** `awaitOperator({ reason: string }) -> void`. Declare a successful operator handoff after durable artifacts exist, then return the unchanged handoff payload. Accepts exactly one nonblank reason, no length bound. It does not suspend JavaScript or change the result; cancellation/failure still wins finalization. Missing/extra fields, empty reason, unavailable callback, and no-operator mode fail at the call site. **Example:** `publishPrimaryArtifact("handoff.md", handoff); awaitOperator({ reason: "Choose the deployment window." }); return handoff;`. See [operator continuation behavior](#operator-handoff-behavior).
+
+## Workspace, resources, and replay values
+
+### outputDir
+
+**Signature:** `outputDir() -> string`. Standard compatibility only. Return the project-relative durable workflow workspace shared by the execution tree, created by the host before children start. Fresh default is `.locus-pi/workspaces/<generated-run-name>`; launch options can select another confined namespace. It is not the run evidence directory. Missing host configuration throws. **Example:** `const directory = outputDir();`. [Workspace details](#workspace-and-saved-child-contract) define naming, path checks, freshness, and ownership.
+
+### projectRoot
+
+**Signature:** `projectRoot() -> string`. Standard compatibility only. Return the absolute launch project root captured by the host, not the current agent worktree. Missing/blank host configuration throws. **Example:** `const root = projectRoot();` then include it as context in an agent prompt; generated orchestration-only source delegates filesystem work through prompts.
+
+### promptFile
+
+**Signature:** `promptFile(path: string, variables?: Record<string, string>) -> Promise<string>`. Standard compatibility only. Render a neighboring `.prompt.md` resource relative to the original workflow source; variables default to `{}` and replace uppercase `{{NAME}}` slots (`[A-Z][A-Z0-9_]*`). Missing/unused variables, empty resources/results, wrong suffix, missing files, escapes, and replay snapshot hash mismatch throw. **Example:** `const prompt = await promptFile("./resources/review.prompt.md", { TASK: input });`. Resource text `Review {{TASK}}.` renders with the exact value; use resources for role charters, never hidden routing. [Authoring](create.md) owns resource guidance.
+
+### workspace
+
+**Signature:** `workspace(label: string, ref: string) -> Promise<string>`. Standard compatibility only. Allocate one retained runtime-owned linked Git worktree at an exact ref; return an opaque handle, not a path. Requires the host workspace manager and valid Git allocation. **Example:** `const handle = await workspace("review", "HEAD");` then `await agent(input, { label: "inspect-tree", workspaceHandle: handle })`. Reusing the handle shares that worktree across calls; worktree isolation is not a security boundary. See [trust](trust.md).
+
+### now
+
+**Signature:** `now() -> number`. Standard compatibility only. Return wall-clock milliseconds like `Date.now()`; record on first execution and replay the recorded value on resume until divergence. Without a replay store, reads the clock directly. **Example:** `const startedAt = now();`. Direct `Date.now()` is runtime JavaScript but unrecorded and prevents replay; neither that global nor this DSL call belongs in orchestration-only source. See [replay](replay.md#resume-and-replay).
+
+### random
+
+**Signature:** `random() -> number`. Standard compatibility only. Return a value in `[0, 1)` like `Math.random()` under the same record/replay contract as `now()`. **Example:** `const sample = random();`. Direct `Math.random()` is unrecorded and prevents replay. Neither method promises deterministic values across fresh runs; replay guarantees apply to the recorded call sequence.
+
+### runWorkspaceDir
+
+**Signature:** `runWorkspaceDir() -> never` (the deprecated interface retains `string`). **Removed:** always throws `WorkflowRunWorkspaceRemovedError` with code `WORKFLOW_RUN_WORKSPACE_REMOVED`; both source-check modes reject it. **Migration example:** replace `runWorkspaceDir()` with `outputDir()` in a reviewed standard workflow. New run evidence has no writable `workspace/`: readable material goes to `outputs/`, machine evidence/transcripts to `runtime/artifacts/`.
+
+**Example — standard compatibility, rejected by orchestration-only:**
+
+<!-- dsl-example: standard -->
+
+```js
+export const meta = { name: "workspace-review", profile: "standard" };
+export default async function run({ agent, outputDir }, input) {
+  const directory = outputDir();
+  return agent(`Review the request in workspace ${directory}:\n${input}`, { label: "review" });
+}
+```
+
+## Workspace and saved-child contract
 
 `outputDir()` returns the project-relative workflow workspace. Fresh runs
 default to `.locus-pi/workspaces/<generated-run-name>` under the project root. The
@@ -145,7 +326,7 @@ in Package prompts or overloading semantic input.
 `runWorkspaceDir()` is removed and throws
 `WorkflowRunWorkspaceRemovedError`. New run evidence has no `workspace/`
 directory. Auto-captured readable material goes to `outputs/`; machine evidence
-and transcripts go to `runtime/artifacts/`. See [`docs/workflows.md`](../workflows.md).
+and transcripts go to `runtime/artifacts/`. See [run evidence](evidence.md).
 
 `publishPrimaryFile(relativePath)` validates a regular, non-symlink, non-empty
 file beneath the workflow workspace and exposes absolute/relative path, byte count, and
@@ -211,38 +392,63 @@ Project source is read live throughout execution. Each run journals
 consistency policy observable without pretending the repository was snapshotted;
 an approved workflow that needs stronger drift behavior must state it explicitly.
 
-`now()` and `random()` exist so a workflow can be nondeterministic AND replayable.
-They return exactly what `Date.now()` / `Math.random()` would, and the runtime
-records each value in the run's replay record; a resumed run reads the recorded
-value instead of producing a new one. Calling `Date.now()` or `Math.random()`
-directly is not forbidden — those values are simply unrecorded, and a script
-containing them is refused for replay. See [resume and replay](replay.md#resume-and-replay).
+## Operator handoff behavior
 
-## Agent options
+`awaitOperator()` accepts exactly one non-empty reason, of any length. It is a
+control declaration, not model output and not a thrown
+pause. Call it only after durable handoff artifacts exist, immediately before
+returning the unchanged handoff payload. An abort or semantic/infrastructure
+failure still wins at finalization. Under the run-level no-operator mode
+(`--no-operator`, the tool's `noOperator`) the call does not declare anything:
+it fails the run closed at the call site with a named reason — see [no-operator mode](running.md).
 
-| Field              | Type                        | Default                               | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------ | --------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent`            | string                      | — (clean child)                       | Optional project/user catalog name. Omit it to run without a role profile.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `ask`              | `true`                      | — (off)                               | Lets THIS child ask the operator live clarifying questions through the injected `workflow_ask` tool: the question renders in the parent session, the answer returns as the tool result, and the same child continues. Interactive parents only — with no UI the call **fails closed** with `failureCause: "ask-unavailable"`. See [live operator questions](running.md#live-operator-questions--agent-ask-true).                                                                                                    |
-| `maxToolCalls`     | positive safe integer       | — (unbounded)                         | Per-child-attempt runaway safety fuse. Do not set it to zero. The first over-budget tool start aborts the child; this is not a normal work target or security boundary. Absent means no counter at all.                                                                                                                                                                                                                                                                                                             |
-| `timeoutMs`        | positive safe integer       | — (unbounded)                         | Wall clock for one child attempt, operator `ask` waits included. On expiry the runtime **aborts the child** and the call fails closed; it never resolves to a partial answer. `maxToolCalls` cannot end a stalled child. A value above Node's maximum timer delay runs as a chain of representable waits.                                                                                                                                                                                                           |
-| `maxTurns`         | positive safe integer       | — (unbounded)                         | Cumulative SDK model cycles for one child, including tool use and output clarification; not workflow restarts or returned answers. Applies to text and tool-return paths. It is a separate axis from `timeoutMs` and is never multiplied by it.                                                                                                                                                                                                                                                                     |
-| `attempts`         | positive safe integer       | `1`                                   | Physical child attempts for this one call when the **transport** failed — the child never got to answer, or lost the channel while answering. Refused, never clamped, when it is not a positive safe integer. Never re-asks an answer the child did produce.                                                                                                                                                                                                                                                        |
-| `label`            | string                      | —                                     | Journal / UI label                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `artifact`         | string                      | safe label or agent name              | Logical name for the exact automatic answer artifact. It must be a safe single component; transcript/result names derive from it.                                                                                                                                                                                                                                                                                                                                                                                   |
-| `phase`            | string                      | current phase                         | Overrides the active phase tag                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `workspaceMode`    | string                      | `"project"`                           | Workspace intent: `"project"`, `"worktree"`, or `"temporary-worktree"`. Worktree modes allocate an isolated git worktree for file-change review UX.                                                                                                                                                                                                                                                                                                                                                                 |
-| `workspaceHandle`  | string                      | —                                     | Opaque handle returned by `workspace(label, ref)`; reuses one runtime-owned linked worktree across agent calls.                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `sandbox`          | string                      | —                                     | Deprecated workspace alias. `"read-only"` maps to `workspaceMode: "project"`; `"workspace-write"` maps to `workspaceMode: "worktree"`. Explicit `workspaceMode` wins. It does not restrict tools.                                                                                                                                                                                                                                                                                                                   |
-| `model`            | string                      | the resolved tier, else session model | Per-call CONCRETE selector `provider/id` with an optional `:off\|minimal\|low\|medium\|high\|xhigh` child reasoning-effort suffix. The resolved model and requested effort are passed to the child session. A selector this host's registry cannot resolve **fails the call** by name, with no child spawned — it never falls back to `ctx.model`.                                                                                                                                                                  |
-| `modelRole`        | string                      | the resolved tier, else session model | Per-call TIER: a name in the roles table (`smol`, `slow`, `task`, …), never a provider selector. The package ships no assignments, so an operator layer has to say what the name means; a role nothing assigns degrades to `ctx.model` and records `modelRoleFallback` on `agent_end`, in the run-result artifact and in the run report. A role that IS assigned but whose value is not a parseable selector is a config error, not an unassigned role: it fails the call by name, quoting the value and the layer. |
-| `requireModelRole` | `true`                      | absent                                | Requires an explicit `modelRole` on the same call, cannot be combined with `model`, and refuses an unassigned role before a fresh child starts. Use only when the stage's evidence contract depends on the declared tier; ordinary portable workflows keep the recorded session-model fallback. The flag is part of replay identity and appears on `agent_start`; replay starts no child and may reuse original evidence.                                                                                           |
-| `choice`           | string[] (2+ unique values) | none                                  | **Standard machine-routing form.** The declared members travel in the return contract, and the child submits one of them through the acceptance tool, so replay, journal evidence, budgets and fail-closed exhaustion are the ordinary shaped path. There is no ceiling on the number of options and no length limit on one option. Cannot be combined with `schema`, `handoffs`, `output` or `validate`.                                                                                                           |
-| `handoffs`         | `{minItems?, maxItems?}`    | none                                  | **Standard dynamic-decomposition form.** Returns complete non-blank text units. Both bounds are optional author declarations about the CONSUMER (`minItems` defaults to 0; omitting `maxItems` accepts any number of items), and there is no per-item character bound — `maxItemChars` is refused by name. Runtime owns acceptance, replay, evidence, budgets and fail-closed exhaustion. Cannot be combined with `choice`, `schema`, `output` or `validate`.                                                       |
-| `schema`           | object (JSON Schema)        | none                                  | **Advanced compatibility.** Declare an arbitrary answer shape: the call returns the validated value instead of text, corrects the format inside the same child session, and throws `SchemaValidationError` when the contract is exhausted. Standard generated source uses `choice` instead. `validate` is available alongside it.                                                                                                                                                                                   |
-| `validate`         | `(value) => string[]`       | none                                  | **Advanced compatibility, requires `schema`.** Cross-field rules the subset cannot declare. Runs on a schema-valid value; a non-empty return asks the same child to correct it in its own labelled block. Standard generated source does not emit validators.                                                                                                                                                                                                                                                       |
+If the operator answers the question, the workflow's continuation run receives
+their answer text. If they press Escape, it receives a plain-text refusal
+instead — the same questions, each with whatever was answered before the
+refusal, under the line `The operator declined to answer this workflow's
+questions.` — delivered through the same channel and the same continuation. It
+is not a status and the runtime attaches no handling contract to it: what a
+declined question means is the workflow author's decision, exactly as it would
+be for any other answer text.
 
-See [agent results](agent-results.md) for the complete acceptance lifecycle.
+A question opens on its own only for a run the current Pi session started, or a
+continuation that run spawned. Nothing an earlier session left unanswered
+interrupts a new one — not at session start and not on its first settled turn.
+Those questions stay in their run's evidence and reopen on request: the
+`/workflows` menu's `continue` entry takes the oldest pending one project-wide,
+and `/workflows continue <runId>` takes a named run.
+
+## Fusion execution details
+
+`fusion()` requires `mode: "tool-free" | "agent"`; every member and the judge
+use that same mode. Each selector still requires `model` or `modelRole` and may
+also name an existing catalog `agent`. Tool-free legs retain the selected
+catalog persona and ordinary execution metadata, but the package supplies their
+complete system prompt, disables extension, skill, prompt-template, theme, and
+context-file discovery, and starts them with no active tools. The host reads the
+active tool registry before the first prompt and fails the leg without prompting
+if that readback is missing or non-empty. Agent-mode legs keep the existing
+catalog-agent tool and parent-permission behavior. Ordinary `agent()` calls are
+unchanged.
+
+Fusion defaults to prompt-only context and never reads ambient chat history.
+Explicit `context: { mode: "provided", text }` is copied verbatim into the
+Fusion packet artifact. When reconnaissance is needed, run it as an ordinary
+visible `agent()` or child-workflow stage and pass its bounded text through this
+explicit context field; Fusion does not discover it automatically. No character
+cap applies to a member answer, to the judge answer, or to the assembled judge
+prompt: a panel returns what its members wrote. A panel declares at least two
+members. All declared members are required; a member failure stops before the
+judge runs. The production runner resolves
+all declared model selectors before the first child, and overlapping Fusion
+calls reserve their complete worst-case invocation counts atomically. A resume
+tries recorded answers without requiring the old models to remain configured;
+Fusion fails before any fresh child if one of its recorded legs is missing or
+divergent. The mode is part of the replay key. Replayed legs retain the declared
+mode but do not claim a fresh host active-tool readback. Fresh results persist
+the declared mode and exact host readback in per-call evidence, the workflow
+journal, and the readable run report. Run without `--resume` to execute a new
+panel.
 
 ## Existing parallel with explicit options
 

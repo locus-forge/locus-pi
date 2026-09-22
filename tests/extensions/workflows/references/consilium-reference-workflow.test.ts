@@ -353,8 +353,8 @@ describe("consilium reference workflow", () => {
     const { packagedWorkflowNames, resolveWorkflowTarget } =
       await import("../../../../extensions/workflows/runtime/workflow-discovery.js");
 
-    // `references/` is a sibling of the scanned `examples/` directory and is never
-    // visited, so this file is unreachable by name.
+    // The registry scans only `examples/workflows/`, so this reference remains
+    // available by explicit path and is unreachable by saved name.
     expect([...packagedWorkflowNames()].sort()).toEqual([
       "live-smoke",
       "post-code-review",

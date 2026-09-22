@@ -157,7 +157,7 @@ grows it through at most six complete graph-node slices. An owner re-cuts the
 source-free remaining queue after each accepted slice. Independent mechanical and
 design gates share one cumulative correction per slice; final whole-file gates run
 after the queue is empty. The exact routes and terminal reasons live in the
-[task authoring manual](../../../extensions/workflows/examples/task/README.md).
+[task authoring manual](../../../examples/workflows/task/README.md).
 
 `publishPrimaryFile("workflow.mjs")` returns `primaryFile` with the validated
 workspace-relative path, absolute path, byte count, and digest. It does not copy the

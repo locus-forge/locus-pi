@@ -1,14 +1,17 @@
 ---
-title: Author a workflow module
+title: Workflow file format
 type: guide
 status: active
-updated: "2026-09-13T00:12:22Z"
-description: "Organize the installed workflow contract by reader task."
+updated: "2026-09-22T16:20:57Z"
+source_commit: "54dea11dbe11"
+update_event: "user_request"
+context: "changes=XL files=71 task=T-101"
+description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
 ---
 
-# Author a workflow module
+# Workflow file format
 
-[Workflow documentation](index.md) · [Authoring guide](../locus-pi-workflows.md) · [Operator guide](../workflows.md)
+[Workflow documentation](index.md) · [Authoring guide](create.md) · [Operator guide](running.md)
 
 ## Authoring a new workflow
 
@@ -45,7 +48,7 @@ owner re-cuts the source-free remaining queue after each accepted slice. Indepen
 mechanical and design gates share one cumulative correction per slice and preserve
 named diagnostics on failure; an empty queue still requires final whole-file gates.
 The detailed contract and terminal reasons live in the
-[task authoring manual](../../extensions/workflows/examples/task/README.md).
+[task authoring manual](../../examples/workflows/task/README.md).
 
 After those gates, `publishPrimaryFile("workflow.mjs")` returns `primaryFile` with
 the validated workspace-relative path, absolute path, byte count, and digest. It
@@ -124,7 +127,7 @@ A workflow with several stages, agents, branches, parallel groups, or persisted
 handoffs keeps a visual map beside its source: exactly one hand-authored
 `<name>-pipeline.svg`. It is edited directly. There is no generator, no
 rendering dependency, and no exported preview to keep in sync;
-[`extensions/workflows/examples/post-code-review/post-code-review-pipeline.svg`](../../extensions/workflows/examples/post-code-review/post-code-review-pipeline.svg)
+[`examples/workflows/post-code-review/post-code-review-pipeline.svg`](../../examples/workflows/post-code-review/post-code-review-pipeline.svg)
 is the remaining Package reference shape.
 
 This replaced a generated trio — an `@kroffske/excalidraw-diagrams` generator,
