@@ -29,6 +29,11 @@ queue, but cannot implement more work. Named terminal reasons are `seed_failed`,
 `workflow.mjs` plus diagnostic evidence in the workspace and publishes no primary
 file.
 
+An intermediate design review accepts a correct slice when earlier accepted work
+remains intact and the whole module stays runnable. Requirements still queued for
+later slices do not consume that slice's fix allowance. The final design review
+checks complete conformance before publication.
+
 An empty queue is not completion. Final whole-file mechanical and design gates run
 before `publishPrimaryFile("workflow.mjs")`. The host validates the confined regular,
 non-empty file and returns `primaryFile` with its workspace-relative path, absolute

@@ -173,6 +173,30 @@ describe("Package workflow: task/plan", () => {
     for (const call of calls) expect(call.options.label).toMatch(/^workflow-/u);
   });
 
+  it("accepts a correct intermediate slice while later design work remains queued", async () => {
+    const fixtureRun = fixture({
+      "workflow-source-cut": [["select_slice: bounded selection"], ["recut_queue: remaining graph"], []],
+      "workflow-source-queue-assessment": ["selection remains", "recut remains", "all requirements complete"],
+      "workflow-source-queue-route": ["work", "work", "complete"],
+      "workflow-source-slice": ["selection implemented", "recut implemented"],
+      "workflow-source-check": ["selection mechanically valid", "recut mechanically valid"],
+      "workflow-source-check-route": ["passed", "passed"],
+      "workflow-source-review": [
+        "select_slice conforms; the module is runnable; recut_queue and final verification remain",
+        "recut_queue conforms; the module is runnable",
+      ],
+      "workflow-source-review-route": ["accept", "accept"],
+    });
+
+    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
+    const firstRoute = fixtureRun.calls.find((call) => call.options.label === "workflow-source-review-route");
+    expect(firstRoute?.prompt).toContain("recut_queue and final verification remain");
+    expect(firstRoute?.prompt).toContain("even if later design requirements remain in the source queue");
+    expect(firstRoute?.prompt).toContain("The final whole-file review alone decides");
+    expect(fixtureRun.calls.filter((call) => call.options.label === "workflow-source-cut")).toHaveLength(3);
+    expect(fixtureRun.calls.some((call) => call.options.label === "workflow-source-design-fix")).toBe(false);
+  });
+
   it("routes every mechanical failure through one fix before semantic review", async () => {
     const fixtureRun = fixture({
       "workflow-source-check": ["workflow-source-check.md: failed"],
@@ -246,6 +270,12 @@ describe("Package workflow: task/plan", () => {
     expect(
       fixtureRun.calls.find((call) => call.options.label === "workflow-source-review-route")?.options.choice,
     ).toEqual(["accept", "fix", "failed"]);
+    expect(fixtureRun.calls.find((call) => call.options.label === "workflow-source-design-recheck")?.prompt).toContain(
+      "do not require them to be implemented in this slice",
+    );
+    expect(
+      fixtureRun.calls.find((call) => call.options.label === "workflow-source-design-recheck-route")?.prompt,
+    ).toContain("future queued requirements need not be complete");
   });
 
   it.each([
