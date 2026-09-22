@@ -447,7 +447,7 @@ async function runChildSession(
 
   const diagnostics: string[] = [];
   const capsule = createAgentExecutionPromptCapsule(request, diagnostics, promptEnv);
-  const kickoff = formatAgentKickoffPrompt(capsule);
+  const kickoff = formatAgentKickoffPrompt(capsule, request.responseAcceptance === undefined ? "text" : "tool");
 
   const cwd = request.workingDirectory ?? request.projectRoot ?? process.cwd();
   const readOnlyCapabilities =

@@ -126,6 +126,23 @@ describe("T-119 explicit parent-context", () => {
     const reference = formatAgentKickoffPrompt(capsule);
     expect(kickoffString).toBe(reference);
     expect(kickoffString).not.toContain("Parent-provided context (explicit, read-only):");
+    expect(kickoffString).toContain("Your exact final non-empty message is the result.");
+  });
+
+  it("uses the return tool as the result for a tool-accepted child", () => {
+    const request = {
+      ...createAgentRunRequest(agent, "Use workflow_return({ value: ... })", { approvalTier: "allow" }),
+      parentSessionId: "parent-session",
+      projectRoot: "/project",
+      workingDirectory: "/project",
+    };
+    const capsule = createAgentExecutionPromptCapsule(request, [], { LOCUS_AGENT_CONTEXT_EXTRAS: "0" });
+    const kickoff = formatAgentKickoffPrompt(capsule, "tool");
+
+    expect(kickoff).toContain("submit the result through the return tool specified in the prompt capsule");
+    expect(kickoff).toContain("Your final message is not the result.");
+    expect(kickoff).not.toContain("reply to the parent runtime in plain text");
+    expect(kickoff).not.toContain("Do not wrap the result in JSON");
   });
 
   it("adds inline parent context to the kickoff payload", () => {

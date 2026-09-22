@@ -233,11 +233,11 @@ export default async function runWorkflow(dsl, input = "") {
       mechanicalRoute === "fix" ? "workflow-source-fix-check.md" : "workflow-source-check.md";
 
     const designReview = await dsl.agent(
-      `Independently inspect the entire current workspace workflow.mjs and this slice against the reviewed design. Read the exact current mechanical evidence from workspace ${currentMechanicalReport}. Check that the accepted identity is implemented, existing nodes remain correct, every handoff is visible, and the module stays runnable. Do not edit or execute source. Write workflow-source-design-review.md with criterion evidence and exact fix guidance. Return the report and paths, never source bytes.\n\n${SOURCE_CONTRACT}\n\nSlice:\n${slice}\n\nReviewed design:\n${reviewedDesign}`,
+      `Independently inspect the entire current workspace workflow.mjs for the effects of this slice. Read the exact current mechanical evidence from workspace ${currentMechanicalReport}. Check that this slice’s accepted identity is implemented, previously accepted nodes remain correct, every handoff for this slice is visible, and the module stays runnable. Identify unmet design requirements as remaining work for the next source queue; their absence is not a defect in this slice. Do not edit or execute source. Write workflow-source-design-review.md with slice criterion evidence, remaining work, and exact fix guidance for any defect in this slice or regression. Return the report and paths, never source bytes.\n\n${SOURCE_CONTRACT}\n\nSlice:\n${slice}\n\nReviewed design:\n${reviewedDesign}`,
       { label: "workflow-source-review", result: "report", title: `Review source slice ${accepted + 1}` },
     );
     const designRoute = await dsl.agent(
-      `Translate the design review without rejudging it. Choose accept only when the slice and whole file conform. Choose fix for a correctable in-scope mismatch. Choose failed for a scope conflict or design mismatch that cannot be corrected within the accepted graph.\n\n${designReview}`,
+      `Translate the slice design review without rejudging it. Choose accept when this slice conforms, previously accepted work remains correct, and the whole module remains runnable, even if later design requirements remain in the source queue. Choose fix for a correctable defect in this slice or regression of accepted work. Choose failed for a scope conflict or mismatch that cannot be corrected within the accepted graph. The final whole-file review alone decides whether the complete design may be published.\n\n${designReview}`,
       {
         label: "workflow-source-review-route",
         title: "Route source design review",
@@ -297,7 +297,7 @@ export default async function runWorkflow(dsl, input = "") {
           diagnostics: designFixCheck,
         };
       const designRecheck = await dsl.agent(
-        `Independently recheck the fixed whole workspace workflow.mjs against the reviewed design and this slice. Do not edit or execute source. Write workflow-source-design-recheck.md with criterion evidence. Return the report and paths, never source bytes.\n\n${SOURCE_CONTRACT}\n\nSlice:\n${slice}\n\nReviewed design:\n${reviewedDesign}\n\nFix evidence:\n${designFix}`,
+        `Independently recheck the fixed slice and its effects on the whole workspace workflow.mjs. Confirm this slice conforms, previously accepted nodes remain correct, and the module stays runnable. Record unmet future design requirements for the next source queue; do not require them to be implemented in this slice. Do not edit or execute source. Write workflow-source-design-recheck.md with slice criterion evidence and remaining work. Return the report and paths, never source bytes.\n\n${SOURCE_CONTRACT}\n\nSlice:\n${slice}\n\nReviewed design:\n${reviewedDesign}\n\nFix evidence:\n${designFix}`,
         {
           label: "workflow-source-design-recheck",
           result: "report",
@@ -305,7 +305,7 @@ export default async function runWorkflow(dsl, input = "") {
         },
       );
       const designRecheckRoute = await dsl.agent(
-        `Translate the independent design recheck without rejudging it. Choose accept only for complete conformance; otherwise choose failed.\n\n${designRecheck}`,
+        `Translate the independent slice design recheck without rejudging it. Choose accept when this slice and previously accepted work conform and the whole module remains runnable; future queued requirements need not be complete. Otherwise choose failed.\n\n${designRecheck}`,
         {
           label: "workflow-source-design-recheck-route",
           title: "Route fixed source design",

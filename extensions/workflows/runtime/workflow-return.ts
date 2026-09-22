@@ -164,12 +164,17 @@ export function assertWorkflowReturnValidationErrors(returned: unknown): readonl
 
 export function workflowReturnInstructions(contract: WorkflowReturnContract): string {
   const clarifications = workflowReturnClarificationTurns(contract);
+  const choiceInstructions =
+    contract.choices === undefined
+      ? ""
+      : ` For this choice, value must be one exact declared string, without an object, explanation, prefix, or Markdown. Valid tool arguments are ${contract.choices.map((choice) => JSON.stringify({ value: choice })).join(" or ")}. Select the member supported by your evidence; these argument shapes do not recommend a branch.`;
   return (
     `Return the value using workflow_return({ value: ... }), not by formatting a final message. The host validates this contract: ${JSON.stringify(contract)}. ` +
     `The contract states no answer size; return the complete value. After the first submission you get ${String(clarifications)} same-session ` +
     "correction turn(s) (maxAttempts counts the first submission), which exist to fix the FORM of the value you already found. " +
     "Do all research before submitting. After submitting, use only workflow_return to correct the answer; do not repeat file writes or other " +
     "external effects. Finish the turn normally after acceptance." +
+    choiceInstructions +
     (contract.schema === undefined
       ? ""
       : " For a schema or handoffs contract, pass the JSON value itself (object or array) as value, not a string that contains JSON.")
@@ -178,6 +183,8 @@ export function workflowReturnInstructions(contract: WorkflowReturnContract): st
 
 /** Syntax guidance only: the agent keeps its content and still has to satisfy the schema. */
 function workflowReturnCorrectionExample(contract: WorkflowReturnContract, value: unknown): string {
+  if (contract.choices !== undefined)
+    return " Submit one exact declared string as value, without a choice/reason object or explanatory text.";
   const type = contract.schema?.type;
   if (type !== "array" && type !== "object") return "";
   if (type === "array" ? Array.isArray(value) : isRecord(value)) return "";
