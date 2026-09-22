@@ -4,6 +4,8 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-09-23
+
 ### Changed
 
 - Pi `enabledModels` is no longer a hard execution allowlist. It again only
