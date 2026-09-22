@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/locus-pi/schemas/extension-manifest.schema.json",
+  "title": "locus-pi extension manifest",
+  "description": "The declared public contract of one extension. scripts/check-extension-manifests.ts validates every manifest referenced by package.json#pi.extensions against this file, so a field added here without a consumer is a defect. Each property description names the consumer that reads it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "runtimeRequirements", "stateUsed", "provides", "permissions", "risk", "docsPath", "tests"],
+  "properties": {
+    "id": {
+      "description": "Extension identity; must equal the directory name. Read by extensions/agents/catalog/catalog.ts and scripts/check-extension-manifests.ts.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "runtimeRequirements": {
+      "description": "Host APIs and lifecycle events the extension needs. Reviewer and documentation contract; nothing executes it. Read by tests/extensions/workflows/fusion/fusion-tool.test.ts and documented in docs/extensions.md.",
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "stateUsed": {
+      "description": "Session and on-disk state the extension reads or writes. Reviewer and documentation contract; nothing executes it. Read by tests/extensions/workflows/fusion/fusion-tool.test.ts and documented in docs/extensions.md.",
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "provides": {
+      "description": "The public surface. Read by tests/contracts/extensions/runtime-registration.test.ts (commands must equal live registration), tests/contracts/host/selective-package-loading.test.ts (tools, commands and hooks must equal what the host loads) and tests/contracts/docs/extension-reference.test.ts (the docs/extensions.md row).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tools", "commands", "hooks"],
+      "properties": {
+        "tools": { "type": "array", "items": { "type": "string" } },
+        "commands": { "type": "array", "items": { "type": "string" } },
+        "hooks": { "type": "array", "items": { "type": "string" } },
+        "shortcuts": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "uiLifecycle": {
+      "description": "Per-surface UI and persistence taxonomy for review. Nothing executes it; scripts/check-extension-manifests.ts requires every entry to name a surface this manifest declares under provides. Omitted by extensions that expose no command and no tool.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "commands": { "type": "array", "items": { "$ref": "#/$defs/uiLifecycleEntry" } },
+        "tools": { "type": "array", "items": { "$ref": "#/$defs/uiLifecycleEntry" } }
+      }
+    },
+    "permissions": {
+      "description": "Declared capabilities. Reviewer and documentation contract: the package grants no capability from this field and the host is not sandboxed by it. Documented in docs/extensions.md and docs/architecture.md.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filesystem", "subprocess", "network", "browser", "models", "ui"],
+      "properties": {
+        "filesystem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["read", "write"],
+          "properties": {
+            "read": { "type": "array", "items": { "type": "string" } },
+            "write": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "subprocess": { "type": "array", "items": { "type": "string" } },
+        "network": { "type": "array", "items": { "type": "string" } },
+        "browser": { "type": "boolean" },
+        "models": { "type": "boolean" },
+        "ui": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "risk": {
+      "description": "Review severity, not a sandbox guarantee. Read by tests/contracts/docs/extension-reference.test.ts, which pins it to the docs/extensions.md row.",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "docsPath": {
+      "description": "Co-located manual. Read by tests/contracts/docs/extension-reference.test.ts and tests/docs/public-docs.test.ts; scripts/check-extension-manifests.ts requires the file to exist and to be packaged through package.json#files.",
+      "type": "string"
+    },
+    "tests": {
+      "description": "The evidence that the implementation matches this contract. scripts/check-extension-manifests.ts and tests/contracts/docs/extension-reference.test.ts require every path to exist.",
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "uiLifecycleEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "taxonomy", "persistent"],
+      "properties": {
+        "name": {
+          "description": "A tool name, or the top-level word of a command, declared under provides.",
+          "type": "string"
+        },
+        "taxonomy": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "artifact-write",
+              "blocking-prompt",
+              "no-ui",
+              "overlay-selector",
+              "persistent-state",
+              "status",
+              "transient-widget"
+            ]
+          },
+          "minItems": 1
+        },
+        "transient": { "type": "array", "items": { "type": "string" } },
+        "persistent": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

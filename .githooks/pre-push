@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+
+blocked_ref=""
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/dev)
+      blocked_ref=${remote_ref#refs/heads/}
+      ;;
+  esac
+done
+
+if [ -n "$blocked_ref" ]; then
+  echo "Direct pushes to $blocked_ref are blocked. Use a pull request." >&2
+  exit 1
+fi
+
+# Git exports repository-local variables to hooks. Clear them before the test
+# suite creates foreign temporary repositories, or nested git commands will
+# keep targeting this checkout despite their explicit `-C` directory.
+unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_OBJECT_DIRECTORY GIT_DIR GIT_WORK_TREE \
+  GIT_IMPLICIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR
+
+npm run check:push

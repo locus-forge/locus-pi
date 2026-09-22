@@ -1,0 +1,70 @@
+{
+  "id": "model",
+  "runtimeRequirements": [
+    "Pi setModel/getThinkingLevel/setThinkingLevel APIs",
+    "Pi model registry with reasoning/thinkingLevelMap capability metadata",
+    "global enabledModels is enforced as a hard pre-agent allowlist, including explicit --model selections; configured empty, malformed, or unreadable policy fails closed without an LLM request",
+    "Pi custom/select UI",
+    "Global user model role config",
+    "Locus model-settings role resolver",
+    "/effort reads pi.getThinkingLevel, puts the supported current level first in Pi's host selector, reports an unchanged current selection as VIEW without mutation, and sets pi.setThinkingLevel only for a different capability-validated level",
+    "the shared inline interaction slot fences Pi's own close callback by slot ownership: a component the host silently replaced can no longer run the host's editor-restore path, so a late timeout, abort, or queued key from a superseded prompt cannot blank the interaction that replaced it, and the incumbent is retired only once the newcomer's factory has produced a component, so a request that never appears cannot take the slot; when a factory rejects, Pi restores the editor over the live component anyway, so the incumbent is explicitly retired on that path too and its owner is told rather than left awaiting a surface that is off the screen; a retired caller sees the typed stale error and reports benign replacement rather than failure — /model-roles closes benignly and keeps any applied route"
+  ],
+  "stateUsed": [
+    "Pi defaultProvider/defaultModel",
+    "read-only ~/.pi/agent/settings.json enabledModels policy",
+    "global ~/.pi/agent/model-roles/config.json",
+    "optional project .locus/runtime/session-state.jsonl runtime event",
+    "optional session custom entry evidence"
+  ],
+  "provides": {
+    "tools": [],
+    "commands": ["model-roles", "effort"],
+    "hooks": ["session_start", "input"]
+  },
+  "uiLifecycle": {
+    "commands": [
+      {
+        "name": "model-roles",
+        "taxonomy": ["overlay-selector", "transient-widget", "persistent-state", "status"],
+        "transient": ["widget:model-roles"],
+        "persistent": [
+          "status:locus contribution model.roles",
+          "~/.pi/agent/model-roles/config.json",
+          ".locus/runtime/session-state.jsonl"
+        ]
+      },
+      {
+        "name": "effort",
+        "taxonomy": ["overlay-selector", "transient-widget"],
+        "transient": ["widget:effort"],
+        "persistent": []
+      }
+    ]
+  },
+  "permissions": {
+    "filesystem": {
+      "read": ["~/.pi/agent/settings.json", "~/.pi/agent/model-roles/config.json"],
+      "write": [
+        "~/.pi/agent/model-roles/config.json",
+        "~/.pi/agent/model-roles/config.json.lock",
+        "~/.pi/agent/model-roles/config.json.*.tmp",
+        ".locus/runtime/session-state.jsonl"
+      ]
+    },
+    "subprocess": [],
+    "network": [],
+    "browser": false,
+    "models": true,
+    "ui": ["custom", "select", "setStatus", "setWidget"]
+  },
+  "risk": "medium",
+  "docsPath": "extensions/model/README.md",
+  "tests": [
+    "tests/extensions/model/model.test.ts",
+    "tests/extensions/model/model-persistence.test.ts",
+    "tests/extensions/model/model-allowlist.test.ts",
+    "tests/contracts/extensions/runtime-registration.test.ts",
+    "tests/shared/operator/operator-interaction-slot.test.ts"
+  ]
+}

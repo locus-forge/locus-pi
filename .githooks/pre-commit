@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+branch=$(git symbolic-ref --quiet --short HEAD || true)
+case "$branch" in
+  main|dev)
+    echo "Direct commits to $branch are blocked. Create a task branch from dev." >&2
+    exit 1
+    ;;
+esac
+
+if [ ! -x ./node_modules/.bin/lint-staged ]; then
+  echo "lint-staged is unavailable. Run: npm ci --ignore-scripts" >&2
+  exit 1
+fi
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "gitleaks is required for staged secret scanning." >&2
+  echo "Install it with: brew install gitleaks" >&2
+  exit 1
+fi
+
+./node_modules/.bin/lint-staged
+git diff --cached --check
+gitleaks git --staged --redact --no-banner
+npm run typecheck

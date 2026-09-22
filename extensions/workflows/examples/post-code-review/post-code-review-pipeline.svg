@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1500" viewBox="0 0 1600 1500" role="img" aria-labelledby="title desc">
+  <title id="title">post-code-review: one parent, seven child workflows, one published report</title>
+  <desc id="desc">The runtime preserves or creates style.md in the request workspace. Scope runs first. Boundaries, delete-first simplicity, contracts, and style run in parallel. Every fresh child requires an assigned model role. Necessity challenges stable question ids before synthesis makes current-change code-shape defects required and publishes post-code-review.md. Final QA remains separate.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#334155"/>
+    </marker>
+    <style>
+      .sans{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+      .h1{font-size:30px;font-weight:750;fill:#0f172a}.sub{font-size:15px;fill:#475569}.tag{font-size:11px;font-weight:750;letter-spacing:.06em;fill:#475569}
+      .title{font-size:16px;font-weight:740;fill:#0f172a}.body{font-size:13px;fill:#334155}.small{font-size:12px;fill:#475569}
+      .edge{fill:none;stroke:#334155;stroke-width:2;marker-end:url(#arrow)}.bar{font-size:13px;font-weight:700;fill:#1e3a8a;text-anchor:middle}
+    </style>
+  </defs>
+  <rect width="1600" height="1500" fill="#fff"/>
+  <text x="60" y="52" class="sans h1">Post-code review — one entry point, seven child workflows</text>
+  <text x="60" y="80" class="sans sub">The parent owns graph order. Request-local style guidance stays beside the request id.</text>
+
+  <rect x="60" y="105" width="1480" height="92" rx="16" fill="#fef3c7" stroke="#b45309" stroke-width="2"/>
+  <text x="86" y="132" class="sans tag">OPERATOR: REQUEST WORKSPACE</text>
+  <text x="86" y="158" class="mono title">.locus-pi/workspaces/&lt;run-name&gt;/style.md</text>
+  <text x="86" y="181" class="sans body">Workflow: runtime preserves a regular file or creates it empty before any Agent starts.</text>
+
+  <path d="M800 197 V230" class="edge"/>
+  <rect x="60" y="230" width="1480" height="104" rx="16" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2"/>
+  <text x="86" y="257" class="sans tag">WORKFLOW: ONLY EXTERNAL ENTRY</text>
+  <text x="86" y="285" class="mono title">post-code-review.workflow.mjs</text>
+  <text x="86" y="312" class="sans body">Phases: scope → audit-barrier → necessity → synthesis → publish · parent model calls: 0</text>
+
+  <path d="M800 334 V370" class="edge"/>
+  <rect x="180" y="370" width="1240" height="132" rx="16" fill="#fff" stroke="#64748b" stroke-width="2"/>
+  <text x="206" y="398" class="sans tag">WORKFLOW: scope</text>
+  <text x="206" y="426" class="mono title">scope.workflow.mjs</text>
+  <text x="206" y="453" class="sans body">Agent: one Pi session · modelRole "smol:high" required · freezes the exact review boundary</text>
+  <text x="206" y="480" class="mono body">Artifact: review-scope.md</text>
+
+  <path d="M800 502 V548" class="edge"/>
+  <rect x="180" y="548" width="1240" height="44" rx="18" fill="#e0e7ff" stroke="#4f46e5"/>
+  <text x="800" y="576" class="sans bar">Workflow: audit-barrier · four independent children read review-scope.md</text>
+
+  <path d="M340 592 V630" class="edge"/><path d="M650 592 V630" class="edge"/><path d="M960 592 V630" class="edge"/><path d="M1260 592 V630" class="edge"/>
+
+  <rect x="75" y="630" width="360" height="220" rx="15" fill="#fff" stroke="#94a3b8" stroke-width="2"/>
+  <text x="98" y="659" class="sans tag">WORKFLOW</text>
+  <text x="98" y="686" class="mono title">boundaries.workflow.mjs</text>
+  <text x="98" y="718" class="sans body">Ownership · layers · dependency direction</text>
+  <text x="98" y="752" class="mono small">modelRole "smol:high" · required</text>
+  <text x="98" y="810" class="mono body">Artifact: review-boundaries.md</text>
+
+  <rect x="455" y="630" width="330" height="220" rx="15" fill="#fff" stroke="#94a3b8" stroke-width="2"/>
+  <text x="478" y="659" class="sans tag">WORKFLOW</text>
+  <text x="478" y="686" class="mono title">simplicity.workflow.mjs</text>
+  <text x="478" y="718" class="sans body">Contraction · callers · delete-first</text>
+  <text x="478" y="752" class="mono small">modelRole "smol:high" · required</text>
+  <text x="478" y="810" class="mono body">Artifact: review-simplicity.md</text>
+
+  <rect x="805" y="630" width="330" height="220" rx="15" fill="#fff" stroke="#94a3b8" stroke-width="2"/>
+  <text x="828" y="659" class="sans tag">WORKFLOW</text>
+  <text x="828" y="686" class="mono title">contracts.workflow.mjs</text>
+  <text x="828" y="718" class="sans body">APIs · consumers · owned guarantees</text>
+  <text x="828" y="752" class="mono small">modelRole "smol:xhigh" · required</text>
+  <text x="828" y="810" class="mono body">Artifact: review-contracts.md</text>
+
+  <rect x="1155" y="630" width="370" height="220" rx="15" fill="#fff" stroke="#94a3b8" stroke-width="2"/>
+  <text x="1178" y="659" class="sans tag">WORKFLOW</text>
+  <text x="1178" y="686" class="mono title">style.workflow.mjs</text>
+  <text x="1178" y="718" class="sans body">Comments · project style · style.md</text>
+  <text x="1178" y="752" class="mono small">modelRole "smol:high" · required</text>
+  <text x="1178" y="810" class="mono body">Artifact: review-style.md</text>
+
+  <path d="M340 850 V890 H800" class="edge"/><path d="M650 850 V890 H800" class="edge"/><path d="M960 850 V890 H800" class="edge"/><path d="M1260 850 V890 H800" class="edge"/>
+  <rect x="180" y="910" width="1240" height="132" rx="16" fill="#fff" stroke="#64748b" stroke-width="2"/>
+  <text x="206" y="938" class="sans tag">WORKFLOW: necessity</text>
+  <text x="206" y="966" class="mono title">necessity.workflow.mjs</text>
+  <text x="206" y="993" class="sans body">Agent: modelRole "smol:xhigh" required · proves behavioral or code-shape defect and simplest fix</text>
+  <text x="206" y="1020" class="mono body">Artifact: review-necessity.md</text>
+
+  <path d="M800 1042 V1082" class="edge"/>
+  <rect x="180" y="1082" width="1240" height="132" rx="16" fill="#fff" stroke="#64748b" stroke-width="2"/>
+  <text x="206" y="1110" class="sans tag">WORKFLOW: synthesis</text>
+  <text x="206" y="1138" class="mono title">synthesis.workflow.mjs</text>
+  <text x="206" y="1165" class="sans body">Agent: modelRole "smol:xhigh" required · code-shape READY / CHANGES_REQUIRED · REQUIRED / RECOMMENDED / NO_ACTION</text>
+  <text x="206" y="1192" class="mono body">Artifact: post-code-review.md · final QA remains separate</text>
+
+  <path d="M800 1214 V1254" class="edge"/>
+  <rect x="180" y="1254" width="1240" height="76" rx="16" fill="#dcfce7" stroke="#15803d" stroke-width="2"/>
+  <text x="206" y="1283" class="sans tag">WORKFLOW: publish</text>
+  <text x="206" y="1312" class="mono title">dsl.publishPrimaryFile("post-code-review.md")</text>
+
+  <rect x="60" y="1362" width="1480" height="58" rx="14" fill="#fef2f2" stroke="#b91c1c" stroke-width="2"/>
+  <text x="86" y="1397" class="sans body">Fail closed: unassigned required modelRole for fresh child · unsafe style.md · missing child · failed Agent/report · no publication</text>
+
+  <rect x="60" y="1440" width="1480" height="36" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="86" y="1464" class="sans body"><tspan font-weight="700">Operator:</tspan> request input · <tspan font-weight="700">Workflow:</tspan> deterministic graph · <tspan font-weight="700">Agent:</tspan> Pi child · <tspan font-weight="700">Artifact:</tspan> Markdown handoff</text>
+</svg>

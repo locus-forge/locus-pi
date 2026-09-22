@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  push:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      upload-candidate:
+        description: Upload the verified npm tarball for same-run staging.
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Node 22 package contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Use Node 22.19.0
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      # The Pi host shells out to ripgrep for its grep tool. Runner images that
+      # already ship it need no package mirror at all, and the apt path is
+      # bounded on both sides: Acquire timeouts so a stalled mirror fails fast,
+      # one retry for a transient failure, and a step timeout so a mirror that
+      # hangs anyway cannot consume the whole job (it twice did, at 20 minutes).
+      - name: Install workflow system dependency
+        timeout-minutes: 5
+        run: |
+          if command -v rg >/dev/null 2>&1; then
+            rg --version
+            exit 0
+          fi
+          for attempt in 1 2; do
+            if sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update \
+              && sudo apt-get install --yes --no-install-recommends ripgrep; then
+              exit 0
+            fi
+            echo "ripgrep install attempt ${attempt} failed" >&2
+            sleep 15
+          done
+          exit 1
+
+      - name: Install exact dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Enforce pull-request branch and release policy
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npm run check:pull-request
+
+      # The one deterministic gate: formatting, manifests, layers, workflow
+      # source shape, types, Pi host coherence, tests, published
+      # links, repository inventory, and release metadata. Anything CI runs
+      # beyond this step needs the network or the runner environment, which is
+      # exactly why it is not inside `check`.
+      - name: Run the canonical gate
+        run: npm run check
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+
+      - name: Confirm the installed Pi peer
+        run: ./node_modules/.bin/pi --version
+
+      - name: Pin npm CLI for candidate packing
+        run: |
+          npm install --global npm@11.19.1
+          test "$(npm --version)" = "11.19.1"
+
+      - name: Build and verify the real npm candidate
+        run: node scripts/release-candidate.mjs pack "$RUNNER_TEMP/candidate"
+
+      - name: Test clean external Pi installs from the candidate
+        run: node scripts/release-consumer-smoke.mjs "$RUNNER_TEMP/candidate"
+
+      - name: Upload verified candidate for same-run staging
+        if: inputs.upload-candidate == true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: npm-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/candidate/
+          if-no-files-found: error
+          retention-days: 7

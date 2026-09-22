@@ -1,0 +1,71 @@
+name: Stage npm candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-staging
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    name: Verify release candidate
+    if: github.repository == 'locus-forge/locus-pi' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+    with:
+      upload-candidate: true
+
+  stage:
+    name: Submit verified tarball to npm staging
+    needs: candidate
+    if: github.repository == 'locus-forge/locus-pi' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm-staging
+    steps:
+      - name: Check out release tooling
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+
+      - name: Use Node 22.19.0
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22.19.0
+          registry-url: https://registry.npmjs.org
+
+      - name: Install pinned npm staging CLI
+        env:
+          NPM_CONFIG_USERCONFIG: /dev/null
+        run: |
+          npm install --global npm@11.19.1
+          test "$(npm --version)" = "11.19.1"
+
+      - name: Download candidate from this workflow run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: npm-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/candidate
+
+      - name: Verify exact candidate bytes and package identity
+        run: node scripts/release-candidate.mjs verify "$RUNNER_TEMP/candidate"
+
+      - name: Require an existing public npm package
+        env:
+          NPM_CONFIG_USERCONFIG: /dev/null
+        run: |
+          if ! npm view @locus-forge/locus-pi version --registry=https://registry.npmjs.org/; then
+            echo 'Could not confirm an existing public package; see the registry error above. If E404, the owner must bootstrap its first public version. This workflow never publishes directly.' >&2
+            exit 1
+          fi
+
+      - name: Submit exact candidate to npm staging
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          test -n "$NODE_AUTH_TOKEN"
+          candidate_filename=$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).filename' "$RUNNER_TEMP/candidate/candidate.json")
+          npm stage publish "$RUNNER_TEMP/candidate/$candidate_filename" --ignore-scripts --access public --tag latest

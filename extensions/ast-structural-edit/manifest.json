@@ -1,0 +1,46 @@
+{
+  "id": "ast-structural-edit",
+  "runtimeRequirements": [
+    "filesystem read/write for selected project files",
+    "AST engine dependencies",
+    "Pi tool approval metadata for apply writes"
+  ],
+  "stateUsed": ["in-memory pending AST previews"],
+  "provides": {
+    "tools": ["ast_grep", "ast_edit", "resolve"],
+    "commands": [],
+    "hooks": []
+  },
+  "uiLifecycle": {
+    "commands": [],
+    "tools": [
+      {
+        "name": "ast_edit",
+        "taxonomy": ["artifact-write"],
+        "persistent": ["in-memory pending AST preview"]
+      },
+      {
+        "name": "resolve",
+        "taxonomy": ["artifact-write"],
+        "persistent": ["filesystem writes after Pi approval and stale-check"]
+      }
+    ]
+  },
+  "permissions": {
+    "filesystem": {
+      "read": ["."],
+      "write": ["."]
+    },
+    "subprocess": [],
+    "network": [],
+    "browser": false,
+    "models": false,
+    "ui": []
+  },
+  "risk": "high",
+  "docsPath": "extensions/ast-structural-edit/README.md",
+  "tests": [
+    "tests/extensions/ast-structural-edit/tools.test.ts",
+    "tests/contracts/extensions/runtime-registration.test.ts"
+  ]
+}

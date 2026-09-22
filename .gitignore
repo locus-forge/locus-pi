@@ -1,0 +1,115 @@
+# Dependencies and build output
+node_modules/
+dist/*
+!dist/public-catalogs.json
+coverage/
+test-results/
+build/
+.next/
+target/
+vendor/
+
+# Local runtime, task, and planning state
+.runs/
+.cache/
+.tasks/
+.locus/
+.locus-pi/
+.pi/
+.omp/
+.test_pi/
+.planning/
+artifacts/
+benchmarks/
+eval/
+evaluation/
+evaluations/
+reports/
+transcripts/
+output/
+tmp/
+
+# Internal documentation and publication handoff
+# These paths are intentionally outside the public repository surface.
+docs/adr/
+docs/decisions/
+docs/prd/
+docs/source-audit/
+docs/internal/
+docs/archive/
+docs/_archive/
+docs/drafts/
+docs/notes/
+docs/research/
+docs/proposals/
+docs/specs/
+docs/system-design/
+docs/extension-gallery/
+docs/reports/
+docs/milestones*.md
+docs/roadmap*.md
+.publication/
+PUBLICATION_PLAN.md
+PUBLICATION_REMOVALS.txt
+VALIDATION_REPORT.md
+EXPORT_MANIFEST.md
+EXPORT_MANIFEST.json
+
+# Local/spec drafting state
+/specs/
+.claude/
+.agents/skills/
+.agents/workflows/
+
+# Generated/export scratch
+pi-session-*.html
+task-index.json
+ROADMAP.md
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+.npmrc
+.mcp.json
+
+# Editor, OS, and language state
+.DS_Store
+.idea/
+.vscode/
+*.code-workspace
+*.log
+*.tmp
+*.swp
+*.swo
+*~
+Thumbs.db
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Tool-specific local state
+.gsd
+.gsd-worktrees/
+.gsd-id
+.bg-shell/
+.gstack/
+
+# Windows reserved-name artifacts
+nul
+nul.*
+con
+con.*
+prn
+prn.*
+aux
+aux.*
+com[1-9]
+com[1-9].*
+lpt[1-9]
+lpt[1-9].*
+
+# Stray demo output
+/test1.md
+/test2.md

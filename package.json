@@ -1,0 +1,113 @@
+{
+  "name": "@locus-forge/locus-pi",
+  "version": "0.9.0",
+  "type": "module",
+  "description": "Pi extension package for agentic software-development workflows.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/locus-forge/locus-pi.git"
+  },
+  "homepage": "https://github.com/locus-forge/locus-pi#readme",
+  "bugs": {
+    "url": "https://github.com/locus-forge/locus-pi/issues"
+  },
+  "keywords": [
+    "locus-pi",
+    "pi-package",
+    "pi-extension",
+    "agentic-development"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/agents/index.ts",
+      "./extensions/ask-user-question/index.ts",
+      "./extensions/ast-structural-edit/index.ts",
+      "./extensions/model/index.ts",
+      "./extensions/status-line/index.ts",
+      "./extensions/workflows/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "scripts": {
+    "build:catalogs": "tsx scripts/build-public-catalogs.ts",
+    "check": "npm run format:check && npm run check:links && npm run check:generated && npm run check:fast && npm run check:repository && npm run check:release",
+    "check:fast": "npm run check:manifests && npm run check:layers && npm run check:workflow-source && npm run typecheck && npm run check:pi-host && npm test",
+    "check:generated": "tsx scripts/build-public-catalogs.ts --check",
+    "check:layers": "tsx scripts/check-extension-layers.ts",
+    "check:links": "tsx scripts/check-markdown-links.ts",
+    "check:manifests": "tsx scripts/check-extension-manifests.ts",
+    "check:pull-request": "tsx scripts/check-pull-request-policy.ts",
+    "check:push": "npm run check && npm run check:topology && npm run pack:json > /dev/null",
+    "check:topology": "node scripts/check-topology.mjs",
+    "check:release": "tsx scripts/check-release-metadata.ts",
+    "check:repository": "tsx scripts/check-repository.ts",
+    "check:workflow-source": "tsx scripts/check-workflow-source-shape.ts",
+    "format": "prettier --write --ignore-unknown .",
+    "format:check": "prettier --check --ignore-unknown .",
+    "hooks:install": "git config core.hooksPath .githooks",
+    "lint:staged": "lint-staged",
+    "pack:json": "npm pack --dry-run --json --ignore-scripts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "pack:dry": "npm pack --dry-run --ignore-scripts",
+    "check:pi-host": "node scripts/check-pi-host-version.mjs",
+    "test:host-loading": "vitest run tests/contracts/host/selective-package-loading.test.ts",
+    "sync:pi-host": "node scripts/sync-pi-host-version.mjs"
+  },
+  "dependencies": {
+    "@ast-grep/lang-python": "^0.0.6",
+    "@ast-grep/napi": "^0.43.0",
+    "@sinclair/typebox": "^0.34.41",
+    "minimatch": "^10.2.5"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": ">=0.83.0",
+    "@earendil-works/pi-ai": ">=0.83.0",
+    "@earendil-works/pi-coding-agent": ">=0.83.0",
+    "@earendil-works/pi-tui": ">=0.83.0",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-agent-core": "0.84.1",
+    "@earendil-works/pi-ai": "0.84.1",
+    "@earendil-works/pi-coding-agent": "0.84.1",
+    "@earendil-works/pi-tui": "0.84.1",
+    "@types/node": "^24.0.0",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.9.5",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  },
+  "files": [
+    "dist/public-catalogs.json",
+    "docs/",
+    "extensions/",
+    "!extensions/workflows/references/consilium/",
+    "!extensions/workflows/references/excalidraw-pipeline/",
+    "schemas/extension-manifest.schema.json",
+    "skills/"
+  ],
+  "prettier": {
+    "arrowParens": "always",
+    "printWidth": 120,
+    "semi": true,
+    "singleQuote": false,
+    "tabWidth": 2,
+    "trailingComma": "all",
+    "useTabs": false
+  },
+  "lint-staged": {
+    "*.{js,mjs,cjs,ts,tsx,json,md,yml,yaml}": "prettier --write --ignore-unknown"
+  }
+}

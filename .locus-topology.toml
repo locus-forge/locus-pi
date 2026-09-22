@@ -1,0 +1,271 @@
+schema = "locus.topology.v1"
+exclude_paths = [".locus/**", ".tasks/**", ".test_pi/**", ".claude/**", ".pi/**", ".locus-pi/**"]
+
+# Per-file code-line ceilings were removed on 2026-09-12 (T-218 W1). `locus topology check`
+# already fails on growth since the base ref, so a ceiling per file only documented
+# historical size. Record a new exception only for growth that a reviewer accepted,
+# with an owner and a trigger that says when it is revisited.
+
+[[exceptions]]
+path = "extensions/_shared/host/pi-api.ts"
+rule = "code-lines"
+ceiling = 592
+owner = "Pi tool result integration"
+reason = "T-220: one opt-in registration bridge preserves returned errors through Pi's supported tool_result hook without dropping structured diagnostics. Existing API/type ownership is retained."
+trigger = "Any further tool bridge behavior requires review of the host API boundary; do not add more adapters here."
+
+[[exceptions]]
+path = "extensions/workflows/runtime/workflow-runtime.ts"
+rule = "code-lines"
+ceiling = 948
+owner = "workflow DSL publication"
+reason = "T-220: narrow checked-source declaration on the existing primary-artifact API plus an injected host read; no filesystem dependency enters the DSL core."
+trigger = "Another publication variant requires reviewing this union and the artifact port rather than adding a generic validation framework."
+
+[[exceptions]]
+path = "extensions/workflows/runtime/workflow-runner.ts"
+rule = "code-lines"
+ceiling = 1132
+owner = "workflow host composition"
+reason = "T-220: connects confined workspace bytes, existing source checker and retained artifact publication at the existing host boundary."
+trigger = "Further growth in publication wiring requires moving the cohesive operation to the existing artifact owner, not enlarging this exception."
+
+[[exceptions]]
+path = "tests/extensions/workflows/runtime"
+rule = "directory-files"
+ceiling = 53
+owner = "workflows runtime tests"
+reason = "Runtime behavior tests mirror their production owner; T-218 (2026-09-12) added one test file per extracted owner and closed at 53 direct files."
+trigger = "T-218 is closed: a 54th file needs its own owner review (a new production owner, or a sub-directory for a stable test family such as replay or return)."
+
+[[exceptions]]
+path = "tests/shared/agent-runtime"
+rule = "directory-files"
+ceiling = 16
+owner = "shared agent runtime tests"
+reason = "Shared agent runtime tests intentionally mirror the named shared production layer."
+trigger = "Split when the directory exceeds 12 direct files or a stable agent-runtime sub-owner gains four tests."
+
+[[exceptions]]
+path = "extensions/workflows/runtime"
+rule = "directory-files"
+ceiling = 44
+owner = "workflows runtime"
+reason = "T-218 (2026-09-12) extracted single-owner modules (execution state, groups, agent contract/call/attempt/output/model, fusion, journal format, snapshot, workspace, admission, resume, saved child, finalization) out of the runtime/runner/journal/bridge monoliths and closed at 44 direct files."
+trigger = "T-218 is closed: a 45th file is a new owner and needs its own review (ledger entry, negative import test) or a sub-directory."
+
+[[exceptions]]
+path = "scripts"
+rule = "directory-files"
+ceiling = 16
+owner = "repository gates"
+reason = "T-218 W1 (2026-09-12) adds scripts/check-topology.mjs, the size-ratchet entry that check:push runs."
+trigger = "A new gate script beyond 16 files needs review; consolidate gate entry points before adding more."
+
+[[exceptions]]
+path = "extensions/workflows/runtime/workflow-workspace.ts"
+rule = "code-lines"
+ceiling = 560
+owner = "workflow workspace identity"
+reason = "T-218 W6 (2026-09-12): workspace path/physical identity, file operations and primary-file proofs extracted verbatim from the 1147-line workflow-output.ts; one owner, one reason to change."
+trigger = "Growth above 560 lines means a second concern crept in; split it out instead of raising this."
+
+[[exceptions]]
+path = "extensions/workflows/runtime/workflow-workspace-state.ts"
+rule = "code-lines"
+ceiling = 660
+owner = "workflow workspace state"
+reason = "T-218 W6 (2026-09-12): root lease/fencing, checkpoints and fresh-namespace state extracted verbatim from workflow-output.ts. Lease and checkpoint halves are separable if this owner grows."
+trigger = "Growth above 660 lines: split the lease protocol from checkpoints before adding code."
+
+[[exceptions]]
+path = "tests/integration/package-boundary.test.ts"
+rule = "code-lines"
+ceiling = 830
+owner = "package boundary contract"
+reason = "Package-wide inventory test; each T-218 owner extraction adds a two-line reason next to the packed-file count."
+trigger = "Above 830 lines, move the packed-file reason log out of the test body."
+
+[[exceptions]]
+path = "extensions/workflows/runtime/workflow-journal-format.ts"
+rule = "code-lines"
+ceiling = 960
+owner = "workflow journal event contract"
+reason = "T-218 W4 (2026-09-12): the journal line type, the per-kind field matrix and the strict codec are one versioned contract; splitting types from codec would recreate the two-file read the slice removed."
+trigger = "Growth above 960 lines means a new event kind or a second concern; review the event contract before adding code."
+
+[[exceptions]]
+path = "scripts/check-extension-layers.ts"
+rule = "code-lines"
+ceiling = 1000
+owner = "architecture ledger"
+reason = "AGENTS.md requires one ledger entry per new internal owner, so this file grows by a few lines per T-218 slice by design; the rule engine itself does not grow."
+trigger = "Above 1000 lines, move the ledger data (module lists) out of the rule engine into a data file."
+
+[[exceptions]]
+path = "extensions/workflows/source/workflow-source-provenance.ts"
+rule = "code-lines"
+ceiling = 690
+owner = "workflow source provenance analysis"
+reason = "T-218 W15 (2026-09-12): one fixed-point provenance analysis plus its query family, extracted verbatim from the 2443-line source checker."
+trigger = "Growth above 690 lines: split the query API from the analysis."
+
+[[exceptions]]
+path = "extensions/workflows/source/workflow-source-value-rules.ts"
+rule = "code-lines"
+ceiling = 650
+owner = "workflow source value-use rules"
+reason = "T-218 W15 (2026-09-12): the permitted-value-use rules, extracted verbatim; validateStandardValueUses alone is 155 lines."
+trigger = "Growth above 650 lines: split validateStandardValueUses by rule family."
+
+[[exceptions]]
+path = "tests/extensions/workflows/authoring/workflow-source-grammar-contract.test.ts"
+rule = "code-lines"
+ceiling = 570
+owner = "workflow source grammar tests"
+reason = "T-218 W15: grammar/policy acceptance table moved out of the 1679-line authoring contract suite."
+trigger = "Above 570 lines, split by diagnostic family."
+
+[[exceptions]]
+path = "tests/extensions/workflows/authoring/workflow-source-value-contract.test.ts"
+rule = "code-lines"
+ceiling = 630
+owner = "workflow source value-use tests"
+reason = "T-218 W15: provenance/value-use acceptance table moved out of the authoring contract suite."
+trigger = "Above 630 lines, split by rule family."
+
+[[exceptions]]
+path = "tests/extensions/workflows/operator"
+rule = "directory-files"
+ceiling = 12
+owner = "workflow operator surface tests"
+reason = "T-218 W16 (2026-09-12): the 2579-line progress suite is partitioned by owner (render, surfaces, state, install)."
+trigger = "Above 12 files, revisit the operator test layout."
+
+[[exceptions]]
+path = "tests/extensions/workflows/operator/workflow-progress-render.test.ts"
+rule = "code-lines"
+ceiling = 1450
+owner = "workflow progress render tests"
+reason = "T-218 W16: the rendering/viewport cases (44) of the former 2579-line suite, moved not rewritten."
+trigger = "Do not grow; split rail vs roster rendering when the next case lands."
+
+[[exceptions]]
+path = "tests/extensions/workflows/operator/workflow-progress-surfaces.test.ts"
+rule = "code-lines"
+ceiling = 930
+owner = "workflow progress surface tests"
+reason = "T-218 W16: terminal/headless projection cases (18) of the former suite."
+trigger = "Above 930 lines, split terminal from headless."
+
+[[exceptions]]
+path = "extensions/_shared/agent-runtime/agent-live-panel.ts"
+rule = "code-lines"
+ceiling = 960
+owner = "shared agent live panel"
+reason = "T-218 W16: countAgentLiveStatuses moved here because both the workflow progress header and the agents observer read it; +11 lines."
+trigger = "Above 960 lines, extract row projections from the panel."
+
+[[exceptions]]
+path = "extensions/workflows/runtime/workflow-groups.ts"
+rule = "code-lines"
+ceiling = 550
+owner = "workflow group execution"
+reason = "T-218 W7 (2026-09-12): group barriers, branch context and the per-call scheduler, cut verbatim out of the runtime; 35 lines over the threshold."
+trigger = "Growth above 550 lines: split the barrier-result half (group failure error/envelope/classification) from the scheduler and branch context."
+
+[[exceptions]]
+path = "extensions/workflows/runtime/workflow-result.ts"
+rule = "code-lines"
+ceiling = 760
+owner = "workflow result persistence and readback"
+reason = "T-218 W5 (2026-09-12): write and tolerant readback of runtime/result.json and outputs/workflow-result.md now have one owner; the ~310-line envelope parser is the next seam (workflow-result-format.ts) if it grows."
+trigger = "Growth above 760 lines: extract the envelope parser into a result-format module, mirroring artifact/journal format."
+
+[[exceptions]]
+path = "tests/extensions/workflows/runtime/workflow-saved-child.test.ts"
+rule = "code-lines"
+ceiling = 810
+owner = "workflow saved-child tests"
+reason = "T-218 W12/W13 (2026-09-12): saved-child lifecycle/checkpoint/cycle cases (15) after the resume-identity cases moved to the resume suite."
+trigger = "Growth above 810 lines: split checkpoint reuse from lifecycle/cycle refusal."
+
+[[exceptions]]
+path = "extensions/workflows/runtime/workflow-agent-contract.ts"
+rule = "code-lines"
+ceiling = 680
+owner = "workflow agent contract"
+reason = "T-218 W8 (2026-09-12): request/result wire contract plus the callsite options family, ~95% moved declarations; bridge, call and attempt import it instead of the composition root."
+trigger = "Growth above 680 lines: split callsite options (choice/handoffs/schema/report) from the request/result wire contract."
+
+[[exceptions]]
+path = "extensions/workflows/runtime/workflow-run-admission.ts"
+rule = "code-lines"
+ceiling = 600
+owner = "workflow run admission"
+reason = "T-218 W13 (2026-09-12): the ordered pre-execution admission (target → source snapshot → workspace identity → launch binding), cut verbatim from the runner; the resume-source binding block is the only movable seam and would just shift lines to the resume owner."
+trigger = "Growth above 600 lines: move the resume-source binding block to the resume authority."
+
+[[exceptions]]
+path = "tests/extensions/workflows/runtime/workflow-run-resume.test.ts"
+rule = "code-lines"
+ceiling = 980
+owner = "workflow resume authority tests"
+reason = "T-218 W13: 23 resume identity/prefix/safety/recovery cases moved unchanged out of the replay and saved-child suites."
+trigger = "Above 980 lines, split replay-plan cases from workspace-identity cases."
+
+[[exceptions]]
+path = "extensions/workflows/runtime/workflow-fusion.ts"
+rule = "code-lines"
+ceiling = 690
+owner = "workflow fusion composition"
+reason = "T-218 W10 (2026-09-12): Fusion declaration/preflight and member+judge execution moved verbatim out of the runtime as one pure composition owner behind injected agent/scheduler ports."
+trigger = "Growth above 690 lines: split the declaration/preflight half from the execution half."
+
+[[exceptions]]
+path = "extensions/workflows/runtime/workflow-run-finalization.ts"
+rule = "code-lines"
+ceiling = 620
+owner = "workflow run finalization"
+reason = "T-218 W14 (2026-09-12): the terminal precedence sequence (abort → evidence → handoff → terminal text → lease → report → result.json) moved whole; splitting it would scatter the precedence across two files."
+trigger = "Growth above 620 lines: move the RunWorkflowScriptResult declaration to the contract side; never split the sequence."
+
+[[exceptions]]
+path = "extensions/_shared/agent-runtime/agent-sdk-host.ts"
+rule = "code-lines"
+ceiling = 1672
+owner = "agent SDK session boundary"
+reason = "Eval integrity repair (2026-09-16): the existing child-session boundary now records host thinking readback and gates its adjacent HTML projection without inventing a second session owner."
+trigger = "Do not grow: the next evidence feature must extract the JSONL/HTML projection into a registered shared owner."
+
+[[exceptions]]
+path = "tests/extensions/workflows/runtime/workflow-artifacts.test.ts"
+rule = "code-lines"
+ceiling = 1129
+owner = "workflow artifact-store tests"
+reason = "Eval integrity repair (2026-09-16): one regression proves child evidence destinations stay lazy until a writer uses them."
+trigger = "Above 1129 lines, split persisted-index and child-evidence cases into a stable artifact test subdirectory."
+
+[[exceptions]]
+path = "tests/extensions/workflows/runtime/workflow-input.test.ts"
+rule = "code-lines"
+ceiling = 720
+owner = "workflow semantic-input tests"
+reason = "Eval integrity repair (2026-09-16): Package task/plan admission is proven for missing, empty and whitespace input with zero child calls and no published primary file."
+trigger = "Above 720 lines, split Package target admission from the generic string/items contract."
+
+[[exceptions]]
+path = "tests/extensions/workflows/runtime/workflow-model-tiers.test.ts"
+rule = "code-lines"
+ceiling = 1266
+owner = "workflow model-tier tests"
+reason = "Eval integrity repair (2026-09-16): parent-thinking inheritance, explicit override precedence and absent-readback honesty are covered at the workflow-to-SDK boundary."
+trigger = "Above 1266 lines, split executed model/thinking evidence from tier routing."
+
+[[exceptions]]
+path = "tests/shared/agent-runtime/agent-sdk-host-evidence.test.ts"
+rule = "code-lines"
+ceiling = 735
+owner = "agent SDK evidence tests"
+reason = "Eval integrity repair (2026-09-16): JSONL remains unconditional while HTML rendering is proven disabled by default and enabled only by LOCUS_PI_HTML_TRANSCRIPTS=1."
+trigger = "Above 735 lines, split readable-render policy from JSONL validation and result-artifact evidence."

@@ -1,0 +1,48 @@
+{
+  "id": "ask-user-question",
+  "runtimeRequirements": [
+    "Pi interactive UI for select/input/editor/custom prompts",
+    "single-question TUI calls share the Locus session-generation inline interaction queue and keep Other/text editing inside the same non-overlay component; RPC uses native select/input requests, while multi-select/default/timeout orchestration remains ask-owned",
+    "Custom and fallback selectors are presented as typed SELECT surfaces; free-text follow-ups are typed INPUT surfaces",
+    "Official Pi dialog results use string or undefined; a known legacy object result is normalized by the local adapter",
+    "Interactive cancellation records a cancelled decision, while no-UI modes fail unavailable without recording a fake user decision",
+    "Locus human-control decision journal",
+    "the shared inline interaction slot fences Pi's own close callback by slot ownership: a component the host silently replaced can no longer run the host's editor-restore path, so a late timeout, abort, or queued key from a superseded prompt cannot blank the interaction that replaced it, and the incumbent is retired only once the newcomer's factory has produced a component, so a request that never appears cannot take the slot; when a factory rejects, Pi restores the editor over the live component anyway, so the incumbent is explicitly retired on that path too and its owner is told rather than left awaiting a surface that is off the screen; a retired caller sees the typed stale error and reports benign replacement rather than failure — the ask tool reports it as status superseded with a retryable message instead of Ask UI failed"
+  ],
+  "stateUsed": ["decision session entries", "Pi custom decision entries"],
+  "provides": {
+    "tools": ["ask"],
+    "commands": [],
+    "hooks": []
+  },
+  "uiLifecycle": {
+    "commands": [],
+    "tools": [
+      {
+        "name": "ask",
+        "taxonomy": ["overlay-selector", "blocking-prompt"],
+        "persistent": ["decision entries"]
+      }
+    ]
+  },
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": [".locus/runtime/session-state.jsonl"]
+    },
+    "subprocess": [],
+    "network": [],
+    "browser": false,
+    "models": false,
+    "ui": ["select", "input", "editor", "custom"]
+  },
+  "risk": "medium",
+  "docsPath": "extensions/ask-user-question/README.md",
+  "tests": [
+    "tests/extensions/ask-user-question/tool/ask-user-question.test.ts",
+    "tests/shared/operator/operator-interaction.test.ts",
+    "tests/shared/operator/operator-question.test.ts",
+    "tests/contracts/extensions/runtime-registration.test.ts",
+    "tests/shared/operator/operator-interaction-slot.test.ts"
+  ]
+}

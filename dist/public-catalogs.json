@@ -1,0 +1,63 @@
+{
+  "extensions": [
+    {
+      "id": "agents",
+      "tools": ["spawn_agent"],
+      "commands": [
+        "agent list",
+        "agent inspect",
+        "agent run",
+        "agent observe",
+        "agent summary",
+        "agent drill",
+        "agent ps",
+        "ps"
+      ],
+      "hooks": ["session_start", "session_shutdown", "before_agent_start", "input"],
+      "risk": "high"
+    },
+    { "id": "ask-user-question", "tools": ["ask"], "commands": [], "hooks": [], "risk": "medium" },
+    {
+      "id": "ast-structural-edit",
+      "tools": ["ast_grep", "ast_edit", "resolve"],
+      "commands": [],
+      "hooks": [],
+      "risk": "high"
+    },
+    {
+      "id": "model",
+      "tools": [],
+      "commands": ["model-roles", "effort"],
+      "hooks": ["session_start", "input"],
+      "risk": "medium"
+    },
+    {
+      "id": "status-line",
+      "tools": [],
+      "commands": [],
+      "hooks": ["session_start", "session_before_compact", "session_compact", "session_shutdown"],
+      "risk": "low"
+    },
+    {
+      "id": "workflows",
+      "tools": ["workflow", "workflow_check_source", "fusion"],
+      "commands": ["workflows", "workflow-stop", "fusion"],
+      "hooks": ["session_start", "session_shutdown", "input", "turn_end", "agent_settled", "tool_result"],
+      "risk": "critical"
+    }
+  ],
+  "workflows": [
+    { "name": "live-smoke", "namespace": "live-smoke" },
+    { "name": "post-code-review", "namespace": "post-code-review" },
+    { "name": "post-code-review/boundaries", "namespace": "post-code-review" },
+    { "name": "post-code-review/contracts", "namespace": "post-code-review" },
+    { "name": "post-code-review/necessity", "namespace": "post-code-review" },
+    { "name": "post-code-review/scope", "namespace": "post-code-review" },
+    { "name": "post-code-review/simplicity", "namespace": "post-code-review" },
+    { "name": "post-code-review/style", "namespace": "post-code-review" },
+    { "name": "post-code-review/synthesis", "namespace": "post-code-review" },
+    { "name": "stage-loop", "namespace": "stage-loop" },
+    { "name": "task/draft", "namespace": "task" },
+    { "name": "task/plan", "namespace": "task" }
+  ]
+}

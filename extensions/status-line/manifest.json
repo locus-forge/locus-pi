@@ -1,0 +1,32 @@
+{
+  "id": "status-line",
+  "runtimeRequirements": [
+    "Pi custom footer API (minimum host floor 0.83.0)",
+    "Pi footer data provider for Git branch",
+    "Pi context-usage API",
+    "session_before_compact and session_compact lifecycle events"
+  ],
+  "stateUsed": ["read-only current working directory and Git branch", "ephemeral compaction display state"],
+  "provides": {
+    "tools": [],
+    "commands": [],
+    "hooks": ["session_start", "session_before_compact", "session_compact", "session_shutdown"]
+  },
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "subprocess": [],
+    "network": [],
+    "browser": false,
+    "models": false,
+    "ui": ["setFooter"]
+  },
+  "risk": "low",
+  "docsPath": "extensions/status-line/README.md",
+  "tests": [
+    "tests/extensions/status-line/status-line.test.ts",
+    "tests/contracts/extensions/runtime-registration.test.ts"
+  ]
+}
