@@ -4,6 +4,25 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-22
+
+### Changed
+
+- Public documentation introduces Dynamic Workflows for Pi through a single
+  navigation index, a complete DSL reference, and practical authoring examples.
+- All twelve bundled workflows now live under `examples/workflows/`, with a
+  catalog covering inputs, results, prerequisites, and namespace copying.
+- Workflow creator and runner skills use selective reference reading. Redundant
+  guides and pointer files are removed while useful workflow patterns remain in
+  the examples guide.
+
+### Fixed
+
+- API documentation now accurately describes handoffs, positive `maxItems`,
+  exact-choice returns, and replay divergence, including fresh Fusion panels.
+- Recovery instructions locate grouped child and attempt evidence before reading
+  it; retained-run readers preserve compatibility with historical workflow paths.
+
 ## [0.9.0] - 2026-09-21
 
 ### Changed
