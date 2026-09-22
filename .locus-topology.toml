@@ -269,3 +269,11 @@ ceiling = 735
 owner = "agent SDK evidence tests"
 reason = "Eval integrity repair (2026-09-16): JSONL remains unconditional while HTML rendering is proven disabled by default and enabled only by LOCUS_PI_HTML_TRANSCRIPTS=1."
 trigger = "Above 735 lines, split readable-render policy from JSONL validation and result-artifact evidence."
+
+[[exceptions]]
+path = "examples/workflows/post-code-review"
+rule = "directory-files"
+ceiling = 9
+owner = "Packaged post-code-review namespace"
+reason = "T-101 relocates the existing namespace from extensions/workflows/examples/post-code-review without adding entries. Its nine counted source/documentation files and adjacent diagram keep their existing folder ownership."
+trigger = "Adding any file to this namespace requires reviewing the package workflow inventory and its copy-as-one-folder contract."

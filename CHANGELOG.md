@@ -4,6 +4,25 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-22
+
+### Changed
+
+- Public documentation introduces Dynamic Workflows for Pi through a single
+  navigation index, a complete DSL reference, and practical authoring examples.
+- All twelve bundled workflows now live under `examples/workflows/`, with a
+  catalog covering inputs, results, prerequisites, and namespace copying.
+- Workflow creator and runner skills use selective reference reading. Redundant
+  guides and pointer files are removed while useful workflow patterns remain in
+  the examples guide.
+
+### Fixed
+
+- API documentation now accurately describes handoffs, positive `maxItems`,
+  exact-choice returns, and replay divergence, including fresh Fusion panels.
+- Recovery instructions locate grouped child and attempt evidence before reading
+  it; retained-run readers preserve compatibility with historical workflow paths.
+
 ## [0.9.0] - 2026-09-21
 
 ### Changed
@@ -119,7 +138,7 @@ User-visible changes to the public package.
   interactive `task`/`spawn_agent` and `/agent run` surfaces now declare the same
   one-hour runtime at their own call site, with no turn or tool-call limit.
   Requests without a declared turn budget record it as `unbounded`.
-- Execution budgets follow one [documented policy](extensions/workflows/REFERENCE.md#run-budget).
+- Execution budgets follow one [documented policy](docs/workflows/budgets.md#run-budget).
   Headless (`print`/`json`) root workflows default to `totalAgents: 10_000`, shared
   with saved children; concurrency remains 4. Explicit numbers override defaults,
   with raises journaled. Other undeclared axes remain `unbounded`. Every run opens
@@ -233,7 +252,7 @@ User-visible changes to the public package.
 
 - Documented the planned two-workflow authoring model: produce a specification first, then author implementation from its actual artifact. The guide explicitly distinguishes repairable findings from blockers and marks the example changes and live proof as pending.
 - Substantive workflow authoring defaults to adaptive slices with outcome-led briefs, folder-level task context, cumulative slice bounds and independent correction checks. Design/implementation references and a procedural alternative show each style.
-- Workflow authoring is now discoverable in docs/locus-pi-workflows.md. The former AUTHORING.md is split into a short installed-skill boundary, a runtime source contract and a separate rationale reference.
+- Workflow authoring is now discoverable in [the creation guide](docs/workflows/create.md). The former AUTHORING.md is split into a short installed-skill boundary, a runtime source contract and a separate rationale reference.
 - Standard source checking permits whole handoff-list carry in bounded loops while preserving opaque item provenance. Scheduling, model routing and continuation APIs remain unchanged.
 
 ## [0.7.2] - 2026-09-09

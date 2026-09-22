@@ -24,7 +24,7 @@ export function workflowCompletionPresentation(
     };
   }
   return {
-    nextAction: `Review ${primaryFile}. Copy it to the target project's ${WORKFLOW_SAVED_SOURCE_RELATIVE_ROOT}/<name>.workflow.mjs path, verify its meta.name, then run the saved name through the normal reviewed-workflow path.`,
+    nextAction: `Review ${primaryFile}. Copy it to the target project's ${WORKFLOW_SAVED_SOURCE_RELATIVE_ROOT}/<name>/<name>.workflow.mjs path, verify its meta.name, then run the saved name through the normal reviewed-workflow path.`,
   };
 }
 

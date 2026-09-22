@@ -2,10 +2,9 @@
  * scripts/build-public-catalogs.ts — one machine-owned source for the two public catalogs.
  *
  * The package publishes two enumerable sets: the extensions `package.json#pi.extensions` activates,
- * and the workflow names `extensions/workflows/examples/` resolves. Both were transcribed by hand into
- * docs/extensions.md, docs/workflows.md and two contract tests, and every copy could drift
- * independently — the published "five namespaces" against six on disk was exactly that failure. This
- * script resolves both catalogs from the same readers the runtime uses and writes them once:
+ * and the workflow names `examples/workflows/` resolves. This script resolves both catalogs
+ * from the same readers the runtime uses, preventing hand-maintained documentation and tests
+ * from drifting away from the installed package. It writes the shared data and catalog regions:
  *
  *   dist/public-catalogs.json   checked-in data; contract tests compare reality against it
  *   the fenced regions below    generated Markdown fragments inside published documentation
@@ -64,6 +63,16 @@ const NUMBER_WORDS = [
   "twenty",
 ];
 
+// User-facing catalog copy lives with its renderer; manifests retain the machine contract.
+const EXTENSION_PURPOSES: Readonly<Record<string, string>> = {
+  agents: "Launch child agents and inspect their progress and results.",
+  "ask-user-question": "Let an agent ask you a question when it needs a decision.",
+  "ast-structural-edit": "Find code by structure, preview edits, and apply or discard them.",
+  model: "Assign models to reusable roles and adjust thinking effort.",
+  "status-line": "See the active model, context use, and working directory at a glance.",
+  workflows: "Save and run multi-agent workflows, inspect results, and resume runs.",
+};
+
 /**
  * One activated extension, projected from its manifest.
  */
@@ -116,7 +125,7 @@ interface DocumentTarget {
  */
 const DOCUMENT_TARGETS: DocumentTarget[] = [
   { file: "docs/extensions.md", regions: [{ kind: "extensions", render: extensionTableFragment }] },
-  { file: "docs/workflows.md", regions: [{ kind: "workflows", render: workflowCatalogFragment }] },
+  { file: "examples/workflows/README.md", regions: [{ kind: "workflows", render: workflowCatalogFragment }] },
 ];
 
 /** Which catalog regions each published document is expected to carry. Read by the golden test. */
@@ -236,7 +245,7 @@ export function publicCatalogs(
   assertUnique(
     "packaged workflow name",
     workflows.map((entry) => entry.name),
-    "rename the colliding entry under extensions/workflows/examples/",
+    "rename the colliding entry under examples/workflows/",
   );
   return { extensions, workflows };
 }
@@ -264,20 +273,15 @@ function extensionTableFragment({ catalogs, manuals }: CatalogSources, docFile: 
   const rows = catalogs.extensions.map((entry) => {
     const manual = manuals.get(entry.id);
     if (manual === undefined) throw new Error(`Extension ${entry.id} has no docsPath to link`);
-    return row([
-      code(entry.id),
-      codeList(entry.tools),
-      codeList(entry.commands),
-      codeList(entry.hooks),
-      cell(entry.risk),
-      `[${code(manual)}](${relativeLink(docFile, manual)})`,
-    ]);
+    const purpose = EXTENSION_PURPOSES[entry.id];
+    if (!purpose) throw new Error(`Extension ${entry.id} needs a purpose in EXTENSION_PURPOSES`);
+    return row([code(entry.id), cell(purpose), `[Guide](${relativeLink(docFile, manual)})`]);
   });
   return [
     GENERATED_NOTICE,
     "",
-    row(["Extension", "Tools", "Commands", "Hooks", "Risk", "Manual"]),
-    row(["---", "---", "---", "---", "---", "---"]),
+    row(["Extension", "What it adds", "Learn more"]),
+    row(["---", "---", "---"]),
     ...rows,
   ].join("\n");
 }
@@ -347,11 +351,6 @@ function code(value: string): string {
 
 function cell(value: string): string {
   return value.split("|").join("\\|");
-}
-
-/** An em dash for an empty surface, matching how the reference tables have always read. */
-function codeList(values: string[]): string {
-  return values.length === 0 ? "—" : values.map(code).join(", ");
 }
 
 /** Published prose spells small counts; anything larger reads better as a numeral than as a word chain. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import runDraftWorkflow from "../../../../../extensions/workflows/examples/task/draft.workflow.mjs";
+import runDraftWorkflow from "../../../../../examples/workflows/task/draft.workflow.mjs";
 
 describe("Package workflow: task/draft", () => {
   it("publishes one editable brief with patterns and bounded reflection", async () => {

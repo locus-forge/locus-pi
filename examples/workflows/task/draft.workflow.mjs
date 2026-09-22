@@ -14,7 +14,7 @@ export const meta = {
 };
 
 /**
- * @param {import("../../runtime/workflow-runtime.js").WorkflowDsl} dsl
+ * @param {import("../../../extensions/workflows/runtime/workflow-runtime.js").WorkflowDsl} dsl
  * @param {string} [input]
  */
 export default async function runWorkflow(dsl, input = "") {

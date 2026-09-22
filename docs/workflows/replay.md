@@ -2,13 +2,16 @@
 title: Replay recorded workflow calls
 type: guide
 status: active
-updated: "2026-09-13T00:12:22Z"
-description: "Organize the installed workflow contract by reader task."
+updated: "2026-09-22T17:02:17Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
 # Replay recorded workflow calls
 
-[Workflow documentation](index.md) · [Authoring guide](../locus-pi-workflows.md) · [Operator guide](../workflows.md)
+[Workflow documentation](index.md) · [Authoring guide](create.md) · [Operator guide](running.md)
 
 ## Resume and replay
 
@@ -198,25 +201,21 @@ A replayed call reports **no** token usage, so the run budget shown by
   fabricated and every surface marks it `replayed` — but if an early stage's
   answer must reflect your edit, change that stage's prompt or resume from
   further back.
-- **`parallel()` wider than the scheduler is a cache miss, not a wrong answer.**
-  Ordinals are assigned as calls start, and a group with more branches than the
-  scheduler width (4) may start them in a different order on the second run. That
-  breaks the prefix and the remaining calls run for real. Sequential pipelines —
-  the case this feature exists for — are fully deterministic.
+- **Parallel calls can miss the cache.** Replay matches recorded calls by
+  position as well as request. Concurrent calls can be recorded in a different
+  order from the next attempt's lookups, even with two branches. A mismatch
+  makes that call and the remaining calls fresh; it does not reuse a different
+  agent's answer. Check the new run's replay counts rather than assuming an
+  unchanged parallel workflow will reuse its results. Sequential pipelines have
+  a stable call order.
 - **Resume is not Pi session continuation.** The child session is not resumed;
   only the workflow-level answer is reused.
 - **A recorded failure is not replayed.** It keeps its ordinal so the prefix
   before it still replays, and the call itself runs again — which is what
   "resume to fix the stage that failed" means.
-- **The prefix latch fires on key mismatch, not on a changed outcome.** A call
-  that re-runs at a matching key — a recorded failure that now succeeds, or a
-  worktree stage that is never replayed — does _not_ break the prefix. Its
-  successors, if their own keys still match, keep replaying. So a stage whose
-  recorded answer was produced in a run where its predecessor had failed can be
-  replayed into a run where that predecessor succeeded. Nothing is fabricated:
-  the text is a real child answer to a byte-identical request, and the run is
-  marked `replayed`. But "the prefix before the divergence replays" is only half
-  the rule — the prefix _after_ an outcome change replays too, and only a
-  changed request key stops it.
+- **Every replay miss ends prefix reuse.** A recorded failure or a side-effecting
+  worktree call executes fresh even when its request key still matches. That miss
+  also makes every later call fresh, so later answers cannot be reused across a
+  predecessor that executed again.
 - Recording is skipped entirely for `unproven` and `entry-only` scripts, so those
   runs write no `replay.ndjson` and cannot be resumed.

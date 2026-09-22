@@ -139,13 +139,13 @@ while the generator must stop at the first unreadable file.
 ### build-public-catalogs.ts
 
 Two enumerable public sets — the extensions `package.json#pi.extensions`
-activates and the workflow names `extensions/workflows/examples/` resolves —
+activates and the workflow names `examples/workflows/` resolves —
 were transcribed by hand into two documentation pages and two contract
 tests, and each copy could drift on its own. This script resolves both from
 the readers that own them (`extension-manifest-sources.ts`, and the packaged
 workflow discovery the registry itself uses) and writes them once, into
 `dist/public-catalogs.json` and into the fenced `<!-- locus:…:start -->`
-regions of `docs/extensions.md` and `docs/workflows.md`.
+regions of `docs/extensions.md` and `examples/workflows/README.md`.
 
 `npm run build:catalogs` writes; `npm run check:generated` re-renders into
 memory and fails on any committed byte that differs, naming the write command.

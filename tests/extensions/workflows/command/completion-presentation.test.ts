@@ -14,7 +14,7 @@ import { createHarness } from "../../../test-harness.js";
 const primaryFilePath = "/repo/tmp/plan with spaces/workflow.mjs";
 const workspaceDir = "/repo/tmp/plan with spaces";
 const nextAction =
-  "Review /repo/tmp/plan with spaces/workflow.mjs. Copy it to the target project's .locus-pi/workflows/<name>.workflow.mjs path, verify its meta.name, then run the saved name through the normal reviewed-workflow path.";
+  "Review /repo/tmp/plan with spaces/workflow.mjs. Copy it to the target project's .locus-pi/workflows/<name>/<name>.workflow.mjs path, verify its meta.name, then run the saved name through the normal reviewed-workflow path.";
 
 describe("workflow completion presentation", () => {
   it("ends the TUI on the exact result with primary path, grouped metadata, and gated next action", async () => {
@@ -61,7 +61,7 @@ describe("workflow completion presentation", () => {
       .join("\n");
     expect(rendered).toContain(`Workflow result (${primaryFilePath})`);
     expect(rendered).toContain("Next action (after review and approval)");
-    expect(rendered).toContain(".locus-pi/workflows/<name>.workflow.mjs");
+    expect(rendered).toContain(".locus-pi/workflows/<name>/<name>.workflow.mjs");
   });
 
   it("draws run rules at the live card width while persisted headers stay semantic", async () => {
@@ -190,7 +190,7 @@ describe("workflow completion presentation", () => {
       resultPersistence: { ok: true, path: "/repo/.locus-pi/runs/run-plan-named/runtime/result.json" },
     });
 
-    expect(completion.nextAction).toContain(".locus-pi/workflows/<name>.workflow.mjs");
+    expect(completion.nextAction).toContain(".locus-pi/workflows/<name>/<name>.workflow.mjs");
     expect(completion.digest).not.toContain("Next action");
     expect(completion.nextAction).toContain("normal reviewed-workflow path");
   });

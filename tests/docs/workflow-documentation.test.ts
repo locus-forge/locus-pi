@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { root } from "../contracts/helpers/package-contract.js";
@@ -8,6 +8,7 @@ const chapters = [
   "authoring.md",
   "budgets.md",
   "catalog.md",
+  "create.md",
   "dsl.md",
   "error-diagnostics.md",
   "evidence.md",
@@ -31,44 +32,27 @@ describe("installed workflow documentation ownership", () => {
     expect(readdirSync(path.join(root, "docs/workflows")).sort()).toEqual(chapters);
     const index = read("docs/workflows/index.md");
     for (const chapter of chapters.filter((file) => file !== "index.md")) expect(index).toContain(`](${chapter}`);
-    for (const entry of ["docs/workflows.md", "docs/locus-pi-workflows.md", "extensions/workflows/README.md"])
-      expect(read(entry)).toContain(
-        "docs/workflows/index.md".replace(/^docs\//u, entry.startsWith("docs/") ? "" : "docs/"),
-      );
+    expect(read("extensions/workflows/README.md")).toContain("docs/workflows/index.md");
     expect(index).toContain("## What belongs here");
     expect(index).not.toMatch(/10[_,]000|3_600_000/u);
   });
 
-  it("keeps old budget, return, source and recovery bookmarks as navigation only", () => {
-    for (const [file, anchor, target] of [
-      ["extensions/workflows/REFERENCE.md", "run-budget", "budgets.md#run-budget"],
-      [
-        "extensions/workflows/REFERENCE.md",
-        "continuing-a-repaired-workflow",
-        "replay.md#continuing-a-repaired-workflow",
-      ],
-      ["extensions/workflows/references/output-acceptance.md", "the-principle", "agent-results.md#the-principle"],
-      [
-        "extensions/workflows/references/execution-controls.md",
-        "shared-run-budget-at-the-tool-boundary",
-        "budgets.md#shared-run-budget-at-the-tool-boundary",
-      ],
-      [
-        "extensions/workflows/references/source-shape.md",
-        "machine-enforced-standard-source-shape",
-        "source-shape.md#machine-enforced-standard-source-shape",
-      ],
-      [
-        "extensions/workflows/references/recovery-and-continuation.md",
-        "reconcile-an-unconfirmed-call",
-        "recovery-and-continuation.md#reconcile-an-unconfirmed-call",
-      ],
-    ]) {
-      const content = read(file!);
-      expect(content).toContain(`id="${anchor}"`);
-      expect(content).toContain(target);
-      expect(content).not.toMatch(/10[_,]000|3_600_000|```/u);
-    }
+  it("retires former documentation addresses instead of publishing parallel entrypoints", () => {
+    for (const file of [
+      "docs/workflows.md",
+      "docs/locus-pi-workflows.md",
+      "extensions/workflows/REFERENCE.md",
+      ...[
+        "output-acceptance",
+        "execution-controls",
+        "source-shape",
+        "recovery-and-continuation",
+        "error-diagnostics",
+        "patterns",
+      ].map((name) => `extensions/workflows/references/${name}.md`),
+      "examples/README.md",
+    ])
+      expect(existsSync(path.join(root, file)), file).toBe(false);
   });
 
   it("routes machine-visible contract prose to the same public owners", () => {
@@ -82,7 +66,7 @@ describe("installed workflow documentation ownership", () => {
     expect(read("skills/locus-pi-workflow-create/references/design-and-build.md")).toContain(
       "launch defaults apply; every other undeclared workflow budget axis is unbounded",
     );
-    expect(read("skills/locus-pi-workflow-run/SKILL.md")).toContain("For a TUI/RPC");
+    expect(read("skills/locus-pi-workflow-run/SKILL.md")).toContain("docs/workflows/budgets.md#run-budget");
     const replay = read("docs/workflows/replay.md");
     for (const field of ["timeoutMs", "maxTurns", "maxToolCalls", "returnContract"])
       expect(replay.split("## What is compared\n")[1]?.split("## Continuing a repaired workflow")[0]).toContain(field);

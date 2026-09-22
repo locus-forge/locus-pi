@@ -1,8 +1,8 @@
 {
   "name": "@locus-forge/locus-pi",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "type": "module",
-  "description": "Pi extension package for agentic software-development workflows.",
+  "description": "Dynamic workflows for Pi: reusable multi-agent workflows with configurable model roles.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -92,6 +92,7 @@
   "files": [
     "dist/public-catalogs.json",
     "docs/",
+    "examples/",
     "extensions/",
     "!extensions/workflows/references/consilium/",
     "!extensions/workflows/references/excalidraw-pipeline/",

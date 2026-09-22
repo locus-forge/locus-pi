@@ -2,47 +2,110 @@
 title: Getting started
 type: guide
 status: active
-updated: 2026-08-19T22:43:07Z
-description: Guide installation and first runtime checks.
 owner: locus-pi maintainers
 tags: [installation, getting-started]
+updated: "2026-09-22T17:02:15Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
 # Getting started
 
-## Install and try the published package
+Requires Node.js `>=22.19.0`, Pi `>=0.83.0`, and a configured model provider.
+Choose one installation source. The new npm package is not published yet; use
+Git for now. Both routes provide the same extensions, workflows, and skills.
 
-If you already have `npm:@kroffske/locus-pi` in Pi settings, replace that
-source with `npm:@locus-forge/locus-pi` in the same scope, then run
-`pi update npm:@locus-forge/locus-pi`. Do not keep both entries. Leave other
-package settings intact.
+[Documentation](index.md) · [Create a workflow](workflows/create.md) · [Examples](../examples/workflows/README.md)
 
-For a new installation:
+## Windows: use WSL 2
+
+Use WSL 2 for the Linux installation route described below. In an administrator
+PowerShell, follow [Microsoft's WSL installation guide](https://learn.microsoft.com/en-us/windows/wsl/install)
+and run `wsl --install` if WSL is not installed. Restart when prompted, then open
+your Linux distribution.
+
+Install Git, Node.js `>=22.19.0`, and Pi **inside that Linux environment**. Configure
+Pi's model provider there, then run the Git or npm commands below from the same
+Linux shell. Keep the checkout and your project in the Linux filesystem, for example
+under `~/projects/`. Avoid mixing Windows Node/npm with a WSL Pi installation.
+
+This is the recommended route for locus-pi on Windows. Pi also documents native
+Windows bash setups; the WSL recommendation is not a claim that Pi requires WSL.
+
+## Install from a Git checkout
+
+```bash
+git clone https://github.com/locus-forge/locus-pi.git
+cd locus-pi
+npm ci --ignore-scripts
+pi install .
+pi list
+```
+
+Keep the checkout at this path: Pi loads it directly. `pi install .` registers
+it for your user. To register it only for a project, run
+`pi install /absolute/path/to/locus-pi -l` from that project's directory.
+Register it in one scope, not both.
+
+If you already have locus-pi installed, replace its entry as described below
+before registering another source.
+
+## Install from npm
+
+Once `@locus-forge/locus-pi` is published:
 
 ```bash
 pi install npm:@locus-forge/locus-pi
 pi list
 ```
 
-`pi list` is the authority for registration scope. Pi reports missing entrypoints and extension load failures when it loads the package.
+Add `-l` to `pi install` for project scope. `pi list` shows registered sources
+and their scopes. Pi reports missing entrypoints and load failures at startup.
 
-Start a new Pi session in a trusted project:
+## Replace an existing installation
+
+Use `pi list` to find the existing locus-pi source and scope. In
+`~/.pi/agent/settings.json` (user scope) or `.pi/settings.json` (project scope),
+replace only that entry's source. Preserve its resource filters and all other
+package settings. Do not add a second locus-pi entry alongside it.
+
+For example, replace `npm:@kroffske/locus-pi` with the absolute path to your
+prepared Git checkout now, or with `npm:@locus-forge/locus-pi` after publication.
+For the npm source, then run `pi update npm:@locus-forge/locus-pi` to install it.
+For a checkout, run `npm ci --ignore-scripts` in that checkout. Confirm the new
+source with `pi list`, then start a fresh Pi session.
+
+## First launch
+
+Start Pi in the project you want agents to work on. To check discovery:
 
 ```text
 /workflows list
-/workflows run live-smoke
+/workflows info live-smoke
 ```
 
-`live-smoke` is the smallest runtime check: it starts two child-agent jobs that list the current project directory.
+For a small live check, run `/workflows run live-smoke`. It starts two child
+agents **in sequence**, each listing the project directory, and uses your
+configured model provider.
 
-The package also ships workflow skills. Pi loads them by default. To expose the
-same skills to Codex or Claude Code, follow the [managed skill-link guide](../skills/README.md#install-for-codex-and-claude-code).
+Next, [create and save your first workflow](workflows/create.md#your-first-workflow),
+then follow [run and inspect](workflows/running.md#run-a-saved-workflow). The first example
+runs two agents in parallel and combines their results.
+
+Pi loads the package skills by default. If you use the Workflow-only filter,
+use the copyable example or enable the skills before asking Pi to author a workflow.
+To expose the same skills to Codex or Claude Code, follow the
+[managed skill-link guide](../skills/README.md#install-for-codex-and-claude-code).
 
 ## Load only selected extensions
 
 Pi installs the package once and can filter which entrypoints it loads. Use `pi config` for an interactive global or project-local selection, or edit the existing locus-pi entry in `~/.pi/agent/settings.json` or `.pi/settings.json`. Replace that entry instead of adding a second copy; keep all other package entries.
 
-For example, this profile loads only the workflow extension and disables the bundled skills:
+For Git, keep the existing checkout path as `source` and add the resource filters
+below. The example uses the npm source for after publication; it loads only the
+workflow extension and disables the bundled skills:
 
 ```json
 {
@@ -60,7 +123,9 @@ The JSON block shows one `packages` array for clarity. If your settings already
 contain other packages, change only the locus-pi object inside that array.
 `skills: []` disables package skills; omitting `skills` leaves them enabled.
 
-Filtering is a loading boundary, not an installation boundary: the npm tarball and production dependencies are still installed, and an enabled extension may import helper modules owned by another feature directory without registering that feature's entrypoint.
+For a Git installation, retain the registered checkout path as `source` instead
+of the npm source shown above. Filters limit the resources Pi loads; the complete
+package and its dependencies remain installed.
 
 ## Mix with another Pi package
 
@@ -83,43 +148,37 @@ Example: keep the Locus agent launcher and use workflows from another package:
 
 ## Update, scopes, and removal
 
-To update the npm installation, run `pi update npm:@locus-forge/locus-pi` and start
-a fresh Pi session. The filter stays in your settings.
+### Update a Git checkout
 
-The same package identity can be configured globally and for a project. Use `pi list` and `pi config` to inspect the effective source and filters. Remove only the unwanted scope:
-
-```bash
-pi remove npm:@locus-forge/locus-pi
-pi remove npm:@locus-forge/locus-pi -l
-```
-
-For a source checkout, run `pi remove .` or `pi remove . -l` from the registered checkout root. Remove the registration before moving or deleting the directory.
-
-Removing a registration does not delete Pi runtime history.
-
-## Install from a Git checkout
-
-Use a checkout only for development or pre-release validation. Review it before registration because Pi loads the extension source directly.
-
-```bash
-git clone https://github.com/locus-forge/locus-pi.git
-cd locus-pi
-npm ci --ignore-scripts
-pi install .
-pi list
-npm run check
-```
-
-Use either user scope (`pi install .`) or project scope (`pi install . -l`), not both for the same checkout.
-
-Updating the checkout does not require re-registration:
+From the registered checkout:
 
 ```bash
 git pull --ff-only
 npm ci --ignore-scripts
 ```
 
-Start a fresh Pi session after updating so the host reloads the source.
+No re-registration is needed. Start a fresh Pi session so it loads the updated
+source. If Git reports local changes or a diverged branch, resolve those before
+updating; do not discard your work to force an update.
+
+### Update an npm installation
+
+Run `pi update npm:@locus-forge/locus-pi` and start a fresh Pi session. Your
+resource filter stays in settings.
+
+### Inspect scopes and remove a registration
+
+Use `pi list` and `pi config` to inspect sources and filters. Remove only the
+unwanted scope:
+
+```bash
+pi remove npm:@locus-forge/locus-pi
+pi remove npm:@locus-forge/locus-pi -l
+```
+
+For a checkout, run `pi remove /absolute/path/to/locus-pi` from the same scope,
+or add `-l` from the project where it was registered. Remove the registration
+before moving or deleting the checkout. Removing it does not delete runtime history.
 
 ## Common failures
 

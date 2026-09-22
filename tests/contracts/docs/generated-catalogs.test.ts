@@ -22,7 +22,7 @@ afterAll(() => {
 /**
  * The smallest tree `--check` reads under a given root: package.json, the manifests it declares, the
  * two published documents, and the committed catalog. Packaged workflows are deliberately absent —
- * the registry is the installed `extensions/workflows/examples/` directory the generator resolves from
+ * the registry is the installed `examples/workflows/` directory the generator resolves from
  * its own module URL, not from the working directory, so a fixture cannot fake it.
  */
 function fixtureRoot(): string {
@@ -84,6 +84,29 @@ describe("generated public catalogs", () => {
     expect(catalogs.extensions.map(({ id }) => id)).toEqual(defaultExtensionManifests().map(({ id }) => id));
   });
 
+  it("gives every active extension a purpose and a link to its manual", async () => {
+    const files = contentByPath(await generatedPublicCatalogFiles(root));
+    const document = files.get("docs/extensions.md") ?? "";
+    for (const { id, manifest } of defaultExtensionManifests()) {
+      const line = document.split("\n").find((line) => line.startsWith(`| \`${id}\``));
+      expect(line, id).toBeDefined();
+      const cells = line!.split("|").map((part) => part.trim());
+      expect(cells[2], id).not.toBe("");
+      expect(cells[3], id).toContain(`../${manifest.docsPath}`);
+    }
+  });
+
+  it("refuses a new extension without a user-facing purpose", async () => {
+    const fixture = fixtureRoot();
+    const manifestFile = path.join(fixture, "extensions/agents/manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestFile, "utf8"));
+    manifest.id = "new-feature";
+    writeFileSync(manifestFile, JSON.stringify(manifest));
+    await expect(generatedPublicCatalogFiles(fixture)).rejects.toThrow(
+      "Extension new-feature needs a purpose in EXTENSION_PURPOSES",
+    );
+  });
+
   it("keeps the workflow catalog internally consistent with the packaged registry on disk", async () => {
     const [catalogFile] = await generatedPublicCatalogFiles(root);
     const { workflows } = JSON.parse(catalogFile?.content ?? "") as {
@@ -137,7 +160,7 @@ describe("generated public catalogs", () => {
 
   it("reports a deleted marker as a finding instead of crashing", () => {
     const fixture = fixtureRoot();
-    const document = path.join(fixture, "docs/workflows.md");
+    const document = path.join(fixture, "examples/workflows/README.md");
     writeFileSync(document, readFileSync(document, "utf8").replace("<!-- locus:workflows:end -->", ""));
 
     const broken = runCheck(fixture);

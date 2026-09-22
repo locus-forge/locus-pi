@@ -23,7 +23,6 @@ import {
 const workflowDir = path.join(process.cwd(), "extensions/workflows/references/consilium");
 const workflowPath = path.join(workflowDir, "consilium.workflow.mjs");
 const readmePath = path.join(workflowDir, "README.md");
-const patternsPath = path.join(process.cwd(), "extensions/workflows/references/patterns.md");
 const FIXTURE_QUESTION = readFileSync(path.join(workflowDir, "fixture-question.md"), "utf8").trim();
 
 async function loadWorkflow(): Promise<(dsl: unknown, input?: unknown) => Promise<unknown>> {
@@ -335,13 +334,7 @@ describe("consilium reference workflow", () => {
     expect(source).toContain('modelRole: "slow"');
   });
 
-  it("keeps the shipped skeleton bounded and the reference docs on the executed-model contract", () => {
-    const patterns = readFileSync(patternsPath, "utf8");
-    const consilium = patterns.slice(patterns.indexOf("## Consilium"));
-    // The stage bounds are gone: the runtime owns no answer-size policy, so the pattern
-    // must not teach one. Stages are shaped by their prompts and by the verdict `schema`.
-    expect(consilium).not.toContain("maxAnswerChars");
-
+  it("keeps reference docs on the executed-model contract", () => {
     const readme = readFileSync(readmePath, "utf8");
     expect(readme).toContain('modelRole: "smol"');
     expect(readme).toContain('modelRole: "slow"');
@@ -353,8 +346,8 @@ describe("consilium reference workflow", () => {
     const { packagedWorkflowNames, resolveWorkflowTarget } =
       await import("../../../../extensions/workflows/runtime/workflow-discovery.js");
 
-    // `references/` is a sibling of the scanned `examples/` directory and is never
-    // visited, so this file is unreachable by name.
+    // The registry scans only `examples/workflows/`, so this reference remains
+    // available by explicit path and is unreachable by saved name.
     expect([...packagedWorkflowNames()].sort()).toEqual([
       "live-smoke",
       "post-code-review",

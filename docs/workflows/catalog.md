@@ -2,18 +2,21 @@
 title: Workflow catalog and source resolution
 type: guide
 status: active
-updated: "2026-09-13T00:12:23Z"
-description: "Organize the installed workflow contract by reader task."
+updated: "2026-09-22T17:02:15Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
 # Workflow catalog and source resolution
 
-[Workflow documentation](index.md) · [Authoring guide](../locus-pi-workflows.md) · [Operator guide](../workflows.md)
+[Workflow documentation](index.md) · [Authoring guide](create.md) · [Operator guide](running.md)
 
 ## Curated Package workflows
 
-The generated [Package inventory](../workflows.md#package-catalog) and
-[examples guide](../../extensions/workflows/examples/README.md) list the shipped
+The generated [Package inventory](../../examples/workflows/README.md) and
+[examples guide](../../examples/workflows/README.md) list the shipped
 names and their purpose. The `standard` profile classifies source shape, not
 runtime behavior or model choice; catalog rows omit the internal label.
 
@@ -25,20 +28,9 @@ names to small standard topologies; the author reads only the selected card.
 Cards are algorithms and snippets, not Package workflows. Saving a local workflow
 does not add it to the Package registry.
 
-The older `extensions/workflows/references/patterns.md` remains an advanced
-compatibility reference for trusted scripts that already use raw schemas and
-validators. It is not the standard generation target.
-
-This repository dogfoods that boundary with ignored project files under
-`.locus-pi/workflows/`: `locus-plan.workflow.mjs` exercises clarification, planning,
-digest-bound split-run execution, and per-unit implementation; `test-code.workflow.mjs`
-separates testcase design, test implementation/execution, and failure
-attribution among independent agents. Their independent final verifier and
-attribution agents are instructed not to edit and can run frozen
-`repository_check` scripts; bounded intent, plans, units, predecessor results,
-execution evidence, and final inputs fail closed. They are local operational examples, not
-tracked source, curated names, documentation shipped in the npm tarball, or
-public package support promises.
+The [current pattern index](../../skills/locus-pi-workflow-create/references/INDEX.md)
+selects the graph; the [agent result contract](agent-results.md)
+documents raw-schema and validator behavior for reviewed compatibility scripts.
 
 Standard scripts pass narrative results as exact text, use
 `agent({ choice: [...] })` when JavaScript must select a branch, and use

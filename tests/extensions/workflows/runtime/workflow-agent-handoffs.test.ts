@@ -53,10 +53,13 @@ describe("agent({ handoffs }) dynamic decomposition", () => {
     await expect(dsl.agent("Discover.", { handoffs: { maxItems: 2 } })).rejects.toBeInstanceOf(SchemaValidationError);
   });
 
-  it("accepts two items that are identical after trimming", async () => {
-    // Same text is not proof of the same work; the runtime no longer deduplicates for the author.
-    const { dsl } = scriptedRuntime("agent-handoffs-trim-dupes", ['["DAG A", " DAG A "]']);
-    await expect(dsl.agent("Discover.", { handoffs: {} })).resolves.toEqual(["DAG A", " DAG A "]);
+  it.each([
+    ["byte-identical", ["DAG A", "DAG A"]],
+    ["equal after trimming", ["DAG A", " DAG A "]],
+  ])("preserves %s handoffs as separate work units", async (_, items) => {
+    // Matching text is not proof of duplicated work; preserve each complete handoff.
+    const { dsl } = scriptedRuntime("agent-handoffs-dupes", [JSON.stringify(items)]);
+    await expect(dsl.agent("Discover.", { handoffs: {} })).resolves.toEqual(items);
   });
 
   it("still refuses a blank item: an empty string is not a work unit", async () => {

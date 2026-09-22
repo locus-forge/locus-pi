@@ -105,9 +105,7 @@ decomposition edges. Two review checks apply to every design:
   item count the consumer did not declare. "Keep it short" is the removed policy
   rewritten in English.
 
-Read [the pattern index](INDEX.md), then only the selected
-pattern card. The cards are algorithms and small snippets, not full workflows to
-copy blindly.
+Use the already selected pattern card as an algorithm, not a full workflow to copy blindly.
 
 ## Build checks
 
@@ -157,7 +155,7 @@ grows it through at most six complete graph-node slices. An owner re-cuts the
 source-free remaining queue after each accepted slice. Independent mechanical and
 design gates share one cumulative correction per slice; final whole-file gates run
 after the queue is empty. The exact routes and terminal reasons live in the
-[task authoring manual](../../../extensions/workflows/examples/task/README.md).
+[task authoring manual](../../../examples/workflows/task/README.md).
 
 `publishPrimaryFile("workflow.mjs")` returns `primaryFile` with the validated
 workspace-relative path, absolute path, byte count, and digest. It does not copy the
@@ -178,7 +176,3 @@ For adaptive slices, name the queue owner, cumulative slice allowance, correctio
 Budget values and failure dispositions belong to the [runtime reference](../../../docs/workflows/index.md); source provenance, mutation and permitted DSL methods belong to [source contract](../../../docs/workflows/source-shape.md#machine-enforced-standard-source-shape). Read the relevant sections before Build. Do not duplicate those invariants in another skill.
 
 A standard source check is not live proof. Report the exact checks executed and any unavailable native checker, dependency, host or model route. Do not report successful Build after a skipped gate.
-
-## Task specification versus workflow design
-
-Before writing this graph design, resolve whether the user wants specification creation, specification revision or implementation. Ask only when the request and supplied documents leave that ambiguous. For implementation, identify the actual selected specification and documentation directory, then define initial slices and the completion outcome of every phase. A `.design.md` here describes the workflow graph; it does not replace the task specification. Author the implementation workflow after the user has seen the specification and requested implementation, not as an automatic companion to the specification workflow.

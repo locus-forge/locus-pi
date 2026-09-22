@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 // docs/evidence.md, NOT guarded here: runnable live-proof workflows (e.g.
 // live-args) legitimately pin a real model, so a regex would false-positive.
 
-const EXAMPLES_DIR = path.resolve(process.cwd(), "extensions/workflows/examples");
+const EXAMPLES_DIR = path.resolve(process.cwd(), "examples/workflows");
 const PLACEHOLDER_LABEL = "SDK child session";
 
 describe("evidence honesty: workflow example fixtures (T-194 / REQ-010)", () => {

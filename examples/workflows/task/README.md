@@ -72,5 +72,5 @@ read and validation to the existing host publication boundary.
 Substantive implementation briefs default to adaptive slices: the owner revises
 remaining work after each reviewed slice. Briefs state the role, expected result,
 sources and essential constraints. Fixed graphs and procedural detail remain
-explicit alternatives. See the [workflow guide](../../../../docs/locus-pi-workflows.md#create-a-workflow)
+explicit alternatives. See the [workflow guide](../../../docs/workflows/create.md)
 for folder-level inputs, style/size choices and design-to-implementation handoff.
