@@ -62,7 +62,7 @@ export const publicCatalogs = JSON.parse(
   readFileSync(path.join(root, "dist/public-catalogs.json"), "utf8"),
 ) as PublicCatalogs;
 export const extensionDocs = readFileSync(path.join(root, "docs/extensions.md"), "utf8");
-export const workflowDocs = readFileSync(path.join(root, "docs/workflows.md"), "utf8");
+export const workflowDocs = readFileSync(path.join(root, "examples/workflows/README.md"), "utf8");
 const sourceExtensions = new Set([".cjs", ".js", ".mjs", ".mts", ".ts", ".tsx"]);
 
 export function extensionIdFromEntrypoint(entrypoint: string): string {

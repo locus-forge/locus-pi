@@ -2,10 +2,13 @@
 title: Getting started
 type: guide
 status: active
-updated: 2026-08-19T22:43:07Z
-description: Guide installation and first runtime checks.
 owner: locus-pi maintainers
 tags: [installation, getting-started]
+updated: "2026-09-22T17:02:15Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
 # Getting started
@@ -13,6 +16,23 @@ tags: [installation, getting-started]
 Requires Node.js `>=22.19.0`, Pi `>=0.83.0`, and a configured model provider.
 Choose one installation source. The new npm package is not published yet; use
 Git for now. Both routes provide the same extensions, workflows, and skills.
+
+[Documentation](index.md) · [Create a workflow](workflows/create.md) · [Examples](../examples/workflows/README.md)
+
+## Windows: use WSL 2
+
+Use WSL 2 for the Linux installation route described below. In an administrator
+PowerShell, follow [Microsoft's WSL installation guide](https://learn.microsoft.com/en-us/windows/wsl/install)
+and run `wsl --install` if WSL is not installed. Restart when prompted, then open
+your Linux distribution.
+
+Install Git, Node.js `>=22.19.0`, and Pi **inside that Linux environment**. Configure
+Pi's model provider there, then run the Git or npm commands below from the same
+Linux shell. Keep the checkout and your project in the Linux filesystem, for example
+under `~/projects/`. Avoid mixing Windows Node/npm with a WSL Pi installation.
+
+This is the recommended route for locus-pi on Windows. Pi also documents native
+Windows bash setups; the WSL recommendation is not a claim that Pi requires WSL.
 
 ## Install from a Git checkout
 
@@ -70,8 +90,8 @@ For a small live check, run `/workflows run live-smoke`. It starts two child
 agents **in sequence**, each listing the project directory, and uses your
 configured model provider.
 
-Next, [create and save your first workflow](locus-pi-workflows.md#your-first-workflow),
-then follow [run and inspect](workflows.md#run-a-saved-workflow). The first example
+Next, [create and save your first workflow](workflows/create.md#your-first-workflow),
+then follow [run and inspect](workflows/running.md#run-a-saved-workflow). The first example
 runs two agents in parallel and combines their results.
 
 Pi loads the package skills by default. If you use the Workflow-only filter,

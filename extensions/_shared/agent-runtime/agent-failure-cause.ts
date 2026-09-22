@@ -6,7 +6,7 @@
  * operator cancellation as `cancelled`, and a turn timeout, a tool-call budget breach,
  * a provider error and any mid-turn throw all collapse into one `failed` plus an English
  * sentence. A caller that wants to tell those apart today has to match on that sentence —
- * the prose-scanning move `extensions/workflows/references/patterns.md` forbids, and one
+ * the prose-scanning move `docs/workflows/agent-results.md` forbids, and one
  * that starts misbehaving the day someone rewords a message.
  *
  * So the cause is declared where it is KNOWN and carried, never re-derived downstream.

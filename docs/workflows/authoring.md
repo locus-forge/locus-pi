@@ -1,67 +1,30 @@
 ---
-title: Author a workflow module
+title: Workflow file format
 type: guide
 status: active
-updated: "2026-09-13T00:12:22Z"
-description: "Organize the installed workflow contract by reader task."
+updated: "2026-09-22T17:02:15Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
-# Author a workflow module
+# Workflow file format
 
-[Workflow documentation](index.md) · [Authoring guide](../locus-pi-workflows.md) · [Operator guide](../workflows.md)
+[Workflow documentation](index.md) · [Authoring guide](create.md) · [Operator guide](running.md)
 
 ## Authoring a new workflow
 
-Authoring is design-first and continuous by default. A raw request first creates
-`.locus-pi/workflows/<name>/<name>.design.md`: selected pattern, exact `Entries` table,
-numbered algorithm, graph
-table, node responsibilities, inputs, complete outputs, roles, consumers,
-edges, concurrency, loop bounds, handoffs, mechanisms, and failure exits. The
-author reviews and revises that design, then creates exactly its declared direct
-`.workflow.mjs` entries in the same turn. The design explicitly declares either
-a `runnable root`, which includes the same-named root, or a `group-only`
-namespace, which omits the root and contains only direct children. Build checks
-every logical ref, filename, Node syntax and source shape without importing
-unchecked source; it never invents a root. Create-only ends with checked source
-and a launch command. An authorized create-and-run request continues through
-`locus-pi-workflow-run` without repeat approval and reports the actual run outcome.
+Start with [Create a workflow](create.md) for the authoring request and first
+working example. The [create skill](../../skills/locus-pi-workflow-create/SKILL.md)
+owns Design → review → Build, including design-only and build-only requests.
+A folder may contain a runnable same-named root or only directly addressable
+children; the [catalog contract](catalog.md) defines both namespace forms.
 
-The author stops after design only when the user explicitly asks for `design
-only`, `pause after design`, `do not build`, or equivalent wording. Build-only
-requests may use `Build design: <exact design path>` or the compatibility form
-`Build approved design: <exact design path>`. Both forms read the current design
-bytes; there is no separate token or persisted design digest. If the algorithm
-changes materially, revise and re-review the design before source is created or
-replaced. The packaged `skills/locus-pi-workflow-create/SKILL.md` skill owns the
-exact protocol.
-
-The group-only Package `task` namespace offers an editable two-stage handoff.
-`task/draft` publishes a complete `draft.md` with the graph pattern, agents,
-handoffs, review bounds, concurrency, failure exits, and primary output. Copy or
-edit that full text, then pass it as semantic input to `task/plan`. That workflow
-designs and reviews a node-and-edge ledger, creates a minimal runnable workspace
-`workflow.mjs`, and grows it through at most six complete graph-node slices. An
-owner re-cuts the source-free remaining queue after each accepted slice. Independent
-mechanical and design gates share one cumulative correction per slice and preserve
-named diagnostics on failure; an empty queue still requires final whole-file gates.
-The detailed contract and terminal reasons live in the
-[task authoring manual](../../extensions/workflows/examples/task/README.md).
-
-After those gates, `publishPrimaryFile("workflow.mjs")` returns `primaryFile` with
-the validated workspace-relative path, absolute path, byte count, and digest. It
-does not create `outputs/workflow.mjs`; use `primaryFile.absolutePath` for the
-existing reviewed file-target launch path, whose execution snapshot binds the
-launched bytes. Neither package stage itself runs generated source. For
-create-and-run, the calling agent hands this checked workspace file to the run skill
-and reports authoring, execution, and product verification separately. `task/plan`
-requires the complete accepted draft: missing or blank semantic input fails before
-any child starts and publishes no workflow source.
-
-New standard source omits `maxToolCalls` and `timeoutMs`: both are unbounded unless
-the author or operator explicitly supplies a fuse. Launch-mode defaults apply only
-as stated in the [budget policy](budgets.md#run-budget). A Design records a
-per-attempt override only when the operator explicitly requests it and records why.
-This rule does not mechanically rewrite legacy workflows.
+The Package [task authoring workflow](../../examples/workflows/task/README.md)
+provides an editable `task/draft` → `task/plan` handoff. Its manual owns incremental
+source building and final gates. Neither entry executes the generated workflow;
+a create-and-run request passes the checked file to the run skill.
 
 A workflow is a single ESM module `<name>.workflow.mjs` with two exports:
 
@@ -73,7 +36,7 @@ A workflow is a single ESM module `<name>.workflow.mjs` with two exports:
   permissions, or runtime model, and nothing in it is enforced at runtime.
 - `export default async function runWorkflow(dsl, input) { ... }` — executable
   behavior. `dsl` is the intended authoring handle; `input` is the run's task,
-  always absent or bounded semantic text (see "Workflow input" below). Whatever
+  always absent or semantic text (see "Workflow input" below). Whatever
   the function returns is written to `result.json` as `result`.
   Trusted JavaScript can still use host capabilities allowed by its identity mode,
   so `dsl`-only is a convention, not enforcement.
@@ -124,7 +87,7 @@ A workflow with several stages, agents, branches, parallel groups, or persisted
 handoffs keeps a visual map beside its source: exactly one hand-authored
 `<name>-pipeline.svg`. It is edited directly. There is no generator, no
 rendering dependency, and no exported preview to keep in sync;
-[`extensions/workflows/examples/post-code-review/post-code-review-pipeline.svg`](../../extensions/workflows/examples/post-code-review/post-code-review-pipeline.svg)
+[`examples/workflows/post-code-review/post-code-review-pipeline.svg`](../../examples/workflows/post-code-review/post-code-review-pipeline.svg)
 is the remaining Package reference shape.
 
 This replaced a generated trio — an `@kroffske/excalidraw-diagrams` generator,
@@ -199,45 +162,12 @@ with:
 }
 ```
 
-Run the same check for every declared direct child. The tool comes from the
-installed workflows extension and resolves the workflow path inside the
-current project. The omitted or explicit `compatibility` mode keeps the broader
-standard grammar for existing reviewed scripts; workflow-create Build uses the
-strict mode above. Build is not successful until the checker and Node syntax
-validation pass, source identity is assessed, and the source matches its reviewed
-design. Do not import or execute unchecked source as a preliminary smoke test. Diagnostic text uses
-`path:line:column [CODE] message`; structured tool details include the same
-stable code, `error`/`warning` severity, one-based source span, and optional
-related spans. Errors fail the tool. Warning-only results remain successful so
-authors can repair declaration drift without losing the rest of the checker
-output. The pure compatibility API `standardWorkflowSourceShapeErrors()` still
-returns the legacy sorted error-message array and omits warnings.
-Standard source treats semantic input, plain model text, and items as opaque whole values:
-only exact prompt/publication/return forwarding and unchanged item scheduling
-are allowed. Runtime-owned choices, list identity, status, and counters remain
-valid orchestration controls. Every semantic or runtime-owned value-bearing
-binding, callback parameter, and loop counter uses one globally unique name; a
-nested scalar literal may reuse that spelling within its actual lexical scope.
-Every computed subscript index retains provenance, and unclassified callback
-parameters fail closed. Arrays, objects, spreads, and nested composites retain
-contained provenance. Standard source reads only declared lexical/literal roots,
-never ambient host globals or implicit `arguments`. Inline callbacks use arrow
-functions; function expressions and all sequence expressions, including
-literal-only sequences, are rejected. `Error` accepts only author-known or
-literal arguments; opaque/runtime values cannot be hidden in its message,
-options, cause, composites, spreads, or member access. Mandatory unused
-acknowledgement protocols remain a design/source review prohibition; the checker
-never parses prompt English.
-
-The standard checker classifies every allowed DSL return. Exact
-`agent({ choice })` identity, list results from handoffs/continuations/items/groups,
-and exact saved-child `status` are the only control categories. Ordinary model,
-consumed-file, prompt-file, inline-workflow, and workspace results are opaque.
-Recorded clock/random values, host paths, and publication references are
-runtime/host values. `awaitOperator`, `log`, and `phase` are void effects.
-Opaque/runtime-host values may be forwarded whole through documented sinks but
-never inspected, branched on, indexed, transformed, or put inside `Error`;
-`outputDir()` alone may flow unchanged into `invokeWorkflow.outputDir`.
+Run the same check for every declared direct child. Build requires checker and
+Node syntax success, source-identity assessment, and conformance to the reviewed
+design. Do not import or execute unchecked source as a preliminary smoke test.
+The [source contract](source-shape.md#machine-enforced-standard-source-shape)
+owns diagnostics, compatibility checking, opaque-value forwarding, allowed control
+flow and binding rules. Warning-only checks remain successful.
 
 Notes:
 
@@ -420,14 +350,6 @@ replay-only `resumeFromRunId`.
 
 ### Delegate authoring through the packaged skill
 
-Ask a clean child to read and follow `locus-pi-workflow-create`, or invoke that
-skill directly in the active session. The child writes the design first, reviews
-it, then writes source in the same
-turn unless the user explicitly asks to pause after design. `Build design:
-.locus-pi/workflows/<name>/<name>.design.md` and `Build approved design:
-.locus-pi/workflows/<name>/<name>.design.md` remain build-only compatibility requests. The
-agent confirms identity, syntax and source shape. Create-only does not launch;
-create-and-run hands the checked target to the run skill under existing authority.
-The helper
-is a packaged skill; the package surface remains
-`./extensions/workflows/index.ts`.
+Use the [create skill](../../skills/locus-pi-workflow-create/SKILL.md) directly or
+ask a clean child to follow it. The [creation guide](create.md#ask-pi-to-create-it)
+shows the request and separates creating source from executing its agents.

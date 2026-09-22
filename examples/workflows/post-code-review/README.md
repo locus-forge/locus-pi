@@ -44,7 +44,7 @@ model roles, Markdown handoffs, and the failure boundary on one canvas.
 
 ## Install
 
-The tree ships with the locus-pi package. Follow [Getting started](../../../../docs/getting-started.md)
+The tree ships with the locus-pi package. Follow [Getting started](../../../docs/getting-started.md)
 to install the published package or register a source checkout. Register it once;
 do not copy workflow files into every project.
 
@@ -107,23 +107,18 @@ fix snippet when it can do so truthfully. The snippet explains intended shape;
 it is not a literal patch and never replaces ownership evidence, a complete
 action, or verification. `NO_ACTION` items receive no fix snippet.
 
-Apply the default REQUIRED set with the separate Package workflow `implement`:
+To apply fixes, give an implementation agent the exact review report and ask it
+to address the REQUIRED findings. Include RECOMMENDED findings only when you
+explicitly want that optional work. The report remains the handoff; this review
+workflow does not start implementation.
 
-```text
-/workflows run implement --output-dir .locus-pi/workspaces/<generated-run-name> apply REQUIRED fixes from post-code-review.md
-```
-
-Reuse the review workspace so the workflow can read the exact report. To include
-optional work, explicitly say `apply REQUIRED and RECOMMENDED fixes`. A `READY`
-report or an unselected recommendation produces an intentional `NO_WORK` result.
-`post-code-review` itself remains read-only and never starts implementation.
-After remediation changes the reviewed head, run a fresh post-code review; the
+After remediation changes the reviewed head, run a fresh post-code review. The
 old decision does not prove the new head.
 
 ## Source binding
 
 All eight files are Package workflow entries because the Package registry scans
-one directory level below `extensions/workflows/examples/`. The parent is the
+one directory level below `examples/workflows/`. The parent is the
 intended external entry. Its seven `invokeWorkflow({ child })` edges bind
 children to these installed Package files. A project or personal workflow with
 the same name therefore cannot silently replace one child; a shadow causes the

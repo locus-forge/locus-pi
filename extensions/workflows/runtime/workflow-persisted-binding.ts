@@ -22,7 +22,10 @@ import {
   workflowRunRuntimeDir,
 } from "./workflow-run-layout.js";
 
-const WORKFLOW_PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../examples");
+// Read historical receipts from the former package location without registering it for execution.
+const WORKFLOW_PACKAGE_ROOTS = ["../../../examples/workflows", "../examples"].map((relative) =>
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), relative),
+);
 
 export interface PersistedWorkflowScriptIdentity {
   schemaVersion: 1 | 2;
@@ -317,7 +320,8 @@ function validatePersistedWorkflowPath(
     target.source === "personal"
       ? path.join(os.homedir(), WORKFLOW_ROOT_DIRNAME, WORKFLOW_SAVED_SOURCE_DIRNAME)
       : target.source === "package"
-        ? WORKFLOW_PACKAGE_ROOT
+        ? (WORKFLOW_PACKAGE_ROOTS.find((candidate) => isWorkflowPathWithinRoot(candidate, path.resolve(value))) ??
+          WORKFLOW_PACKAGE_ROOTS[0]!)
         : path.resolve(projectRoot);
   const lexicalRoot = path.resolve(root);
   const lexicalPath = path.resolve(value);

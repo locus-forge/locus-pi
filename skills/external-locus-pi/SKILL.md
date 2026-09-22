@@ -5,7 +5,9 @@ description: Launch or inspect Locus Pi from Codex, Claude Code or another exter
 
 # External Locus Pi
 
-Resolve this `SKILL.md` to its physical file before following relative links; the installed [workflow manual](../../docs/workflows/index.md) is relative to that file, never the caller cwd (see [discovery](../README.md#find-the-installed-workflow-documentation)).
+Resolve this `SKILL.md` to its physical file before following relative links.
+The installed [workflow manual](../../docs/workflows/index.md) is relative to that file,
+never the caller cwd; see [discovery](../README.md#find-the-installed-workflow-documentation).
 
 Own the external Pi session and the user's route back to it. Default to an
 interactive Pi terminal retained by tmux, with session saving enabled. Keep the

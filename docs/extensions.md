@@ -2,10 +2,13 @@
 title: Extension reference
 type: overview
 status: active
-updated: 2026-08-19T22:43:06Z
-description: Reference the shipped extension surface.
 owner: locus-pi maintainers
 tags: [extensions, reference]
+updated: "2026-09-22T16:20:55Z"
+source_commit: "54dea11dbe11"
+update_event: "user_request"
+context: "changes=XL files=71 task=T-101"
+description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
 ---
 
 # Extensions
@@ -29,7 +32,7 @@ extensions help you run agents, choose models, answer questions, and inspect pro
 
 Install them together, or choose the resources you need with
 [package filters](getting-started.md#load-only-selected-extensions).
-Start with [your first workflow](locus-pi-workflows.md#your-first-workflow), then
+Start with [your first workflow](workflows/create.md#your-first-workflow), then
 use the guides above for individual commands and options.
 
 Contributor details live in [architecture and repository boundaries](architecture.md).

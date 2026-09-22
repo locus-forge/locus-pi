@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const workflowPath = path.join(process.cwd(), "extensions/workflows/examples/live-smoke/live-smoke.workflow.mjs");
+const workflowPath = path.join(process.cwd(), "examples/workflows/live-smoke/live-smoke.workflow.mjs");
 
 interface AgentCall {
   prompt: string;

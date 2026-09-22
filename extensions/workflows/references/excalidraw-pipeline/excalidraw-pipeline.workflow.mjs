@@ -68,9 +68,9 @@ const AUTHOR_MODEL_ROLE = "agent";
  *
  * Explicitly NOT the reason: this stage's script-side `parseRequestFile` gate below.
  * That gate and its repair loop predate this choice and are the script-side debt
- * roadmap P0.2 owns (`references/patterns.md`, "What the script may check" — a shape
+ * described by the output boundary in `docs/workflows/agent-results.md`: a shape
  * the script must branch on belongs in `agent({ schema })`, whose runtime retry is
- * the one correction loop the DSL gives for free). A cheap tier is not licensed by a
+ * the one correction loop the DSL gives for free. A cheap tier is not licensed by a
  * script that re-reads the answer, and this choice must not be read as endorsing one.
  */
 const DRAFT_MODEL_ROLE = "smol";

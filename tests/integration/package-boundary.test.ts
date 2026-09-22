@@ -14,7 +14,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
 import { beforeAll, describe, expect, it } from "vitest";
-import { packagedWorkflowNames } from "../../extensions/workflows/runtime/workflow-discovery.js";
+import {
+  listPackagedWorkflowEntries,
+  packagedWorkflowNames,
+} from "../../extensions/workflows/runtime/workflow-discovery.js";
 import { verifyInstalledWorkflowDocs } from "../docs/helpers/installed-workflow-docs.js";
 import { deadMarkdownLinks } from "../../scripts/markdown-links.js";
 
@@ -70,18 +73,18 @@ const PI_PACKAGES = [
   "@earendil-works/pi-tui",
 ] as const;
 const PACKAGE_WORKFLOW_PATHS = {
-  "live-smoke": "extensions/workflows/examples/live-smoke/live-smoke.workflow.mjs",
-  "task/draft": "extensions/workflows/examples/task/draft.workflow.mjs",
-  "task/plan": "extensions/workflows/examples/task/plan.workflow.mjs",
-  "post-code-review": "extensions/workflows/examples/post-code-review/post-code-review.workflow.mjs",
-  "post-code-review/boundaries": "extensions/workflows/examples/post-code-review/boundaries.workflow.mjs",
-  "post-code-review/contracts": "extensions/workflows/examples/post-code-review/contracts.workflow.mjs",
-  "post-code-review/necessity": "extensions/workflows/examples/post-code-review/necessity.workflow.mjs",
-  "post-code-review/scope": "extensions/workflows/examples/post-code-review/scope.workflow.mjs",
-  "post-code-review/simplicity": "extensions/workflows/examples/post-code-review/simplicity.workflow.mjs",
-  "post-code-review/style": "extensions/workflows/examples/post-code-review/style.workflow.mjs",
-  "post-code-review/synthesis": "extensions/workflows/examples/post-code-review/synthesis.workflow.mjs",
-  "stage-loop": "extensions/workflows/examples/stage-loop/stage-loop.workflow.mjs",
+  "live-smoke": "examples/workflows/live-smoke/live-smoke.workflow.mjs",
+  "task/draft": "examples/workflows/task/draft.workflow.mjs",
+  "task/plan": "examples/workflows/task/plan.workflow.mjs",
+  "post-code-review": "examples/workflows/post-code-review/post-code-review.workflow.mjs",
+  "post-code-review/boundaries": "examples/workflows/post-code-review/boundaries.workflow.mjs",
+  "post-code-review/contracts": "examples/workflows/post-code-review/contracts.workflow.mjs",
+  "post-code-review/necessity": "examples/workflows/post-code-review/necessity.workflow.mjs",
+  "post-code-review/scope": "examples/workflows/post-code-review/scope.workflow.mjs",
+  "post-code-review/simplicity": "examples/workflows/post-code-review/simplicity.workflow.mjs",
+  "post-code-review/style": "examples/workflows/post-code-review/style.workflow.mjs",
+  "post-code-review/synthesis": "examples/workflows/post-code-review/synthesis.workflow.mjs",
+  "stage-loop": "examples/workflows/stage-loop/stage-loop.workflow.mjs",
 } as const;
 
 function installedStandardSource(run: string, declarations = ""): string {
@@ -343,6 +346,7 @@ describe("npm public package boundary", () => {
     expect(pkg.files).toEqual([
       "dist/public-catalogs.json",
       "docs/",
+      "examples/",
       "extensions/",
       "!extensions/workflows/references/consilium/",
       "!extensions/workflows/references/excalidraw-pipeline/",
@@ -351,7 +355,8 @@ describe("npm public package boundary", () => {
     ]);
     // Directory-owned means the dotfiles inside a listed directory ship with it:
     // `skills/.ignore` rides along under `skills/` and is counted here.
-    expect(dryRun.files).toHaveLength(258);
+    // Retired eleven redundant docs; recovery has one conditionally loaded owner.
+    expect(dryRun.files).toHaveLength(251);
   });
 
   it("ships every prompt resource a curated workflow renders", () => {
@@ -387,7 +392,7 @@ describe("npm public package boundary", () => {
   it("packs exactly the workflows the examples directory resolves, and no forbidden paths", () => {
     const packedPaths = dryRun.files.map((file) => file.path);
     const packedWorkflowNames = packedPaths
-      .filter((file) => file.startsWith("extensions/workflows/examples/") && file.endsWith(".workflow.mjs"))
+      .filter((file) => file.startsWith("examples/workflows/") && file.endsWith(".workflow.mjs"))
       .map((file) => {
         const stem = path.basename(file, ".workflow.mjs");
         const rootName = path.basename(path.dirname(file));
@@ -400,29 +405,16 @@ describe("npm public package boundary", () => {
     // workflow present here and missing from `package.json#files` would work in
     // this repository and be gone after `npm i`, which is the one way "the
     // folder is the registry" could lie to an operator.
+    expect(packedPaths).not.toContain("examples/README.md");
+    expect(packedPaths).toContain("examples/workflows/README.md");
+    expect(packedPaths.some((file) => file.startsWith("extensions/workflows/examples/"))).toBe(false);
+    expect(
+      Object.fromEntries(listPackagedWorkflowEntries().map((entry) => [entry.name, path.relative(root, entry.path)])),
+    ).toEqual(PACKAGE_WORKFLOW_PATHS);
     expect(packedWorkflowNames).toEqual(packagedWorkflowNames().sort());
     expect(packagedWorkflowNames().sort()).toEqual([...EXPECTED_PACKAGE_WORKFLOW_NAMES].sort());
     expect(packedPaths.filter((file) => forbiddenPackedPaths.some((pattern) => pattern.test(file)))).toEqual([]);
     expect(pkg.bin).toBeUndefined();
-  });
-
-  it("keeps every pattern-catalog link resolvable inside the installed package", () => {
-    // The catalog is the one `references/` file an install ships (OD3, T-130: the
-    // consilium reference stays tracked in this repository and runs by path, exactly like
-    // `excalidraw-pipeline`). So a relative link from the catalog into a sibling under
-    // `references/` renders as a link in the npm tarball and resolves to nothing — for a
-    // reader who has only the tarball, which is the audience the catalog exists for.
-    // Naming the repository path in prose is the shape that stays honest in both places.
-    const packedPaths = new Set(dryRun.files.map((file) => file.path));
-    const catalog = "extensions/workflows/references/patterns.md";
-    expect(packedPaths.has(catalog)).toBe(true);
-    const directory = path.posix.dirname(catalog);
-    const unresolvable: string[] = [];
-    for (const match of readFileSync(path.join(root, catalog), "utf8").matchAll(/\]\((\.[^)\s#]+)\)/gu)) {
-      const target = path.posix.normalize(path.posix.join(directory, match[1]!));
-      if (!packedPaths.has(target)) unresolvable.push(`${match[1]!} → ${target}`);
-    }
-    expect(unresolvable).toEqual([]);
   });
 
   it("ships every declared skill, and every document a skill sends the reader to", () => {
@@ -471,8 +463,8 @@ describe("npm public package boundary", () => {
 
   it("ships the editable draft to concrete workflow.mjs protocol", () => {
     const packedPaths = new Set(dryRun.files.map((file) => file.path));
-    const draftPath = "extensions/workflows/examples/task/draft.workflow.mjs";
-    const planPath = "extensions/workflows/examples/task/plan.workflow.mjs";
+    const draftPath = "examples/workflows/task/draft.workflow.mjs";
+    const planPath = "examples/workflows/task/plan.workflow.mjs";
     const draft = readFileSync(path.join(root, draftPath), "utf8");
     const plan = readFileSync(path.join(root, planPath), "utf8");
 

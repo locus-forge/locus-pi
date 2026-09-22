@@ -2,13 +2,16 @@
 title: Run artifacts, results and journal
 type: guide
 status: active
-updated: "2026-09-13T00:12:22Z"
-description: "Organize the installed workflow contract by reader task."
+updated: "2026-09-22T17:02:16Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
 # Run artifacts, results and journal
 
-[Workflow documentation](index.md) · [Authoring guide](../locus-pi-workflows.md) · [Operator guide](../workflows.md)
+[Workflow documentation](index.md) · [Authoring guide](create.md) · [Operator guide](running.md)
 
 ## Persisted run artifacts and viewer
 
@@ -202,6 +205,21 @@ waiting child resolves the source item. `result.json` is never rewritten.
 `--resume` remains recorded-call replay and is not a continuation alias.
 
 ## Journal layout
+
+The first launch and its saved children/resume attempts share one physical group.
+`lineage.rootRunId` names the root of the current attempt; `storageRootRunId`
+names the first launch's physical group. Independent launches receive different groups.
+The runner creates non-symlink `outputs/` and `runtime/` directories and writes
+its first journal line before announcing a run ID. Initialization failure announces
+no start and launches no child. The start receipt reports the resolved run directory;
+`runtime/result.json` appears only when that execution settles.
+
+Group and workspace navigation, lease ownership and legacy lookup are described in
+[run evidence navigation](running.md#run-evidence). Lookup examines group roots and
+their `children/` and `attempts/` directories; it never returns the old `.pi/locus-pi`
+path. Global run claims use `.locus-pi/runs/.run-claim.lock`. An interrupted claim
+makes the next launch reject explicitly. Before removing that lock manually,
+verify that its owning process has stopped; do not remove run history.
 
 ```
 .locus-pi/runs/<storageRootRunId>/

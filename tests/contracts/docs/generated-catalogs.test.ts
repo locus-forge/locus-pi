@@ -22,7 +22,7 @@ afterAll(() => {
 /**
  * The smallest tree `--check` reads under a given root: package.json, the manifests it declares, the
  * two published documents, and the committed catalog. Packaged workflows are deliberately absent —
- * the registry is the installed `extensions/workflows/examples/` directory the generator resolves from
+ * the registry is the installed `examples/workflows/` directory the generator resolves from
  * its own module URL, not from the working directory, so a fixture cannot fake it.
  */
 function fixtureRoot(): string {
@@ -160,7 +160,7 @@ describe("generated public catalogs", () => {
 
   it("reports a deleted marker as a finding instead of crashing", () => {
     const fixture = fixtureRoot();
-    const document = path.join(fixture, "docs/workflows.md");
+    const document = path.join(fixture, "examples/workflows/README.md");
     writeFileSync(document, readFileSync(document, "utf8").replace("<!-- locus:workflows:end -->", ""));
 
     const broken = runCheck(fixture);

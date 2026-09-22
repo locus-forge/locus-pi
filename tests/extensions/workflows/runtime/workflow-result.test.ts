@@ -1,3 +1,5 @@
+import { createWorkflowArtifactStore } from "../../../../extensions/workflows/runtime/workflow-artifacts.js";
+import { parseWorkflowPersistedBinding } from "../../../../extensions/workflows/runtime/workflow-persisted-binding.js";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -402,5 +404,56 @@ describe("persisted workflow result readback", () => {
       message: expect.stringContaining("disposition is malformed or inconsistent"),
     });
     expect(readWorkflowRunSummary(fixture.root, fixture.runId).status).toBe("unknown");
+  });
+});
+
+function historicalReceipt(sourcePath = path.resolve("extensions/workflows/examples/task/plan.workflow.mjs")) {
+  const fixture = writeSnapshotRun("historical-package-source", "export default () => 'historical';\n");
+  const { root, runId, runDir, snapshotPath, sha256 } = fixture;
+  const source = createWorkflowArtifactStore({ projectRoot: root, runId, runDir });
+  const ref = source.publishText("plan.md", "retained plan");
+  writeResult(
+    runDir,
+    snapshotPath,
+    sha256,
+    { kind: "name", ref: "task/plan", source: "package", path: sourcePath },
+    { artifactRefs: [ref] },
+  );
+  const record = JSON.parse(readFileSync(workflowResultFile(runDir), "utf8"));
+  return { root, runId, record, ref, snapshotPath };
+}
+
+describe("historical Package workflow receipts", () => {
+  it("reads a retained artifact whose target and source point to the former installed registry", () => {
+    const { root, runId, record, ref } = historicalReceipt();
+    const binding = parseWorkflowPersistedBinding(record, root, runId, { verifySnapshot: true });
+    expect(binding.targetInvalid).toBeUndefined();
+    expect(binding.scriptIdentityInvalid).toBeUndefined();
+    expect(binding.targetPath).toBe(record.target.path);
+    const consumerId = "historical-package-consumer";
+    const consumer = createWorkflowArtifactStore({
+      projectRoot: root,
+      runId: consumerId,
+      runDir: ensureWorkflowRunDir(root, consumerId),
+    });
+    expect(consumer.consumeText(ref).text).toBe("retained plan");
+  });
+
+  it.each(["extensions/workflows/examples-lookalike", "examples/workflows-lookalike", "other-package/examples"])(
+    "rejects a source under the unrelated %s directory",
+    (directory) => {
+      const { root, runId, record } = historicalReceipt(path.resolve(directory, "task/plan.workflow.mjs"));
+      const binding = parseWorkflowPersistedBinding(record, root, runId, { verifySnapshot: true });
+      expect(binding.targetInvalid).toContain("escapes its package workflow root");
+      expect(binding.scriptIdentityInvalid).toContain("requires a valid persisted target");
+    },
+  );
+
+  it("still rejects a tampered retained snapshot", () => {
+    const { root, runId, record, snapshotPath } = historicalReceipt();
+    writeFileSync(snapshotPath, "tampered source\n");
+    const binding = parseWorkflowPersistedBinding(record, root, runId, { verifySnapshot: true });
+    expect(binding.targetInvalid).toBeUndefined();
+    expect(binding.scriptIdentityInvalid).toBeDefined();
   });
 });

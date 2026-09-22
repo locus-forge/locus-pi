@@ -2,18 +2,22 @@
 title: Workflow source contract
 type: guide
 status: active
-updated: "2026-09-13T00:12:21Z"
-description: "Organize the installed workflow contract by reader task."
+updated: "2026-09-22T17:02:17Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
 # Workflow source contract
 
-[Workflow documentation](index.md) · [Authoring guide](../locus-pi-workflows.md) · [Operator guide](../workflows.md)
+[Workflow documentation](index.md) · [Create a workflow](create.md) · [DSL reference](dsl.md) · [Run a workflow](running.md)
 
-This is the runtime-owned contract checked by `workflow_check_source`. Start with
-[the user guide](../locus-pi-workflows.md) to create a workflow, or
-[the source boundary](../../skills/locus-pi-workflow-create/references/source-boundary.md)
-for the short author-facing rules. Read this file when resolving a source diagnostic.
+Read this contract before authoring workflow source. The [DSL reference](dsl.md#dsl-surface-v0) describes callable methods, signatures, and examples; this page defines which source forms `workflow_check_source` accepts. New workflows use the [create guide](create.md) and the packaged skill's [short author-facing rules](../../skills/locus-pi-workflow-create/references/source-boundary.md).
+
+Three boundaries apply: trusted runtime JavaScript, the `standard` compatibility grammar, and the stricter `mode: "orchestration-only"` grammar used by the create skill. A runtime method is not automatically permitted by either checker: `fusion()` is runtime-only, raw `schema`/`validate` are runtime compatibility options, and `runWorkspaceDir()` is removed. The [availability table](dsl.md#dsl-surface-v0) distinguishes every method. Omitting the tool's mode selects standard compatibility checking; it does not grant arbitrary runtime JavaScript access.
+
+The rules below own source restrictions and diagnostics. Passing them does not prove the workflow's prompts, decisions, side effects, or final result satisfy its goal; design review and execution evidence remain necessary.
 
 ## Standard primitive profile
 
@@ -37,15 +41,10 @@ const route = await agent("Choose the next step.", {
 });
 ```
 
-The runtime desugars `choice` to its existing string-enum shape path. It owns
-format instructions, parsing, validation, corrective re-ask, journal evidence,
-replay, and budgets. A child that answers with the bare member text or echoes the
-schema as `{"type":"string","value":"…"}` is read as that member and the journal
-records the reading; anything else is re-asked once. By default exhaustion fails
-closed. A design may declare
-`choiceFallback` as one of the listed choices when a deterministic degraded route
-is safer; the runtime uses it only after both invalid answers and records the
-fallback in the journal. Workflow code does none of that recovery itself.
+The child submits one exact declared string through `workflow_return`; workflow
+source receives the accepted value. The [agent result contract](agent-results.md#standard-exact-choice--agent-choice)
+owns same-session correction, optional `choiceFallback`, journal evidence and
+failure behavior. Workflow code neither parses an answer nor implements format repair.
 
 When discovery determines the work units at runtime, use text handoffs:
 
@@ -105,7 +104,7 @@ would invalidate a fresh run. Replay starts no child and follows the recorded
 evidence contract.
 
 Standard generated source also omits `ask: true`. Live operator questions
-(`agent({ ask: true })`, REFERENCE "Live operator questions") are an
+([`agent({ ask: true })`](running.md#live-operator-questions--agent-ask-true)) are an
 interactive capability for operator-attended workflows: the child asks through
 `workflow_ask` and continues with the answer in the same session. Declare it
 only when the approved Design names the stage that may ask and why an

@@ -16,7 +16,7 @@ export const meta = {
 const SOURCE_CONTRACT = `The workspace workflow.mjs is the only authoritative source. Every accepted step leaves a complete runnable, Node-parseable and orchestration-only-valid module. Agents edit that file and return only opaque reports or source-free requirement briefs; never return, quote or transport source bytes. The generated source uses unique literal labels, complete prompts, visible bounded control flow and only orchestration-only DSL calls. Preserve the accepted graph, scope and primary contract. Mechanical checks and design review stay separate. Write named diagnostic files in the workspace before returning any failed route. Do not publish partial source.`;
 
 /**
- * @param {import("../../runtime/workflow-runtime.js").WorkflowDsl} dsl
+ * @param {import("../../../extensions/workflows/runtime/workflow-runtime.js").WorkflowDsl} dsl
  * @param {string} [input]
  */
 export default async function runWorkflow(dsl, input = "") {

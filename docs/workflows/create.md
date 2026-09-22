@@ -1,17 +1,46 @@
 ---
-title: Locus Pi workflow authoring
+title: Create a workflow with an agent
 type: guide
 status: active
-description: "Create adaptive workflows, choose prompt detail and size, and continue after owner acceptance."
 owner: locus-pi maintainers
 tags: [workflows, authoring]
+updated: "2026-09-22T17:02:16Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=46"
+description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
-# Locus Pi workflows
+# Create a workflow with an agent
 
-[Workflow documentation by topic](workflows/index.md) — open only the contract needed for the current task.
+[Documentation](../index.md) · [Workflow reference](index.md) · [DSL methods](dsl.md) · [Run and inspect](running.md)
 
-Create a readable graph of agents for a real task. The default implementation style works through reviewable slices and revises the remaining plan after each slice. [Run and inspect workflows](workflows.md) covers commands, evidence and recovery.
+Use the [workflow-create skill](../../skills/locus-pi-workflow-create/SKILL.md)
+to turn a task description into a reusable `.workflow.mjs` file. The skill designs
+the agent graph, reviews it, writes the source, and checks it. You can inspect and
+edit that source before running it.
+
+## Ask Pi to create it
+
+With the package skills enabled, enter this in Pi:
+
+```text
+/skill:locus-pi-workflow-create Create a project-tour workflow: two agents read README.md and package.json in parallel, then a third combines their notes into a getting-started guide. Do not modify project files during the run. Build and check the workflow, but do not run it yet.
+```
+
+The resulting files belong under `.locus-pi/workflows/project-tour/`: a
+`project-tour.design.md` description and `project-tour.workflow.mjs` source.
+Review them, then use `/workflows run project-tour`. See [run and inspect](running.md#run-a-saved-workflow)
+for progress, results, and stopping a run. A request to create **and run** continues
+through the [run skill](../../skills/locus-pi-workflow-run/SKILL.md).
+
+Pi loads these skills with the full package. A Workflow-only installation with
+`skills: []` disables them; enable package skills or write the example below.
+For Codex or Claude Code, use the [skill installation guide](../../skills/README.md).
+
+Prefer writing the source yourself? Start with the complete example below, then
+use the [DSL reference](dsl.md), [file format](authoring.md), and [source rules](source-shape.md).
+The later sections explain larger authoring tasks and adaptive graphs.
 
 ## Your first workflow
 
@@ -73,8 +102,8 @@ Before running, ask Pi to check the file with `workflow_check_source`:
 ```
 
 Read the source and resolve any diagnostics. Then follow
-[run, inspect, and rerun](workflows.md#run-a-saved-workflow). For optional stage
-routing, see [model roles](workflows/models.md#use-model-roles).
+[run, inspect, and rerun](running.md#run-a-saved-workflow). For optional stage
+routing, see [model roles](models.md#use-model-roles).
 
 ## Create a workflow
 
@@ -122,28 +151,12 @@ result by dropping a report.
 
 ### Build generated source in complete slices
 
-`task/plan` applies the same pattern to source authoring so a weaker model never
-has to produce the whole workflow module in one answer. It first records a reviewed
-node-and-edge ledger, then creates a minimal runnable `workflow.mjs` in the workflow
-workspace. An owner repeatedly reads that actual file, returns a source-free queue
-of remaining complete graph nodes or branches, and re-cuts the queue after each
-accepted slice.
-
-Each seed, slice, and correction leaves the whole module Node-parseable and valid
-under `workflow_check_source` in orchestration-only mode. Source bytes stay in the
-workspace: model answers carry only reports, paths, and source-free requirement
-briefs. An independent queue assessment preserves outstanding identities and fails
-closed on an irreconcilable transition. Mechanical failures always use the slice's
-single correction before an independent recheck; design conformance is reviewed on
-a separate route. The workflow accepts at most six slices and returns the full
-remaining queue when that allowance is exhausted.
-
-An empty queue alone is not success. Final whole-file mechanical and design gates
-must pass before the host publishes the exact file through
-`publishPrimaryFile("workflow.mjs")`. Failures retain the current file and named
-diagnostics without publishing a primary artifact. Replay reuses answers but not
-file edits, so Repair + Continue requires the original workspace to remain intact;
-fresh suffix checks must reject a cleaned or drifted workspace.
+The Package `task/plan` workflow builds one workspace `workflow.mjs` in complete,
+checked graph-node slices. It re-cuts the remaining queue after each accepted
+slice, keeps source bytes in the workspace, and publishes the file only after
+final whole-file checks. The [task authoring manual](../../examples/workflows/task/README.md)
+owns its slice/correction allowances, mechanical and design gates, terminal reasons,
+and replay requirements. Use that manual when running or repairing `task/plan`.
 
 Use a **fixed graph** for known, unchanging work or ask for it explicitly.
 Choose **procedural briefs** only when an exact sequence is required by a tool or
@@ -163,7 +176,7 @@ Show the worst-case agent calls and explain if the task requires more.
 This is advice to the author. Locus Pi has no `workflowSizeGuideline` setting or
 `small`/`medium` runtime switch. The reviewed design records concrete slice and
 correction bounds; run budgets — time, agents, turns, tool calls — are a separate
-concern governed by the [budget policy](workflows/budgets.md#run-budget).
+concern governed by the [budget policy](budgets.md#run-budget).
 Only the listed launch defaults apply; other undeclared axes are `unbounded`. Never remove required work to meet an
 advisory size preference.
 
@@ -175,8 +188,8 @@ advisory agent count, not prompt length or reasoning effort. See the
 
 ### What the runtime does not bound
 
-Use the [output acceptance principle](workflows/agent-results.md#the-principle)
-when designing results and the [budget policy](workflows/budgets.md#run-budget)
+Use the [output acceptance principle](agent-results.md#the-principle)
+when designing results and the [budget policy](budgets.md#run-budget)
 when planning execution. Two practical consequences for authoring:
 
 - Shape a stage by asking for what you want — "one paragraph and three bullets", "one
@@ -188,11 +201,11 @@ when planning execution. Two practical consequences for authoring:
   told about it and can correct the value in the same session.
 
 The full statement, including how budgets and unsupported capabilities behave, is in
-[output acceptance](workflows/agent-results.md#the-principle).
+[output acceptance](agent-results.md#the-principle).
 
 ### Use the references
 
-The [adaptive pattern](../skills/locus-pi-workflow-create/references/adaptive-slices.md)
+The [adaptive pattern](../../skills/locus-pi-workflow-create/references/adaptive-slices.md)
 links executable design and implementation examples. They are teaching sources,
 not names installed in the Package command catalog. Copy and adapt them into
 `.locus-pi/workflows/<name>/` through the authoring skill. Match filenames,
@@ -229,7 +242,7 @@ returns immediately. The host starts a new run after a real answer and verifies
 its continuation artifacts. This is separate from manual cross-workflow handoff
 and from `invokeWorkflow`, which actually invokes a saved child with runtime-owned
 checkpoint semantics. Choose the mechanism needed by the design; never run a
-child across an unresolved owner decision. See [continuation](workflows/recovery-and-continuation.md).
+child across an unresolved owner decision. See [continuation](recovery-and-continuation.md).
 
 ## Specification and implementation as independent workflows
 
@@ -282,10 +295,10 @@ global retry scheduler, status system or automatic cross-workflow launcher.
 
 The default uses outcome-led briefs for capable agents and substantive arbitration. Fixed graphs and procedural detail remain separate task-dependent choices; no model route is changed automatically.
 
-An opted-in `agent(prompt, { result: "report" })` returns the actual answer or eligible host-observed failure facts for the next agent. Preserve full reports from completed, failed, missing and skipped checks. An arbiter may reject a finding, request correction, retry a review or continue with a disclosed limitation when the requested outcome is evidenced. A failed check is never described as completed. Cancellation, global limits, uncertain shutdown and persistence failures remain fatal. See [the exact report contract](workflows/agent-results.md#agent-execution-reports).
+An opted-in `agent(prompt, { result: "report" })` returns the actual answer or eligible host-observed failure facts for the next agent. Preserve full reports from completed, failed, missing and skipped checks. An arbiter may reject a finding, request correction, retry a review or continue with a disclosed limitation when the requested outcome is evidenced. A failed check is never described as completed. Cancellation, global limits, uncertain shutdown and persistence failures remain fatal. See [the exact report contract](agent-results.md#agent-execution-reports).
 
 Both adaptive references allow new residuals to return to the author after the second review. Teaching limits allow two corrections with fresh reviews; actual resource limits come from the task. On exhaustion they return the latest reviewed artifact and remaining criteria with a continuation action. Scripted-child regression tests prove graph routing and failure/replay boundaries; they do not certify model judgment, the user's feature or a previously stopped project run.
 
 ## Authoring references
 
-The installed [workflow-create skill](../skills/locus-pi-workflow-create/SKILL.md) owns Design → review → Build. The [workflow-run skill](../skills/locus-pi-workflow-run/SKILL.md) owns execution and recovery. Read the [source boundary](../skills/locus-pi-workflow-create/references/source-boundary.md) before building and the [exact source contract](workflows/source-shape.md) when resolving checker diagnostics.
+The installed [workflow-create skill](../../skills/locus-pi-workflow-create/SKILL.md) owns Design → review → Build. The [workflow-run skill](../../skills/locus-pi-workflow-run/SKILL.md) owns execution and recovery. Read the [source boundary](../../skills/locus-pi-workflow-create/references/source-boundary.md) before building and the [exact source contract](source-shape.md) when resolving checker diagnostics.

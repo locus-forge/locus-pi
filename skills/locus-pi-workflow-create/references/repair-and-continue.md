@@ -8,12 +8,6 @@ Read the stopped run diagnostic and the evidence it names: child result, transcr
 
 Validate the exact repaired source with the supported checker and Node syntax/source checks, without importing unchecked source. Report what changed and which prefix is expected to remain reusable. Hand the source path, diagnostics and original run id to the [run skill](../../locus-pi-workflow-run/SKILL.md). Repair-only stops at this handoff; authorized Repair + Continue resumes now through that skill, without a new approval ritual. Preserve original attempts and check the new terminal evidence; checking source alone does not complete continuation.
 
-## Operator's procedure
-
-Use the structured `workflow` field `resumeFromRunId`, or `--resume <runId>` on the operator surface. Preserve the source run's workspace and its exact original input; do not guess either. Continue from the repaired file at the same target. Then read the NEW run's `runtime/result.json` replay envelope and report `replayedCalls`, `divergedAtCall` and `divergedAtNode`. `freshCalls` alone proves nothing — a full restart reports it too. A run that reused nothing must not be described as proof of saved work.
-
-For example, A completed, B failed, and C was never reached. Repair B: A is served from the record, B and C run fresh. Appending more work can preserve the completed prefix the same way. If A's request also changes, reuse ends at A. A label match without the matching request is not enough.
-
 ## Current limitations, by name
 
 ### Legitimate quality refusal
@@ -169,22 +163,10 @@ to exceed, and increasing turns does not fix it. Use `choice` for a routing
 decision and `handoffs` only for discovered work units, including sequential
 slice queues.
 
-### Prefix and invocation limits
+## Runtime handoff
 
-Owned by [locus-pi-workflow-run](../../locus-pi-workflow-run/SKILL.md#declare-one-outcome-before-launching):
-strict prefix matching and its named misses, `unnamed-node`, the `fusion()`
-boundary, the `return-contract-changed` boundary of a run recorded before the
-current return contract, and explicit `totalAgents`, which replayed answers do
-not spend.
-
-## Do not promise stronger recovery
-
-Saved answers do not recreate files, reset Git or repeat tool effects. Confirm that the needed artifacts and project state are still suitable, and require current verification before irreversible effects. An unconfirmed child may already have changed external state.
-
-Ordinary terminal resume, a real `awaiting_operator` continuation, and explicit interrupted-run recovery are three different mechanisms. Do not add `recoverInterrupted: true` to bypass normal admission, invent an operator answer, modify journal or result evidence, or turn a mismatch into reuse of another node's answer.
-
-## Work scope and limits
-
-A larger legitimate work list is not a reason to erase completed agent work. Do not insert a new total-call cap and do not automatically raise an existing bound. Preserve user choices. Run-level operational changes and changes to one call's prompt, model or options have different identities; do not replace them with a blanket whole-source equality rule.
-
-Canonical owners: [runtime reference](../../../docs/workflows/replay.md#continuing-a-repaired-workflow), [recovery and continuation](../../../docs/workflows/recovery-and-continuation.md) and [execution controls](../../../docs/workflows/dsl.md).
+The [run recovery procedure](../../locus-pi-workflow-run/references/recovery.md) owns
+launch admission, original input/workspace binding, operator answers and proof of actual prefix reuse.
+Do not copy those runtime rules into a repaired workflow. Saved answers restore no files or tool effects;
+retain suitable prerequisites and require fresh verification before irreversible effects.
+A larger legitimate work list does not authorize an invented call cap or an automatic budget increase.
