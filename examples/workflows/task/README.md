@@ -49,9 +49,12 @@ composed text in `publishArtifact()`; this narrower diagnostic rule belongs to
 the `task/plan` editor contract and its design review.
 
 For adaptive graphs, the editor guidance uses the checker's supported shape: a
-literal-bounded `for` loop counts implementation and correction turns, a
-`choice` agent produces each branch identity, and a whole agent answer can be
-carried into the next iteration from a `let` binding declared before the loop.
+literal-bounded `for` loop owns the cumulative work count without a second
+mutable counter, a `choice` agent produces each branch identity, and a whole
+agent answer can be carried into the next iteration from a `let` binding
+declared before the loop. An agent node reached from several branches has one
+call site and one literal label; branch-specific opaque reports can be assigned
+whole to a carry binding before that call.
 Opaque answers appear only in later agent prompts or exact terminal results.
 This keeps the turn cap and routes in source control flow; describing them in
 an agent prompt does not implement them. `while` loops, manually maintained
@@ -75,6 +78,11 @@ item names every covered identity. This lets a graph with more than six nodes
 fit the existing six-slice allowance without dropping requirements. If safe
 grouping cannot fit, the queue keeps all unmet identities visible and fails
 closed.
+An intermediate edit may leave an edge to a later queued node as a named,
+fail-closed incomplete route. The current queue names its exact future
+destination and required replacement; later queues retain that edge until the
+destination slice connects it. The slice review accepts this bounded pending
+work, while final review rejects every remaining placeholder.
 Each branch item names its exact choices, their destinations, and terminal
 behavior from the reviewed design. The first independent assessment treats a
 missing destination as a conflict. Reconciliation can add that detail under
