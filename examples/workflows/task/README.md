@@ -53,6 +53,17 @@ independent recheck. A clean proposal keeps its identities in that pass; a
 conflicting proposal is corrected once. The first pass has no prior identities. Queue
 items describe missing or defective nodes and branches in `workflow.mjs`, not
 the product implementation slices that the generated workflow will later run.
+One queue item is one bounded source edit. It may include adjacent graph nodes
+and their connecting branches when they form a coherent runnable route; the
+item names every covered identity. This lets a graph with more than six nodes
+fit the existing six-slice allowance without dropping requirements. If safe
+grouping cannot fit, the queue keeps all unmet identities visible and fails
+closed.
+Each branch item names its exact choices, their destinations, and terminal
+behavior from the reviewed design. The first independent assessment treats a
+missing destination as a conflict. Reconciliation can add that detail under
+the same identity and order even when the first assessment missed it; the
+independent recheck still rejects an ambiguous branch.
 
 Mechanical checks and design review are separate. Any failed mechanical check
 always enters its one-fix path. A later distinct design defect has one design
