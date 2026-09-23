@@ -162,8 +162,10 @@ read and validation to the existing host publication boundary.
 
 ## Default authoring style
 
-Substantive implementation briefs default to adaptive slices: the owner revises
-remaining work after each reviewed slice. Briefs state the role, expected result,
-sources and essential constraints. Fixed graphs and procedural detail remain
-explicit alternatives. See the [workflow guide](../../../docs/workflows/create.md)
+Prefer a fixed graph for one bounded deliverable with known requirements, even
+when implementation is substantive. Include independent review, a finite
+correction and recheck path when needed, and final verification. Use adaptive
+slices when accepted output or findings must change the remaining work; bound
+the queue and retain owner decisions. Briefs state the role, expected result,
+sources and essential constraints. See the [workflow guide](../../../docs/workflows/create.md)
 for folder-level inputs, style/size choices and design-to-implementation handoff.
