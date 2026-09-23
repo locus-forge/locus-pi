@@ -223,16 +223,15 @@ describe("Package workflow: task/plan", () => {
     await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
     const seedPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-seed")?.prompt;
     const checkPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-seed-check")?.prompt;
-    const routePrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-seed-route")?.prompt;
     const cutPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-cut")?.prompt;
-    expect(seedPrompt).toContain("source-free list of every reviewed graph requirement still missing");
+    expect(seedPrompt).toContain("use at most two local edit-check passes total");
     expect(checkPrompt).toContain("Reviewed design:\nReviewed design ledger.");
     expect(checkPrompt).toContain("remaining source work, not seed-gate failures");
     expect(checkPrompt).toContain(seedReport);
     expect(fixtureRun.calls.find((call) => call.options.label === "workflow-source-seed-fix")?.prompt).toContain(
       seedCheck,
     );
-    expect(routePrompt).toContain("missing reviewed graph nodes is work for source slices");
+    expect(seedPrompt).toContain("Never inspect, compare or transform opaque agent answers");
     expect(cutPrompt).toContain("workflow-source-seed-fix-check.md exists");
     expect(cutPrompt).toContain("Re-evaluate either report against the current file on every pass");
     expect(fixtureRun.calls.some((call) => call.options.label === "workflow-source-final-review")).toBe(true);
