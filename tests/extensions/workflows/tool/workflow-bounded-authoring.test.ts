@@ -67,6 +67,24 @@ describe("standard bounded carry and author-owned records; requires native ast-g
       ),
     ).toEqual([]);
   });
+  it("accepts an adaptive owner loop with whole evidence, exact routes, and a hard turn cap", () => {
+    const source = wrap(
+      [
+        'const inspection = await dsl.agent(input, { label: "inspect" });',
+        'let lastOutcome = "";',
+        "for (let turn = 1; turn <= 6; turn += 1) {",
+        'const slice = await dsl.agent(`Select from ${inspection} and ${lastOutcome}`, { label: "select" });',
+        'const route = await dsl.agent(`Route ${slice}`, { label: "route", choice: ["work", "complete", "stop"] });',
+        'if (route === "complete") return dsl.agent(`Verify ${lastOutcome}`, { label: "verify" });',
+        'if (route === "stop") return { ok: false, status: "failed", reason: "owner_stop", diagnostics: slice };',
+        'const work = await dsl.agent(`Implement ${slice}`, { label: "implement" });',
+        'lastOutcome = await dsl.agent(`Review ${slice} and ${work}`, { label: "review" });',
+        "}",
+        'return { ok: false, status: "failed", reason: "turn_cap", diagnostics: lastOutcome };',
+      ].join("\n"),
+    );
+    expect(errors(source)).toEqual([]);
+  });
   it("treats one repeated bounded callsite as replay-safe and distinct duplicate callsites as unsafe", () => {
     const repeated = wrap(
       'let queue = []; for (let slice = 0; slice <= 6; slice += 1) { queue = await dsl.agent(input, { label: "source-slice", handoffs: {} }); if (queue.length === 0) break; } return queue;',

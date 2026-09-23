@@ -225,6 +225,7 @@ describe("Package workflow: task/plan", () => {
     const checkPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-seed-check")?.prompt;
     const cutPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-cut")?.prompt;
     expect(seedPrompt).toContain("use at most two local edit-check passes total");
+    expect(seedPrompt).toContain("numeric-literal bounded for loop");
     expect(checkPrompt).toContain("Reviewed design:\nReviewed design ledger.");
     expect(checkPrompt).toContain("remaining source work, not seed-gate failures");
     expect(checkPrompt).toContain(seedReport);
