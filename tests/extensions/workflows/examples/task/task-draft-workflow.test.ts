@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import runDraftWorkflow from "../../../../../examples/workflows/task/draft.workflow.mjs";
 
 describe("Package workflow: task/draft", () => {
-  it("publishes one editable brief with patterns and bounded reflection", async () => {
+  it("passes bounded graph selection and read-only recon to agents, then publishes one brief", async () => {
     const calls: Array<{ prompt: string; options: { label: string } }> = [];
     const phases: string[] = [];
     const publications: Array<{ name: string; text: string }> = [];
@@ -25,10 +25,18 @@ describe("Package workflow: task/draft", () => {
 
     expect(phases).toEqual(["recon", "draft", "publish"]);
     expect(calls.map((call) => call.options.label)).toEqual(["draft-context", "task-draft"]);
+    expect(calls[0]?.prompt).toContain("This call is reconnaissance only.");
+    expect(calls[0]?.prompt).toContain("Do not create or modify any file");
+    expect(calls[0]?.prompt).toContain("later execution stage, not this call");
     expect(calls[1]?.prompt).toContain("Workflow direction:");
     expect(calls[1]?.prompt).toContain("Pattern:");
     expect(calls[1]?.prompt).toContain("Reflection/review:");
     expect(calls[1]?.prompt).toContain("Failure and bounds:");
+    expect(calls[1]?.prompt).toContain("Prefer the smallest fixed graph for one bounded deliverable");
+    expect(calls[1]?.prompt).toContain("even when implementation is substantive");
+    expect(calls[1]?.prompt).toContain("Do not invent a slice queue for one known output.");
+    expect(calls[1]?.prompt).toContain("only when accepted output or findings");
+    expect(calls[1]?.prompt).toContain("independent review, a finite correction and independent recheck");
     expect(publications).toEqual([{ name: "draft.md", text: "Task:\nBuild one workflow." }]);
     expect(result).toEqual({ name: "draft.md", text: "Task:\nBuild one workflow." });
   });

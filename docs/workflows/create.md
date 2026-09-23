@@ -128,7 +128,8 @@ ready for the owner, not that implementation is authorized.
 
 ### Choose a graph and prompt detail
 
-For substantive implementation, the default is an adaptive slice queue:
+Use an adaptive slice queue when accepted output or findings must determine or
+re-cut the remaining work:
 
 ```mermaid
 flowchart LR
@@ -158,7 +159,11 @@ final whole-file checks. The [task authoring manual](../../examples/workflows/ta
 owns its slice/correction allowances, mechanical and design gates, terminal reasons,
 and replay requirements. Use that manual when running or repairing `task/plan`.
 
-Use a **fixed graph** for known, unchanging work or ask for it explicitly.
+Prefer a **fixed graph** for one bounded deliverable with known requirements,
+even when the implementation is substantive. Keep independent review, a finite
+correction and recheck path when needed, and required final verification; do
+not invent a slice queue merely because implementation has several internal
+steps. A caller can also request a fixed graph explicitly.
 Choose **procedural briefs** only when an exact sequence is required by a tool or
 an observed failure. The default **outcome-led brief** names the role, result,
 sources and essential constraints, then leaves the method to the agent. Graph
