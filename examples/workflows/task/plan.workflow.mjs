@@ -34,13 +34,13 @@ export default async function runWorkflow(dsl, input = "") {
 
   dsl.phase("build");
   const seed = await dsl.agent(
-    `Create workspace workflow.mjs directly as a file from the reviewed design. No prior workflow.mjs is required; this stage owns its first creation in the workflow workspace. Do not launch another workflow or require a saved workflow registration to create the file. Start with the smallest complete runnable module that preserves the primary output identity and product scope and can grow by whole graph nodes or branches. It may omit later reviewed graph nodes, bounds and review paths, but must not contradict them. Write workflow-source-seed.md with the exact path, edit outcome, preserved primary output, and a source-free list of every reviewed graph requirement still missing from this seed. Return only the report and paths, never source bytes. The independent checker owns node --check and workflow_check_source evidence.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}`,
+    `Create workspace workflow.mjs directly as a file from the reviewed design. No prior workflow.mjs is required; this stage owns its first creation in the workflow workspace. Do not launch another workflow or require a saved workflow registration to create the file. Use standard orchestration-only source shape: a literal top-level export const meta with profile "standard", one default async runWorkflow(dsl, input) export, and only supported dsl methods; every dsl.agent call has a unique literal label. Do not use top-level agent/text globals, unlabeled calls, regex policy routes or unsupported expressions. Start with the smallest complete runnable module that preserves the primary output identity and product scope and can grow by whole graph nodes or branches. It may omit later reviewed graph nodes, bounds and review paths, but must not contradict them. For an adaptive design, a temporary single-slice route must not claim final success while the bounded queue is absent; use a fail-closed incomplete route until that graph is built. Write workflow-source-seed.md with the exact path, edit outcome, preserved primary output, and a source-free list of every reviewed graph requirement still missing from this seed. Return only the report and paths, never source bytes. The independent checker owns node --check and workflow_check_source evidence.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}`,
     { label: "workflow-source-seed", result: "report", title: "Create a valid workflow source seed" },
   );
 
   dsl.phase("verify");
   const seedCheck = await dsl.agent(
-    `Independently check the exact workspace workflow.mjs as a starting seed, not as the final reviewed graph. Run node --check and workflow_check_source with mode orchestration-only. Pass the seed gate only if those checks pass, the module has a runnable route aimed at the reviewed primary output in the declared product scope, and it has no graph contradiction that prevents later source slices. Missing reviewed nodes, bounds, review and correction paths are remaining source work, not seed-gate failures, when the seed report names them and the current file confirms the gap. Compare the seed report with the actual file and reviewed design. Write workflow-source-seed-check.md with explicit seed gate passed/failed evidence and a separate source-free remaining graph work list. Do not edit or execute source. Return the report and paths, never source bytes. Full design conformance belongs to the source queue and final review.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nSeed evidence:\n${seed}`,
+    `Independently check the exact workspace workflow.mjs as a starting seed, not as the final reviewed graph. Run node --check and workflow_check_source with mode orchestration-only. Pass the seed gate only if those checks pass, the module has a runnable route aimed at the reviewed primary output in the declared product scope, and it has no graph contradiction that prevents later source slices. A temporary single-slice route is remaining adaptive graph work if it fails closed rather than claiming final success; the final whole-file review requires the complete bounded route. Missing reviewed nodes, bounds, review and correction paths are remaining source work, not seed-gate failures, when the seed report names them and the current file confirms the gap. Compare the seed report with the actual file and reviewed design. Write workflow-source-seed-check.md with explicit seed gate passed/failed evidence and a separate source-free remaining graph work list. Do not edit or execute source. Return the report and paths, never source bytes. Full design conformance belongs to the source queue and final review.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nSeed evidence:\n${seed}`,
     { label: "workflow-source-seed-check", result: "report", title: "Gate the workflow source seed" },
   );
   const seedRoute = await dsl.agent(
@@ -51,15 +51,33 @@ export default async function runWorkflow(dsl, input = "") {
       choice: ["passed", "failed"],
     },
   );
-  if (seedRoute !== "passed")
-    return {
-      ok: false,
-      status: "failed",
-      stage: "verify",
-      reason: "seed_failed",
-      source: "workflow.mjs",
-      diagnostics: seedCheck,
-    };
+  if (seedRoute !== "passed") {
+    const seedFix = await dsl.agent(
+      `Use the failed seed check to repair exactly its defects in the existing workspace workflow.mjs once. If the file is absent, do not create it here; report that seed creation failed. Otherwise restore standard orchestration-only grammar, the primary output and scope, and a runnable noncontradictory starting route. A partial adaptive route may remain only if it fails closed instead of claiming final success; list its missing graph nodes for later source slices. Preserve source outside the failed criteria. Write workflow-source-seed-fix.md with path, exact edit outcome and remaining source work. Return only report and paths, never source bytes. The independent checker owns node --check and workflow_check_source evidence.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nFailed seed check:\n${seedCheck}`,
+      { label: "workflow-source-seed-fix", result: "report", title: "Repair the source seed once" },
+    );
+    const seedFixCheck = await dsl.agent(
+      `Independently recheck the exact workspace workflow.mjs after the one seed fix. Run node --check and workflow_check_source with mode orchestration-only. Verify the primary output, product scope and a runnable noncontradictory starter route against the reviewed design; missing later graph nodes must be listed, not mistaken for a completed final source. If the file is still absent or any seed criterion fails, report failure. Do not edit or execute source. Write workflow-source-seed-fix-check.md with exact diagnostics and a source-free remaining-work list. Return only report and paths, never source bytes.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nInitial failure:\n${seedCheck}\n\nFix evidence:\n${seedFix}`,
+      { label: "workflow-source-seed-fix-check", result: "report", title: "Recheck the repaired source seed" },
+    );
+    const seedFixRoute = await dsl.agent(
+      `Translate the independent seed fix check without rejudging it. Choose passed only when every seed criterion now passes; otherwise choose failed. Remaining graph work alone is not a seed failure.\n\n${seedFixCheck}`,
+      {
+        label: "workflow-source-seed-fix-route",
+        title: "Route the repaired source seed",
+        choice: ["passed", "failed"],
+      },
+    );
+    if (seedFixRoute !== "passed")
+      return {
+        ok: false,
+        status: "failed",
+        stage: "verify",
+        reason: "seed_failed",
+        source: "workflow.mjs",
+        diagnostics: seedFixCheck,
+      };
+  }
 
   /** @type {string[]} */
   let previousQueue = [];
@@ -70,7 +88,7 @@ export default async function runWorkflow(dsl, input = "") {
   for (let accepted = 0; accepted <= 6; accepted += 1) {
     /** @type {string[]} */
     const proposedQueue = await dsl.agent(
-      `Own the remaining source plan. Read the reviewed design and the actual workspace workflow.mjs. Use the seed check's remaining-work list as baseline evidence, but re-evaluate it against the current file on every pass. Return the complete remaining queue in execution order as source-free identity and requirements briefs, one missing or defective node or branch in workspace workflow.mjs per item. These are edits to the workflow source graph, not the product implementation slices that the generated workflow will later execute. A node present in the file but missing required control flow remains work. On the first pass, an empty prior queue and no accepted evidence are the expected baseline. On later passes, preserve unmet identities from the prior queue unless the accepted slice or current file satisfies them. Never include source bytes, quoted source or generated module text. Do not drop requirements to fit the allowance. Return no items only when the actual whole file satisfies every design requirement. Do not edit source.\n\n${SOURCE_CONTRACT}\n\nAccepted slices: ${accepted}; maximum: 6.\nReviewed design:\n${reviewedDesign}\n\nSeed check baseline (recheck against current file):\n${seedCheck}\n\nPrior queue identities:\n${previousQueue.join("\n---\n")}\n\nLast accepted evidence:\n${lastAccepted}`,
+      `Own the remaining source plan. Read the reviewed design and the actual workspace workflow.mjs. Use the seed check's remaining-work list as baseline evidence; if workflow-source-seed-fix-check.md exists, its later report supersedes that initial check. Re-evaluate either report against the current file on every pass. Return the complete remaining queue in execution order as source-free identity and requirements briefs, one missing or defective node or branch in workspace workflow.mjs per item. These are edits to the workflow source graph, not the product implementation slices that the generated workflow will later execute. A node present in the file but missing required control flow remains work. On the first pass, an empty prior queue and no accepted evidence are the expected baseline. On later passes, preserve unmet identities from the prior queue unless the accepted slice or current file satisfies them. Never include source bytes, quoted source or generated module text. Do not drop requirements to fit the allowance. Return no items only when the actual whole file satisfies every design requirement. Do not edit source.\n\n${SOURCE_CONTRACT}\n\nAccepted slices: ${accepted}; maximum: 6.\nReviewed design:\n${reviewedDesign}\n\nInitial seed check baseline (recheck against current file):\n${seedCheck}\n\nPrior queue identities:\n${previousQueue.join("\n---\n")}\n\nLast accepted evidence:\n${lastAccepted}`,
       { label: "workflow-source-cut", handoffs: {}, title: `Cut remaining source after ${accepted} slices` },
     );
     const proposedAssessment = await dsl.agent(
