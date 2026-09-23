@@ -241,47 +241,47 @@ describe("Package workflow: task/plan", () => {
 
   it("recuts a conflicting first source queue once before continuing", async () => {
     const fixtureRun = fixture({
-      "workflow-source-cut": [["product slice: board and movement"], []],
+      "workflow-source-cut": [["review route: destinations missing", "single correction branch"], []],
       "workflow-source-queue-assessment": [
-        "first pass; product slice already exists but failure route is missing",
+        "review choices omit accepted and correction-needed destinations",
         "complete",
       ],
       "workflow-source-queue-route": ["queue_conflict", "complete"],
-      "workflow-source-queue-repair": [["source branch: explicit failure route"], []],
-      "workflow-source-queue-recheck": ["source branch covers the missing failure route", "whole source complete"],
+      "workflow-source-queue-repair": [["review+correction: accepted->final; correct->single fix"], []],
+      "workflow-source-queue-recheck": ["source branch covers both destinations", "whole source complete"],
       "workflow-source-queue-recheck-route": ["work", "complete"],
     });
 
     await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
     const assessment = fixtureRun.calls.find((call) => call.options.label === "workflow-source-queue-assessment");
-    expect(assessment?.prompt).toContain("On the first pass, no prior identities or accepted evidence exist");
+    expect(assessment?.prompt).toContain("Treat a branch item with any missing choice destination");
     const repair = fixtureRun.calls.find((call) => call.options.label === "workflow-source-queue-repair");
-    expect(repair?.prompt).toContain("failure route is missing");
-    expect(repair?.prompt).toContain("edits to workflow.mjs");
+    expect(repair?.prompt).toContain("review choices omit accepted and correction-needed destinations");
+    expect(repair?.prompt).toContain("group adjacent items into one bounded coherent source edit");
     expect(fixtureRun.calls.find((call) => call.options.label === "workflow-source-queue-recheck")?.prompt).toContain(
-      "source branch: explicit failure route",
+      "review+correction: accepted->final; correct->single fix",
     );
     const slice = fixtureRun.calls.find((call) => call.options.label === "workflow-source-slice");
-    expect(slice?.prompt).toContain("source branch: explicit failure route");
-    expect(slice?.prompt).not.toContain("Slice 1:\\nproduct slice: board and movement");
+    expect(slice?.prompt).toContain("review+correction: accepted->final; correct->single fix");
+    expect(slice?.prompt).toContain("Implement every graph identity and connecting edge");
     expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
   });
 
   it("fails closed when the repaired source queue still conflicts", async () => {
     const fixtureRun = fixture({
-      "workflow-source-cut": [["product slice: board and movement"]],
-      "workflow-source-queue-assessment": ["source failure route is missing"],
+      "workflow-source-cut": [["review route: choices lack destinations"]],
+      "workflow-source-queue-assessment": ["review choice destinations are missing"],
       "workflow-source-queue-route": ["queue_conflict"],
-      "workflow-source-queue-repair": [["still only a product slice"]],
-      "workflow-source-queue-recheck": ["source failure route remains missing"],
+      "workflow-source-queue-repair": [["review route still lacks destinations"]],
+      "workflow-source-queue-recheck": ["review choice destinations remain missing"],
       "workflow-source-queue-recheck-route": ["queue_conflict"],
     });
 
     await expect(fixtureRun.run()).resolves.toMatchObject({
       ok: false,
       reason: "queue_conflict",
-      diagnostics: "source failure route remains missing",
-      remaining: ["still only a product slice"],
+      diagnostics: "review choice destinations remain missing",
+      remaining: ["review route still lacks destinations"],
     });
     expect(fixtureRun.calls.at(-1)?.options.label).toBe("workflow-source-queue-recheck-route");
     expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
