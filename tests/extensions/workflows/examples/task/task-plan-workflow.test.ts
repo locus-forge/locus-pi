@@ -317,24 +317,24 @@ describe("Package workflow: task/plan", () => {
     ).toEqual(["passed", "fix"]);
   });
 
-  it("does not grant a second fix when the mechanical path consumed the slice allowance", async () => {
+  it("allows one design fix after a successful mechanical fix on the same slice", async () => {
     const fixtureRun = fixture({
       "workflow-source-check-route": ["fix"],
       "workflow-source-fix": ["workflow-source-fix.md"],
       "workflow-source-fix-check": ["workflow-source-fix-check.md: passed"],
       "workflow-source-fix-route": ["passed"],
       "workflow-source-review-route": ["fix"],
+      "workflow-source-design-fix": ["design defect corrected"],
+      "workflow-source-design-fix-check": ["design fix mechanically valid"],
+      "workflow-source-design-fix-route": ["passed"],
+      "workflow-source-design-recheck": ["design fix accepted"],
+      "workflow-source-design-recheck-route": ["accept"],
     });
 
-    await expect(fixtureRun.run()).resolves.toMatchObject({
-      ok: false,
-      status: "failed",
-      reason: "slice_repair_failed",
-      source: "workflow.mjs",
-      diagnostics: "workflow-source-design-review.md: accepted",
-    });
-    expect(fixtureRun.calls.some((call) => call.options.label === "workflow-source-design-fix")).toBe(false);
-    expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
+    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
+    const labels = fixtureRun.calls.map((call) => call.options.label);
+    expect(labels.indexOf("workflow-source-fix-route")).toBeLessThan(labels.indexOf("workflow-source-design-fix"));
+    expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
   });
 
   it("independently rechecks a semantic fix before accepting the slice", async () => {

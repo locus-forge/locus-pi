@@ -234,7 +234,7 @@ export default async function runWorkflow(dsl, input = "") {
     );
     if (mechanicalRoute === "fix") {
       const fixReport = await dsl.agent(
-        `Use workflow-source-check.md to fix exactly the failed mechanical contract in workspace workflow.mjs. Preserve accepted graph nodes outside this slice. This consumes the slice's one fix allowance. Write workflow-source-fix.md with the edited path and outcome. Return only the report and paths, never source bytes. The independent checker owns node --check and workflow_check_source evidence.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nFailed check:\n${mechanical}`,
+        `Use workflow-source-check.md to fix exactly the failed mechanical contract in workspace workflow.mjs. Preserve accepted graph nodes outside this slice. This consumes the slice's one mechanical fix allowance; a later distinct design defect may use one design fix after independent review. Write workflow-source-fix.md with the edited path and outcome. Return only the report and paths, never source bytes. The independent checker owns node --check and workflow_check_source evidence.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nFailed check:\n${mechanical}`,
         { label: "workflow-source-fix", result: "report", title: `Fix source slice ${accepted + 1}` },
       );
       const fixCheck = await dsl.agent(
@@ -288,17 +288,8 @@ export default async function runWorkflow(dsl, input = "") {
         diagnostics: designReview,
       };
     if (designRoute === "fix") {
-      if (mechanicalRoute === "fix")
-        return {
-          ok: false,
-          status: "failed",
-          stage: "verify",
-          reason: "slice_repair_failed",
-          source: "workflow.mjs",
-          diagnostics: designReview,
-        };
       const designFix = await dsl.agent(
-        `Use workflow-source-design-review.md to fix exactly the in-scope design mismatch in workspace workflow.mjs. Preserve accepted nodes outside this slice. This consumes the slice's one fix allowance. Write workflow-source-design-fix.md with the edited path and outcome. Return only the report and paths, never source bytes. The independent checker owns node --check and workflow_check_source evidence.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nDesign findings:\n${designReview}`,
+        `Use workflow-source-design-review.md to fix exactly the in-scope design mismatch in workspace workflow.mjs. Preserve accepted nodes outside this slice. This consumes the slice's one design fix allowance, whether or not a separate mechanical fix was used. Write workflow-source-design-fix.md with the edited path and outcome. Return only the report and paths, never source bytes. The independent checker owns node --check and workflow_check_source evidence.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nDesign findings:\n${designReview}`,
         {
           label: "workflow-source-design-fix",
           result: "report",
