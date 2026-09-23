@@ -35,6 +35,13 @@ Every source editor runs local `node --check` and orchestration-only source
 checks after writing, with at most two edit-check passes inside its call. It
 reports unresolved diagnostics instead of claiming success. Independent check
 agents repeat those checks; the editor's preflight never grants acceptance.
+The standard DSL uses singular `choice: [...]` on `agent()` for a branch result
+and `publishArtifact()` for an in-memory diagnostic. `choices` and
+`publishText()` are unsupported. An opaque agent answer can be forwarded whole
+to a later agent prompt or published exactly; source code does not branch on it
+or construct diagnostic text from it. The broader standard checker permits
+composed text in `publishArtifact()`; this narrower diagnostic rule belongs to
+the `task/plan` editor contract and its design review.
 
 For adaptive graphs, the editor guidance uses the checker's supported shape: a
 literal-bounded `for` loop counts implementation and correction turns, a
@@ -53,6 +60,10 @@ independent recheck. A clean proposal keeps its identities in that pass; a
 conflicting proposal is corrected once. The first pass has no prior identities. Queue
 items describe missing or defective nodes and branches in `workflow.mjs`, not
 the product implementation slices that the generated workflow will later run.
+The returned list itself is authoritative. Each member must be a concrete
+source-free requirements brief. A workspace report describing a queue, or one
+narrative member summarizing several unseen items, cannot stand in for that
+list. Independent recheck examines the actual returned members before editing.
 One queue item is one bounded source edit. It may include adjacent graph nodes
 and their connecting branches when they form a coherent runnable route; the
 item names every covered identity. This lets a graph with more than six nodes

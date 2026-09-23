@@ -85,6 +85,24 @@ describe("standard bounded carry and author-owned records; requires native ast-g
     );
     expect(errors(source)).toEqual([]);
   });
+  it("requires the exact choice option and a supported diagnostic publication method", () => {
+    const valid = wrap(
+      'const route = await dsl.agent(input, { label: "route", choice: ["passed", "failed"] }); ' +
+        'if (route === "failed") { dsl.publishArtifact("diagnostic.md", "literal reason"); return { ok: false, status: "failed" }; } return route;',
+    );
+    const invalidChoice = wrap(
+      'const route = await dsl.agent(input, { label: "route", choices: ["passed", "failed"] }); return route;',
+    );
+    const invalidMethod = wrap('dsl.publishText("diagnostic.md", "literal reason"); return "failed";');
+    const composedPublication = wrap(
+      'const report = await dsl.agent(input, { label: "report" }); ' +
+        'dsl.publishArtifact("diagnostic.md", `Failure: ${report}`); return report;',
+    );
+    expect(errors(valid)).toEqual([]);
+    expect(errors(invalidChoice).map((item) => item.code)).toContain("WF_AUTHORING_SUBSET");
+    expect(errors(invalidMethod).map((item) => item.code)).toContain("WF_CALL");
+    expect(errors(composedPublication)).toEqual([]);
+  });
   it("treats one repeated bounded callsite as replay-safe and distinct duplicate callsites as unsafe", () => {
     const repeated = wrap(
       'let queue = []; for (let slice = 0; slice <= 6; slice += 1) { queue = await dsl.agent(input, { label: "source-slice", handoffs: {} }); if (queue.length === 0) break; } return queue;',
