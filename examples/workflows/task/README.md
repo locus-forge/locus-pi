@@ -36,6 +36,16 @@ checks after writing, with at most two edit-check passes inside its call. It
 reports unresolved diagnostics instead of claiming success. Independent check
 agents repeat those checks; the editor's preflight never grants acceptance.
 
+For adaptive graphs, the editor guidance uses the checker's supported shape: a
+literal-bounded `for` loop counts implementation and correction turns, a
+`choice` agent produces each branch identity, and a whole agent answer can be
+carried into the next iteration from a `let` binding declared before the loop.
+Opaque answers appear only in later agent prompts or exact terminal results.
+This keeps the turn cap and routes in source control flow; describing them in
+an agent prompt does not implement them. `while` loops, manually maintained
+turn counters, concatenated semantic state, and computed returns built from
+opaque answers fail the standard source contract.
+
 An owner re-cuts the remaining graph-node queue after each accepted slice. An independent
 queue assessment preserves unmet identities and fails with `queue_conflict` when
 the transition cannot be reconciled after one source-free queue pass and
