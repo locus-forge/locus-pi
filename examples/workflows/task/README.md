@@ -11,6 +11,11 @@
    whitespace-only input fails before the first child starts and publishes no
    `workflow.mjs`.
 
+Design and design review use the accepted draft before any source file exists.
+The seed stage creates `workflow.mjs` directly in the workflow workspace. From
+that point onward, the workspace file is the source authority; a missing file
+at the seed check or any later gate fails closed.
+
 The seed and every accepted source slice leave the shared workspace
 `workflow.mjs` as a complete runnable module that parses and passes the
 orchestration-only checker. The seed preserves the primary output identity and

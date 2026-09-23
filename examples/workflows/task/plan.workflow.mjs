@@ -13,7 +13,7 @@ export const meta = {
   ],
 };
 
-const SOURCE_CONTRACT = `The workspace workflow.mjs is the only authoritative source. Every accepted step leaves a complete runnable, Node-parseable and orchestration-only-valid module. Agents edit that file and return only opaque reports or source-free requirement briefs; never return, quote or transport source bytes. The generated source uses unique literal labels, complete prompts, visible bounded control flow and only orchestration-only DSL calls. Preserve the accepted scope and primary output identity while growing the reviewed graph; seed and intermediate source may still lack listed graph nodes or branches. The final source must implement the complete reviewed graph. Mechanical checks and design review stay separate. Write named diagnostic files in the workspace before returning any failed route. Do not publish partial source.`;
+const SOURCE_CONTRACT = `Before seed creation, the accepted draft supplies the requirements and workspace workflow.mjs is expected to be absent. After the seed is created, workspace workflow.mjs is the only authoritative source artifact. Every accepted source step leaves a complete runnable, Node-parseable and orchestration-only-valid module. Agents edit that file and return only opaque reports or source-free requirement briefs; never return, quote or transport source bytes. The generated source uses unique literal labels, complete prompts, visible bounded control flow and only orchestration-only DSL calls. Preserve the accepted scope and primary output identity while growing the reviewed graph; seed and intermediate source may still lack listed graph nodes or branches. The final source must implement the complete reviewed graph. Mechanical checks and design review stay separate. Write named diagnostic files in the workspace before returning any failed route. Do not publish partial source.`;
 
 /**
  * @param {import("../../../extensions/workflows/runtime/workflow-runtime.js").WorkflowDsl} dsl
@@ -24,17 +24,17 @@ export default async function runWorkflow(dsl, input = "") {
 
   dsl.phase("design");
   const design = await dsl.agent(
-    `Translate the accepted draft into a concrete node-and-edge ledger. Name every role, literal label, input, output, consumer, branch, loop bound, failure exit and primary result. Select complete graph nodes or branches as possible source slices. Do not edit files. Return the complete design, not source code.\n\n${SOURCE_CONTRACT}\n\nAccepted draft:\n${draftText}`,
+    `Translate the accepted draft into a concrete node-and-edge ledger. This design stage runs before seed creation: workspace workflow.mjs is expected to be absent and is not a precondition. Use the accepted draft, not an existing source file, to name every role, literal label, input, output, consumer, branch, loop bound, failure exit and primary result. Select complete graph nodes or branches as possible source slices. Do not edit files. Return the complete design, not source code.\n\n${SOURCE_CONTRACT}\n\nAccepted draft:\n${draftText}`,
     { label: "workflow-design", title: "Define the accepted workflow graph" },
   );
   const reviewedDesign = await dsl.agent(
-    `Independently correct the proposed workflow design. Check every edge, bound, correction path, failure exit and primary output. Remove unused layers and preserve simple fixed graphs when requested. Do not edit files. Return the complete replacement design, not source code.\n\n${SOURCE_CONTRACT}\n\nAccepted draft:\n${draftText}\n\nProposed design:\n${design}`,
+    `Independently correct the proposed workflow design against the accepted draft. The source seed has not been created yet; absence of workspace workflow.mjs is expected and must not block this design review. Check every edge, bound, correction path, failure exit and primary output. Remove unused layers and preserve simple fixed graphs when requested. Do not edit files. Return the complete replacement design, not source code.\n\n${SOURCE_CONTRACT}\n\nAccepted draft:\n${draftText}\n\nProposed design:\n${design}`,
     { label: "workflow-design-review", title: "Review the workflow graph" },
   );
 
   dsl.phase("build");
   const seed = await dsl.agent(
-    `Create workspace workflow.mjs from the reviewed design. Start with the smallest complete runnable module that preserves the primary output identity and product scope and can grow by whole graph nodes or branches. It may omit later reviewed graph nodes, bounds and review paths, but must not contradict them. Write workflow-source-seed.md with the exact path, edit outcome, preserved primary output, and a source-free list of every reviewed graph requirement still missing from this seed. Return only the report and paths, never source bytes. The independent checker owns node --check and workflow_check_source evidence.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}`,
+    `Create workspace workflow.mjs directly as a file from the reviewed design. No prior workflow.mjs is required; this stage owns its first creation in the workflow workspace. Do not launch another workflow or require a saved workflow registration to create the file. Start with the smallest complete runnable module that preserves the primary output identity and product scope and can grow by whole graph nodes or branches. It may omit later reviewed graph nodes, bounds and review paths, but must not contradict them. Write workflow-source-seed.md with the exact path, edit outcome, preserved primary output, and a source-free list of every reviewed graph requirement still missing from this seed. Return only the report and paths, never source bytes. The independent checker owns node --check and workflow_check_source evidence.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}`,
     { label: "workflow-source-seed", result: "report", title: "Create a valid workflow source seed" },
   );
 
