@@ -69,16 +69,16 @@ export default async function runWorkflow(dsl, input = "") {
   // implement a seventh slice. Every earlier pass can accept at most one slice.
   for (let accepted = 0; accepted <= 6; accepted += 1) {
     /** @type {string[]} */
-    const queue = await dsl.agent(
-      `Own the remaining source plan. Read the reviewed design and the actual workspace workflow.mjs. Return the complete remaining queue in execution order as source-free identity and requirements briefs, one complete graph node or branch per item. Preserve unmet identities from the prior queue unless the accepted slice or current file satisfies them. Never include source bytes, quoted source or generated module text. Do not drop requirements to fit the allowance. Return no items only when the actual whole file satisfies every design requirement. Do not edit source.\n\n${SOURCE_CONTRACT}\n\nAccepted slices: ${accepted}; maximum: 6.\nReviewed design:\n${reviewedDesign}\n\nPrior queue identities:\n${previousQueue.join("\n---\n")}\n\nLast accepted evidence:\n${lastAccepted}`,
+    const proposedQueue = await dsl.agent(
+      `Own the remaining source plan. Read the reviewed design and the actual workspace workflow.mjs. Return the complete remaining queue in execution order as source-free identity and requirements briefs, one missing or defective node or branch in workspace workflow.mjs per item. These are edits to the workflow source graph, not the product implementation slices that the generated workflow will later execute. A node present in the file but missing required control flow remains work. On the first pass, an empty prior queue and no accepted evidence are the expected baseline. On later passes, preserve unmet identities from the prior queue unless the accepted slice or current file satisfies them. Never include source bytes, quoted source or generated module text. Do not drop requirements to fit the allowance. Return no items only when the actual whole file satisfies every design requirement. Do not edit source.\n\n${SOURCE_CONTRACT}\n\nAccepted slices: ${accepted}; maximum: 6.\nReviewed design:\n${reviewedDesign}\n\nPrior queue identities:\n${previousQueue.join("\n---\n")}\n\nLast accepted evidence:\n${lastAccepted}`,
       { label: "workflow-source-cut", handoffs: {}, title: `Cut remaining source after ${accepted} slices` },
     );
-    const queueAssessment = await dsl.agent(
-      `Independently compare the proposed source-free queue with the prior queue identities, the reviewed design and the actual workspace workflow.mjs. Confirm that accepted work is present and every unmet prior identity remains represented. An empty queue is not proof of completion. Write workflow-source-queue.md with the identity comparison, completed requirements, remaining requirements and any conflict. Return the report and paths, never source bytes. Do not edit source.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nPrior queue identities:\n${previousQueue.join("\n---\n")}\n\nProposed queue:\n${queue.join("\n---\n")}\n\nLast accepted evidence:\n${lastAccepted}`,
+    const proposedAssessment = await dsl.agent(
+      `Independently compare the proposed source-free queue with the prior queue identities, the reviewed design and the actual workspace workflow.mjs. On the first pass, no prior identities or accepted evidence exist; do not treat that baseline as a conflict. On later passes, confirm that accepted work is present and every unmet prior identity remains represented. Compare proposed items to missing or defective workflow.mjs graph nodes and branches, not the product slices executed by that graph. A source node whose prompt mentions failure but has no required route is not complete. An empty queue is not proof of completion. Write workflow-source-queue.md with the identity comparison, completed requirements, remaining requirements and any conflict. Return the report and paths, never source bytes. Do not edit source.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nPrior queue identities:\n${previousQueue.join("\n---\n")}\n\nProposed queue:\n${proposedQueue.join("\n---\n")}\n\nLast accepted evidence:\n${lastAccepted}`,
       { label: "workflow-source-queue-assessment", result: "report", title: "Validate the source queue transition" },
     );
-    const queueRoute = await dsl.agent(
-      `Translate the queue assessment without rejudging it. Choose work for a complete conflict-free non-empty queue. Choose complete only when the actual whole file satisfies every design requirement and the proposed queue is empty. Choose queue_conflict when an unmet identity disappeared, an accepted identity returned, the queue contradicts the file, or completion conflicts with remaining work.\n\n${queueAssessment}`,
+    const proposedRoute = await dsl.agent(
+      `Translate the queue assessment without rejudging it. Choose work for a complete conflict-free non-empty queue. Choose complete only when the actual whole file satisfies every design requirement and the proposed queue is empty. Choose queue_conflict when an unmet source identity disappeared, an accepted identity returned, the queue contradicts the file or reviewed graph, or completion conflicts with remaining work. An empty prior queue on the first pass is expected and is not a conflict.\n\n${proposedAssessment}`,
       {
         label: "workflow-source-queue-route",
         title: "Route the source queue",
@@ -86,6 +86,22 @@ export default async function runWorkflow(dsl, input = "") {
       },
     );
 
+    const queue = await dsl.agent(
+      `Reconcile the source-free queue once using the independent assessment. When the assessment finds no conflict, preserve the proposed queue's identities and order exactly. When it finds a conflict, correct the complete remaining queue using the report. Return edits to workflow.mjs, one missing or defective graph node or branch per item; do not return product implementation slices when those stages already exist in source. Preserve genuinely unmet prior identities and add omitted source-control work. On the first pass there are no prior identities to preserve. Do not edit source or return source bytes. If the conflict cannot be resolved, leave the mismatch visible for independent recheck; do not claim completion.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nInitial route:\n${proposedRoute}\n\nPrior queue identities:\n${previousQueue.join("\n---\n")}\n\nProposed queue:\n${proposedQueue.join("\n---\n")}\n\nAssessment:\n${proposedAssessment}`,
+      { label: "workflow-source-queue-repair", handoffs: {}, title: "Reconcile the source queue once" },
+    );
+    const queueAssessment = await dsl.agent(
+      `Independently recheck the reconciled source-free queue against the reviewed design, actual workspace workflow.mjs, prior identities, and first assessment. On the first pass an empty prior queue is expected. Confirm that every unmet source graph node or branch is represented, no completed identity returned, and the queue names source edits rather than product implementation slices. When the first assessment found no conflict, also confirm the proposed queue's identities and order were preserved. A prompt mentioning failure is not an explicit failure route. An empty queue is not proof of completion. Write workflow-source-queue-recheck.md with exact evidence and any remaining conflict. Do not edit source or return source bytes.\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nPrior queue identities:\n${previousQueue.join("\n---\n")}\n\nProposed queue:\n${proposedQueue.join("\n---\n")}\n\nReconciled queue:\n${queue.join("\n---\n")}\n\nInitial route:\n${proposedRoute}\n\nFirst assessment:\n${proposedAssessment}`,
+      { label: "workflow-source-queue-recheck", result: "report", title: "Recheck the reconciled source queue" },
+    );
+    const queueRoute = await dsl.agent(
+      `Translate the independent queue recheck without rejudging it. Choose work only for a complete conflict-free non-empty source queue. Choose complete only when the actual whole file satisfies every design requirement and the reconciled queue is empty. Otherwise choose queue_conflict. Do not treat the first pass's empty prior queue as a conflict.\n\n${queueAssessment}`,
+      {
+        label: "workflow-source-queue-recheck-route",
+        title: "Route the reconciled source queue",
+        choice: ["work", "complete", "queue_conflict"],
+      },
+    );
     if (queueRoute === "queue_conflict")
       return {
         ok: false,
