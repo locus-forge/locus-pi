@@ -29,7 +29,12 @@ The seed uses the standard `meta`/default DSL export shape. A failed seed check
 gets one correction of the existing file and one independent recheck. A missing
 file remains a failure; an unrepaired defect returns the last check report and
 publishes nothing. A temporary route may leave adaptive graph work for later
-source slices, but cannot claim final success before that graph exists.
+source slices, but cannot claim final success before that graph exists. The
+starter route includes an agent explicitly aimed at the reviewed primary output;
+metadata or an incomplete diagnostic that merely names the output is not a
+runnable route. Semantic input passes whole into an agent prompt. A blank input
+default belongs at the `runWorkflow` parameter boundary; `input || "fallback"`
+inside the body transforms opaque input and fails the source checker.
 
 Every source editor runs local `node --check` and orchestration-only source
 checks after writing, with at most two edit-check passes inside its call. It
