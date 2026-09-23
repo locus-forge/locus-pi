@@ -137,7 +137,6 @@ describe("Package workflow: task/plan", () => {
     const fixtureRun = runnerFixture();
     const absolutePath = path.join(fixtureRun.root, "proof", "workflow.mjs");
     const result = await fixtureRun.run();
-
     expect(result.ok, result.error).toBe(true);
     expect(result.primaryFile).toEqual({
       relativePath: "workflow.mjs",
@@ -147,6 +146,9 @@ describe("Package workflow: task/plan", () => {
     });
     expect(readFileSync(result.primaryFile!.absolutePath, "utf8")).toBe(generatedSource);
     expect(fixtureRun.tasks.every((task) => !task.includes(generatedSource))).toBe(true);
+    expect(fixtureRun.tasks[0]).toContain("expected to be absent and is not a precondition");
+    expect(fixtureRun.tasks[1]).toContain("must not block this design review");
+    expect(fixtureRun.tasks[2]).toContain("Create workspace workflow.mjs directly as a file");
     expect(fixtureRun.labels.filter((label) => label === "workflow-source-cut")).toHaveLength(2);
     expect(fixtureRun.phases).toEqual(["design", "build", "verify", "build", "verify", "verify", "publish"]);
   });
@@ -416,7 +418,7 @@ describe("Package workflow: task/plan", () => {
     {
       name: "seed failure",
       overrides: {
-        "workflow-source-seed-check": ["seed gate failed: primary output identity missing"],
+        "workflow-source-seed-check": ["seed gate failed: workflow.mjs absent; primary output identity missing"],
         "workflow-source-seed-route": ["failed"],
       },
       reason: "seed_failed",
@@ -463,7 +465,7 @@ describe("Package workflow: task/plan", () => {
       ok: false,
       source: "workflow.mjs",
       reason,
-      diagnostics: expect.any(String),
+      diagnostics: expect.stringContaining(reason === "seed_failed" ? "workflow.mjs absent" : ""),
     });
     expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
   });
