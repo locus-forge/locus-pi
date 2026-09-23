@@ -17,7 +17,11 @@ orchestration-only checker. Agents edit that file and return reports or source-f
 requirement briefs; source bytes never travel through a model answer. An owner
 re-cuts the remaining graph-node queue after each accepted slice. An independent
 queue assessment preserves unmet identities and fails with `queue_conflict` when
-the transition cannot be reconciled.
+the transition cannot be reconciled after one source-free queue pass and
+independent recheck. A clean proposal keeps its identities in that pass; a
+conflicting proposal is corrected once. The first pass has no prior identities. Queue
+items describe missing or defective nodes and branches in `workflow.mjs`, not
+the product implementation slices that the generated workflow will later run.
 
 Mechanical checks and design review are separate. Any failed mechanical check
 always enters the fix path. Each slice has one cumulative fix,

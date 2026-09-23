@@ -32,6 +32,9 @@ function completeRunAnswers(): AnswerQueues {
     "workflow-source-cut": [["slice-a: add the review branch"], []],
     "workflow-source-queue-assessment": ["queue transition is valid", "all requirements are implemented"],
     "workflow-source-queue-route": ["work", "complete"],
+    "workflow-source-queue-repair": [["slice-a: add the review branch"], []],
+    "workflow-source-queue-recheck": ["reconciled source queue is valid", "whole source is complete"],
+    "workflow-source-queue-recheck-route": ["work", "complete"],
     "workflow-source-slice": ["workflow-source-slice.md"],
     "workflow-source-check": ["workflow-source-check.md: passed"],
     "workflow-source-check-route": ["passed"],
@@ -164,7 +167,7 @@ describe("Package workflow: task/plan", () => {
       "slice-a: add the review branch",
     );
     expect(calls.find((call) => call.options.label === "workflow-source-final-review")?.prompt).toContain(
-      "Queue evidence:\nall requirements are implemented",
+      "Queue evidence:\nwhole source is complete",
     );
     for (const call of calls.filter(
       (entry) => entry.options.label.startsWith("workflow-source-") && !entry.options.choice,
@@ -178,6 +181,9 @@ describe("Package workflow: task/plan", () => {
       "workflow-source-cut": [["select_slice: bounded selection"], ["recut_queue: remaining graph"], []],
       "workflow-source-queue-assessment": ["selection remains", "recut remains", "all requirements complete"],
       "workflow-source-queue-route": ["work", "work", "complete"],
+      "workflow-source-queue-repair": [["select_slice: bounded selection"], ["recut_queue: remaining graph"], []],
+      "workflow-source-queue-recheck": ["selection preserved", "recut preserved", "whole source complete"],
+      "workflow-source-queue-recheck-route": ["work", "work", "complete"],
       "workflow-source-slice": ["selection implemented", "recut implemented"],
       "workflow-source-check": ["selection mechanically valid", "recut mechanically valid"],
       "workflow-source-check-route": ["passed", "passed"],
@@ -195,6 +201,54 @@ describe("Package workflow: task/plan", () => {
     expect(firstRoute?.prompt).toContain("The final whole-file review alone decides");
     expect(fixtureRun.calls.filter((call) => call.options.label === "workflow-source-cut")).toHaveLength(3);
     expect(fixtureRun.calls.some((call) => call.options.label === "workflow-source-design-fix")).toBe(false);
+  });
+
+  it("recuts a conflicting first source queue once before continuing", async () => {
+    const fixtureRun = fixture({
+      "workflow-source-cut": [["product slice: board and movement"], []],
+      "workflow-source-queue-assessment": [
+        "first pass; product slice already exists but failure route is missing",
+        "complete",
+      ],
+      "workflow-source-queue-route": ["queue_conflict", "complete"],
+      "workflow-source-queue-repair": [["source branch: explicit failure route"], []],
+      "workflow-source-queue-recheck": ["source branch covers the missing failure route", "whole source complete"],
+      "workflow-source-queue-recheck-route": ["work", "complete"],
+    });
+
+    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
+    const assessment = fixtureRun.calls.find((call) => call.options.label === "workflow-source-queue-assessment");
+    expect(assessment?.prompt).toContain("On the first pass, no prior identities or accepted evidence exist");
+    const repair = fixtureRun.calls.find((call) => call.options.label === "workflow-source-queue-repair");
+    expect(repair?.prompt).toContain("failure route is missing");
+    expect(repair?.prompt).toContain("edits to workflow.mjs");
+    expect(fixtureRun.calls.find((call) => call.options.label === "workflow-source-queue-recheck")?.prompt).toContain(
+      "source branch: explicit failure route",
+    );
+    const slice = fixtureRun.calls.find((call) => call.options.label === "workflow-source-slice");
+    expect(slice?.prompt).toContain("source branch: explicit failure route");
+    expect(slice?.prompt).not.toContain("Slice 1:\\nproduct slice: board and movement");
+    expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when the repaired source queue still conflicts", async () => {
+    const fixtureRun = fixture({
+      "workflow-source-cut": [["product slice: board and movement"]],
+      "workflow-source-queue-assessment": ["source failure route is missing"],
+      "workflow-source-queue-route": ["queue_conflict"],
+      "workflow-source-queue-repair": [["still only a product slice"]],
+      "workflow-source-queue-recheck": ["source failure route remains missing"],
+      "workflow-source-queue-recheck-route": ["queue_conflict"],
+    });
+
+    await expect(fixtureRun.run()).resolves.toMatchObject({
+      ok: false,
+      reason: "queue_conflict",
+      diagnostics: "source failure route remains missing",
+      remaining: ["still only a product slice"],
+    });
+    expect(fixtureRun.calls.at(-1)?.options.label).toBe("workflow-source-queue-recheck-route");
+    expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
   });
 
   it("routes every mechanical failure through one fix before semantic review", async () => {
@@ -339,12 +393,22 @@ describe("Package workflow: task/plan", () => {
     },
     {
       name: "queue conflict",
-      overrides: { "workflow-source-queue-route": ["queue_conflict"] },
+      overrides: {
+        "workflow-source-queue-route": ["queue_conflict"],
+        "workflow-source-queue-repair": [["still conflicting"]],
+        "workflow-source-queue-recheck": ["still conflicting"],
+        "workflow-source-queue-recheck-route": ["queue_conflict"],
+      },
       reason: "queue_conflict",
     },
     {
       name: "empty work queue",
-      overrides: { "workflow-source-cut": [[]], "workflow-source-queue-route": ["work"] },
+      overrides: {
+        "workflow-source-cut": [[]],
+        "workflow-source-queue-route": ["work"],
+        "workflow-source-queue-repair": [[]],
+        "workflow-source-queue-recheck-route": ["work"],
+      },
       reason: "empty_queue",
     },
     {
@@ -375,6 +439,9 @@ describe("Package workflow: task/plan", () => {
       "workflow-source-cut": slices,
       "workflow-source-queue-assessment": Array.from({ length: 7 }, (_, index) => `queue-${index + 1}`),
       "workflow-source-queue-route": Array.from({ length: 7 }, () => "work"),
+      "workflow-source-queue-repair": slices,
+      "workflow-source-queue-recheck": Array.from({ length: 7 }, (_, index) => `rechecked-queue-${index + 1}`),
+      "workflow-source-queue-recheck-route": Array.from({ length: 7 }, () => "work"),
       "workflow-source-slice": Array.from({ length: 6 }, (_, index) => `slice-report-${index + 1}`),
       "workflow-source-check": Array.from({ length: 6 }, (_, index) => `check-${index + 1}`),
       "workflow-source-check-route": Array.from({ length: 6 }, () => "passed"),
@@ -387,7 +454,7 @@ describe("Package workflow: task/plan", () => {
       status: "incomplete",
       reason: "slice_allowance",
       source: "workflow.mjs",
-      diagnostics: "queue-7",
+      diagnostics: "rechecked-queue-7",
       remaining: ["slice-7"],
     });
     expect(fixtureRun.calls.filter((call) => call.options.label === "workflow-source-slice")).toHaveLength(6);
