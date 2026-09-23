@@ -75,6 +75,11 @@ behavior from the reviewed design. The first independent assessment treats a
 missing destination as a conflict. Reconciliation can add that detail under
 the same identity and order even when the first assessment missed it; the
 independent recheck still rejects an ambiguous branch.
+The current source is expected to lack queued work. A queue item that names its
+wrong or missing route and specifies the reviewed replacement remains work to
+implement; the old route still present in the file is not itself a queue
+conflict. A proposed edge contrary to the reviewed design, a dropped unmet
+identity, or a false completion claim is a conflict.
 
 Mechanical checks and design review are separate. Any failed mechanical check
 always enters its one-fix path. A later distinct design defect has one design
