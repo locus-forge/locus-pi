@@ -23,8 +23,15 @@ product scope; reviewed graph nodes may still be missing. Its independent check
 records those gaps as remaining source work and fails on mechanical errors,
 changed output or scope, or a graph contradiction. Only the final whole-file
 review requires the complete graph. Agents edit that file and return reports or
-source-free requirement briefs; source bytes never travel through a model answer. An owner
-re-cuts the remaining graph-node queue after each accepted slice. An independent
+source-free requirement briefs; source bytes never travel through a model answer.
+
+The seed uses the standard `meta`/default DSL export shape. A failed seed check
+gets one correction of the existing file and one independent recheck. A missing
+file remains a failure; an unrepaired defect returns the last check report and
+publishes nothing. A temporary route may leave adaptive graph work for later
+source slices, but cannot claim final success before that graph exists.
+
+An owner re-cuts the remaining graph-node queue after each accepted slice. An independent
 queue assessment preserves unmet identities and fails with `queue_conflict` when
 the transition cannot be reconciled after one source-free queue pass and
 independent recheck. A clean proposal keeps its identities in that pass; a

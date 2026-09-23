@@ -29,6 +29,9 @@ function completeRunAnswers(): AnswerQueues {
     "workflow-source-seed": ["workflow-source-seed.md"],
     "workflow-source-seed-check": ["workflow-source-seed-check.md: passed"],
     "workflow-source-seed-route": ["passed"],
+    "workflow-source-seed-fix": ["workflow-source-seed-fix.md"],
+    "workflow-source-seed-fix-check": ["workflow-source-seed-fix-check.md: passed"],
+    "workflow-source-seed-fix-route": ["passed"],
     "workflow-source-cut": [["slice-a: add the review branch"], []],
     "workflow-source-queue-assessment": ["queue transition is valid", "all requirements are implemented"],
     "workflow-source-queue-route": ["work", "complete"],
@@ -149,6 +152,7 @@ describe("Package workflow: task/plan", () => {
     expect(fixtureRun.tasks[0]).toContain("expected to be absent and is not a precondition");
     expect(fixtureRun.tasks[1]).toContain("must not block this design review");
     expect(fixtureRun.tasks[2]).toContain("Create workspace workflow.mjs directly as a file");
+    expect(fixtureRun.labels).not.toContain("workflow-source-seed-fix");
     expect(fixtureRun.labels.filter((label) => label === "workflow-source-cut")).toHaveLength(2);
     expect(fixtureRun.phases).toEqual(["design", "build", "verify", "build", "verify", "verify", "publish"]);
   });
@@ -205,12 +209,13 @@ describe("Package workflow: task/plan", () => {
     expect(fixtureRun.calls.some((call) => call.options.label === "workflow-source-design-fix")).toBe(false);
   });
 
-  it("carries a valid but incomplete seed into source slicing before final review", async () => {
+  it("repairs an invalid seed once and carries remaining work into source slicing", async () => {
     const seedReport = "primary output product/index.html retained; bounded review branch remains missing";
-    const seedCheck = "seed gate passed: mechanics and primary output valid; remaining graph: bounded review branch";
+    const seedCheck = "seed gate failed: source grammar invalid; remaining graph: bounded review branch";
     const fixtureRun = fixture({
       "workflow-source-seed": [seedReport],
       "workflow-source-seed-check": [seedCheck],
+      "workflow-source-seed-route": ["failed"],
       "workflow-source-cut": [["source branch: bounded review"], []],
       "workflow-source-queue-repair": [["source branch: bounded review"], []],
     });
@@ -224,10 +229,12 @@ describe("Package workflow: task/plan", () => {
     expect(checkPrompt).toContain("Reviewed design:\nReviewed design ledger.");
     expect(checkPrompt).toContain("remaining source work, not seed-gate failures");
     expect(checkPrompt).toContain(seedReport);
-    expect(routePrompt).toContain(seedCheck);
+    expect(fixtureRun.calls.find((call) => call.options.label === "workflow-source-seed-fix")?.prompt).toContain(
+      seedCheck,
+    );
     expect(routePrompt).toContain("missing reviewed graph nodes is work for source slices");
-    expect(cutPrompt).toContain(seedCheck);
-    expect(cutPrompt).toContain("re-evaluate it against the current file on every pass");
+    expect(cutPrompt).toContain("workflow-source-seed-fix-check.md exists");
+    expect(cutPrompt).toContain("Re-evaluate either report against the current file on every pass");
     expect(fixtureRun.calls.some((call) => call.options.label === "workflow-source-final-review")).toBe(true);
     expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
   });
@@ -420,6 +427,8 @@ describe("Package workflow: task/plan", () => {
       overrides: {
         "workflow-source-seed-check": ["seed gate failed: workflow.mjs absent; primary output identity missing"],
         "workflow-source-seed-route": ["failed"],
+        "workflow-source-seed-fix-check": ["seed gate failed: workflow.mjs absent after repair"],
+        "workflow-source-seed-fix-route": ["failed"],
       },
       reason: "seed_failed",
     },
@@ -465,7 +474,7 @@ describe("Package workflow: task/plan", () => {
       ok: false,
       source: "workflow.mjs",
       reason,
-      diagnostics: expect.stringContaining(reason === "seed_failed" ? "workflow.mjs absent" : ""),
+      diagnostics: expect.stringContaining(reason === "seed_failed" ? "absent after repair" : ""),
     });
     expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
   });
