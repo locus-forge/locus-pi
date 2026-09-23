@@ -216,6 +216,17 @@ function validateOrchestrationOnlyAgentLabel(
   diagnostics: WorkflowSourceDiagnosticBag,
 ): void {
   const options = unwrapStandardParentheses(standardCallArguments(call)[1]);
+  const choices =
+    options?.kind() === "object"
+      ? options.children().find((child) => child.kind() === "pair" && staticObjectKey(child.field("key")) === "choices")
+      : undefined;
+  if (choices !== undefined)
+    diagnostics.add(
+      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.authoringSubset,
+      "error",
+      "agent() uses singular choice: [...]; choices is not a supported option",
+      choices,
+    );
   const labelNode =
     options?.kind() === "object"
       ? options

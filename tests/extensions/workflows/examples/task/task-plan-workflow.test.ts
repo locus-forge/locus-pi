@@ -263,7 +263,7 @@ describe("Package workflow: task/plan", () => {
     );
     const slice = fixtureRun.calls.find((call) => call.options.label === "workflow-source-slice");
     expect(slice?.prompt).toContain("review+correction: accepted->final; correct->single fix");
-    expect(slice?.prompt).toContain("Implement every graph identity and connecting edge");
+    expect(slice?.prompt).toContain("Implement only the graph identities and connecting edges explicitly named");
     expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
   });
 
