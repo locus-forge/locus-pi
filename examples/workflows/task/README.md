@@ -31,6 +31,11 @@ file remains a failure; an unrepaired defect returns the last check report and
 publishes nothing. A temporary route may leave adaptive graph work for later
 source slices, but cannot claim final success before that graph exists.
 
+Every source editor runs local `node --check` and orchestration-only source
+checks after writing, with at most two edit-check passes inside its call. It
+reports unresolved diagnostics instead of claiming success. Independent check
+agents repeat those checks; the editor's preflight never grants acceptance.
+
 An owner re-cuts the remaining graph-node queue after each accepted slice. An independent
 queue assessment preserves unmet identities and fails with `queue_conflict` when
 the transition cannot be reconciled after one source-free queue pass and
