@@ -12,9 +12,13 @@
    `workflow.mjs`.
 
 The seed and every accepted source slice leave the shared workspace
-`workflow.mjs` complete, runnable, Node-parseable, and valid under the
-orchestration-only checker. Agents edit that file and return reports or source-free
-requirement briefs; source bytes never travel through a model answer. An owner
+`workflow.mjs` as a complete runnable module that parses and passes the
+orchestration-only checker. The seed preserves the primary output identity and
+product scope; reviewed graph nodes may still be missing. Its independent check
+records those gaps as remaining source work and fails on mechanical errors,
+changed output or scope, or a graph contradiction. Only the final whole-file
+review requires the complete graph. Agents edit that file and return reports or
+source-free requirement briefs; source bytes never travel through a model answer. An owner
 re-cuts the remaining graph-node queue after each accepted slice. An independent
 queue assessment preserves unmet identities and fails with `queue_conflict` when
 the transition cannot be reconciled after one source-free queue pass and

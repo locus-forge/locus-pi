@@ -203,6 +203,33 @@ describe("Package workflow: task/plan", () => {
     expect(fixtureRun.calls.some((call) => call.options.label === "workflow-source-design-fix")).toBe(false);
   });
 
+  it("carries a valid but incomplete seed into source slicing before final review", async () => {
+    const seedReport = "primary output product/index.html retained; bounded review branch remains missing";
+    const seedCheck = "seed gate passed: mechanics and primary output valid; remaining graph: bounded review branch";
+    const fixtureRun = fixture({
+      "workflow-source-seed": [seedReport],
+      "workflow-source-seed-check": [seedCheck],
+      "workflow-source-cut": [["source branch: bounded review"], []],
+      "workflow-source-queue-repair": [["source branch: bounded review"], []],
+    });
+
+    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
+    const seedPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-seed")?.prompt;
+    const checkPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-seed-check")?.prompt;
+    const routePrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-seed-route")?.prompt;
+    const cutPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-cut")?.prompt;
+    expect(seedPrompt).toContain("source-free list of every reviewed graph requirement still missing");
+    expect(checkPrompt).toContain("Reviewed design:\nReviewed design ledger.");
+    expect(checkPrompt).toContain("remaining source work, not seed-gate failures");
+    expect(checkPrompt).toContain(seedReport);
+    expect(routePrompt).toContain(seedCheck);
+    expect(routePrompt).toContain("missing reviewed graph nodes is work for source slices");
+    expect(cutPrompt).toContain(seedCheck);
+    expect(cutPrompt).toContain("re-evaluate it against the current file on every pass");
+    expect(fixtureRun.calls.some((call) => call.options.label === "workflow-source-final-review")).toBe(true);
+    expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
+  });
+
   it("recuts a conflicting first source queue once before continuing", async () => {
     const fixtureRun = fixture({
       "workflow-source-cut": [["product slice: board and movement"], []],
@@ -388,7 +415,10 @@ describe("Package workflow: task/plan", () => {
   it.each([
     {
       name: "seed failure",
-      overrides: { "workflow-source-seed-route": ["failed"] },
+      overrides: {
+        "workflow-source-seed-check": ["seed gate failed: primary output identity missing"],
+        "workflow-source-seed-route": ["failed"],
+      },
       reason: "seed_failed",
     },
     {
@@ -420,6 +450,11 @@ describe("Package workflow: task/plan", () => {
       name: "final design mismatch",
       overrides: { "workflow-source-final-route": ["design_mismatch"] },
       reason: "design_mismatch",
+    },
+    {
+      name: "incomplete final graph",
+      overrides: { "workflow-source-final-route": ["empty_queue"] },
+      reason: "empty_queue",
     },
   ])("fails closed on $name with an explicit diagnostic string", async ({ overrides, reason }) => {
     const fixtureRun = fixture(overrides);
