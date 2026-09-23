@@ -40,8 +40,9 @@ items describe missing or defective nodes and branches in `workflow.mjs`, not
 the product implementation slices that the generated workflow will later run.
 
 Mechanical checks and design review are separate. Any failed mechanical check
-always enters the fix path. Each slice has one cumulative fix,
-followed by an independent mechanical and, when needed, design recheck. Six slices
+always enters its one-fix path. A later distinct design defect has one design
+fix, even if the mechanical fix was used; both corrections receive independent
+checks. A repeated failure stops without publication. Six slices
 may be accepted; a seventh pass can prove completion or return the unconsumed
 queue, but cannot implement more work. Named terminal reasons are `seed_failed`,
 `slice_allowance`, `slice_repair_failed`, `queue_conflict`, `empty_queue`,
