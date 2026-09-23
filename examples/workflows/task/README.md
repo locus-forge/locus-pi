@@ -55,6 +55,12 @@ agent answer can be carried into the next iteration from a `let` binding
 declared before the loop. An agent node reached from several branches has one
 call site and one literal label; branch-specific opaque reports can be assigned
 whole to a carry binding before that call.
+Keep the initial agent report in an immutable binding. Declare the evolving
+carry as `let lastOutcome = ""` before the bounded loop and assign whole agent
+answers to it only inside that loop. Later prompts can use the initial report
+and latest carry separately. Initializing the mutable binding from an opaque
+report or assigning that report before the loop fails the source checker with
+`WF_DATA_FLOW` and `WF_EXPRESSION`.
 An exact `choice` call returns only its route token. A separate agent call
 produces the full slice brief or findings report; later owner decisions,
 correction, and accepted-state updates receive the latest whole state and

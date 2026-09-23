@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import runPlanWorkflow from "../../../../../examples/workflows/task/plan.workflow.mjs";
+import { orchestrationOnlyWorkflowSourceShapeDiagnostics } from "../../../../../extensions/workflows/tool/workflow-source-shape.js";
 
 function runWithResidual(mechanical: "passed" | "failed", design: "accept" | "failed") {
   const calls: { label: string; prompt: string }[] = [];
@@ -68,7 +69,7 @@ describe("task/plan bounded design recheck repair", () => {
     for (const label of ["workflow-source-seed", "workflow-source-slice", "workflow-source-design-refix"]) {
       const prompt = fixture.calls.find((call) => call.label === label)?.prompt;
       expect(prompt).toContain("A choice returns only its exact route token");
-      expect(prompt).toContain("carry the latest whole state and queue");
+      expect(prompt).toContain("Carry the latest whole state and queue");
     }
     expect(fixture.publishPrimaryFile).toHaveBeenCalledOnce();
   });
@@ -92,6 +93,101 @@ describe("task/plan bounded design recheck repair", () => {
       diagnostics: "Final design result",
     });
     expect(fixture.calls.filter((call) => call.label === "workflow-source-design-refix")).toHaveLength(1);
+    expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();
+  });
+});
+
+function carrySource(declaration: string, beforeLoop = "", extraInside = "") {
+  return [
+    'export const meta = { name: "carry", profile: "standard" };',
+    'export default async function runWorkflow(dsl, input = "") {',
+    '  const initialReport = await dsl.agent(`Initial: ${input}`, { label: "initial" });',
+    declaration,
+    beforeLoop,
+    "  for (let turn = 1; turn <= 2; turn += 1) {",
+    '    const report = await dsl.agent(`Work: ${initialReport}; latest: ${lastOutcome}`, { label: "work" });',
+    "    lastOutcome = report;",
+    extraInside,
+    "  }",
+    '  return await dsl.agent(`Final: ${initialReport}; latest: ${lastOutcome}`, { label: "final" });',
+    "}",
+  ].join("\n");
+}
+
+function failedMechanicalRepair() {
+  const calls: { label: string; prompt: string }[] = [];
+  const publishPrimaryFile = vi.fn();
+  const answers: Record<string, unknown[]> = {
+    "workflow-design": ["Design"],
+    "workflow-design-review": ["Reviewed design"],
+    "workflow-source-seed": ["Seed"],
+    "workflow-source-seed-check": ["Seed passed"],
+    "workflow-source-seed-route": ["passed"],
+    "workflow-source-cut": [["state carry slice"]],
+    "workflow-source-queue-assessment": ["Queue valid"],
+    "workflow-source-queue-route": ["work"],
+    "workflow-source-queue-repair": [["state carry slice"]],
+    "workflow-source-queue-recheck": ["Queue valid"],
+    "workflow-source-queue-recheck-route": ["work"],
+    "workflow-source-slice": ["Source edited"],
+    "workflow-source-check": ["WF_DATA_FLOW and WF_EXPRESSION at state assignment"],
+    "workflow-source-check-route": ["fix"],
+    "workflow-source-fix": ["Attempted repair"],
+    "workflow-source-fix-check": ["WF_DATA_FLOW remains"],
+    "workflow-source-fix-route": ["failed"],
+  };
+  const dsl = {
+    phase: () => undefined,
+    publishPrimaryFile,
+    agent: async (prompt: string, options: { label: string }) => {
+      calls.push({ label: options.label, prompt });
+      const answer = answers[options.label]?.shift();
+      if (answer === undefined) throw new Error(`No scripted answer for ${options.label}`);
+      return answer;
+    },
+  };
+  return {
+    calls,
+    publishPrimaryFile,
+    run: () => runPlanWorkflow(dsl as unknown as Parameters<typeof runPlanWorkflow>[0], "Accepted brief"),
+  };
+}
+
+describe("task/plan empty whole carry", () => {
+  it("matches the real source checker for the v17 failure and its valid replacement", () => {
+    const valid = carrySource(
+      '  let lastOutcome = "";',
+      "",
+      '    const review = await dsl.agent(`Review: ${report}`, { label: "review" });\n    lastOutcome = review;',
+    );
+    expect(orchestrationOnlyWorkflowSourceShapeDiagnostics(valid)).toEqual([]);
+
+    for (const invalid of [
+      carrySource("  let lastOutcome = initialReport;"),
+      carrySource('  let lastOutcome = "";', "  lastOutcome = initialReport;"),
+    ]) {
+      const codes = orchestrationOnlyWorkflowSourceShapeDiagnostics(invalid).map((diagnostic) => diagnostic.code);
+      expect(codes).toContain("WF_DATA_FLOW");
+      expect(codes).toContain("WF_EXPRESSION");
+    }
+  });
+
+  it("delivers the precise repair rule and keeps a failed independent recheck closed", async () => {
+    const fixture = failedMechanicalRepair();
+    await expect(fixture.run()).resolves.toMatchObject({
+      ok: false,
+      reason: "slice_repair_failed",
+      diagnostics: "WF_DATA_FLOW remains",
+    });
+    for (const label of ["workflow-source-seed", "workflow-source-slice", "workflow-source-fix"]) {
+      const prompt = fixture.calls.find((call) => call.label === label)?.prompt;
+      expect(prompt).toContain('let lastOutcome = ""');
+      expect(prompt).toContain("Never declare let lastOutcome = initialReport");
+      expect(prompt).toContain("only inside the loop");
+    }
+    expect(fixture.calls.find((call) => call.label === "workflow-source-fix")?.prompt).toContain(
+      "For WF_DATA_FLOW or WF_EXPRESSION on state/report assignments",
+    );
     expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();
   });
 });
