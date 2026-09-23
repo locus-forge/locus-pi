@@ -55,6 +55,10 @@ agent answer can be carried into the next iteration from a `let` binding
 declared before the loop. An agent node reached from several branches has one
 call site and one literal label; branch-specific opaque reports can be assigned
 whole to a carry binding before that call.
+An exact `choice` call returns only its route token. A separate agent call
+produces the full slice brief or findings report; later owner decisions,
+correction, and accepted-state updates receive the latest whole state and
+queue, using the initial handoff only as the baseline.
 Opaque answers appear only in later agent prompts or exact terminal results.
 This keeps the turn cap and routes in source control flow; describing them in
 an agent prompt does not implement them. `while` loops, manually maintained
@@ -96,8 +100,10 @@ identity, or a false completion claim is a conflict.
 
 Mechanical checks and design review are separate. Any failed mechanical check
 always enters its one-fix path. A later distinct design defect has one design
-fix, even if the mechanical fix was used; both corrections receive independent
-checks. A repeated failure stops without publication. Six slices
+fix, even if the mechanical fix was used. If its independent design recheck
+finds a precise correctable residual in the same slice, one final targeted
+design fix is allowed. Each fix receives independent mechanical and design
+checks. A failed second check stops without publication. Six slices
 may be accepted; a seventh pass can prove completion or return the unconsumed
 queue, but cannot implement more work. Named terminal reasons are `seed_failed`,
 `slice_allowance`, `slice_repair_failed`, `queue_conflict`, `empty_queue`,

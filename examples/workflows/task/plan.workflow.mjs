@@ -13,9 +13,9 @@ export const meta = {
   ],
 };
 
-const SOURCE_CONTRACT = `Before seed creation, the accepted draft supplies the requirements and workspace workflow.mjs is expected to be absent. After the seed is created, workspace workflow.mjs is the only authoritative source artifact. Every accepted source step leaves a complete runnable, Node-parseable and orchestration-only-valid module. Agents edit that file and return only opaque reports or source-free requirement briefs; never return, quote or transport source bytes. The generated source uses unique literal labels, complete prompts, visible bounded control flow and only orchestration-only DSL calls. Never inspect, compare or transform opaque agent answers or semantic input in source control flow, regex gates or computed return text; route with runtime-owned exact choices, list identity, status or counters, and forward opaque answers whole inside later agent prompts or exact text publication. Interpolate semantic input whole in an agent prompt; if a blank default is needed, use a default parameter at the runWorkflow boundary, not input || a fallback inside the body. For failed-route diagnostics in generated task workflows, use literal text or publish a whole opaque report; composing opaque diagnostic text is outside this authoring contract even when the broader checker permits publication templates. Preserve the accepted scope and primary output identity while growing the reviewed graph; seed and intermediate source may still lack listed graph nodes or branches. A current slice may leave an edge to an explicitly named later queued node as a fail-closed incomplete route with a named diagnostic; keep that target and replacement edge in the next queue, never claim the target is implemented, and replace the placeholder before final publication. The final source must implement the complete reviewed graph with no pending placeholders. Mechanical checks and design review stay separate. Before any failed route, have an agent write a named workspace diagnostic or persist exact diagnostic text with dsl.publishArtifact; a workflow-owned artifact is evidence, not partial source. Do not publish partial source.`;
+const SOURCE_CONTRACT = `Before seed creation, the accepted draft supplies the requirements and workspace workflow.mjs is expected to be absent. After the seed is created, workspace workflow.mjs is the only authoritative source artifact. Every accepted source step leaves a complete runnable, Node-parseable and orchestration-only-valid module. Agents edit that file and return only opaque reports or source-free requirement briefs; never return, quote or transport source bytes. The generated source uses unique literal labels, complete prompts, visible bounded control flow and only orchestration-only DSL calls. Never inspect, compare or transform opaque agent answers or semantic input in source control flow, regex gates or computed return text; route with runtime-owned exact choices, list identity, status or counters, and forward opaque answers whole inside later agent prompts or exact text publication. A choice returns only its exact route token, never a requested brief or findings report; obtain the full opaque report from a separate agent call and pass it whole. In an adaptive graph, carry the latest whole state and queue from accepted or corrected work into every later owner decision, correction, and accepted-state update; the initial handoff is only the baseline. Interpolate semantic input whole in an agent prompt; if a blank default is needed, use a default parameter at the runWorkflow boundary, not input || a fallback inside the body. For failed-route diagnostics in generated task workflows, use literal text or publish a whole opaque report; composing opaque diagnostic text is outside this authoring contract even when the broader checker permits publication templates. Preserve the accepted scope and primary output identity while growing the reviewed graph; seed and intermediate source may still lack listed graph nodes or branches. A current slice may leave an edge to an explicitly named later queued node as a fail-closed incomplete route with a named diagnostic; keep that target and replacement edge in the next queue, never claim the target is implemented, and replace the placeholder before final publication. The final source must implement the complete reviewed graph with no pending placeholders. Mechanical checks and design review stay separate. Before any failed route, have an agent write a named workspace diagnostic or persist exact diagnostic text with dsl.publishArtifact; a workflow-owned artifact is evidence, not partial source. Do not publish partial source.`;
 
-const SOURCE_EDIT_PREFLIGHT = `For an adaptive graph, use one numeric-literal bounded for loop such as for (let turn = 1; turn <= 6; turn += 1); its loop variable is the sole cumulative count for the reviewed bounded unit. Do not initialize or mutate a second count in the body; one implementation slice consumes one turn, while a correction inside that slice stays in the same turn unless the reviewed design counts it separately. Classify each opaque owner or reviewer report with dsl.agent(prompt, { label: "route", choice: ["passed", "failed"] }) using the singular choice option; branch only on that runtime-owned return. The plural choices option is unsupported and leaves the answer opaque. A graph node reached from several branches uses one agent call site with one literal label; converge to that site instead of duplicating it. For alternate opaque review or correction evidence, declare one empty whole-carry binding before the loop, assign each whole report in its branch, then pass that binding to one downstream call site. To carry evidence across iterations, declare let lastOutcome = "" immediately before the loop and assign a whole agent answer or its alias inside it (lastOutcome = outcomeReport); interpolate that whole value only in later agent prompts. For a named in-memory diagnostic use dsl.publishArtifact("diagnostic.md", "literal reason") or publish one whole opaque report; dsl.publishText is unsupported. Use a literal failure status/reason object with whole diagnostics or return a whole terminal agent answer. For this generated-task authoring policy, never interpolate an opaque report into a computed diagnostic string; the broader standard checker permits composed publication, so design review enforces this narrower rule. Do not use while, manually incremented semantic counters, boolean state flags, accumulated semantic strings, or computed return text containing opaque answers. A prompt describing a route does not implement the route; the loop, branches, and exits must be visible in source. After writing workspace workflow.mjs, run node --check and workflow_check_source with mode orchestration-only on that exact file. If either reports an error, correct the file within this editor call and check again; use at most two local edit-check passes total. Report both check outcomes, remaining diagnostics and edited paths without source bytes. These are writer preflight checks; the independent checker repeats them and alone accepts or rejects the source.`;
+const SOURCE_EDIT_PREFLIGHT = `For an adaptive graph, use one numeric-literal bounded for loop such as for (let turn = 1; turn <= 6; turn += 1); its loop variable is the sole cumulative count for the reviewed bounded unit. Do not initialize or mutate a second count in the body; one implementation slice consumes one turn, while a correction inside that slice stays in the same turn unless the reviewed design counts it separately. Classify each opaque owner or reviewer report with dsl.agent(prompt, { label: "route", choice: ["passed", "failed"] }) using the singular choice option; branch only on that runtime-owned return. The plural choices option is unsupported and leaves the answer opaque. A graph node reached from several branches uses one agent call site with one literal label; converge to that site instead of duplicating it. For alternate opaque review or correction evidence, declare one empty whole-carry binding before the loop, assign each whole report in its branch, then pass that binding to one downstream call site. To carry evidence across iterations, declare let lastOutcome = "" immediately before the loop and assign a whole agent answer or its alias inside it (lastOutcome = outcomeReport); interpolate that whole value only in later agent prompts. Use the latest whole carry, not the initial handoff, for later owner, correction, review, and accepted-state updates; pass complete findings separately from their exact choice route. For a named in-memory diagnostic use dsl.publishArtifact("diagnostic.md", "literal reason") or publish one whole opaque report; dsl.publishText is unsupported. Use a literal failure status/reason object with whole diagnostics or return a whole terminal agent answer. For this generated-task authoring policy, never interpolate an opaque report into a computed diagnostic string; the broader standard checker permits composed publication, so design review enforces this narrower rule. Do not use while, manually incremented semantic counters, boolean state flags, accumulated semantic strings, or computed return text containing opaque answers. A prompt describing a route does not implement the route; the loop, branches, and exits must be visible in source. After writing workspace workflow.mjs, run node --check and workflow_check_source with mode orchestration-only on that exact file. If either reports an error, correct the file within this editor call and check again; use at most two local edit-check passes total. Report both check outcomes, remaining diagnostics and edited paths without source bytes. These are writer preflight checks; the independent checker repeats them and alone accepts or rejects the source.`;
 
 /**
  * @param {import("../../../extensions/workflows/runtime/workflow-runtime.js").WorkflowDsl} dsl
@@ -30,7 +30,7 @@ export default async function runWorkflow(dsl, input = "") {
     { label: "workflow-design", title: "Define the accepted workflow graph" },
   );
   const reviewedDesign = await dsl.agent(
-    `Independently correct the proposed workflow design against the accepted draft. The source seed has not been created yet; absence of workspace workflow.mjs is expected and must not block this design review. Check every edge, bound, correction path, failure exit and primary output. Require one bounded loop counter and one call site per labeled graph node; later source slices may temporarily fail closed on named future edges, but the final design must connect them. Remove unused layers and preserve simple fixed graphs when requested. Do not edit files. Return the complete replacement design, not source code.\n\n${SOURCE_CONTRACT}\n\nAccepted draft:\n${draftText}\n\nProposed design:\n${design}`,
+    `Independently correct the proposed workflow design against the accepted draft. The source seed has not been created yet; absence of workspace workflow.mjs is expected and must not block this design review. Check every edge, bound, correction path, failure exit and primary output. Verify that exact choice nodes carry only route identity and the full brief or findings travels through separate opaque reports; every later state consumer uses the latest whole state and queue, not a stale initialization. Require one bounded loop counter and one call site per labeled graph node; later source slices may temporarily fail closed on named future edges, but the final design must connect them. Remove unused layers and preserve simple fixed graphs when requested. Do not edit files. Return the complete replacement design, not source code.\n\n${SOURCE_CONTRACT}\n\nAccepted draft:\n${draftText}\n\nProposed design:\n${design}`,
     { label: "workflow-design-review", title: "Review the workflow graph" },
   );
 
@@ -236,7 +236,7 @@ export default async function runWorkflow(dsl, input = "") {
     );
     if (mechanicalRoute === "fix") {
       const fixReport = await dsl.agent(
-        `Use workflow-source-check.md to fix exactly the failed mechanical contract in workspace workflow.mjs. Preserve accepted graph nodes outside this slice. This consumes the slice's one mechanical fix allowance; a later distinct design defect may use one design fix after independent review. Write workflow-source-fix.md with the edited path and outcome. Return only the report and paths, never source bytes. ${SOURCE_EDIT_PREFLIGHT}\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nFailed check:\n${mechanical}`,
+        `Use workflow-source-check.md to fix exactly the failed mechanical contract in workspace workflow.mjs. Preserve accepted graph nodes outside this slice. This consumes the slice's one mechanical fix allowance; a later distinct design defect may use the bounded design-repair route after independent review. Write workflow-source-fix.md with the edited path and outcome. Return only the report and paths, never source bytes. ${SOURCE_EDIT_PREFLIGHT}\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nFailed check:\n${mechanical}`,
         { label: "workflow-source-fix", result: "report", title: `Fix source slice ${accepted + 1}` },
       );
       const fixCheck = await dsl.agent(
@@ -269,7 +269,7 @@ export default async function runWorkflow(dsl, input = "") {
       mechanicalRoute === "fix" ? "workflow-source-fix-check.md" : "workflow-source-check.md";
 
     const designReview = await dsl.agent(
-      `Independently inspect the entire current workspace workflow.mjs for the effects of this slice. Read the exact current mechanical evidence from workspace ${currentMechanicalReport}. Check that every graph identity and edge named in this slice is implemented or explicitly pending at a named fail-closed route to a later queued node, previously accepted nodes remain correct, every completed handoff for this slice is visible, and the module stays runnable. Identify unmet design requirements as remaining work for the next source queue; their absence is not a defect in this slice. Accept a named fail-closed placeholder for an edge to an exact later queued node if the full queue below retains its final destination and replacement; do not require that future node now. An incomplete edge to a node in this slice is a defect. Do not edit or execute source. Write workflow-source-design-review.md with slice criterion evidence, remaining work, and exact fix guidance for any defect in this slice or regression. Return the report and paths, never source bytes.\n\n${SOURCE_CONTRACT}\n\nSlice:\n${slice}\n\nFull remaining queue (later members identify pending-edge targets):\n${queue.join("\n---\n")}\n\nReviewed design:\n${reviewedDesign}`,
+      `Independently inspect the entire current workspace workflow.mjs for the effects of this slice. Read the exact current mechanical evidence from workspace ${currentMechanicalReport}. Check that every graph identity and edge named in this slice is implemented or explicitly pending at a named fail-closed route to a later queued node, previously accepted nodes remain correct, every completed handoff for this slice is visible, and the module stays runnable. Check that choice tokens are not treated as full reports and that later consumers receive the latest whole state and queue. Identify unmet design requirements as remaining work for the next source queue; their absence is not a defect in this slice. Accept a named fail-closed placeholder for an edge to an exact later queued node if the full queue below retains its final destination and replacement; do not require that future node now. An incomplete edge to a node in this slice is a defect. Do not edit or execute source. Write workflow-source-design-review.md with slice criterion evidence, remaining work, and exact fix guidance for any defect in this slice or regression. Return the report and paths, never source bytes.\n\n${SOURCE_CONTRACT}\n\nSlice:\n${slice}\n\nFull remaining queue (later members identify pending-edge targets):\n${queue.join("\n---\n")}\n\nReviewed design:\n${reviewedDesign}`,
       { label: "workflow-source-review", result: "report", title: `Review source slice ${accepted + 1}` },
     );
     const designRoute = await dsl.agent(
@@ -291,7 +291,7 @@ export default async function runWorkflow(dsl, input = "") {
       };
     if (designRoute === "fix") {
       const designFix = await dsl.agent(
-        `Use workflow-source-design-review.md to fix exactly the in-scope design mismatch in workspace workflow.mjs. Preserve accepted nodes outside this slice. This consumes the slice's one design fix allowance, whether or not a separate mechanical fix was used. Write workflow-source-design-fix.md with the edited path and outcome. Return only the report and paths, never source bytes. ${SOURCE_EDIT_PREFLIGHT}\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nDesign findings:\n${designReview}\n\nFull remaining queue:\n${queue.join("\n---\n")}`,
+        `Use workflow-source-design-review.md to fix exactly the in-scope design mismatch in workspace workflow.mjs. Preserve accepted nodes outside this slice. This is the first design fix for this slice, whether or not a separate mechanical fix was used; only a correctable residual found by its independent design recheck can receive one further targeted fix. Write workflow-source-design-fix.md with the edited path and outcome. Return only the report and paths, never source bytes. ${SOURCE_EDIT_PREFLIGHT}\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nDesign findings:\n${designReview}\n\nFull remaining queue:\n${queue.join("\n---\n")}`,
         {
           label: "workflow-source-design-fix",
           result: "report",
@@ -332,14 +332,74 @@ export default async function runWorkflow(dsl, input = "") {
         },
       );
       const designRecheckRoute = await dsl.agent(
-        `Translate the independent slice design recheck without rejudging it. Choose accept when this slice and previously accepted work conform and the whole module remains runnable; future queued requirements need not be complete. Otherwise choose failed.\n\n${designRecheck}`,
+        `Translate the independent slice design recheck without rejudging it. Choose accept when this slice and previously accepted work conform and the whole module remains runnable; future queued requirements need not be complete. Choose fix only for a precise correctable residual within this slice, including a stale state handoff, while preserving accepted work. Choose failed for an uncorrectable scope conflict or mismatch.\n\n${designRecheck}`,
         {
           label: "workflow-source-design-recheck-route",
           title: "Route fixed source design",
-          choice: ["accept", "failed"],
+          choice: ["accept", "fix", "failed"],
         },
       );
-      if (designRecheckRoute !== "accept")
+      if (designRecheckRoute === "fix") {
+        const designRefix = await dsl.agent(
+          `Use the precise correctable findings in workflow-source-design-recheck.md to repair only the residual defect of this slice in workspace workflow.mjs. Preserve previously accepted nodes and do not implement future queue members. This is the second and final semantic repair allowance for this slice; do not retry again. Write workflow-source-design-refix.md with the edited path, exact outcome and remaining work. Return only the report and paths, never source bytes. ${SOURCE_EDIT_PREFLIGHT}\n\n${SOURCE_CONTRACT}\n\nReviewed design:\n${reviewedDesign}\n\nCurrent slice:\n${slice}\n\nFull remaining queue:\n${queue.join("\n---\n")}\n\nFirst design fix:\n${designFix}\n\nIndependent recheck findings:\n${designRecheck}`,
+          {
+            label: "workflow-source-design-refix",
+            result: "report",
+            title: `Repair residual source design defect ${accepted + 1}`,
+          },
+        );
+        const designRefixCheck = await dsl.agent(
+          `Independently check the exact workspace workflow.mjs after the second and final semantic repair. Run node --check and workflow_check_source with mode orchestration-only; do not edit or execute source. Write workflow-source-design-refix-check.md with exact diagnostics. Return only the report and paths, never source bytes.\n\n${SOURCE_CONTRACT}\n\nSecond fix evidence:\n${designRefix}`,
+          {
+            label: "workflow-source-design-refix-check",
+            result: "report",
+            title: `Mechanically recheck residual design fix ${accepted + 1}`,
+          },
+        );
+        const designRefixCheckRoute = await dsl.agent(
+          `Translate the independent mechanical recheck without rejudging it. Choose passed only when both checks passed; otherwise failed.\n\n${designRefixCheck}`,
+          {
+            label: "workflow-source-design-refix-check-route",
+            title: "Route residual design mechanical check",
+            choice: ["passed", "failed"],
+          },
+        );
+        if (designRefixCheckRoute !== "passed")
+          return {
+            ok: false,
+            status: "failed",
+            stage: "verify",
+            reason: "slice_repair_failed",
+            source: "workflow.mjs",
+            diagnostics: designRefixCheck,
+          };
+        const designRerecheck = await dsl.agent(
+          `Independently recheck the exact workspace workflow.mjs after the second design fix. Confirm this slice and previously accepted work conform, the module is runnable, every current handoff uses complete reports and latest whole state, and later queued work remains explicit. There is no third repair allowance. Do not edit or execute source. Write workflow-source-design-rerecheck.md with criterion evidence and remaining work. Return only the report and paths, never source bytes.\n\n${SOURCE_CONTRACT}\n\nSlice:\n${slice}\n\nFull remaining queue:\n${queue.join("\n---\n")}\n\nReviewed design:\n${reviewedDesign}\n\nFirst recheck findings:\n${designRecheck}\n\nSecond fix evidence:\n${designRefix}`,
+          {
+            label: "workflow-source-design-rerecheck",
+            result: "report",
+            title: `Recheck residual source design fix ${accepted + 1}`,
+          },
+        );
+        const designRerecheckRoute = await dsl.agent(
+          `Translate the final independent design recheck without rejudging it. Choose accept only when this slice and accepted work conform; otherwise failed. No further repair is available.\n\n${designRerecheck}`,
+          {
+            label: "workflow-source-design-rerecheck-route",
+            title: "Route final design recheck",
+            choice: ["accept", "failed"],
+          },
+        );
+        if (designRerecheckRoute !== "accept")
+          return {
+            ok: false,
+            status: "failed",
+            stage: "verify",
+            reason: "design_mismatch",
+            source: "workflow.mjs",
+            diagnostics: designRerecheck,
+          };
+        lastAccepted = designRerecheck;
+      } else if (designRecheckRoute !== "accept") {
         return {
           ok: false,
           status: "failed",
@@ -348,7 +408,9 @@ export default async function runWorkflow(dsl, input = "") {
           source: "workflow.mjs",
           diagnostics: designRecheck,
         };
-      lastAccepted = designRecheck;
+      } else {
+        lastAccepted = designRecheck;
+      }
     } else {
       lastAccepted = designReview;
     }
