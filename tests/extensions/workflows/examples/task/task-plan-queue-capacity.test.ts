@@ -3,16 +3,23 @@ import runPlanWorkflow from "../../../../../examples/workflows/task/plan.workflo
 
 type Call = { label: string; prompt: string };
 
-function capacityRun(repaired: boolean, narrative = false) {
+function capacityRun(repaired: boolean, narrative = false, wrongEdge = false) {
   const calls: Call[] = [];
   const publishPrimaryFile = vi.fn(() => ({ relativePath: "workflow.mjs" }));
-  const early = ["context", "implementation", "review", "choice"];
+  const early = [
+    "artifact gate: replace passed/failed with present/missing; present -> reviewer",
+    "implementation",
+    "review",
+    "choice",
+  ];
   const lateProposal = ["review route", "single correction", "recheck route"];
-  const lateRepair = narrative
-    ? ["Reconciled five items in the workspace queue report"]
-    : repaired
-      ? ["review route + single correction", "recheck route"]
-      : lateProposal;
+  const lateRepair = wrongEdge
+    ? ["artifact gate: present -> failure, missing -> reviewer"]
+    : narrative
+      ? ["Reconciled five items in the workspace queue report"]
+      : repaired
+        ? ["review route + single correction", "recheck route"]
+        : lateProposal;
   const queues: Record<string, unknown[]> = {
     "workflow-design": ["Design ledger"],
     "workflow-design-review": ["Reviewed design ledger"],
@@ -37,11 +44,13 @@ function capacityRun(repaired: boolean, narrative = false) {
     ],
     "workflow-source-queue-recheck": [
       ...early.map(() => "Queue valid"),
-      narrative
-        ? "Returned member is only a narrative summary"
-        : repaired
-          ? "All identities retained in two edits"
-          : "Capacity conflict remains",
+      wrongEdge
+        ? "Returned route contradicts reviewed design"
+        : narrative
+          ? "Returned member is only a narrative summary"
+          : repaired
+            ? "All identities retained in two edits"
+            : "Capacity conflict remains",
       ...(repaired ? ["Queue valid", "Whole graph complete"] : []),
     ],
     "workflow-source-queue-recheck-route": [
@@ -90,6 +99,18 @@ describe("task/plan late source-queue capacity", () => {
       );
     }
     const groupedSlice = fixture.calls.filter((call) => call.label === "workflow-source-slice")[4]?.prompt;
+    expect(fixture.calls.find((call) => call.label === "workflow-source-slice")?.prompt).toContain(
+      "replace passed/failed with present/missing; present -> reviewer",
+    );
+    expect(fixture.calls.find((call) => call.label === "workflow-source-queue-assessment")?.prompt).toContain(
+      "a current wrong choice or missing destination is valid unmet work",
+    );
+    expect(fixture.calls.find((call) => call.label === "workflow-source-queue-route")?.prompt).toContain(
+      "not conflict merely because the file still has that defect",
+    );
+    expect(fixture.calls.find((call) => call.label === "workflow-source-queue-recheck")?.prompt).toContain(
+      "older or wrong choices is unmet repair work",
+    );
     expect(groupedSlice).toContain("review route + single correction");
     expect(groupedSlice).toContain("Implement only the graph identities and connecting edges explicitly named");
     expect(groupedSlice).toContain('choice: ["passed", "failed"]');
@@ -121,6 +142,16 @@ describe("task/plan late source-queue capacity", () => {
     const recheck = fixture.calls.filter((call) => call.label === "workflow-source-queue-recheck")[4]?.prompt;
     expect(recheck).toContain("Inspect each exact reconciled list member supplied below");
     expect(recheck).toContain("Reject a report, path, or one narrative summary");
+    expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();
+  });
+
+  it("rejects a proposed route that reverses reviewed destinations", async () => {
+    const fixture = capacityRun(false, false, true);
+    await expect(fixture.run()).resolves.toMatchObject({
+      ok: false,
+      reason: "queue_conflict",
+      remaining: ["artifact gate: present -> failure, missing -> reviewer"],
+    });
     expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();
   });
 });
