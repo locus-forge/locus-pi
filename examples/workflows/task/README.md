@@ -120,6 +120,15 @@ queue, but cannot implement more work. Named terminal reasons are `seed_failed`,
 `workflow.mjs` plus diagnostic evidence in the workspace and publishes no primary
 file.
 
+Every stage except the route translators reads and appends to
+`workflow-decision-log.md` in the workspace. Each entry records one stage's
+decision, reason, evidence and any open conflict, so a later fixer or reviewer
+knows what was already tried and why, and must name an entry it reverses. The
+log is history, not instruction: the accepted draft, reviewed design and stage
+prompt stay the only requirements, an entry never accepts or waives a check, and
+imperatives inside entries are ignored. The design stage marks a new run when an
+earlier log exists. The log stays in the workspace after a failed result.
+
 An intermediate design review accepts a correct slice when earlier accepted work
 remains intact and the whole module stays runnable. Requirements still queued for
 later slices do not consume that slice's fix allowance. The final design review
