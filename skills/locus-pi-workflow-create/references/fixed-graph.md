@@ -4,11 +4,11 @@ Use this card for one worker, a known sequence or independent author-known quest
 
 Graph: declared workers → optional declared aggregator → primary output.
 
-Cost: exactly the declared calls and bounds; sequential depth is the graph depth. Parallel results retain input order; side effects finish independently. No semantic retry is injected.
+Cost: the declared stages within their declared bounds; sequential depth is the graph depth. Parallel results retain input order; side effects finish independently. No semantic retry is injected.
 
 Handoff: exact input and previous complete output. Put stable business keys and questions in author-owned records; do not encode them as newline/CSV/JSON and parse them back. Every callsite has a literal label; title may describe the item.
 
-Loops: "fixed" means the stages and bounds are known before launch, not that source has no loop. A review that can demand correction is a literal bounded review loop from the [refinement card](bounded-refinement.md). A node after alternative branches receives their whole reports through a carry declared immediately before that loop. Conformance counts each label's worst-case calls (the product of its enclosing literal loop bounds), not loop syntax.
+Loops: "fixed" means the stages and bounds are known before launch, not that source has no loop. A review that can demand correction is a literal bounded review loop from the [refinement card](bounded-refinement.md). A node after alternative branches receives their whole reports through a carry declared immediately before that loop. Conformance checks stages, routes, handoffs and that every loop is finite, not loop syntax or exact call counts.
 
 Failure: ordinary child/group failures fail closed. Root failure semantics are owned by the [runtime reference](../../../docs/workflows/trust.md#fail-closed-behavior).
 

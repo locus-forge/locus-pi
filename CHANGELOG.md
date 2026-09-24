@@ -4,6 +4,27 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+### Changed
+
+- `task/draft` and `task/plan` treat a literal-bounded loop as ordinary control
+  flow in any graph, including a fixed graph. A review that can demand
+  correction becomes a bounded review loop, and a node after alternative
+  branches receives their whole reports through a carry inside that loop.
+- `task/plan` stages share an append-only `workflow-decision-log.md` in the
+  workflow workspace. Each working stage reads it as evidence and appends its
+  decision, reason, evidence and open conflict; entries never act as
+  instructions or waive a check.
+- Workflow bounds no longer block creation. Drafts give each loop a finite
+  round limit but no total agent-call cap, designs adapt a conflicting draft to
+  the nearest expressible graph and record the adaptation, and conformance is
+  judged by stages, routes, handoffs and termination rather than exact call
+  counts.
+
+### Fixed
+
+- The `task/plan` seed stage now always creates `workflow.mjs`, and its one
+  correction creates a missing file instead of failing on it.
+
 ## [0.9.3] - 2026-09-24
 
 ### Changed

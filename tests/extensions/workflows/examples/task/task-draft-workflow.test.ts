@@ -38,8 +38,13 @@ describe("Package workflow: task/draft", () => {
     expect(calls[1]?.prompt).toContain("only when accepted output or findings");
     expect(calls[1]?.prompt).toContain("a bounded review loop when review can demand correction");
     expect(calls[1]?.prompt).toContain("a fixed graph may contain that loop");
-    expect(calls[1]?.prompt).toContain("never as the absence of a loop");
-    expect(calls[1]?.prompt).toContain("bounded review loop with literal round and correction limits");
+    expect(calls[1]?.prompt).toContain("Give each loop");
+    expect(calls[1]?.prompt).toContain("a finite round limit");
+    expect(calls[1]?.prompt).toContain("Do not cap the total number of agent calls");
+    expect(calls[1]?.prompt).toContain("the plan stage adds the routing calls the source needs");
+    expect(calls[1]?.prompt).toContain("a review loop with a finite round limit");
+    expect(calls[1]?.prompt).toContain("a finite limit for each loop or list");
+    expect(calls[1]?.prompt).not.toContain("call limits");
     expect(publications).toEqual([{ name: "draft.md", text: "Task:\nBuild one workflow." }]);
     expect(result).toEqual({ name: "draft.md", text: "Task:\nBuild one workflow." });
   });

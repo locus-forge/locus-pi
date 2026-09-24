@@ -13,8 +13,9 @@
 
 Design and design review use the accepted draft before any source file exists.
 The seed stage creates `workflow.mjs` directly in the workflow workspace. From
-that point onward, the workspace file is the source authority; a missing file
-at the seed check or any later gate fails closed.
+that point onward, the workspace file is the source authority. A missing file at
+the seed check enters the one seed correction, which creates it; a missing file
+at the recheck or any later gate fails closed.
 
 The seed and every accepted source slice leave the shared workspace
 `workflow.mjs` as a complete runnable module that parses and passes the
@@ -25,10 +26,12 @@ changed output or scope, or a graph contradiction. Only the final whole-file
 review requires the complete graph. Agents edit that file and return reports or
 source-free requirement briefs; source bytes never travel through a model answer.
 
-The seed uses the standard `meta`/default DSL export shape. A failed seed check
-gets one correction of the existing file and one independent recheck. A missing
-file remains a failure; an unrepaired defect returns the last check report and
-publishes nothing. A temporary route may leave graph work for later
+The seed uses the standard `meta`/default DSL export shape. The seed stage
+creates the file even when the design or decision log records an open conflict.
+A failed seed check gets one correction and one independent recheck; the
+correction creates a missing file from the reviewed design or repairs the
+existing one. An unrepaired defect returns the last check report and publishes
+nothing. A temporary route may leave graph work for later
 source slices, but cannot claim final success before that graph exists. The
 starter route includes an agent explicitly aimed at the reviewed primary output;
 metadata or an incomplete diagnostic that merely names the output is not a
@@ -56,8 +59,12 @@ a `let` binding declared in the same block immediately before that loop. A fixed
 graph may contain such a loop; its design states bounds, never the absence of a
 loop. An agent node reached from several branches has one call site and one
 literal label; branch-specific opaque reports are assigned whole to a carry
-inside the loop and passed to that call after it. Conformance counts each
-label's worst-case calls, the product of its enclosing literal loop bounds.
+inside the loop and passed to that call after it. Conformance checks stages,
+routes, handoffs and that every loop is finite, not exact call counts. A bound or
+call count that differs from the draft is a recorded design decision. Only an
+unbounded loop, a missing primary output or a scope change is an open design
+conflict, and the seed is still created; slice and final reviews still reject
+wrong routes and missing handoffs as defects.
 Keep the initial agent report in an immutable binding. Declare the evolving
 carry as `let lastOutcome = ""` before the bounded loop and assign whole agent
 answers to it only inside that loop. Later prompts can use the initial report
@@ -70,9 +77,11 @@ correction, and accepted-state updates receive the latest whole state and
 queue, using the initial handoff only as the baseline.
 Opaque answers appear only in later agent prompts or exact terminal results.
 This keeps the turn cap and routes in source control flow; describing them in
-an agent prompt does not implement them. `while` loops, manually maintained
-turn counters, concatenated semantic state, and computed returns built from
-opaque answers fail the standard source contract.
+an agent prompt does not implement them. Manually maintained turn counters,
+concatenated semantic state, and computed returns built from opaque answers fail
+the source checker. `while` loops and loops without a literal bound break the
+`task/plan` editor contract and design review; the checker itself rejects only a
+carry outside a literal-bounded `for` and an opaque value in a loop condition.
 
 An owner re-cuts the remaining graph-node queue after each accepted slice. An independent
 queue assessment preserves unmet identities and fails with `queue_conflict` when

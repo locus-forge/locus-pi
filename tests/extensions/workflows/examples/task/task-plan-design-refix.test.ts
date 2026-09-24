@@ -228,7 +228,7 @@ async function promptsThroughMechanicalFix() {
 }
 
 describe("task/plan bounded loops in any graph", () => {
-  it("lets every stage treat a bounded loop as ordinary control flow judged by call bounds", async () => {
+  it("lets every stage treat a finite loop as ordinary control flow without blocking on call counts", async () => {
     const { prompts, result } = await promptsThroughMechanicalFix();
     expect(result).toMatchObject({ ok: false, reason: "slice_repair_failed" });
 
@@ -237,15 +237,25 @@ describe("task/plan bounded loops in any graph", () => {
       expect(prompt).toContain("ordinary control flow in any graph, including a fixed graph");
       expect(prompt).toContain("never the absence of a loop");
       expect(prompt).toContain("immediately before the loop that assigns it");
-      expect(prompt).toContain("product of its enclosing literal loop bounds");
+      expect(prompt).toContain("not by loop syntax or exact call counts: every loop needs a finite literal bound");
+      expect(prompt).toContain("Do not block workflow creation over bounds or call counts");
+      expect(prompt).toContain("a break or early return is an exit route, never a lower bound");
+      expect(prompt).toContain("This lowers no later gate: a wrong or missing route, a missing handoff");
+      expect(prompt).toContain("even then the seed is still created and the gates decide");
+      expect(prompt).not.toContain("must equal the node's reviewed maximum");
       expect(prompt).not.toContain("In an adaptive graph");
     }
 
     expect(prompts.get("workflow-design")).toContain("label (rounds 1..R)");
     expect(prompts.get("workflow-design")).toContain("correct meaning unresolved");
+    expect(prompts.get("workflow-design")).toContain("A draft limit on agent calls counts its stages only");
+    expect(prompts.get("workflow-design")).toContain("never mark the design blocked over a bound or call count");
     const review = prompts.get("workflow-design-review");
-    expect(review).toContain("Reject a requirement the source contract cannot express");
-    expect(review).toContain("Replace any requirement that forbids a loop with explicit bounds");
+    expect(review).toContain("Rewrite, rather than block, a requirement the source contract cannot express");
+    expect(review).toContain("Record each such adaptation");
+    expect(review).toContain(
+      "Replace any requirement that forbids a loop, or leaves one unbounded, with explicit finite bounds",
+    );
     expect(review).toContain("one literal counter and one literal bound per loop");
     expect(review).not.toContain("Require one bounded loop counter");
     expect(review).not.toContain("preserve simple fixed graphs");
@@ -267,6 +277,9 @@ describe("task/plan bounded loops in any graph", () => {
     );
     expect(slice).toContain("Binding names are unique per file");
     expect(prompts.get("workflow-source-fix")).toContain("when a join of alternative reports has no loop yet");
+    expect(prompts.get("workflow-source-seed")).toContain(
+      "Create the file even when the design or decision log records an open conflict",
+    );
   });
 });
 
@@ -303,5 +316,43 @@ describe("task/plan decision log", () => {
     const review = prompts.get("workflow-design-review");
     expect(review).toContain("Record each change you made to the proposed design and why");
     expect(review).toContain("Do not edit files except appending to workflow-decision-log.md");
+  });
+});
+
+describe("task/plan seed repair", () => {
+  it("creates a missing seed during its one correction instead of leaving creation blocked", async () => {
+    const prompts = new Map<string, string>();
+    const answers: Record<string, unknown[]> = {
+      "workflow-design": ["Design"],
+      "workflow-design-review": ["Reviewed design"],
+      "workflow-source-seed": ["Seed left absent"],
+      "workflow-source-seed-check": ["workflow.mjs absent"],
+      "workflow-source-seed-route": ["failed"],
+      "workflow-source-seed-fix": ["Created workflow.mjs"],
+      "workflow-source-seed-fix-check": ["Still failing"],
+      "workflow-source-seed-fix-route": ["failed"],
+    };
+    const dsl = {
+      phase: () => undefined,
+      publishPrimaryFile: () => undefined,
+      agent: async (prompt: string, options: { label: string }) => {
+        prompts.set(options.label, prompt);
+        const answer = answers[options.label]?.shift();
+        if (answer === undefined) throw new Error(`No scripted answer for ${options.label}`);
+        return answer;
+      },
+    };
+    await expect(
+      runPlanWorkflow(dsl as unknown as Parameters<typeof runPlanWorkflow>[0], "Accepted brief"),
+    ).resolves.toMatchObject({ ok: false, reason: "seed_failed" });
+    const fix = prompts.get("workflow-source-seed-fix");
+    expect(fix).toContain("If the file is absent, create it now from the reviewed design");
+    expect(fix).toContain("an open design conflict is not a reason to leave it absent");
+    expect(fix).not.toContain("do not create it here");
+    for (const label of ["workflow-source-seed-check", "workflow-source-seed-fix-check"]) {
+      expect(prompts.get(label), label).toContain(
+        "An open conflict recorded in the reviewed design or the decision log is not a seed-gate failure",
+      );
+    }
   });
 });
