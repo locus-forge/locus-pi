@@ -191,3 +191,81 @@ describe("task/plan empty whole carry", () => {
     expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();
   });
 });
+
+async function promptsThroughMechanicalFix() {
+  const prompts = new Map<string, string>();
+  const answers: Record<string, unknown[]> = {
+    "workflow-design": ["Design"],
+    "workflow-design-review": ["Reviewed design"],
+    "workflow-source-seed": ["Seed"],
+    "workflow-source-seed-check": ["Seed passed"],
+    "workflow-source-seed-route": ["passed"],
+    "workflow-source-cut": [["review loop slice"]],
+    "workflow-source-queue-assessment": ["Queue valid"],
+    "workflow-source-queue-route": ["work"],
+    "workflow-source-queue-repair": [["review loop slice"]],
+    "workflow-source-queue-recheck": ["Queue valid"],
+    "workflow-source-queue-recheck-route": ["work"],
+    "workflow-source-slice": ["Source edited"],
+    "workflow-source-check": ["WF_EXPRESSION at branch join assignment"],
+    "workflow-source-check-route": ["fix"],
+    "workflow-source-fix": ["Attempted repair"],
+    "workflow-source-fix-check": ["WF_DATA_FLOW remains"],
+    "workflow-source-fix-route": ["failed"],
+  };
+  const dsl = {
+    phase: () => undefined,
+    publishPrimaryFile: () => undefined,
+    agent: async (prompt: string, options: { label: string }) => {
+      prompts.set(options.label, prompt);
+      const answer = answers[options.label]?.shift();
+      if (answer === undefined) throw new Error(`No scripted answer for ${options.label}`);
+      return answer;
+    },
+  };
+  const result = await runPlanWorkflow(dsl as unknown as Parameters<typeof runPlanWorkflow>[0], "Accepted brief");
+  return { prompts, result };
+}
+
+describe("task/plan bounded loops in any graph", () => {
+  it("lets every stage treat a bounded loop as ordinary control flow judged by call bounds", async () => {
+    const { prompts, result } = await promptsThroughMechanicalFix();
+    expect(result).toMatchObject({ ok: false, reason: "slice_repair_failed" });
+
+    for (const label of ["workflow-design", "workflow-design-review", "workflow-source-slice", "workflow-source-fix"]) {
+      const prompt = prompts.get(label);
+      expect(prompt).toContain("ordinary control flow in any graph, including a fixed graph");
+      expect(prompt).toContain("never the absence of a loop");
+      expect(prompt).toContain("immediately before the loop that assigns it");
+      expect(prompt).toContain("product of its enclosing literal loop bounds");
+      expect(prompt).not.toContain("In an adaptive graph");
+    }
+
+    expect(prompts.get("workflow-design")).toContain("label (rounds 1..R)");
+    expect(prompts.get("workflow-design")).toContain("correct meaning unresolved");
+    const review = prompts.get("workflow-design-review");
+    expect(review).toContain("Reject a requirement the source contract cannot express");
+    expect(review).toContain("Replace any requirement that forbids a loop with explicit bounds");
+    expect(review).toContain("one literal counter and one literal bound per loop");
+    expect(review).not.toContain("Require one bounded loop counter");
+    expect(review).not.toContain("preserve simple fixed graphs");
+
+    for (const label of ["workflow-source-seed", "workflow-source-seed-check"]) {
+      expect(prompts.get(label)).not.toMatch(/adaptive (design|graph work)/);
+    }
+    expect(prompts.get("workflow-source-cut")).toContain(
+      "Each reviewed loop with its literal bound is a graph identity",
+    );
+    expect(prompts.get("workflow-source-queue-assessment")).toContain("reviewed loops keep their literal bounds");
+    expect(prompts.get("workflow-source-queue-repair")).toContain("graph identity, edge and loop bound");
+    expect(prompts.get("workflow-source-queue-recheck")).toContain("branch or loop bound");
+
+    const slice = prompts.get("workflow-source-slice");
+    expect(slice).toContain("for (let round = 1; round <= 2; round += 1)");
+    expect(slice).toContain(
+      "rejects a carry assigned outside its nearest enclosing for loop, even when that code runs once",
+    );
+    expect(slice).toContain("Binding names are unique per file");
+    expect(prompts.get("workflow-source-fix")).toContain("when a join of alternative reports has no loop yet");
+  });
+});

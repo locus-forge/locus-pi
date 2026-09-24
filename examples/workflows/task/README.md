@@ -28,7 +28,7 @@ source-free requirement briefs; source bytes never travel through a model answer
 The seed uses the standard `meta`/default DSL export shape. A failed seed check
 gets one correction of the existing file and one independent recheck. A missing
 file remains a failure; an unrepaired defect returns the last check report and
-publishes nothing. A temporary route may leave adaptive graph work for later
+publishes nothing. A temporary route may leave graph work for later
 source slices, but cannot claim final success before that graph exists. The
 starter route includes an agent explicitly aimed at the reviewed primary output;
 metadata or an incomplete diagnostic that merely names the output is not a
@@ -48,13 +48,16 @@ or construct diagnostic text from it. The broader standard checker permits
 composed text in `publishArtifact()`; this narrower diagnostic rule belongs to
 the `task/plan` editor contract and its design review.
 
-For adaptive graphs, the editor guidance uses the checker's supported shape: a
-literal-bounded `for` loop owns the cumulative work count without a second
-mutable counter, a `choice` agent produces each branch identity, and a whole
-agent answer can be carried into the next iteration from a `let` binding
-declared before the loop. An agent node reached from several branches has one
-call site and one literal label; branch-specific opaque reports can be assigned
-whole to a carry binding before that call.
+For any graph, the editor guidance uses the checker's supported shape: a
+literal-bounded `for` loop owns each repeated unit, correction path or branch
+join without a second mutable counter, a `choice` agent produces each branch
+identity, and a whole agent answer can be carried into the next iteration from
+a `let` binding declared in the same block immediately before that loop. A fixed
+graph may contain such a loop; its design states bounds, never the absence of a
+loop. An agent node reached from several branches has one call site and one
+literal label; branch-specific opaque reports are assigned whole to a carry
+inside the loop and passed to that call after it. Conformance counts each
+label's worst-case calls, the product of its enclosing literal loop bounds.
 Keep the initial agent report in an immutable binding. Declare the evolving
 carry as `let lastOutcome = ""` before the bounded loop and assign whole agent
 answers to it only inside that loop. Later prompts can use the initial report
@@ -163,8 +166,8 @@ read and validation to the existing host publication boundary.
 ## Default authoring style
 
 Prefer a fixed graph for one bounded deliverable with known requirements, even
-when implementation is substantive. Include independent review, a finite
-correction and recheck path when needed, and final verification. Use adaptive
+when implementation is substantive. Include independent review, a bounded review
+loop when review can demand correction, and final verification. Use adaptive
 slices when accepted output or findings must change the remaining work; bound
 the queue and retain owner decisions. Briefs state the role, expected result,
 sources and essential constraints. See the [workflow guide](../../../docs/workflows/create.md)

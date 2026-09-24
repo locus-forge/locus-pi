@@ -2,7 +2,7 @@
 
 Use this card when a worker may leave concrete work unfinished. Avoid it without acceptance criteria, when effects cannot be safely repeated, or when only an operator has authority. Do not use worker self-approval for a higher-risk adaptive result.
 
-Graph: fresh worker → independent reviewer → shaped decision; continue → fresh worker with exact handoff. Complete → primary output; failed, cap or no-progress → honest non-success; needs_operator → stop and return.
+Graph: fresh worker → independent reviewer → shaped decision; continue → fresh worker with exact handoff. One review, at most one correction and one recheck is the two-round case (`round <= 2`) inside a fixed graph. Complete → primary output; failed, cap or no-progress → honest non-success; needs_operator → stop and return.
 
 Cost: the recipe uses 3R logical calls and sequential depth 3R. Output clarification remains in that call's own session and still costs tokens/turns/tools; it never adds a physical child. No transport retries are declared in the example.
 

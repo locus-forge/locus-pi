@@ -85,6 +85,49 @@ describe("standard bounded carry and author-owned records; requires native ast-g
     );
     expect(errors(source)).toEqual([]);
   });
+  it("joins alternative whole reports only through a carry inside its nearest bounded loop", () => {
+    const reviewLoop = [
+      'const product = await dsl.agent(input, { label: "implement" });',
+      'let latestReview = ""; let latestRoute = ""; let latestCorrection = "";',
+      "for (let round = 1; round <= 2; round += 1) {",
+      'const review = await dsl.agent(`Review ${product} after ${latestCorrection}`, { label: "review" });',
+      'const reviewRoute = await dsl.agent(`Route ${review}`, { label: "review-route", choice: ["accept", "correct"] });',
+      "latestReview = review; latestRoute = reviewRoute;",
+      'if (reviewRoute === "accept" || round === 2) break;',
+      'const correction = await dsl.agent(`Correct ${review}`, { label: "correct" });',
+      "latestCorrection = correction;",
+      "}",
+      'const record = await dsl.agent(`Record ${latestRoute}: ${latestReview}`, { label: "record" });',
+      'if (latestRoute === "accept") return record;',
+      'return { ok: false, status: "failed", reason: "unresolved" };',
+    ].join("\n");
+    expect(errors(wrap(reviewLoop))).toEqual([]);
+
+    const branchJoin = wrap(
+      [
+        'const review = await dsl.agent(input, { label: "review" });',
+        'const route = await dsl.agent(`Route ${review}`, { label: "route", choice: ["accept", "correct"] });',
+        'let latestReport = "";',
+        'if (route === "accept") { latestReport = review; }',
+        'if (route === "correct") { const recheck = await dsl.agent(`Recheck ${review}`, { label: "recheck" }); latestReport = recheck; }',
+        'return dsl.agent(`Record ${latestReport}`, { label: "record" });',
+      ].join("\n"),
+    );
+    const nestedCarry = wrap(
+      'let carry = ""; for (let outer = 1; outer <= 2; outer += 1) { for (let inner = 1; inner <= 2; inner += 1) ' +
+        '{ const answer = await dsl.agent(input, { label: "work" }); carry = answer; } } return carry;',
+    );
+    const outerBlockCarry = wrap(
+      'const route = await dsl.agent(input, { label: "route", choice: ["a", "b"] }); let carry = ""; ' +
+        'if (route === "a") { for (let round = 1; round <= 2; round += 1) { const answer = await dsl.agent(input, { label: "work" }); carry = answer; } } ' +
+        "return carry;",
+    );
+    for (const invalid of [branchJoin, nestedCarry, outerBlockCarry]) {
+      const codes = errors(invalid).map((item) => item.code);
+      expect(codes).toContain("WF_EXPRESSION");
+      expect(codes).toContain("WF_DATA_FLOW");
+    }
+  });
   it("requires the exact choice option and a supported diagnostic publication method", () => {
     const valid = wrap(
       'const route = await dsl.agent(input, { label: "route", choice: ["passed", "failed"] }); ' +

@@ -36,8 +36,8 @@ source; an authorized repair-and-continue returns to the run skill and continues
 
 ## Select and design the graph
 
-Read [the pattern index](references/INDEX.md), then only the selected card. Default substantive
-implementation to adaptive slices; choose a fixed graph for predetermined work or an explicit request.
+Read [the pattern index](references/INDEX.md), then only the selected card. Prefer a fixed graph for one
+bounded deliverable with known requirements; use adaptive slices when accepted output must re-cut the work.
 Read [authoring styles](references/authoring-styles.md) for brief detail, folder input or executor choices.
 Outcome-led briefs are the default; procedural detail needs a concrete constraint or observed failure.
 
