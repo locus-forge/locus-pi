@@ -277,3 +277,19 @@ ceiling = 9
 owner = "Packaged post-code-review namespace"
 reason = "T-101 relocates the existing namespace from extensions/workflows/examples/post-code-review without adding entries. Its nine counted source/documentation files and adjacent diagram keep their existing folder ownership."
 trigger = "Adding any file to this namespace requires reviewing the package workflow inventory and its copy-as-one-folder contract."
+
+[[exceptions]]
+path = "tests/extensions/workflows/examples/task/task-plan-workflow.test.ts"
+rule = "code-lines"
+ceiling = 509
+owner = "task/plan workflow tests"
+reason = "T-115 adds bounded seed-repair success and failure evidence to the existing task/plan runtime fixture."
+trigger = "The next task/plan scenario must shorten this fixture or split a coherent test family; do not raise this exception."
+
+[[exceptions]]
+path = "extensions/workflows/tool/workflow-source-shape.ts"
+rule = "code-lines"
+ceiling = 675
+owner = "orchestration-only workflow source checker"
+reason = "T-120 rejects the unsupported plural choices option on agent() before it silently leaves the result opaque."
+trigger = "The next authoring-option rule must revisit this checker facade's size and option-validation ownership; do not raise this exception."

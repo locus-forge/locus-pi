@@ -4,6 +4,28 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-09-24
+
+### Changed
+
+- Workflow authoring guidance now prefers a fixed graph for one bounded
+  deliverable with known requirements. Adaptive source slices remain for work
+  whose accepted results must change the remaining graph.
+
+### Fixed
+
+- `task/plan` now designs the workflow before creating its source file, seeds a
+  runnable route to the primary output, and checks source edits before handoff.
+  An invalid seed gets one bounded repair; missing or still-invalid source
+  fails without publishing a primary file.
+- Source slicing now keeps concrete queue identities, branch destinations, and
+  pending edges visible through bounded edits. Intermediate checks accept
+  explicitly queued work while final checks reject incomplete routes; distinct
+  mechanical and design defects receive their own bounded repair paths.
+- Shaped workflow choices now tell child agents to submit the exact declared
+  value through `workflow_return`, avoiding prose or object-shaped answers that
+  cannot satisfy the choice contract.
+
 ## [0.9.2] - 2026-09-23
 
 ### Changed

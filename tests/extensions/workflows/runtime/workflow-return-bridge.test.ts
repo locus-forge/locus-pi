@@ -216,6 +216,44 @@ test("repeating a stringified array still exhausts the contract instead of being
     );
   }));
 
+test("choice repair accepts only an exact tool value within the declared attempts", async () =>
+  temporary(async (root) => {
+    const choices = ["accept", "fix", "failed"] as const;
+    const first = bridgeHarness(root, "choice-repaired", (prompt) =>
+      prompt === 1 ? { choice: "fix", reason: "slice ready; more work remains" } : "fix",
+    );
+    const route = await first.runtime.dsl.agent("Route the slice review", {
+      label: "choice-repaired",
+      choice: choices,
+    });
+    assert.equal(route, "fix");
+    assert.deepEqual(first.counters, { sessions: 1, prompts: 2, disposals: 1 });
+    assert.match(first.promptTexts[0]!, /Your final message is not the result/u);
+    assert.doesNotMatch(first.promptTexts[0]!, /Your exact final non-empty message is the result/u);
+    assert.match(first.promptTexts[0]!, /Valid tool arguments are/u);
+    assert.ok(first.promptTexts[0]!.includes(JSON.stringify(JSON.stringify({ value: "accept" })).slice(1, -1)));
+    assert.ok(first.promptTexts[0]!.includes(JSON.stringify(JSON.stringify({ value: "fix" })).slice(1, -1)));
+    assert.match(first.feedback[0]!, /without a choice\/reason object or explanatory text/u);
+    assert.equal(first.runtime.getJournal().find((line) => line.kind === "agent_end")?.outputAcceptance?.attempts, 2);
+
+    const exhausted = bridgeHarness(root, "choice-exhausted", (prompt) =>
+      prompt === 1
+        ? { choice: "fix", reason: "slice ready; more work remains" }
+        : prompt === 2
+          ? "fix — slice ready; more work remains"
+          : "fix",
+    );
+    await assert.rejects(
+      exhausted.runtime.dsl.agent("Route the slice review", { label: "choice-exhausted", choice: choices }),
+      /Output contract exhausted after 2 attempts: value must exactly match one of/u,
+    );
+    assert.deepEqual(exhausted.counters, { sessions: 1, prompts: 2, disposals: 1 });
+    assert.equal(
+      exhausted.runtime.getJournal().find((line) => line.kind === "agent_end")?.failureCause,
+      "output-contract-exhausted",
+    );
+  }));
+
 test("an already-correct container receives only its actual content validation error", async () =>
   temporary(async (root) => {
     const { runtime, feedback, promptTexts } = bridgeHarness(root, "array-item-correction", (prompt) =>
@@ -247,7 +285,7 @@ test("a large discovered work unit passes runtime -> bridge -> SDK in one sessio
 test("runtime -> bridge -> SDK returns the validated record after same-session shape repair", async () =>
   temporary(async (root) => {
     const id = "bridge-shaped";
-    const { runtime, counters } = bridgeHarness(root, id, (prompt) =>
+    const { runtime, counters, promptTexts } = bridgeHarness(root, id, (prompt) =>
       prompt === 1 ? { decision: "complete" } : { decision: "complete", summary: "ok" },
     );
     const value = await runtime.dsl.agent("Verify", {
@@ -260,6 +298,8 @@ test("runtime -> bridge -> SDK returns the validated record after same-session s
     assert.equal(counters.prompts, 2);
     assert.equal(counters.disposals, 1);
     assert.equal(runtime.getJournal().find((line) => line.kind === "agent_end")?.outputAcceptance?.attempts, 2);
+    assert.match(promptTexts[0]!, /Your final message is not the result/u);
+    assert.doesNotMatch(promptTexts[0]!, /Valid tool arguments are/u);
   }));
 
 test("mapped agents keep distinct human titles through runtime, bridge, fleet rows and drill", async () =>
