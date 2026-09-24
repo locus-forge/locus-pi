@@ -160,10 +160,11 @@ owns its slice/correction allowances, mechanical and design gates, terminal reas
 and replay requirements. Use that manual when running or repairing `task/plan`.
 
 Prefer a **fixed graph** for one bounded deliverable with known requirements,
-even when the implementation is substantive. Keep independent review, a finite
-correction and recheck path when needed, and required final verification; do
-not invent a slice queue merely because implementation has several internal
-steps. A caller can also request a fixed graph explicitly.
+even when the implementation is substantive. Keep independent review, a bounded
+review loop when review can demand correction, and required final verification;
+do not invent a slice queue merely because implementation has several internal
+steps. "Fixed" means known stages and literal bounds, not source without a loop.
+A caller can also request a fixed graph explicitly.
 Choose **procedural briefs** only when an exact sequence is required by a tool or
 an observed failure. The default **outcome-led brief** names the role, result,
 sources and essential constraints, then leaves the method to the agent. Graph

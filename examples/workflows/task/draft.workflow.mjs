@@ -64,7 +64,7 @@ Workflow direction:
 - Task context: <repository and task directory; agents discover relevant files>
 - Agents: <each coherent stage and responsibility>
 - Handoffs: <exact text passed between stages>
-- Reflection/review: <none, one corrected replacement, or an exact finite bound>
+- Reflection/review: <none, or a bounded review loop with literal round and correction limits>
 - Concurrency: <independent stages or none>
 - Failure and bounds: <fail-closed exits and exact loop/list limits>
 
@@ -75,8 +75,10 @@ Draft direction:
 Add Unclear: only for decisions the operator may need to edit before the
 next stage. Prefer the smallest fixed graph for one bounded deliverable with
 known requirements, even when implementation is substantive. Keep implementation,
-independent review, a finite correction and independent recheck path when needed,
-and required final verification. Do not invent a slice queue for one known output.
+independent review, a bounded review loop when review can demand correction, and
+required final verification; a fixed graph may contain that loop, and bounds are
+stated as literal round and call limits, never as the absence of a loop.
+Do not invent a slice queue for one known output.
 Use an owner-managed adaptive slice queue only when accepted output or findings
 must determine or re-cut the remaining work; bound the cumulative slices and
 keep explicit owner decisions and required final verification. Leave
