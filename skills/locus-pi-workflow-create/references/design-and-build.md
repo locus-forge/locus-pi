@@ -150,11 +150,13 @@ use explicit `choice` routing and a bounded correction/recheck edge. On exhausti
 return `{ ok: false, status: "failed" }` with the latest source and evidence; do
 not publish it as accepted or silently start a fresh run.
 
-The packaged `task/plan` creates a minimal runnable workspace `workflow.mjs`, then
-grows it through at most six complete graph-node slices. An owner re-cuts the
-source-free remaining queue after each accepted slice. Independent mechanical and
-design gates share one cumulative correction per slice; final whole-file gates run
-after the queue is empty. The exact routes and terminal reasons live in the
+The packaged `task/plan` writes the whole workspace `workflow.mjs` in one author
+call, then runs at most three independent reviews with at most two revisions.
+The packaged `task/plan-light`, for lighter author models, creates a minimal
+runnable workspace `workflow.mjs`, then grows it through at most six complete
+graph-node slices. An owner re-cuts the source-free remaining queue after each
+accepted slice. Independent mechanical and design gates share one cumulative
+correction per slice; final whole-file gates run after the queue is empty. The exact routes and terminal reasons live in the
 [task authoring manual](../../../examples/workflows/task/README.md).
 
 `publishPrimaryFile("workflow.mjs")` returns `primaryFile` with the validated

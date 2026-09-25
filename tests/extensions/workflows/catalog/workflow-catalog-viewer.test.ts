@@ -46,7 +46,7 @@ describe("focused workflow catalog", () => {
 
     expect(harness.customComponents).toHaveLength(1);
     expect(harness.customRenderFrames[0]?.join("\n")).toContain("[SELECT] Workflow catalog");
-    expect(harness.customRenderFrames[0]?.join("\n")).toContain("[Package 12]");
+    expect(harness.customRenderFrames[0]?.join("\n")).toContain("[Package 13]");
     expect(harness.customRenderFrames[0]?.join("\n")).toContain("> live-smoke · [PKG]");
     expect(harness.widgets.get("workflows")).toBe("");
   });
@@ -116,7 +116,7 @@ describe("focused workflow catalog", () => {
       const narrow = lines.join("\n");
       expect(narrow).toContain(width < 64 ? "P 1" : "Project 1");
       expect(narrow).toContain(width < 64 ? "U 0" : "User 0");
-      expect(narrow).toContain(width < 64 ? "[PKG 12]" : "[Package 12]");
+      expect(narrow).toContain(width < 64 ? "[PKG 13]" : "[Package 13]");
       expect(narrow).toContain("necessity");
       expect(lines.some((line) => /^ {2}└ necessity/u.test(line))).toBe(true);
       expect(narrow).toContain("7 children");
@@ -168,14 +168,14 @@ describe("focused workflow catalog", () => {
     const model = buildWorkflowCatalogModel(root, root);
     const { viewer } = createViewer(model, root, 48);
 
-    expect(viewer.render(146).join("\n")).toContain("Project 1  User 0  [Package 12]  History 1");
+    expect(viewer.render(146).join("\n")).toContain("Project 1  User 0  [Package 13]  History 1");
     viewer.handleInput("left");
-    expect(viewer.render(146).join("\n")).toContain("Project 1  [User 0]  Package 12  History 1");
+    expect(viewer.render(146).join("\n")).toContain("Project 1  [User 0]  Package 13  History 1");
     viewer.handleInput("left");
-    expect(viewer.render(146).join("\n")).toContain("[Project 1]  User 0  Package 12  History 1");
+    expect(viewer.render(146).join("\n")).toContain("[Project 1]  User 0  Package 13  History 1");
     viewer.handleInput("left");
     const history = viewer.render(146).join("\n");
-    expect(history).toContain("Project 1  User 0  Package 12  [History 1]");
+    expect(history).toContain("Project 1  User 0  Package 13  [History 1]");
     expect(history).toContain("alpha · run 20260101-000001-alpha · [P]");
     expect(history).not.toContain("> alpha · [P]");
   });
@@ -189,7 +189,7 @@ describe("focused workflow catalog", () => {
 
     for (let index = 0; index < 4; index += 1) {
       const lines = viewer.render(146);
-      tabRows.push(lines.findIndex((line) => line.includes("Project 18") && line.includes("Package 12")));
+      tabRows.push(lines.findIndex((line) => line.includes("Project 18") && line.includes("Package 13")));
       viewer.handleInput("left");
     }
 
@@ -202,9 +202,9 @@ describe("focused workflow catalog", () => {
     const themed = createViewer(model, root, 18, { fg: (_color: string, text: string) => text }).viewer.render(146);
     const plain = createViewer(model, root, 18).viewer.render(146);
 
-    expect(themed[1]).toContain("\u001b[48;2;88;61;121m\u001b[38;2;248;241;255m[Package 12]\u001b[0m");
+    expect(themed[1]).toContain("\u001b[48;2;88;61;121m\u001b[38;2;248;241;255m[Package 13]\u001b[0m");
     expect(visibleWidth(themed[1]!)).toBe(visibleWidth(plain[1]!));
-    expect(plain[1]).toContain("[Package 12]");
+    expect(plain[1]).toContain("[Package 13]");
     expect(plain[1]).not.toContain("\u001b[");
   });
 
@@ -223,11 +223,11 @@ describe("focused workflow catalog", () => {
       buildWorkflowCatalogModel(personalRichRoot, personalRichRoot),
       personalRichRoot,
     ).viewer;
-    expect(personal.render(100).join("\n")).toContain("Project 1  [User 19]  Package 12");
+    expect(personal.render(100).join("\n")).toContain("Project 1  [User 19]  Package 13");
 
     const tiedRoot = projectWithWorkflows(manyWorkflows(19));
     const tied = createViewer(buildWorkflowCatalogModel(tiedRoot, tiedRoot), tiedRoot).viewer;
-    expect(tied.render(100).join("\n")).toContain("[Project 19]  User 0  Package 12");
+    expect(tied.render(100).join("\n")).toContain("[Project 19]  User 0  Package 13");
   });
 
   it("cycles catalog tabs with Tab plus named, ANSI, and application arrow keys", () => {
@@ -242,7 +242,7 @@ describe("focused workflow catalog", () => {
     viewer.handleInput("\x1b[C");
     expect(viewer.render(100).join("\n")).toContain("[User 0]");
     viewer.handleInput("\x1bOC");
-    expect(viewer.render(100).join("\n")).toContain("[Package 12]");
+    expect(viewer.render(100).join("\n")).toContain("[Package 13]");
     viewer.handleInput("left");
     expect(viewer.render(100).join("\n")).toContain("[User 0]");
     viewer.handleInput("\x1b[D");

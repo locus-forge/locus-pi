@@ -361,6 +361,7 @@ describe("consilium reference workflow", () => {
       "stage-loop",
       "task/draft",
       "task/plan",
+      "task/plan-light",
     ]);
     expect(packagedWorkflowNames()).not.toContain("consilium");
 

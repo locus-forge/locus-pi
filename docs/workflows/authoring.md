@@ -22,8 +22,9 @@ A folder may contain a runnable same-named root or only directly addressable
 children; the [catalog contract](catalog.md) defines both namespace forms.
 
 The Package [task authoring workflow](../../examples/workflows/task/README.md)
-provides an editable `task/draft` → `task/plan` handoff. Its manual owns incremental
-source building and final gates. Neither entry executes the generated workflow;
+provides an editable `task/draft` → `task/plan` handoff; `task/plan-light` is the
+slice-by-slice variant for lighter author models. Its manual owns both plan loops
+and their final gates. Neither entry executes the generated workflow;
 a create-and-run request passes the checked file to the run skill.
 
 A workflow is a single ESM module `<name>.workflow.mjs` with two exports:

@@ -82,7 +82,7 @@ export function isWorkflowArtifactDisplayName(value: unknown): value is string {
   const trimmed = value.trim();
   return trimmed !== "." && trimmed !== "..";
 }
-const TASK_WORKSPACE_TARGET_NAMES = new Set(["task/draft", "task/plan"]);
+const TASK_WORKSPACE_TARGET_NAMES = new Set(["task/draft", "task/plan", "task/plan-light"]);
 
 /** One owner for the Package task workflows that create or reuse planning evidence. */
 export function isTaskWorkspaceName(workflowName: string): boolean {

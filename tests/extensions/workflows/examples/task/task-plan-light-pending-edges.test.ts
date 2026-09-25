@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import runPlanWorkflow from "../../../../../examples/workflows/task/plan.workflow.mjs";
+import runPlanWorkflow from "../../../../../examples/workflows/task/plan-light.workflow.mjs";
 import { orchestrationOnlyWorkflowSourceShapeDiagnostics } from "../../../../../extensions/workflows/tool/workflow-source-shape.js";
 
 const pendingEdge = "review findings -> queued correction; temporary named incomplete route";
@@ -69,7 +69,7 @@ const boundedSource = [
   "}",
 ].join("\n");
 
-describe("task/plan pending source edges", () => {
+describe("task/plan-light pending source edges", () => {
   it("accepts a named future edge as intermediate work and carries it into the next slice", async () => {
     const fixture = runWithPendingEdge();
     await expect(fixture.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });

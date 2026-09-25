@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import runPlanWorkflow from "../../../../../examples/workflows/task/plan.workflow.mjs";
+import runPlanWorkflow from "../../../../../examples/workflows/task/plan-light.workflow.mjs";
 import { orchestrationOnlyWorkflowSourceShapeDiagnostics } from "../../../../../extensions/workflows/tool/workflow-source-shape.js";
 
 function runWithResidual(mechanical: "passed" | "failed", design: "accept" | "failed") {
@@ -14,9 +14,6 @@ function runWithResidual(mechanical: "passed" | "failed", design: "accept" | "fa
     "workflow-source-cut": [["state handoff slice"], []],
     "workflow-source-queue-assessment": ["One unmet slice", "Whole graph complete"],
     "workflow-source-queue-route": ["work", "complete"],
-    "workflow-source-queue-repair": [["state handoff slice"], []],
-    "workflow-source-queue-recheck": ["Slice remains", "Whole graph complete"],
-    "workflow-source-queue-recheck-route": ["work", "complete"],
     "workflow-source-slice": ["Source edit"],
     "workflow-source-check": ["Mechanical pass"],
     "workflow-source-check-route": ["passed"],
@@ -54,7 +51,7 @@ function runWithResidual(mechanical: "passed" | "failed", design: "accept" | "fa
   };
 }
 
-describe("task/plan bounded design recheck repair", () => {
+describe("task/plan-light bounded design recheck repair", () => {
   it("accepts one targeted residual fix only after independent mechanical and design checks", async () => {
     const fixture = runWithResidual("passed", "accept");
     await expect(fixture.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
@@ -126,9 +123,6 @@ function failedMechanicalRepair() {
     "workflow-source-cut": [["state carry slice"]],
     "workflow-source-queue-assessment": ["Queue valid"],
     "workflow-source-queue-route": ["work"],
-    "workflow-source-queue-repair": [["state carry slice"]],
-    "workflow-source-queue-recheck": ["Queue valid"],
-    "workflow-source-queue-recheck-route": ["work"],
     "workflow-source-slice": ["Source edited"],
     "workflow-source-check": ["WF_DATA_FLOW and WF_EXPRESSION at state assignment"],
     "workflow-source-check-route": ["fix"],
@@ -153,7 +147,7 @@ function failedMechanicalRepair() {
   };
 }
 
-describe("task/plan empty whole carry", () => {
+describe("task/plan-light empty whole carry", () => {
   it("matches the real source checker for the v17 failure and its valid replacement", () => {
     const valid = carrySource(
       '  let lastOutcome = "";',
@@ -202,7 +196,8 @@ async function promptsThroughMechanicalFix() {
     "workflow-source-seed-route": ["passed"],
     "workflow-source-cut": [["review loop slice"]],
     "workflow-source-queue-assessment": ["Queue valid"],
-    "workflow-source-queue-route": ["work"],
+    // A conflicting first route exercises the reconciliation prompts too.
+    "workflow-source-queue-route": ["queue_conflict"],
     "workflow-source-queue-repair": [["review loop slice"]],
     "workflow-source-queue-recheck": ["Queue valid"],
     "workflow-source-queue-recheck-route": ["work"],
@@ -227,7 +222,7 @@ async function promptsThroughMechanicalFix() {
   return { prompts, result };
 }
 
-describe("task/plan bounded loops in any graph", () => {
+describe("task/plan-light bounded loops in any graph", () => {
   it("lets every stage treat a finite loop as ordinary control flow without blocking on call counts", async () => {
     const { prompts, result } = await promptsThroughMechanicalFix();
     expect(result).toMatchObject({ ok: false, reason: "slice_repair_failed" });
@@ -283,7 +278,7 @@ describe("task/plan bounded loops in any graph", () => {
   });
 });
 
-describe("task/plan decision log", () => {
+describe("task/plan-light decision log", () => {
   it("shares decisions as append-only evidence with working stages, never with route translators", async () => {
     const { prompts } = await promptsThroughMechanicalFix();
     const routes = [...prompts.keys()].filter((label) => label.endsWith("-route"));
@@ -310,7 +305,7 @@ describe("task/plan decision log", () => {
     for (const label of routes) expect(prompts.get(label), label).not.toContain("workflow-decision-log.md");
 
     const design = prompts.get("workflow-design");
-    expect(design).toContain('append the line "## New task/plan run"');
+    expect(design).toContain('append the line "## New task/plan-light run"');
     expect(design).toContain("Do not edit files except appending to workflow-decision-log.md");
     expect(design).not.toContain("Do not edit files. Return");
     const review = prompts.get("workflow-design-review");
@@ -319,7 +314,7 @@ describe("task/plan decision log", () => {
   });
 });
 
-describe("task/plan seed repair", () => {
+describe("task/plan-light seed repair", () => {
   it("creates a missing seed during its one correction instead of leaving creation blocked", async () => {
     const prompts = new Map<string, string>();
     const answers: Record<string, unknown[]> = {
@@ -353,6 +348,61 @@ describe("task/plan seed repair", () => {
       expect(prompts.get(label), label).toContain(
         "An open conflict recorded in the reviewed design or the decision log is not a seed-gate failure",
       );
+    }
+  });
+});
+
+const validSeed = [
+  'export const meta = { name: "build", profile: "standard" };',
+  'export default async function runWorkflow(dsl, input = "") {',
+  '  await dsl.agent(`Write the reviewed primary output product/index.html from this task: ${input}`, { label: "produce-primary" });',
+  '  dsl.publishArtifact("diagnostic.md", "Remaining reviewed routes need source slices.");',
+  '  return { ok: false, status: "incomplete-seed" };',
+  "}",
+].join("\n");
+
+describe("task/plan-light seed guidance", () => {
+  it("has a checker-valid primary-output starter route and rejects the v14 input fallback", () => {
+    expect(orchestrationOnlyWorkflowSourceShapeDiagnostics(validSeed)).toEqual([]);
+
+    const transformedInput = validSeed
+      .replace("  await dsl.agent(", '  const task = input || "fallback";\n  await dsl.agent(')
+      .replace("${input}", "${task}");
+    expect(orchestrationOnlyWorkflowSourceShapeDiagnostics(transformedInput)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "WF_DATA_FLOW" })]),
+    );
+  });
+
+  it("delivers the primary route and opaque input contract to seed creation and repair", async () => {
+    const calls: { label: string; prompt: string }[] = [];
+    const answers: Record<string, string> = {
+      "workflow-design": "Reviewed task design",
+      "workflow-design-review": "Reviewed task design",
+      "workflow-source-seed": "Seed missing primary route",
+      "workflow-source-seed-check": "Seed gate failed: no primary route",
+      "workflow-source-seed-route": "failed",
+      "workflow-source-seed-fix": "Fixed seed still invalid",
+      "workflow-source-seed-fix-check": "Seed gate failed: WF_DATA_FLOW",
+      "workflow-source-seed-fix-route": "failed",
+    };
+    const dsl = {
+      phase: () => undefined,
+      agent: async (prompt: string, options: { label: string }) => {
+        calls.push({ label: options.label, prompt });
+        return answers[options.label];
+      },
+    };
+
+    await expect(
+      runPlanWorkflow(dsl as unknown as Parameters<typeof runPlanWorkflow>[0], "Accepted draft"),
+    ).resolves.toMatchObject({ ok: false, reason: "seed_failed" });
+
+    const seed = calls.find((call) => call.label === "workflow-source-seed")?.prompt;
+    const fix = calls.find((call) => call.label === "workflow-source-seed-fix")?.prompt;
+    for (const prompt of [seed, fix]) {
+      expect(prompt).toContain("agent explicitly directed to produce the reviewed primary output");
+      expect(prompt).toContain("input ||");
+      expect(prompt).toContain("Pass semantic input whole");
     }
   });
 });

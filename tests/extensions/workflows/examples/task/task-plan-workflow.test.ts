@@ -1,509 +1,126 @@
-import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AgentExecutor, AgentRunRequest } from "../../../../../extensions/_shared/agent-runtime/agent-runner.js";
+import { describe, expect, it, vi } from "vitest";
 import runPlanWorkflow from "../../../../../examples/workflows/task/plan.workflow.mjs";
 import { runWorkflowScript } from "../../../../../extensions/workflows/runtime/workflow-runner.js";
 import { createHarness } from "../../../../test-harness.js";
 
-interface AgentCall {
-  prompt: string;
-  options: { label: string; choice?: string[]; handoffs?: object; result?: string; title?: string };
-}
+type Call = { label: string; prompt: string; choice: string[] | undefined };
 
-type AnswerQueues = Record<string, unknown[]>;
-const roots: string[] = [];
-const generatedSource =
-  'export const meta = { name: "generated", profile: "standard" };\nexport default async function run(dsl) { return await dsl.agent("work", { label: "work" }); }\n';
-
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-});
-
-function completeRunAnswers(): AnswerQueues {
-  return {
-    "workflow-design": ["Complete design ledger."],
-    "workflow-design-review": ["Reviewed design ledger."],
-    "workflow-source-seed": ["workflow-source-seed.md"],
-    "workflow-source-seed-check": ["workflow-source-seed-check.md: passed"],
-    "workflow-source-seed-route": ["passed"],
-    "workflow-source-seed-fix": ["workflow-source-seed-fix.md"],
-    "workflow-source-seed-fix-check": ["workflow-source-seed-fix-check.md: passed"],
-    "workflow-source-seed-fix-route": ["passed"],
-    "workflow-source-cut": [["slice-a: add the review branch"], []],
-    "workflow-source-queue-assessment": ["queue transition is valid", "all requirements are implemented"],
-    "workflow-source-queue-route": ["work", "complete"],
-    "workflow-source-queue-repair": [["slice-a: add the review branch"], []],
-    "workflow-source-queue-recheck": ["reconciled source queue is valid", "whole source is complete"],
-    "workflow-source-queue-recheck-route": ["work", "complete"],
-    "workflow-source-slice": ["workflow-source-slice.md"],
-    "workflow-source-check": ["workflow-source-check.md: passed"],
-    "workflow-source-check-route": ["passed"],
-    "workflow-source-review": ["workflow-source-design-review.md: accepted"],
-    "workflow-source-review-route": ["accept"],
-    "workflow-source-final-check": ["workflow-source-final-check.md: passed"],
-    "workflow-source-final-check-route": ["passed"],
-    "workflow-source-final-review": ["workflow-source-final-review.md: complete"],
-    "workflow-source-final-route": ["publish"],
-  };
-}
-
-function fixture(overrides: Partial<AnswerQueues> = {}) {
-  const calls: AgentCall[] = [];
+function planRun(routes: string[]) {
+  const calls: Call[] = [];
   const phases: string[] = [];
-  const answers = completeRunAnswers();
-  for (const [label, values] of Object.entries(overrides)) {
-    if (values !== undefined) answers[label] = [...values];
-  }
-  const publishPrimaryFile = vi.fn((relativePath: string) => ({
-    relativePath,
-    absolutePath: `/workspace/${relativePath}`,
-    bytes: 321,
-    sha256: "checked-digest",
-  }));
+  const answers: Record<string, string[]> = {
+    "workflow-author": ["author report: fixed graph, checks passed"],
+    "workflow-review": ["review 1: revise, missing failure exit", "review 2: revise, stale path", "review 3: revise"],
+    "workflow-review-route": [...routes],
+    "workflow-revise": ["revision 1: added failure exit", "revision 2: fixed path"],
+  };
+  const publishPrimaryFile = vi.fn((relativePath: string) => ({ relativePath }));
   const dsl = {
-    agent: async (prompt: string, options: AgentCall["options"]) => {
-      calls.push({ prompt, options });
-      const queue = answers[options.label];
-      if (queue === undefined || queue.length === 0) throw new Error(`No scripted answer for ${options.label}`);
-      return queue.shift();
-    },
-    phase: (name: string) => phases.push(name),
+    phase: (title: string) => void phases.push(title),
     publishPrimaryFile,
+    agent: async (prompt: string, options: { label: string; choice?: string[] }) => {
+      calls.push({ label: options.label, prompt, choice: options.choice });
+      const answer = answers[options.label]?.shift();
+      if (answer === undefined) throw new Error(`No scripted answer for ${options.label}`);
+      return answer;
+    },
   };
   return {
     calls,
     phases,
     publishPrimaryFile,
-    run: () => runPlanWorkflow(dsl as unknown as Parameters<typeof runPlanWorkflow>[0], "Accepted brief."),
-  };
-}
-
-function runnerFixture() {
-  const root = mkdtempSync(path.join(tmpdir(), "task-plan-workflow-runner-"));
-  roots.push(root);
-  const harness = createHarness(root, { sessionId: "task-plan-workflow" });
-  const answers = completeRunAnswers();
-  const tasks: string[] = [];
-  const labels: string[] = [];
-  const phases: string[] = [];
-  const createExecutor: NonNullable<Parameters<typeof runWorkflowScript>[0]["createExecutor"]> = (
-    options,
-  ): AgentExecutor => ({
-    async run(request: AgentRunRequest) {
-      const label = options.live?.label;
-      if (label === undefined) throw new Error("Expected every task/plan child call to have a label");
-      const queue = answers[label];
-      if (queue === undefined || queue.length === 0) throw new Error(`No scripted answer for ${label}`);
-      const value = queue.shift();
-      labels.push(label);
-      tasks.push(request.task);
-      if (label === "workflow-source-seed") writeFileSync(path.join(root, "proof", "workflow.mjs"), generatedSource);
-      return {
-        status: "completed",
-        agentName: request.agent?.name ?? "sub-agent",
-        text: request.responseAcceptance === undefined ? String(value) : JSON.stringify(value),
-        reason: "scripted task/plan answer",
-        diagnostics: [],
-        lifecycleEntryIds: [],
-        ...(request.responseAcceptance === undefined
-          ? {}
-          : { outputAcceptance: { source: "tool" as const, attempts: 1, toolName: "workflow_return" as const } }),
-      };
-    },
-  });
-  return {
-    root,
-    tasks,
-    labels,
-    phases,
-    run: () =>
-      runWorkflowScript({
-        pi: harness.pi,
-        ctx: harness.ctx,
-        signal: new AbortController().signal,
-        name: "task/plan",
-        input: "Accepted brief.",
-        outputDir: "proof",
-        createExecutor,
-        onEvent: (line) => {
-          if (line.kind === "phase" && line.phase !== undefined) phases.push(line.phase);
-        },
-      }),
+    run: () => runPlanWorkflow(dsl as unknown as Parameters<typeof runPlanWorkflow>[0], "Accepted draft text"),
+    labels: () => calls.map((call) => call.label),
   };
 }
 
 describe("Package workflow: task/plan", () => {
-  it("returns the task/plan workspace file through the real runner primaryFile boundary", async () => {
-    const fixtureRun = runnerFixture();
-    const absolutePath = path.join(fixtureRun.root, "proof", "workflow.mjs");
-    const result = await fixtureRun.run();
-    expect(result.ok, result.error).toBe(true);
-    expect(result.primaryFile).toEqual({
-      relativePath: "workflow.mjs",
-      absolutePath,
-      bytes: Buffer.byteLength(generatedSource),
-      sha256: createHash("sha256").update(generatedSource).digest("hex"),
-    });
-    expect(readFileSync(result.primaryFile!.absolutePath, "utf8")).toBe(generatedSource);
-    expect(fixtureRun.tasks.every((task) => !task.includes(generatedSource))).toBe(true);
-    expect(fixtureRun.tasks[0]).toContain("expected to be absent and is not a precondition");
-    expect(fixtureRun.tasks[1]).toContain("must not block this design review");
-    expect(fixtureRun.tasks[2]).toContain("Create workspace workflow.mjs directly as a file");
-    expect(fixtureRun.labels).not.toContain("workflow-source-seed-fix");
-    expect(fixtureRun.labels.filter((label) => label === "workflow-source-cut")).toHaveLength(2);
-    expect(fixtureRun.phases).toEqual(["design", "build", "verify", "build", "verify", "verify", "publish"]);
+  it("publishes after one author call and an accepted first review", async () => {
+    const fixture = planRun(["accept"]);
+
+    await expect(fixture.run()).resolves.toEqual({ relativePath: "workflow.mjs" });
+    expect(fixture.labels()).toEqual(["workflow-author", "workflow-review", "workflow-review-route"]);
+    expect(fixture.phases).toEqual(["author", "review", "publish"]);
+    expect(fixture.publishPrimaryFile).toHaveBeenCalledWith("workflow.mjs");
+
+    const [author, review, route] = fixture.calls;
+    expect(author?.prompt).toContain("Accepted draft text");
+    expect(author?.prompt).toContain("locus-pi-workflow-create");
+    expect(author?.prompt).toContain('"## New task/plan run"');
+    expect(author?.prompt).toContain("The graph plans stages, not product steps");
+    expect(author?.prompt).toContain("never retype an absolute");
+    expect(review?.prompt).toContain("author report: fixed graph, checks passed");
+    expect(review?.prompt).toContain("Style preferences are not findings");
+    expect(route?.choice).toEqual(["accept", "revise"]);
+    for (const call of fixture.calls.filter((entry) => entry.choice === undefined))
+      expect(call.prompt).toContain("Never write source bytes into the log");
   });
 
-  it("routes bounded source-free slices to terminal publication", async () => {
-    const fixtureRun = fixture();
+  it("revises with the whole review and re-reviews the revision", async () => {
+    const fixture = planRun(["revise", "accept"]);
 
-    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
-    expect(fixtureRun.calls.every((call) => !call.prompt.includes(generatedSource))).toBe(true);
-    expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
-    expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledWith("workflow.mjs");
-    expect(fixtureRun.phases).toEqual(["design", "build", "verify", "build", "verify", "verify", "publish"]);
-
-    const calls = fixtureRun.calls;
-    expect(calls.filter((call) => call.options.label === "workflow-source-cut")).toHaveLength(2);
-    expect(calls.find((call) => call.options.label === "workflow-source-cut")?.options.handoffs).toEqual({});
-    expect(calls.find((call) => call.options.label === "workflow-source-slice")?.prompt).toContain(
-      "slice-a: add the review branch",
-    );
-    expect(calls.find((call) => call.options.label === "workflow-source-final-review")?.prompt).toContain(
-      "Queue evidence:\nwhole source is complete",
-    );
-    for (const call of calls.filter(
-      (entry) => entry.options.label.startsWith("workflow-source-") && !entry.options.choice,
-    ))
-      expect(call.prompt).toMatch(/never[^.]*source bytes/iu);
-    for (const call of calls) expect(call.options.label).toMatch(/^workflow-/u);
+    await expect(fixture.run()).resolves.toEqual({ relativePath: "workflow.mjs" });
+    expect(fixture.labels()).toEqual([
+      "workflow-author",
+      "workflow-review",
+      "workflow-review-route",
+      "workflow-revise",
+      "workflow-review",
+      "workflow-review-route",
+    ]);
+    const revise = fixture.calls.find((call) => call.label === "workflow-revise");
+    expect(revise?.prompt).toContain("review 1: revise, missing failure exit");
+    const secondReview = fixture.calls.filter((call) => call.label === "workflow-review")[1];
+    expect(secondReview?.prompt).toContain("revision 1: added failure exit");
+    expect(secondReview?.prompt).toContain("review 1: revise, missing failure exit");
   });
 
-  it("accepts a correct intermediate slice while later design work remains queued", async () => {
-    const fixtureRun = fixture({
-      "workflow-source-cut": [["select_slice: bounded selection"], ["recut_queue: remaining graph"], []],
-      "workflow-source-queue-assessment": ["selection remains", "recut remains", "all requirements complete"],
-      "workflow-source-queue-route": ["work", "work", "complete"],
-      "workflow-source-queue-repair": [["select_slice: bounded selection"], ["recut_queue: remaining graph"], []],
-      "workflow-source-queue-recheck": ["selection preserved", "recut preserved", "whole source complete"],
-      "workflow-source-queue-recheck-route": ["work", "work", "complete"],
-      "workflow-source-slice": ["selection implemented", "recut implemented"],
-      "workflow-source-check": ["selection mechanically valid", "recut mechanically valid"],
-      "workflow-source-check-route": ["passed", "passed"],
-      "workflow-source-review": [
-        "select_slice conforms; the module is runnable; recut_queue and final verification remain",
-        "recut_queue conforms; the module is runnable",
-      ],
-      "workflow-source-review-route": ["accept", "accept"],
-    });
+  it("fails closed after three reviews and two revisions without publishing", async () => {
+    const fixture = planRun(["revise", "revise", "revise"]);
 
-    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
-    const firstRoute = fixtureRun.calls.find((call) => call.options.label === "workflow-source-review-route");
-    expect(firstRoute?.prompt).toContain("recut_queue and final verification remain");
-    expect(firstRoute?.prompt).toContain("even if later design requirements remain in the source queue");
-    expect(firstRoute?.prompt).toContain("The final whole-file review alone decides");
-    expect(fixtureRun.calls.filter((call) => call.options.label === "workflow-source-cut")).toHaveLength(3);
-    expect(fixtureRun.calls.some((call) => call.options.label === "workflow-source-design-fix")).toBe(false);
-  });
-
-  it("repairs an invalid seed once and carries remaining work into source slicing", async () => {
-    const seedReport = "primary output product/index.html retained; bounded review branch remains missing";
-    const seedCheck = "seed gate failed: source grammar invalid; remaining graph: bounded review branch";
-    const fixtureRun = fixture({
-      "workflow-source-seed": [seedReport],
-      "workflow-source-seed-check": [seedCheck],
-      "workflow-source-seed-route": ["failed"],
-      "workflow-source-cut": [["source branch: bounded review"], []],
-      "workflow-source-queue-repair": [["source branch: bounded review"], []],
-    });
-
-    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
-    const seedPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-seed")?.prompt;
-    const checkPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-seed-check")?.prompt;
-    const cutPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-cut")?.prompt;
-    expect(seedPrompt).toContain("use at most two local edit-check passes total");
-    expect(seedPrompt).toContain("numeric-literal bounded for loop");
-    expect(checkPrompt).toContain("Reviewed design:\nReviewed design ledger.");
-    expect(checkPrompt).toContain("remaining source work, not seed-gate failures");
-    expect(checkPrompt).toContain(seedReport);
-    expect(fixtureRun.calls.find((call) => call.options.label === "workflow-source-seed-fix")?.prompt).toContain(
-      seedCheck,
-    );
-    expect(seedPrompt).toContain("Never inspect, compare or transform opaque agent answers");
-    expect(cutPrompt).toContain("workflow-source-seed-fix-check.md exists");
-    expect(cutPrompt).toContain("Re-evaluate either report against the current file on every pass");
-    expect(fixtureRun.calls.some((call) => call.options.label === "workflow-source-final-review")).toBe(true);
-    expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
-  });
-
-  it("recuts a conflicting first source queue once before continuing", async () => {
-    const fixtureRun = fixture({
-      "workflow-source-cut": [["review route: destinations missing", "single correction branch"], []],
-      "workflow-source-queue-assessment": [
-        "review choices omit accepted and correction-needed destinations",
-        "complete",
-      ],
-      "workflow-source-queue-route": ["queue_conflict", "complete"],
-      "workflow-source-queue-repair": [["review+correction: accepted->final; correct->single fix"], []],
-      "workflow-source-queue-recheck": ["source branch covers both destinations", "whole source complete"],
-      "workflow-source-queue-recheck-route": ["work", "complete"],
-    });
-
-    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
-    const assessment = fixtureRun.calls.find((call) => call.options.label === "workflow-source-queue-assessment");
-    expect(assessment?.prompt).toContain("Treat a branch item with any missing choice destination");
-    const repair = fixtureRun.calls.find((call) => call.options.label === "workflow-source-queue-repair");
-    expect(repair?.prompt).toContain("review choices omit accepted and correction-needed destinations");
-    expect(repair?.prompt).toContain("group adjacent items into one bounded coherent source edit");
-    expect(fixtureRun.calls.find((call) => call.options.label === "workflow-source-queue-recheck")?.prompt).toContain(
-      "review+correction: accepted->final; correct->single fix",
-    );
-    const slice = fixtureRun.calls.find((call) => call.options.label === "workflow-source-slice");
-    expect(slice?.prompt).toContain("review+correction: accepted->final; correct->single fix");
-    expect(slice?.prompt).toContain("Implement only the graph identities and connecting edges explicitly named");
-    expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
-  });
-
-  it("fails closed when the repaired source queue still conflicts", async () => {
-    const fixtureRun = fixture({
-      "workflow-source-cut": [["review route: choices lack destinations"]],
-      "workflow-source-queue-assessment": ["review choice destinations are missing"],
-      "workflow-source-queue-route": ["queue_conflict"],
-      "workflow-source-queue-repair": [["review route still lacks destinations"]],
-      "workflow-source-queue-recheck": ["review choice destinations remain missing"],
-      "workflow-source-queue-recheck-route": ["queue_conflict"],
-    });
-
-    await expect(fixtureRun.run()).resolves.toMatchObject({
-      ok: false,
-      reason: "queue_conflict",
-      diagnostics: "review choice destinations remain missing",
-      remaining: ["review route still lacks destinations"],
-    });
-    expect(fixtureRun.calls.at(-1)?.options.label).toBe("workflow-source-queue-recheck-route");
-    expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
-  });
-
-  it("routes every mechanical failure through one fix before semantic review", async () => {
-    const fixtureRun = fixture({
-      "workflow-source-check": ["workflow-source-check.md: failed"],
-      "workflow-source-check-route": ["fix"],
-      "workflow-source-fix": ["workflow-source-fix.md"],
-      "workflow-source-fix-check": ["workflow-source-fix-check.md: passed"],
-      "workflow-source-fix-route": ["passed"],
-    });
-
-    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
-    expect(fixtureRun.calls.map((call) => call.options.label)).toEqual(
-      expect.arrayContaining([
-        "workflow-source-check",
-        "workflow-source-check-route",
-        "workflow-source-fix",
-        "workflow-source-fix-check",
-        "workflow-source-fix-route",
-        "workflow-source-review",
-      ]),
-    );
-    const reviewPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-review")?.prompt;
-    expect(reviewPrompt).toContain(
-      "Read the exact current mechanical evidence from workspace workflow-source-fix-check.md",
-    );
-    expect(reviewPrompt).not.toContain("workflow-source-check.md: failed");
-    expect(
-      fixtureRun.calls.find((call) => call.options.label === "workflow-source-check-route")?.options.choice,
-    ).toEqual(["passed", "fix"]);
-  });
-
-  it("allows one design fix after a successful mechanical fix on the same slice", async () => {
-    const fixtureRun = fixture({
-      "workflow-source-check-route": ["fix"],
-      "workflow-source-fix": ["workflow-source-fix.md"],
-      "workflow-source-fix-check": ["workflow-source-fix-check.md: passed"],
-      "workflow-source-fix-route": ["passed"],
-      "workflow-source-review-route": ["fix"],
-      "workflow-source-design-fix": ["design defect corrected"],
-      "workflow-source-design-fix-check": ["design fix mechanically valid"],
-      "workflow-source-design-fix-route": ["passed"],
-      "workflow-source-design-recheck": ["design fix accepted"],
-      "workflow-source-design-recheck-route": ["accept"],
-    });
-
-    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
-    const labels = fixtureRun.calls.map((call) => call.options.label);
-    expect(labels.indexOf("workflow-source-fix-route")).toBeLessThan(labels.indexOf("workflow-source-design-fix"));
-    expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
-  });
-
-  it("independently rechecks a semantic fix before accepting the slice", async () => {
-    const fixtureRun = fixture({
-      "workflow-source-review-route": ["fix"],
-      "workflow-source-design-fix": ["workflow-source-design-fix.md"],
-      "workflow-source-design-fix-check": ["workflow-source-design-fix-check.md: passed"],
-      "workflow-source-design-fix-route": ["passed"],
-      "workflow-source-design-recheck": ["workflow-source-design-recheck.md: accepted"],
-      "workflow-source-design-recheck-route": ["accept"],
-    });
-
-    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
-    expect(fixtureRun.calls.map((call) => call.options.label)).toEqual(
-      expect.arrayContaining([
-        "workflow-source-design-fix",
-        "workflow-source-design-fix-check",
-        "workflow-source-design-fix-route",
-        "workflow-source-design-recheck",
-        "workflow-source-design-recheck-route",
-      ]),
-    );
-    expect(
-      fixtureRun.calls.find((call) => call.options.label === "workflow-source-review-route")?.options.choice,
-    ).toEqual(["accept", "fix", "failed"]);
-    expect(fixtureRun.calls.find((call) => call.options.label === "workflow-source-design-recheck")?.prompt).toContain(
-      "do not require them to be implemented in this slice",
-    );
-    expect(
-      fixtureRun.calls.find((call) => call.options.label === "workflow-source-design-recheck-route")?.prompt,
-    ).toContain("future queued requirements need not be complete");
-  });
-
-  it.each([
-    {
-      name: "mechanical fix recheck",
-      overrides: {
-        "workflow-source-check-route": ["fix"],
-        "workflow-source-fix": ["workflow-source-fix.md"],
-        "workflow-source-fix-check": ["mechanical fix failed"],
-        "workflow-source-fix-route": ["failed"],
-      },
-      reason: "slice_repair_failed",
-      diagnostics: "mechanical fix failed",
-      lastLabel: "workflow-source-fix-route",
-    },
-    {
-      name: "design fix mechanical recheck",
-      overrides: {
-        "workflow-source-review-route": ["fix"],
-        "workflow-source-design-fix": ["workflow-source-design-fix.md"],
-        "workflow-source-design-fix-check": ["design fix check failed"],
-        "workflow-source-design-fix-route": ["failed"],
-      },
-      reason: "slice_repair_failed",
-      diagnostics: "design fix check failed",
-      lastLabel: "workflow-source-design-fix-route",
-    },
-    {
-      name: "design fix semantic recheck",
-      overrides: {
-        "workflow-source-review-route": ["fix"],
-        "workflow-source-design-fix": ["workflow-source-design-fix.md"],
-        "workflow-source-design-fix-check": ["workflow-source-design-fix-check.md: passed"],
-        "workflow-source-design-fix-route": ["passed"],
-        "workflow-source-design-recheck": ["design still mismatched"],
-        "workflow-source-design-recheck-route": ["failed"],
-      },
-      reason: "design_mismatch",
-      diagnostics: "design still mismatched",
-      lastLabel: "workflow-source-design-recheck-route",
-    },
-  ])("stops without publication after a failed $name", async ({ overrides, reason, diagnostics, lastLabel }) => {
-    const fixtureRun = fixture(overrides);
-
-    await expect(fixtureRun.run()).resolves.toMatchObject({
+    await expect(fixture.run()).resolves.toEqual({
       ok: false,
       status: "failed",
-      stage: "verify",
-      reason,
-      diagnostics,
-    });
-    expect(fixtureRun.calls.at(-1)?.options.label).toBe(lastLabel);
-    expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    {
-      name: "seed failure",
-      overrides: {
-        "workflow-source-seed-check": ["seed gate failed: workflow.mjs absent; primary output identity missing"],
-        "workflow-source-seed-route": ["failed"],
-        "workflow-source-seed-fix-check": ["seed gate failed: workflow.mjs absent after repair"],
-        "workflow-source-seed-fix-route": ["failed"],
-      },
-      reason: "seed_failed",
-    },
-    {
-      name: "queue conflict",
-      overrides: {
-        "workflow-source-queue-route": ["queue_conflict"],
-        "workflow-source-queue-repair": [["still conflicting"]],
-        "workflow-source-queue-recheck": ["still conflicting"],
-        "workflow-source-queue-recheck-route": ["queue_conflict"],
-      },
-      reason: "queue_conflict",
-    },
-    {
-      name: "empty work queue",
-      overrides: {
-        "workflow-source-cut": [[]],
-        "workflow-source-queue-route": ["work"],
-        "workflow-source-queue-repair": [[]],
-        "workflow-source-queue-recheck-route": ["work"],
-      },
-      reason: "empty_queue",
-    },
-    {
-      name: "final mechanical failure",
-      overrides: { "workflow-source-final-check-route": ["failed"] },
-      reason: "final_check_failed",
-    },
-    {
-      name: "final design mismatch",
-      overrides: { "workflow-source-final-route": ["design_mismatch"] },
-      reason: "design_mismatch",
-    },
-    {
-      name: "incomplete final graph",
-      overrides: { "workflow-source-final-route": ["empty_queue"] },
-      reason: "empty_queue",
-    },
-  ])("fails closed on $name with an explicit diagnostic string", async ({ overrides, reason }) => {
-    const fixtureRun = fixture(overrides);
-
-    await expect(fixtureRun.run()).resolves.toMatchObject({
-      ok: false,
+      stage: "review",
+      reason: "review_exhausted",
       source: "workflow.mjs",
-      reason,
-      diagnostics: expect.stringContaining(reason === "seed_failed" ? "absent after repair" : ""),
+      diagnostics: "review 3: revise",
     });
-    expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
+    expect(fixture.labels().filter((label) => label === "workflow-review")).toHaveLength(3);
+    expect(fixture.labels().filter((label) => label === "workflow-revise")).toHaveLength(2);
+    expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();
   });
+});
 
-  it("returns the full remaining queue when the six-slice allowance is exhausted", async () => {
-    const slices = Array.from({ length: 7 }, (_, index) => [`slice-${index + 1}`]);
-    const fixtureRun = fixture({
-      "workflow-source-cut": slices,
-      "workflow-source-queue-assessment": Array.from({ length: 7 }, (_, index) => `queue-${index + 1}`),
-      "workflow-source-queue-route": Array.from({ length: 7 }, () => "work"),
-      "workflow-source-queue-repair": slices,
-      "workflow-source-queue-recheck": Array.from({ length: 7 }, (_, index) => `rechecked-queue-${index + 1}`),
-      "workflow-source-queue-recheck-route": Array.from({ length: 7 }, () => "work"),
-      "workflow-source-slice": Array.from({ length: 6 }, (_, index) => `slice-report-${index + 1}`),
-      "workflow-source-check": Array.from({ length: 6 }, (_, index) => `check-${index + 1}`),
-      "workflow-source-check-route": Array.from({ length: 6 }, () => "passed"),
-      "workflow-source-review": Array.from({ length: 6 }, (_, index) => `review-${index + 1}`),
-      "workflow-source-review-route": Array.from({ length: 6 }, () => "accept"),
-    });
+describe("Package workflow: task/plan-light admission", () => {
+  // task/plan's blank-input admission lives in workflow-input.test.ts; both names share one rule.
+  it("refuses blank input before any child starts", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "task-plan-light-admission-"));
+    try {
+      const harness = createHarness(root, { sessionId: "task-plan-light-required-input" });
+      const run = vi.fn(async () => {
+        throw new Error("must not run");
+      });
+      const result = await runWorkflowScript({
+        pi: harness.pi,
+        ctx: harness.ctx,
+        signal: new AbortController().signal,
+        name: "task/plan-light",
+        createExecutor: () => ({ run }),
+        input: " \n ",
+      });
 
-    await expect(fixtureRun.run()).resolves.toMatchObject({
-      ok: false,
-      status: "incomplete",
-      reason: "slice_allowance",
-      source: "workflow.mjs",
-      diagnostics: "rechecked-queue-7",
-      remaining: ["slice-7"],
-    });
-    expect(fixtureRun.calls.filter((call) => call.options.label === "workflow-source-slice")).toHaveLength(6);
-    expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe(
+        "task/plan-light requires the complete accepted draft as non-empty semantic input; no agent was started and no workflow.mjs was published.",
+      );
+      expect(run).not.toHaveBeenCalled();
+      expect(result.primaryFile).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

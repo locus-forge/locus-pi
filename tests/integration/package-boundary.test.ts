@@ -55,6 +55,7 @@ const EXPECTED_PACKAGE_WORKFLOW_NAMES = [
   "live-smoke",
   "task/draft",
   "task/plan",
+  "task/plan-light",
   "post-code-review",
   "post-code-review/boundaries",
   "post-code-review/contracts",
@@ -76,6 +77,7 @@ const PACKAGE_WORKFLOW_PATHS = {
   "live-smoke": "examples/workflows/live-smoke/live-smoke.workflow.mjs",
   "task/draft": "examples/workflows/task/draft.workflow.mjs",
   "task/plan": "examples/workflows/task/plan.workflow.mjs",
+  "task/plan-light": "examples/workflows/task/plan-light.workflow.mjs",
   "post-code-review": "examples/workflows/post-code-review/post-code-review.workflow.mjs",
   "post-code-review/boundaries": "examples/workflows/post-code-review/boundaries.workflow.mjs",
   "post-code-review/contracts": "examples/workflows/post-code-review/contracts.workflow.mjs",
@@ -356,7 +358,7 @@ describe("npm public package boundary", () => {
     // Directory-owned means the dotfiles inside a listed directory ship with it:
     // `skills/.ignore` rides along under `skills/` and is counted here.
     // Retired eleven redundant docs; recovery has one conditionally loaded owner; the enabledModels gate is gone.
-    expect(dryRun.files).toHaveLength(250);
+    expect(dryRun.files).toHaveLength(251);
   });
 
   it("ships every prompt resource a curated workflow renders", () => {
@@ -465,16 +467,22 @@ describe("npm public package boundary", () => {
     const packedPaths = new Set(dryRun.files.map((file) => file.path));
     const draftPath = "examples/workflows/task/draft.workflow.mjs";
     const planPath = "examples/workflows/task/plan.workflow.mjs";
+    const lightPlanPath = "examples/workflows/task/plan-light.workflow.mjs";
     const draft = readFileSync(path.join(root, draftPath), "utf8");
     const plan = readFileSync(path.join(root, planPath), "utf8");
+    const lightPlan = readFileSync(path.join(root, lightPlanPath), "utf8");
 
     expect(packedPaths.has(draftPath)).toBe(true);
     expect(packedPaths.has(planPath)).toBe(true);
+    expect(packedPaths.has(lightPlanPath)).toBe(true);
     expect(draft).toContain("Workflow direction:");
     expect(draft).toContain("Reflection/review:");
-    expect(plan).toContain('publishPrimaryFile("workflow.mjs")');
-    expect(plan).toContain('reason: "queue_conflict"');
-    expect(plan).not.toContain('publishPrimaryArtifact("workflow.mjs"');
+    for (const source of [plan, lightPlan]) {
+      expect(source).toContain('publishPrimaryFile("workflow.mjs")');
+      expect(source).not.toContain('publishPrimaryArtifact("workflow.mjs"');
+    }
+    expect(plan).toContain('reason: "review_exhausted"');
+    expect(lightPlan).toContain('reason: "queue_conflict"');
     expect(packedPaths.has("skills/locus-pi-workflow-implement-task/SKILL.md")).toBe(false);
   });
 

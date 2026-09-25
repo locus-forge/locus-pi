@@ -58,6 +58,7 @@
     { "name": "post-code-review/synthesis", "namespace": "post-code-review" },
     { "name": "stage-loop", "namespace": "stage-loop" },
     { "name": "task/draft", "namespace": "task" },
+    { "name": "task/plan-light", "namespace": "task" },
     { "name": "task/plan", "namespace": "task" }
   ]
 }

@@ -68,7 +68,7 @@ function probe(mutate?: (packageRoot: string) => void): string {
 
 describe("release consumer workflow verification", () => {
   it("discovers installed examples and preserves complete User and Project copies", () => {
-    expect(probe()).toContain("Verified 12 installed workflows and complete Project/User namespace copies");
+    expect(probe()).toContain("Verified 13 installed workflows and complete Project/User namespace copies");
   }, 30_000);
 
   it("rejects an installed package with a missing runnable workflow", () => {

@@ -79,6 +79,8 @@ import { isPostCodeReviewTargetProjection } from "./workflow-saved-name.js";
 import { createWorkflowScriptSnapshot, type WorkflowScriptIdentity } from "./workflow-script-identity.js";
 import type { WorkflowRunnerCoordination } from "./workflow-saved-child.js";
 
+const TASK_PLAN_REFS: ReadonlySet<string> = new Set(["task/plan", "task/plan-light"]);
+
 /** Validate a host-owned target binding before any snapshot or import. */
 export function assertWorkflowTargetBinding(
   binding: unknown,
@@ -242,13 +244,11 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
     return { admitted: false, error: err instanceof Error ? err.message : String(err), target, ...state() };
   }
 
-  const missingTaskPlanInput =
-    target.source === "package" && target.kind === "name" && target.ref === "task/plan" && !opts.input?.trim();
-  if (missingTaskPlanInput) {
+  const taskPlanRef = target.source === "package" && target.kind === "name" ? target.ref : "";
+  if (TASK_PLAN_REFS.has(taskPlanRef) && !opts.input?.trim()) {
     return {
       admitted: false,
-      error:
-        "task/plan requires the complete accepted draft as non-empty semantic input; no agent was started and no workflow.mjs was published.",
+      error: `${taskPlanRef} requires the complete accepted draft as non-empty semantic input; no agent was started and no workflow.mjs was published.`,
       target,
       scriptIdentity,
       ...state(),

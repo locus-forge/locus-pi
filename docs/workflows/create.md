@@ -152,12 +152,14 @@ result by dropping a report.
 
 ### Build generated source in complete slices
 
-The Package `task/plan` workflow builds one workspace `workflow.mjs` in complete,
-checked graph-node slices. It re-cuts the remaining queue after each accepted
-slice, keeps source bytes in the workspace, and publishes the file only after
-final whole-file checks. The [task authoring manual](../../examples/workflows/task/README.md)
-owns its slice/correction allowances, mechanical and design gates, terminal reasons,
-and replay requirements. Use that manual when running or repairing `task/plan`.
+The Package `task/plan` workflow writes one workspace `workflow.mjs` in a single
+author call, then reviews and revises it in a loop of at most three reviews.
+`task/plan-light` builds the same file in complete, checked graph-node slices for
+lighter author models: it re-cuts the remaining queue after each accepted slice
+and publishes the file only after final whole-file checks. The
+[task authoring manual](../../examples/workflows/task/README.md) owns both
+workflows' loops, gates, terminal reasons, and replay requirements. Use that
+manual when running or repairing either one.
 
 Prefer a **fixed graph** for one bounded deliverable with known requirements,
 even when the implementation is substantive. Keep independent review, a bounded
