@@ -26,6 +26,10 @@ const SOURCE_RULES = `Source rules:
   or extra stage is a design decision: record it in the decision log.
 - Branch only on exact choice calls; forward opaque reports whole into later
   prompts. Every loop has a numeric-literal bound.
+- Name each choice token after the action its branch takes, never with a word
+  that also reads as a verdict for another branch: rework is fix or revise,
+  never correct, ok, right or fine. Reviewers report findings; the route
+  prompt defines every token by the condition that selects it.
 - Take paths and product locations from the draft or the workflow input
   exactly. Prefer paths relative to the project root; never retype an absolute
   path from memory.

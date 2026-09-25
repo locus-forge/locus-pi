@@ -6,6 +6,11 @@ User-visible changes to the public package.
 
 ### Changed
 
+- `task/plan`, `task/plan-light`, the workflow-create skill and the choice
+  documentation require route tokens named after the action their branch
+  takes. Rework is `fix` or `revise`, never a verdict-like word such as
+  `correct`, `ok`, `right` or `fine`, which a reviewer can write about clean
+  work and thereby select the rework branch.
 - `task/draft` and `task/plan` treat a literal-bounded loop as ordinary control
   flow in any graph, including a fixed graph. A review that can demand
   correction becomes a bounded review loop, and a node after alternative
