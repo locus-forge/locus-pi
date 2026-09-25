@@ -242,7 +242,8 @@ describe("task/plan-light bounded loops in any graph", () => {
     }
 
     expect(prompts.get("workflow-design")).toContain("label (rounds 1..R)");
-    expect(prompts.get("workflow-design")).toContain("correct meaning unresolved");
+    expect(prompts.get("workflow-design")).toContain("fix meaning unresolved");
+    expect(prompts.get("workflow-design")).toContain("rework is fix or revise, never correct, ok, right or fine");
     expect(prompts.get("workflow-design")).toContain("A draft limit on agent calls counts its stages only");
     expect(prompts.get("workflow-design")).toContain("never mark the design blocked over a bound or call count");
     const review = prompts.get("workflow-design-review");

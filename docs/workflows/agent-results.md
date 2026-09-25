@@ -193,6 +193,16 @@ journal line with the validation errors, and never masks child execution or
 transport failures. Standard generated workflows use this form for machine routing
 and exact text for every narrative result.
 
+Name each member after the action its branch takes, and never use a word that
+also reads as a verdict for a different branch. Rework is `fix` or `revise`,
+never `correct`, `ok`, `right` or `fine`. Observed failure: a reviewer asked for
+"an explicit verdict: pass, correct, or failed" wrote "Verdict: correct — no
+actionable corrections required", meaning _the work is right_; its router then
+chose the `correct` rework branch, and the workflow exhausted its correction
+rounds without reaching final verification. Let a reviewer report findings, and let the router prompt define every
+member by the condition that selects it (for example, `fix` when at least one
+actionable finding remains).
+
 An exact-choice answer is now read strictly, because there is nothing left to read
 loosely: the child submits the value as the tool argument, so the member IS the
 argument. The old text dialects — a bare word, a backticked word, a fenced block,

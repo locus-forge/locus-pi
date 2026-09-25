@@ -47,6 +47,12 @@ named workflow-workspace file before returning and tell the next consumer to
 read it. This keeps the decision with its evidence; it does not let the producer
 approve its own work or remove required review.
 
+Name each choice member after the action its branch takes, never with a word
+that also reads as a verdict for another branch: rework is `fix` or `revise`,
+never `correct`, `ok`, `right` or `fine`. A reviewer who writes "Verdict:
+correct" about clean work selects the rework branch by accident. Define every
+member by the condition that selects it.
+
 If a separate translator is useful, give it the stated branch and its meaning.
 It extracts that decision rather than applying acceptance criteria again. Child
 sessions do not automatically inherit JavaScript variables or earlier agents'

@@ -104,7 +104,9 @@ answers to it only inside that loop. Later prompts can use the initial report
 and latest carry separately. Initializing the mutable binding from an opaque
 report or assigning that report before the loop fails the source checker with
 `WF_DATA_FLOW` and `WF_EXPRESSION`.
-An exact `choice` call returns only its route token. A separate agent call
+An exact `choice` call returns only its route token. Name each token after
+the action its branch takes, never with a word that also reads as a verdict for
+another branch: rework is `fix` or `revise`, never `correct`. A separate agent call
 produces the full slice brief or findings report; later owner decisions,
 correction, and accepted-state updates receive the latest whole state and
 queue, using the initial handoff only as the baseline.

@@ -59,6 +59,23 @@ describe("Package workflow: task/plan", () => {
       expect(call.prompt).toContain("Never write source bytes into the log");
   });
 
+  it("tells author, reviewer and reviser to name route tokens by action, not verdict words", async () => {
+    const fixture = planRun(["revise", "accept"]);
+
+    await fixture.run();
+    const shaping = fixture.calls.filter((entry) => entry.choice === undefined);
+    expect(shaping.map((call) => call.label)).toEqual([
+      "workflow-author",
+      "workflow-review",
+      "workflow-revise",
+      "workflow-review",
+    ]);
+    for (const call of shaping) {
+      expect(call.prompt).toContain("Name each choice token after the action its branch takes");
+      expect(call.prompt).toContain("never correct, ok, right or fine");
+    }
+  });
+
   it("revises with the whole review and re-reviews the revision", async () => {
     const fixture = planRun(["revise", "accept"]);
 
