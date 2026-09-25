@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import runPlanWorkflow from "../../../../../examples/workflows/task/plan.workflow.mjs";
+import runPlanWorkflow from "../../../../../examples/workflows/task/plan-light.workflow.mjs";
 
 type Call = { label: string; prompt: string };
 
@@ -37,13 +37,9 @@ function capacityRun(repaired: boolean, narrative = false, wrongEdge = false) {
       "queue_conflict",
       ...(repaired ? ["work", "complete"] : []),
     ],
-    "workflow-source-queue-repair": [
-      ...early.map((name) => [name]),
-      lateRepair,
-      ...(repaired ? [["recheck route"], []] : []),
-    ],
+    // Only the conflicting fifth pass pays for reconciliation and its recheck.
+    "workflow-source-queue-repair": [lateRepair],
     "workflow-source-queue-recheck": [
-      ...early.map(() => "Queue valid"),
       wrongEdge
         ? "Returned route contradicts reviewed design"
         : narrative
@@ -51,13 +47,8 @@ function capacityRun(repaired: boolean, narrative = false, wrongEdge = false) {
           : repaired
             ? "All identities retained in two edits"
             : "Capacity conflict remains",
-      ...(repaired ? ["Queue valid", "Whole graph complete"] : []),
     ],
-    "workflow-source-queue-recheck-route": [
-      ...early.map(() => "work"),
-      repaired ? "work" : "queue_conflict",
-      ...(repaired ? ["work", "complete"] : []),
-    ],
+    "workflow-source-queue-recheck-route": [repaired ? "work" : "queue_conflict"],
     "workflow-source-slice": Array(6).fill("Source edit complete"),
     "workflow-source-check": Array(6).fill("Mechanical check passed"),
     "workflow-source-check-route": Array(6).fill("passed"),
@@ -85,19 +76,20 @@ function capacityRun(repaired: boolean, narrative = false, wrongEdge = false) {
   };
 }
 
-describe("task/plan late source-queue capacity", () => {
+describe("task/plan-light late source-queue capacity", () => {
   it("carries exact remaining slots to each queue gate and groups adjacent identities", async () => {
     const fixture = capacityRun(true);
     await expect(fixture.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
-    for (const label of [
-      "workflow-source-queue-assessment",
-      "workflow-source-queue-repair",
-      "workflow-source-queue-recheck",
-    ]) {
-      expect(fixture.calls.filter((call) => call.label === label)[4]?.prompt).toContain(
+    for (const [label, index] of [
+      ["workflow-source-queue-assessment", 4],
+      ["workflow-source-queue-repair", 0],
+      ["workflow-source-queue-recheck", 0],
+    ] as const) {
+      expect(fixture.calls.filter((call) => call.label === label)[index]?.prompt).toContain(
         "Accepted source slices: 4; remaining source-slice slots: 2 of 6",
       );
     }
+    expect(fixture.calls.filter((call) => call.label === "workflow-source-queue-repair")).toHaveLength(1);
     const groupedSlice = fixture.calls.filter((call) => call.label === "workflow-source-slice")[4]?.prompt;
     expect(fixture.calls.find((call) => call.label === "workflow-source-slice")?.prompt).toContain(
       "replace passed/failed with present/missing; present -> reviewer",
@@ -139,7 +131,7 @@ describe("task/plan late source-queue capacity", () => {
       reason: "queue_conflict",
       remaining: ["Reconciled five items in the workspace queue report"],
     });
-    const recheck = fixture.calls.filter((call) => call.label === "workflow-source-queue-recheck")[4]?.prompt;
+    const recheck = fixture.calls.filter((call) => call.label === "workflow-source-queue-recheck")[0]?.prompt;
     expect(recheck).toContain("Inspect each exact reconciled list member supplied below");
     expect(recheck).toContain("Reject a report, path, or one narrative summary");
     expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();

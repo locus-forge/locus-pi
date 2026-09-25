@@ -165,7 +165,10 @@ function detailText(value: unknown): string | undefined {
   return text === "" ? undefined : text;
 }
 
-function packageTaskRef(res: RunWorkflowScriptResult, safeTarget: string): "task/draft" | "task/plan" | undefined {
+function packageTaskRef(
+  res: RunWorkflowScriptResult,
+  safeTarget: string,
+): "task/draft" | "task/plan" | "task/plan-light" | undefined {
   const ref = res.target !== undefined ? (res.target.source === "package" ? res.target.ref : undefined) : safeTarget;
-  return ref === "task/draft" || ref === "task/plan" ? ref : undefined;
+  return ref === "task/draft" || ref === "task/plan" || ref === "task/plan-light" ? ref : undefined;
 }

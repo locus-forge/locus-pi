@@ -19,9 +19,15 @@ User-visible changes to the public package.
   the nearest expressible graph and record the adaptation, and conformance is
   judged by stages, routes, handoffs and termination rather than exact call
   counts.
+- `task/plan` now writes the whole `workflow.mjs` in one author call, then runs
+  at most three independent reviews with at most two revisions before
+  publishing. The earlier slice-by-slice builder remains as `task/plan-light`
+  for lighter author models. The earlier notes above describe that builder.
 
 ### Fixed
 
+- `task/plan-light` reads its first source-queue route and runs queue
+  reconciliation and recheck only after a conflict, instead of on every pass.
 - The `task/plan` seed stage now always creates `workflow.mjs`, and its one
   correction creates a missing file instead of failing on it.
 

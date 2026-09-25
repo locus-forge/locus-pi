@@ -54,7 +54,7 @@ Write `.locus-pi/workflows/<name>/<name>.design.md`, review it, then build exact
 A `runnable root` includes the root; `group-only` includes only direct children. A material algorithm
 mismatch returns to design review. Pause after design only when explicitly requested.
 Build-only forms remain `Build design: <exact path>` and `Build approved design: <exact path>`.
-For packaged `task/plan`, supply the complete accepted `task/draft` text; blank input or a placeholder
+For packaged `task/plan` or `task/plan-light`, supply the complete accepted `task/draft` text; blank input or a placeholder
 brief cannot produce an accepted workflow. No package-provided catalog agent is required.
 
 ## Briefs, decisions and evidence

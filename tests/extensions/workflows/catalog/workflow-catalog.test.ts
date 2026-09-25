@@ -360,6 +360,7 @@ describe("workflow operator catalog", () => {
       "post-code-review/synthesis",
       "stage-loop",
       "task/draft",
+      "task/plan-light",
       "task/plan",
     ]);
     for (const { name, description } of descriptions) {
@@ -376,21 +377,8 @@ describe("workflow operator catalog", () => {
       const model = buildWorkflowCatalogModel(root, root);
       const packageNames = model.current.filter((row) => row.source === "package").map((row) => row.name);
 
-      // Package rows are ordered as top-level folders with root before children.
-      expect(packageNames).toEqual([
-        "live-smoke",
-        "post-code-review",
-        "post-code-review/boundaries",
-        "post-code-review/contracts",
-        "post-code-review/necessity",
-        "post-code-review/scope",
-        "post-code-review/simplicity",
-        "post-code-review/style",
-        "post-code-review/synthesis",
-        "stage-loop",
-        "task/draft",
-        "task/plan",
-      ]);
+      // Package rows keep the registry order pinned by the description test above.
+      expect(packageNames).toEqual(packagedWorkflowNames());
       expect(packageNames).not.toContain("plan-build-review");
     } finally {
       rmSync(root, { recursive: true, force: true });

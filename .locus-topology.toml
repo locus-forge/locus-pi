@@ -279,12 +279,12 @@ reason = "T-101 relocates the existing namespace from extensions/workflows/examp
 trigger = "Adding any file to this namespace requires reviewing the package workflow inventory and its copy-as-one-folder contract."
 
 [[exceptions]]
-path = "tests/extensions/workflows/examples/task/task-plan-workflow.test.ts"
+path = "tests/extensions/workflows/examples/task/task-plan-light-workflow.test.ts"
 rule = "code-lines"
 ceiling = 509
-owner = "task/plan workflow tests"
+owner = "task/plan-light workflow tests"
 reason = "T-115 adds bounded seed-repair success and failure evidence to the existing task/plan runtime fixture."
-trigger = "The next task/plan scenario must shorten this fixture or split a coherent test family; do not raise this exception."
+trigger = "The next task/plan-light scenario must shorten this fixture or split a coherent test family; do not raise this exception."
 
 [[exceptions]]
 path = "extensions/workflows/tool/workflow-source-shape.ts"
