@@ -1,6 +1,6 @@
 {
   "name": "@locus-forge/locus-pi",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "type": "module",
   "description": "Dynamic workflows for Pi: reusable multi-agent workflows with configurable model roles.",
   "license": "MIT",
