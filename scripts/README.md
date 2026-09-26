@@ -1,7 +1,7 @@
 # Repository scripts
 
 Development-time tooling for this repository: the validation gates CI runs on
-every push and pull request, plus build, publication, and maintenance
+every push and pull request, plus build and maintenance
 utilities. Nothing here ships with the npm package — `package.json#files` does
 not include `scripts/` — so every script may assume a full development
 checkout with devDependencies installed and Git available.
@@ -61,11 +61,6 @@ Workflows-only without skills, and Workflows-only with bundled skills through
 Pi's real resource loader.
 The install receives an isolated home and npm config, with credential-like
 environment variables removed. No link to the source checkout is used.
-
-The manual `stage.yml` workflow calls `ci.yml`, downloads its artifact named
-`npm-candidate-<commit SHA>` from the same run, verifies it, and submits that
-exact `.tgz` to npm staging. See [RELEASING.md](../RELEASING.md) for owner
-approval and the first-package prerequisite.
 
 ### check-extension-layers.ts
 
