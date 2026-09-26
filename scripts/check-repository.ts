@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 const forbiddenPaths = [
+  /^(?:AGENTS(?:\.local)?|RELEASING(?:\.local)?)\.md$/iu,
   /^\.(locus|tasks|planning|pi|publication)\//,
   /^\.agents\/(skills|workflows)\//,
   /^(artifacts|benchmarks|eval|evaluation|evaluations|output|reports|transcripts)\//,

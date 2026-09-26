@@ -31,6 +31,11 @@ tmp/
 
 # Internal documentation and publication handoff
 # These paths are intentionally outside the public repository surface.
+/AGENTS.md
+/AGENTS.local.md
+/agents.local.md
+/RELEASING.md
+/RELEASING.local.md
 docs/adr/
 docs/decisions/
 docs/prd/
