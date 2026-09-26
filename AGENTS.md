@@ -41,6 +41,9 @@ The public contract is `package.json#pi.extensions`, extension manifests, co-loc
 ## npm release
 
 - Follow [RELEASING.md](RELEASING.md) for the owner-controlled release path.
+- Before requesting npm credentials, read the operator's publication runbook
+  and check its dedicated local npm configuration. A missing GitHub secret or
+  an unauthorized default npm session does not rule out an existing local token.
 - CI checks a real tarball through a clean external Pi consumer install. Only the
   `main` branch in `locus-forge/locus-pi` may dispatch npm staging. The staging
   workflow reuses CI, downloads its exact candidate, and never approves or
