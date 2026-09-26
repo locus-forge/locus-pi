@@ -4,37 +4,40 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-09-26
+
 ### Changed
 
-- `task/plan`, `task/plan-light`, the workflow-create skill and the choice
-  documentation require route tokens named after the action their branch
-  takes. Rework is `fix` or `revise`, never a verdict-like word such as
-  `correct`, `ok`, `right` or `fine`, which a reviewer can write about clean
-  work and thereby select the rework branch.
-- `task/draft` and `task/plan` treat a literal-bounded loop as ordinary control
-  flow in any graph, including a fixed graph. A review that can demand
-  correction becomes a bounded review loop, and a node after alternative
-  branches receives their whole reports through a carry inside that loop.
-- `task/plan` stages share an append-only `workflow-decision-log.md` in the
-  workflow workspace. Each working stage reads it as evidence and appends its
-  decision, reason, evidence and open conflict; entries never act as
-  instructions or waive a check.
-- Workflow bounds no longer block creation. Drafts give each loop a finite
-  round limit but no total agent-call cap, designs adapt a conflicting draft to
-  the nearest expressible graph and record the adaptation, and conformance is
-  judged by stages, routes, handoffs and termination rather than exact call
-  counts.
-- `task/plan` now writes the whole `workflow.mjs` in one author call, then runs
-  at most three independent reviews with at most two revisions before
-  publishing. The earlier slice-by-slice builder remains as `task/plan-light`
-  for lighter author models. The earlier notes above describe that builder.
+- `task/plan` writes the complete `workflow.mjs` in one author call, then runs
+  at most three independent reviews and two revisions before publishing. The
+  earlier slice-by-slice builder remains available as `task/plan-light` for
+  lighter author models.
+- Both task planners share an append-only `workflow-decision-log.md` in the
+  workflow workspace. Working stages record decisions, reasons, evidence and
+  open conflicts so later stages can avoid repeating rejected approaches.
+  Log entries remain evidence and cannot waive a check.
+- Workflow authoring treats a literal-bounded loop as ordinary control flow in
+  any graph, including a fixed graph. Reviews that can demand correction use
+  bounded review loops, with whole reports carried to later consumers.
+- Task planners, the workflow-create skill and choice documentation name route
+  tokens after branch actions. Rework uses `fix` or `revise`, avoiding verdict
+  words that can accidentally send accepted work back for correction.
+- The README now includes workflow diagrams, package badges, all six extensions
+  and a repository map. It distinguishes direct skill-based authoring from the
+  packaged `task/draft`, `task/plan` and `task/plan-light` route.
 
 ### Fixed
 
-- `task/plan-light` reads its first source-queue route and runs queue
-  reconciliation and recheck only after a conflict, instead of on every pass.
-- The `task/plan` seed stage now always creates `workflow.mjs`, and its one
-  correction creates a missing file instead of failing on it.
+- Workflow creation no longer stops over exact agent-call counts or conflicting
+  draft bounds. Drafts keep finite loop limits, and designs record adaptations
+  while preserving scope, required stages, routes, handoffs and termination.
+- `task/plan-light` always creates its seed `workflow.mjs`; its bounded seed
+  correction creates a missing file instead of failing merely because it is
+  absent.
+- `task/plan-light` reads its first source-queue route and reconciles and
+  rechecks the queue only after a conflict, instead of on every pass.
+- Installation instructions now recognize the published npm package and explain
+  that its release and bundled documentation can lag the repository.
 
 ## [0.9.3] - 2026-09-24
 
