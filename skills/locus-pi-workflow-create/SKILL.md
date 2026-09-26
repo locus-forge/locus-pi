@@ -36,8 +36,8 @@ source; an authorized repair-and-continue returns to the run skill and continues
 
 ## Select and design the graph
 
-Read [the pattern index](references/INDEX.md), then only the selected card. Default substantive
-implementation to adaptive slices; choose a fixed graph for predetermined work or an explicit request.
+Read [the pattern index](references/INDEX.md), then only the selected card. Prefer a fixed graph for one
+bounded deliverable with known requirements; use adaptive slices when accepted output must re-cut the work.
 Read [authoring styles](references/authoring-styles.md) for brief detail, folder input or executor choices.
 Outcome-led briefs are the default; procedural detail needs a concrete constraint or observed failure.
 
@@ -54,7 +54,7 @@ Write `.locus-pi/workflows/<name>/<name>.design.md`, review it, then build exact
 A `runnable root` includes the root; `group-only` includes only direct children. A material algorithm
 mismatch returns to design review. Pause after design only when explicitly requested.
 Build-only forms remain `Build design: <exact path>` and `Build approved design: <exact path>`.
-For packaged `task/plan`, supply the complete accepted `task/draft` text; blank input or a placeholder
+For packaged `task/plan` or `task/plan-light`, supply the complete accepted `task/draft` text; blank input or a placeholder
 brief cannot produce an accepted workflow. No package-provided catalog agent is required.
 
 ## Briefs, decisions and evidence

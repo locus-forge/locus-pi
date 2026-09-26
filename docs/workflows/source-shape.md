@@ -286,8 +286,9 @@ These are all rules enforced for `meta.profile: "standard"`:
 
 ### Bounded carry and author-owned records
 
-Adaptive slices are the default for substantive implementation; see the
-[adaptive card](../../skills/locus-pi-workflow-create/references/adaptive-slices.md).
+A literal bounded loop is ordinary control flow in any graph, including a fixed
+graph; see the [adaptive card](../../skills/locus-pi-workflow-create/references/adaptive-slices.md)
+for re-cut queues.
 A `let` seeded with `[]` may carry a whole opaque list in the same finite literal
 `for` shape described below. List length/indexing schedules work; contents remain
 opaque, including aliases, mapped items and `for…of` bindings. No push, shift,
@@ -305,6 +306,12 @@ reset elsewhere. Carry cannot escape into a callback or mutate shared branch
 state, mix control and opaque values, replace a result with a fabricated literal,
 inspect properties or transform the answer. Carried values and aliases retain
 provenance; initializing a variable with `""` does not launder later model text.
+The `let` must sit in the same block immediately before the nearest `for` that
+assigns it. A carry assigned in a nested loop but declared outside that loop,
+or declared in a block around the loop's own block, is rejected, and so is a
+branch assignment outside any loop, even one that runs once. A node after
+alternative branches therefore receives their whole reports through a carry
+assigned inside a bounded loop.
 
 Author-known literal records may use named properties, including in visible
 `.map()` callbacks, and flat object destructuring of those records. Model output,

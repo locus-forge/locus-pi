@@ -6,7 +6,7 @@ the create skill owns deliverable clarification and the Design → review → Bu
 | Form                                        | When                                   | Default call cost                                  |
 | ------------------------------------------- | -------------------------------------- | -------------------------------------------------- |
 | [Adaptive slices](adaptive-slices.md)       | Implement and re-cut a remaining queue | Bounded total slices plus corrections and final QA |
-| [Fixed graph](fixed-graph.md)               | Stages/units known                     | Exactly the declared calls                         |
+| [Fixed graph](fixed-graph.md)               | Stages/units known                     | The declared stages within their bounds            |
 | [Bounded refinement](bounded-refinement.md) | A verifier may demand more work        | Up to 3R logical calls in the text-review recipe   |
 | [Bounded decomposition](decomposition.md)   | Work units discovered during execution | Discovery + bounded workers + aggregation          |
 | [Human continuation](human-continuation.md) | Only the operator can authorize/decide | Two stages in separate runs                        |

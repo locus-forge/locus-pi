@@ -61,8 +61,9 @@ describe("readable workflow authoring references", () => {
     expect(text).toContain("`task/draft` turns a raw request into `draft.md`");
     expect(text).toContain("Copy and edit this text when needed");
     expect(text).toContain("`task/plan` receives the complete accepted draft as semantic input");
-    expect(text).toContain("one concrete `workflow.mjs`");
-    expect(text).toContain("Neither package stage executes generated source.");
+    expect(text).toContain("the complete workspace `workflow.mjs`");
+    expect(text).toContain("`task/plan-light` receives the same input");
+    expect(text).toContain("No task stage executes generated source.");
     expect(text).toContain("For an authorized create-and-run request");
   });
 
@@ -393,6 +394,7 @@ ${authoring[1] ?? ""}
       "live-smoke": "standard",
       "task/draft": "standard",
       "task/plan": "standard",
+      "task/plan-light": "standard",
       "post-code-review": "standard",
       "post-code-review/boundaries": "standard",
       "post-code-review/contracts": "standard",
@@ -403,10 +405,11 @@ ${authoring[1] ?? ""}
       "post-code-review/synthesis": "standard",
       "stage-loop": "standard",
     });
-    expect(packagedWorkflowNames()).toHaveLength(12);
+    expect(packagedWorkflowNames()).toHaveLength(13);
     for (const name of [
       "live-smoke",
       "task/draft",
+      "task/plan-light",
       "task/plan",
       "post-code-review",
       "post-code-review/boundaries",

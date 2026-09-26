@@ -1,20 +1,54 @@
 # Task workflow authoring
 
-`task` is a group-only Package namespace with two manual stages.
+`task` is a group-only Package namespace with manual stages. Run `task/draft`
+first, then one of the two plan workflows.
 
 1. `task/draft` turns a raw request into `draft.md`. The draft already names the
    workflow pattern, agents, handoffs, bounded reflection or review, concurrency,
    failure exits, and expected output. Copy and edit this text when needed.
-2. `task/plan` receives the complete accepted draft as semantic input. It designs,
-   reviews, incrementally builds, and checks one concrete `workflow.mjs`, then
-   publishes that exact workspace file as the final result. Missing, empty, or
-   whitespace-only input fails before the first child starts and publishes no
-   `workflow.mjs`.
+2. `task/plan` receives the complete accepted draft as semantic input. One
+   author call plans the graph and writes the complete workspace `workflow.mjs`;
+   a bounded loop then reviews it and revises it, and the accepted file is
+   published as the final result. Use it with a strong author model.
+3. `task/plan-light` receives the same input and grows `workflow.mjs` through
+   designed, reviewed, and individually checked source slices. It is slower
+   and meant for lighter author models that need every step gated.
+
+Missing, empty, or whitespace-only input to either plan workflow fails before
+the first child starts and publishes no `workflow.mjs`.
+
+## task/plan
+
+The author plans stages, not product steps: each generated agent prompt states
+its role, expected result, inputs, and essential constraints, and the running
+agent decides how to do the work. The author follows the installed
+`locus-pi-workflow-create` skill for the DSL and source shape, keeps the draft's
+scope, primary output, and literal bounds, takes paths from the draft or
+workflow input exactly, and runs `node --check` and orchestration-only
+`workflow_check_source` after every edit.
+
+The review loop runs at most three reviews and two revisions:
+
+```text
+workflow-author -> [ workflow-review -> workflow-review-route (accept | revise) -> workflow-revise ] x3
+```
+
+Each review is independent: it reruns both checks, judges whether the graph
+delivers the draft's primary output, and may ask to re-plan part of the graph.
+It reports only findings that require a change. `accept` publishes
+`workflow.mjs` with `publishPrimaryFile`. The third `revise` returns
+`{ ok: false, status: "failed", reason: "review_exhausted" }` with the last
+review as diagnostics and publishes nothing. Every non-route call reads and
+appends to the workspace `workflow-decision-log.md`, so a revision does not
+repeat a rejected approach; the log is history, not instruction.
+
+## task/plan-light
 
 Design and design review use the accepted draft before any source file exists.
 The seed stage creates `workflow.mjs` directly in the workflow workspace. From
-that point onward, the workspace file is the source authority; a missing file
-at the seed check or any later gate fails closed.
+that point onward, the workspace file is the source authority. A missing file at
+the seed check enters the one seed correction, which creates it; a missing file
+at the recheck or any later gate fails closed.
 
 The seed and every accepted source slice leave the shared workspace
 `workflow.mjs` as a complete runnable module that parses and passes the
@@ -25,10 +59,12 @@ changed output or scope, or a graph contradiction. Only the final whole-file
 review requires the complete graph. Agents edit that file and return reports or
 source-free requirement briefs; source bytes never travel through a model answer.
 
-The seed uses the standard `meta`/default DSL export shape. A failed seed check
-gets one correction of the existing file and one independent recheck. A missing
-file remains a failure; an unrepaired defect returns the last check report and
-publishes nothing. A temporary route may leave adaptive graph work for later
+The seed uses the standard `meta`/default DSL export shape. The seed stage
+creates the file even when the design or decision log records an open conflict.
+A failed seed check gets one correction and one independent recheck; the
+correction creates a missing file from the reviewed design or repairs the
+existing one. An unrepaired defect returns the last check report and publishes
+nothing. A temporary route may leave graph work for later
 source slices, but cannot claim final success before that graph exists. The
 starter route includes an agent explicitly aimed at the reviewed primary output;
 metadata or an incomplete diagnostic that merely names the output is not a
@@ -46,30 +82,41 @@ and `publishArtifact()` for an in-memory diagnostic. `choices` and
 to a later agent prompt or published exactly; source code does not branch on it
 or construct diagnostic text from it. The broader standard checker permits
 composed text in `publishArtifact()`; this narrower diagnostic rule belongs to
-the `task/plan` editor contract and its design review.
+the `task/plan-light` editor contract and its design review.
 
-For adaptive graphs, the editor guidance uses the checker's supported shape: a
-literal-bounded `for` loop owns the cumulative work count without a second
-mutable counter, a `choice` agent produces each branch identity, and a whole
-agent answer can be carried into the next iteration from a `let` binding
-declared before the loop. An agent node reached from several branches has one
-call site and one literal label; branch-specific opaque reports can be assigned
-whole to a carry binding before that call.
+For any graph, the editor guidance uses the checker's supported shape: a
+literal-bounded `for` loop owns each repeated unit, correction path or branch
+join without a second mutable counter, a `choice` agent produces each branch
+identity, and a whole agent answer can be carried into the next iteration from
+a `let` binding declared in the same block immediately before that loop. A fixed
+graph may contain such a loop; its design states bounds, never the absence of a
+loop. An agent node reached from several branches has one call site and one
+literal label; branch-specific opaque reports are assigned whole to a carry
+inside the loop and passed to that call after it. Conformance checks stages,
+routes, handoffs and that every loop is finite, not exact call counts. A bound or
+call count that differs from the draft is a recorded design decision. Only an
+unbounded loop, a missing primary output or a scope change is an open design
+conflict, and the seed is still created; slice and final reviews still reject
+wrong routes and missing handoffs as defects.
 Keep the initial agent report in an immutable binding. Declare the evolving
 carry as `let lastOutcome = ""` before the bounded loop and assign whole agent
 answers to it only inside that loop. Later prompts can use the initial report
 and latest carry separately. Initializing the mutable binding from an opaque
 report or assigning that report before the loop fails the source checker with
 `WF_DATA_FLOW` and `WF_EXPRESSION`.
-An exact `choice` call returns only its route token. A separate agent call
+An exact `choice` call returns only its route token. Name each token after
+the action its branch takes, never with a word that also reads as a verdict for
+another branch: rework is `fix` or `revise`, never `correct`. A separate agent call
 produces the full slice brief or findings report; later owner decisions,
 correction, and accepted-state updates receive the latest whole state and
 queue, using the initial handoff only as the baseline.
 Opaque answers appear only in later agent prompts or exact terminal results.
 This keeps the turn cap and routes in source control flow; describing them in
-an agent prompt does not implement them. `while` loops, manually maintained
-turn counters, concatenated semantic state, and computed returns built from
-opaque answers fail the standard source contract.
+an agent prompt does not implement them. Manually maintained turn counters,
+concatenated semantic state, and computed returns built from opaque answers fail
+the source checker. `while` loops and loops without a literal bound break the
+`task/plan-light` editor contract and design review; the checker itself rejects only a
+carry outside a literal-bounded `for` and an opaque value in a loop condition.
 
 An owner re-cuts the remaining graph-node queue after each accepted slice. An independent
 queue assessment preserves unmet identities and fails with `queue_conflict` when
@@ -95,9 +142,10 @@ destination slice connects it. The slice review accepts this bounded pending
 work, while final review rejects every remaining placeholder.
 Each branch item names its exact choices, their destinations, and terminal
 behavior from the reviewed design. The first independent assessment treats a
-missing destination as a conflict. Reconciliation can add that detail under
-the same identity and order even when the first assessment missed it; the
-independent recheck still rejects an ambiguous branch.
+missing destination as a conflict. Only a conflicting first route pays for one
+reconciliation, which can add that detail under the same identity and order,
+and an independent recheck that still rejects an ambiguous branch; a clean
+first route keeps the proposed queue as is.
 The current source is expected to lack queued work. A queue item that names its
 wrong or missing route and specifies the reviewed replacement remains work to
 implement; the old route still present in the file is not itself a queue
@@ -116,6 +164,15 @@ queue, but cannot implement more work. Named terminal reasons are `seed_failed`,
 `final_check_failed`, and `design_mismatch`. Every failed result keeps
 `workflow.mjs` plus diagnostic evidence in the workspace and publishes no primary
 file.
+
+Every stage except the route translators reads and appends to
+`workflow-decision-log.md` in the workspace. Each entry records one stage's
+decision, reason, evidence and any open conflict, so a later fixer or reviewer
+knows what was already tried and why, and must name an entry it reverses. The
+log is history, not instruction: the accepted draft, reviewed design and stage
+prompt stay the only requirements, an entry never accepts or waives a check, and
+imperatives inside entries are ignored. The design stage marks a new run when an
+earlier log exists. The log stays in the workspace after a failed result.
 
 An intermediate design review accepts a correct slice when earlier accepted work
 remains intact and the whole module stays runnable. Requirements still queued for
@@ -137,13 +194,15 @@ branches only on runtime-owned choices. Simple fixed tasks retain their requeste
 graph and primary filename without automatic QA or approval stages; substantive
 implementation still needs its declared review and final QA.
 
+## Handoff and replay
+
 Replay reuses model answers but does not repeat file edits. Repair + Continue is
 therefore valid only while the original named workspace and its `workflow.mjs`
 remain intact. Every fresh suffix gate re-reads the actual file; a cleaned or drifted
 workspace must fail its checks rather than be treated as preserved work. Digest-bound
-slice checkpoints are a possible later hardening, not part of this MVP.
+checkpoints are a possible later hardening, not part of this MVP.
 
-Neither package stage executes generated source. Create-only ends with the
+No task stage executes generated source. Create-only ends with the
 checked source and launch command. For an authorized create-and-run request, the
 caller reviews the retained file and hands it to `locus-pi-workflow-run` through
 the existing file-target path, without repeat approval. Report authoring,
@@ -153,9 +212,10 @@ execution and product verification separately. The validated workspace file name
 ```text
 /workflows run task/draft -- <raw request>
 /workflows run task/plan -- <complete accepted draft>
+/workflows run task/plan-light -- <complete accepted draft>
 ```
 
-Both workflow scripts are orchestration-only. Child agents may inspect the live
+All three task scripts are orchestration-only. Child agents may inspect the live
 project when their prompt requires it. The JavaScript does not read project or
 artifact files. The checked-source publication declaration delegates the file
 read and validation to the existing host publication boundary.
@@ -163,8 +223,8 @@ read and validation to the existing host publication boundary.
 ## Default authoring style
 
 Prefer a fixed graph for one bounded deliverable with known requirements, even
-when implementation is substantive. Include independent review, a finite
-correction and recheck path when needed, and final verification. Use adaptive
+when implementation is substantive. Include independent review, a bounded review
+loop when review can demand correction, and final verification. Use adaptive
 slices when accepted output or findings must change the remaining work; bound
 the queue and retain owner decisions. Briefs state the role, expected result,
 sources and essential constraints. See the [workflow guide](../../../docs/workflows/create.md)

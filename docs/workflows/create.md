@@ -152,18 +152,21 @@ result by dropping a report.
 
 ### Build generated source in complete slices
 
-The Package `task/plan` workflow builds one workspace `workflow.mjs` in complete,
-checked graph-node slices. It re-cuts the remaining queue after each accepted
-slice, keeps source bytes in the workspace, and publishes the file only after
-final whole-file checks. The [task authoring manual](../../examples/workflows/task/README.md)
-owns its slice/correction allowances, mechanical and design gates, terminal reasons,
-and replay requirements. Use that manual when running or repairing `task/plan`.
+The Package `task/plan` workflow writes one workspace `workflow.mjs` in a single
+author call, then reviews and revises it in a loop of at most three reviews.
+`task/plan-light` builds the same file in complete, checked graph-node slices for
+lighter author models: it re-cuts the remaining queue after each accepted slice
+and publishes the file only after final whole-file checks. The
+[task authoring manual](../../examples/workflows/task/README.md) owns both
+workflows' loops, gates, terminal reasons, and replay requirements. Use that
+manual when running or repairing either one.
 
 Prefer a **fixed graph** for one bounded deliverable with known requirements,
-even when the implementation is substantive. Keep independent review, a finite
-correction and recheck path when needed, and required final verification; do
-not invent a slice queue merely because implementation has several internal
-steps. A caller can also request a fixed graph explicitly.
+even when the implementation is substantive. Keep independent review, a bounded
+review loop when review can demand correction, and required final verification;
+do not invent a slice queue merely because implementation has several internal
+steps. "Fixed" means known stages and literal bounds, not source without a loop.
+A caller can also request a fixed graph explicitly.
 Choose **procedural briefs** only when an exact sequence is required by a tool or
 an observed failure. The default **outcome-led brief** names the role, result,
 sources and essential constraints, then leaves the method to the agent. Graph
