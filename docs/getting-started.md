@@ -4,18 +4,19 @@ type: guide
 status: active
 owner: locus-pi maintainers
 tags: [installation, getting-started]
-updated: "2026-09-22T17:02:15Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=46"
-description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
+updated: "2026-09-26T00:20:02Z"
+source_commit: "dfed8d3519fb"
+update_event: "user_request"
+context: "changes=S files=2"
+description: "Reflect the published npm package and distinguish release documentation from repository changes."
 ---
 
 # Getting started
 
 Requires Node.js `>=22.19.0`, Pi `>=0.83.0`, and a configured model provider.
-Choose one installation source. The new npm package is not published yet; use
-Git for now. Both routes provide the same extensions, workflows, and skills.
+Choose one installation source: a Git checkout or the published npm package.
+The npm release can lag this repository. Use the documentation bundled with your
+installed version when checking its available workflows and skills.
 
 [Documentation](index.md) · [Create a workflow](workflows/create.md) · [Examples](../examples/workflows/README.md)
 
@@ -54,7 +55,7 @@ before registering another source.
 
 ## Install from npm
 
-Once `@locus-forge/locus-pi` is published:
+Install the published `@locus-forge/locus-pi` package:
 
 ```bash
 pi install npm:@locus-forge/locus-pi
@@ -72,7 +73,7 @@ replace only that entry's source. Preserve its resource filters and all other
 package settings. Do not add a second locus-pi entry alongside it.
 
 For example, replace `npm:@kroffske/locus-pi` with the absolute path to your
-prepared Git checkout now, or with `npm:@locus-forge/locus-pi` after publication.
+prepared Git checkout, or with `npm:@locus-forge/locus-pi`.
 For the npm source, then run `pi update npm:@locus-forge/locus-pi` to install it.
 For a checkout, run `npm ci --ignore-scripts` in that checkout. Confirm the new
 source with `pi list`, then start a fresh Pi session.
@@ -104,7 +105,7 @@ To expose the same skills to Codex or Claude Code, follow the
 Pi installs the package once and can filter which entrypoints it loads. Use `pi config` for an interactive global or project-local selection, or edit the existing locus-pi entry in `~/.pi/agent/settings.json` or `.pi/settings.json`. Replace that entry instead of adding a second copy; keep all other package entries.
 
 For Git, keep the existing checkout path as `source` and add the resource filters
-below. The example uses the npm source for after publication; it loads only the
+below. The example uses the npm source; it loads only the
 workflow extension and disables the bundled skills:
 
 ```json
