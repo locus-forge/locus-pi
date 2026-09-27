@@ -4,6 +4,13 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-09-28
+
+### Maintenance
+
+- Moved maintainer instructions out of the public repository and kept local
+  guidance out of repository and npm package checks. Package behavior is unchanged.
+
 ## [0.9.4] - 2026-09-26
 
 ### Changed
