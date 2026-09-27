@@ -131,6 +131,15 @@ describe("repository hygiene", () => {
     await expect(repositoryProblems(root)).resolves.toContain("forbidden repository path: .locus/private.md");
   });
 
+  it.each(["AGENTS.md", "AGENTS.local.md", "agents.local.md", "RELEASING.md", "RELEASING.local.md"])(
+    "rejects private operator instructions force-added as %s",
+    async (filename) => {
+      const root = await gitFixture({ ".gitignore": `${filename}\n`, [filename]: "Private operator instructions\n" });
+
+      await expect(repositoryProblems(root)).resolves.toContain(`forbidden repository path: ${filename}`);
+    },
+  );
+
   it("rejects tracked symlinks", async () => {
     const root = await gitFixture({ "target.txt": "target\n" });
     await symlink("target.txt", path.join(root, "link.txt"));
