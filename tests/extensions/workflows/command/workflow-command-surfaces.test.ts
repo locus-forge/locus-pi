@@ -276,31 +276,31 @@ describe("/workflows help and unknown commands", () => {
     });
     expect(
       parseRunCommand(
-        'run post-code-review --output-dir "tmp/post-code-review/review 1" --resume prior-run review commit HEAD',
+        'run post-code-review --workspace-dir "tmp/post-code-review/review 1" --resume prior-run review commit HEAD',
       ),
     ).toEqual({
       scriptRef: "post-code-review",
-      outputDir: "tmp/post-code-review/review 1",
+      workspaceDir: "tmp/post-code-review/review 1",
       resumeFromRunId: "prior-run",
       input: "review commit HEAD",
     });
-    expect(parseRunCommand("run post-code-review --resume prior-run --output-dir tmp/review-1")).toEqual({
+    expect(parseRunCommand("run post-code-review --resume prior-run --workspace-dir tmp/review-1")).toEqual({
       scriptRef: "post-code-review",
-      outputDir: "tmp/review-1",
+      workspaceDir: "tmp/review-1",
       resumeFromRunId: "prior-run",
     });
     expect(
       parseRunCommand(
-        "run post-code-review --output-dir tmp/first --resume run-first --output-dir tmp/last --resume run-last",
+        "run post-code-review --workspace-dir tmp/first --resume run-first --workspace-dir tmp/last --resume run-last",
       ),
     ).toEqual({
       scriptRef: "post-code-review",
-      outputDir: "tmp/last",
+      workspaceDir: "tmp/last",
       resumeFromRunId: "run-last",
     });
-    expect(parseRunCommand("run post-code-review --output-dir tmp/fresh --resume")).toEqual({
+    expect(parseRunCommand("run post-code-review --workspace-dir tmp/fresh --resume")).toEqual({
       scriptRef: "post-code-review",
-      outputDir: "tmp/fresh",
+      workspaceDir: "tmp/fresh",
       missingResumeId: true,
     });
     expect(parseRunCommand("run task/draft --run-name")).toEqual({
@@ -313,15 +313,15 @@ describe("/workflows help and unknown commands", () => {
       scriptRef: "plan",
       noOperator: true,
     });
-    expect(parseRunCommand("run plan --no-operator --output-dir tmp/auto ship the fix")).toEqual({
+    expect(parseRunCommand("run plan --no-operator --workspace-dir tmp/auto ship the fix")).toEqual({
       scriptRef: "plan",
-      outputDir: "tmp/auto",
+      workspaceDir: "tmp/auto",
       noOperator: true,
       input: "ship the fix",
     });
-    expect(parseRunCommand("run plan --output-dir tmp/auto --no-operator -- --no-operator stays input")).toEqual({
+    expect(parseRunCommand("run plan --workspace-dir tmp/auto --no-operator -- --no-operator stays input")).toEqual({
       scriptRef: "plan",
-      outputDir: "tmp/auto",
+      workspaceDir: "tmp/auto",
       noOperator: true,
       input: "--no-operator stays input",
     });
@@ -331,9 +331,9 @@ describe("/workflows help and unknown commands", () => {
       scriptRef: "plan",
       noOperator: false,
     });
-    expect(parseRunCommand("run plan --operator --output-dir tmp/auto ship the fix")).toEqual({
+    expect(parseRunCommand("run plan --operator --workspace-dir tmp/auto ship the fix")).toEqual({
       scriptRef: "plan",
-      outputDir: "tmp/auto",
+      workspaceDir: "tmp/auto",
       noOperator: false,
       input: "ship the fix",
     });
@@ -350,18 +350,18 @@ describe("/workflows help and unknown commands", () => {
       input: "--operator stays input",
     });
     // A value option cannot eat the flag as its value.
-    expect(parseRunCommand("run plan --output-dir --no-operator")).toEqual({
+    expect(parseRunCommand("run plan --workspace-dir --no-operator")).toEqual({
       scriptRef: "plan",
-      missingOutputDir: true,
+      missingWorkspaceDir: true,
     });
-    expect(parseRunCommand("run plan --output-dir --operator")).toEqual({
+    expect(parseRunCommand("run plan --workspace-dir --operator")).toEqual({
       scriptRef: "plan",
-      missingOutputDir: true,
+      missingWorkspaceDir: true,
     });
-    expect(parseRunCommand("run post-code-review --resume run-old --output-dir")).toEqual({
+    expect(parseRunCommand("run post-code-review --resume run-old --workspace-dir")).toEqual({
       scriptRef: "post-code-review",
       resumeFromRunId: "run-old",
-      missingOutputDir: true,
+      missingWorkspaceDir: true,
     });
     expect(parseRunCommand('run post-code-review --resume ""')).toEqual({
       scriptRef: "post-code-review",
@@ -371,15 +371,15 @@ describe("/workflows help and unknown commands", () => {
       scriptRef: "post-code-review",
       resumeFromRunId: " ",
     });
-    expect(parseRunCommand("run post-code-review --output-dir tmp/first --output-dir")).toEqual({
+    expect(parseRunCommand("run post-code-review --workspace-dir tmp/first --workspace-dir")).toEqual({
       scriptRef: "post-code-review",
-      outputDir: "tmp/first",
-      missingOutputDir: true,
+      workspaceDir: "tmp/first",
+      missingWorkspaceDir: true,
     });
-    expect(parseRunCommand('run post-code-review --output-dir "tmp/first review" --output-dir')).toEqual({
+    expect(parseRunCommand('run post-code-review --workspace-dir "tmp/first review" --workspace-dir')).toEqual({
       scriptRef: "post-code-review",
-      outputDir: "tmp/first review",
-      missingOutputDir: true,
+      workspaceDir: "tmp/first review",
+      missingWorkspaceDir: true,
     });
     expect(parseRunCommand("run post-code-review --resume run-first --resume")).toEqual({
       scriptRef: "post-code-review",
@@ -390,26 +390,28 @@ describe("/workflows help and unknown commands", () => {
 
   it.each(["\t", "\n", "\u00a0"])("recognizes run options separated by %j", (separator) => {
     expect(
-      parseRunCommand(`run post-code-review --output-dir${separator}tmp/review --resume${separator}prior-run`),
+      parseRunCommand(`run post-code-review --workspace-dir${separator}tmp/review --resume${separator}prior-run`),
     ).toEqual({
       scriptRef: "post-code-review",
-      outputDir: "tmp/review",
+      workspaceDir: "tmp/review",
       resumeFromRunId: "prior-run",
     });
   });
 
   it("forwards the exact remainder after the end-of-options delimiter", () => {
-    expect(parseRunCommand("run post-code-review -- --resume --output-dir --")).toEqual({
+    expect(parseRunCommand("run post-code-review -- --resume --workspace-dir --")).toEqual({
       scriptRef: "post-code-review",
-      input: "--resume --output-dir --",
+      input: "--resume --workspace-dir --",
     });
     expect(
-      parseRunCommand("run post-code-review --output-dir tmp/review --resume run-old --   --resume  --output-dir"),
+      parseRunCommand(
+        "run post-code-review --workspace-dir tmp/review --resume run-old --   --resume  --workspace-dir",
+      ),
     ).toEqual({
       scriptRef: "post-code-review",
-      outputDir: "tmp/review",
+      workspaceDir: "tmp/review",
       resumeFromRunId: "run-old",
-      input: "  --resume  --output-dir",
+      input: "  --resume  --workspace-dir",
     });
     expect(parseRunCommand("run post-code-review -- --")).toEqual({ scriptRef: "post-code-review", input: "--" });
   });
@@ -425,7 +427,7 @@ describe("/workflows help and unknown commands", () => {
     expect(description).toBe("Open the workflow command menu, or run, inspect, continue, and stop workflow runs.");
     expect(description).not.toContain(workflowRunUsage("<name|path>", "run"));
     expect(workflowRunUsage()).toBe(
-      "/workflows run <name|path> [--run-name <name> | --output-dir <path>] [--resume <runId>] [--no-operator|--operator] [--] [input]",
+      "/workflows run <name|path> [--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--no-operator|--operator] [--] [input]",
     );
     expect(h.commands.has("workflow-run")).toBe(false);
     expect(h.commands.get("workflow-stop")?.description).toBe(
@@ -680,18 +682,18 @@ describe("/workflows argument rejections", () => {
     expect(widget).toContain("No workflow execution was started.");
   });
 
-  it("rejects --run-name together with --output-dir", async () => {
-    const widget = await runCommand(wideHarness(makeRoot()), "run alpha --run-name one --output-dir tmp/two");
-    expect(widget).toContain("--run-name and --output-dir are mutually exclusive.");
+  it("rejects --run-name together with --workspace-dir", async () => {
+    const widget = await runCommand(wideHarness(makeRoot()), "run alpha --run-name one --workspace-dir tmp/two");
+    expect(widget).toContain("--run-name and --workspace-dir are mutually exclusive.");
     expect(widget).toContain("No workflow execution was started.");
   });
 
-  it("rejects --output-dir with no project-relative path after it", async () => {
-    const widget = await runCommand(wideHarness(makeRoot()), "run alpha --output-dir");
+  it("rejects --workspace-dir with no project-relative path after it", async () => {
+    const widget = await runCommand(wideHarness(makeRoot()), "run alpha --workspace-dir");
     const unwrapped = widget.replace(/[│╭╮╰╯─]/gu, "").replace(/\s+/gu, " ");
 
-    expect(widget).toContain("Missing project-relative path after --output-dir.");
-    expect(unwrapped).toContain("Retry: /workflows run alpha --output-dir <path> [--resume <runId>] [--] [input]");
+    expect(widget).toContain("Missing project-relative path after --workspace-dir.");
+    expect(unwrapped).toContain("Retry: /workflows run alpha --workspace-dir <path> [--resume <runId>] [--] [input]");
     expect(widget).toContain("No workflow execution was started.");
   });
 
@@ -701,35 +703,35 @@ describe("/workflows argument rejections", () => {
 
     expect(widget).toContain("Missing run id after --resume.");
     expect(unwrapped).toContain(
-      "Retry: /workflows run alpha [--run-name <name> | --output-dir <path>] --resume <runId> [--] [input]",
+      "Retry: /workflows run alpha [--run-name <name> | --workspace-dir <path>] --resume <runId> [--] [input]",
     );
     expect(widget).toContain("No workflow execution was started.");
   });
 
   it("preserves an accepted output workspace when the following resume id is missing", async () => {
-    const widget = await runCommand(wideHarness(makeRoot()), "run alpha --output-dir tmp/reviews/review-1 --resume");
+    const widget = await runCommand(wideHarness(makeRoot()), "run alpha --workspace-dir tmp/reviews/review-1 --resume");
     const unwrapped = widget.replace(/[│╭╮╰╯─]/gu, "").replace(/\s+/gu, " ");
 
     expect(unwrapped).toContain(
-      "Retry: /workflows run alpha --output-dir tmp/reviews/review-1 --resume <runId> [--] [input]",
+      "Retry: /workflows run alpha --workspace-dir tmp/reviews/review-1 --resume <runId> [--] [input]",
     );
   });
 
   it("preserves an accepted resume id when the following output workspace is missing", async () => {
-    const widget = await runCommand(wideHarness(makeRoot()), "run alpha --resume run-old --output-dir");
+    const widget = await runCommand(wideHarness(makeRoot()), "run alpha --resume run-old --workspace-dir");
     const unwrapped = widget.replace(/[│╭╮╰╯─]/gu, "").replace(/\s+/gu, " ");
 
-    expect(unwrapped).toContain("Retry: /workflows run alpha --output-dir <path> --resume run-old [--] [input]");
+    expect(unwrapped).toContain("Retry: /workflows run alpha --workspace-dir <path> --resume run-old [--] [input]");
   });
 
-  it("preserves an accepted duplicate outputDir on canonical recovery", async () => {
+  it("preserves an accepted duplicate workspaceDir on canonical recovery", async () => {
     const h = wideHarness(makeRoot());
-    await h.commands.get("workflows")!.handler("run alpha --output-dir tmp/first --output-dir", h.ctx);
+    await h.commands.get("workflows")!.handler("run alpha --workspace-dir tmp/first --workspace-dir", h.ctx);
     const unwrapped = widgetOf(h)
       .replace(/[│╭╮╰╯─]/gu, "")
       .replace(/\s+/gu, " ");
     expect(unwrapped).toContain(
-      "Retry: /workflows run alpha --output-dir tmp/first --output-dir <path> [--resume <runId>] [--] [input]",
+      "Retry: /workflows run alpha --workspace-dir tmp/first --workspace-dir <path> [--resume <runId>] [--] [input]",
     );
   });
 

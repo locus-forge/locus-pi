@@ -56,7 +56,8 @@ function deferred(): { promise: Promise<void>; resolve(): void } {
 describe("workflow command receipts", () => {
   it.each([
     ["run alpha --resume", "missing_resume_id", "alpha"],
-    ["run alpha --output-dir", "missing_output_dir", "alpha"],
+    ["run alpha --output-dir", "launch_policy_refused", "alpha"],
+    ["run alpha --workspace-dir", "missing_workspace_dir", "alpha"],
     ["run task/draft --run-name", "missing_run_name", "task/draft"],
     ["run definitely-missing", "workflow_not_found", "definitely-missing"],
   ] as const)("persists a typed pre-start rejection for %s", async (command, code, target) => {

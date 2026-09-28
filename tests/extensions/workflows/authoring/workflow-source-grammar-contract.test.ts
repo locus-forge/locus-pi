@@ -28,7 +28,7 @@ const STANDARD_DSL_RETURN_CASES = [
   { method: "continuationArtifacts", call: "dsl.continuationArtifacts()", category: "list" },
   {
     method: "invokeWorkflow",
-    call: 'dsl.invokeWorkflow({ child: "worker", key: "one", keys: ["one"], outputDir: dsl.outputDir() })',
+    call: 'dsl.invokeWorkflow({ child: "worker", key: "one", keys: ["one"] })',
     category: "status",
   },
   { method: "items", call: "dsl.items()", category: "list" },
@@ -50,6 +50,7 @@ const STANDARD_DSL_RETURN_CASES = [
   { method: "random", call: "dsl.random()", category: "runtime" },
   { method: "workflow", call: 'dsl.workflow(() => dsl.agent("x"))', category: "opaque" },
   { method: "workspace", call: 'dsl.workspace("work", "HEAD")', category: "opaque" },
+  { method: "workspaceDir", call: "dsl.workspaceDir()", category: "runtime" },
 ] as const;
 
 describe("standard workflow source grammar and policy", () => {
@@ -75,6 +76,7 @@ describe("standard workflow source grammar and policy", () => {
       "random",
       "workflow",
       "workspace",
+      "workspaceDir",
     ]);
   });
 
@@ -134,7 +136,6 @@ describe("standard workflow source grammar and policy", () => {
       keys,
       input: item,
       items: [item],
-      outputDir: dsl.outputDir(),
     });
   }
   return dsl.publishPrimaryFile("report.md");
@@ -156,7 +157,7 @@ describe("standard workflow source grammar and policy", () => {
     ],
     [
       "opaque whole value scheduled inside explicit input and items fields",
-      standardSource(`export default async function run({ agent, invokeWorkflow, outputDir }, input) {
+      standardSource(`export default async function run({ agent, invokeWorkflow }, input) {
   const answer = await agent(input);
   await invokeWorkflow({
     name: "worker",
@@ -164,21 +165,19 @@ describe("standard workflow source grammar and policy", () => {
     keys: ["one"],
     input: answer,
     items: [answer],
-    outputDir: outputDir(),
   });
   return answer;
 }`),
     ],
     [
       "direct opaque producer scheduled as an explicit whole input",
-      standardSource(`export default async function run({ agent, invokeWorkflow, outputDir }, input) {
+      standardSource(`export default async function run({ agent, invokeWorkflow }, input) {
   return invokeWorkflow({
     name: "worker",
     key: "one",
     keys: ["one"],
     input: await agent(input),
     items: [input],
-    outputDir: outputDir(),
   });
 }`),
     ],

@@ -38,7 +38,7 @@ Do not spawn Pi or translate the request into a slash command when the structure
 Use `resumeFromRunId` only through [run recovery](references/recovery.md), not as a general retry switch.
 `continuation` carries a real operator answer to a recorded handoff; never synthesize that answer.
 
-Choose either `outputDir` or `runName`, never both. A name selects `.locus-pi/workspaces/<name>`;
+Choose either `workspaceDir` or `runName`, never both. A name selects `.locus-pi/workspaces/<name>`;
 a legacy-only `.locus-pi/plans/<name>` stays bound in place, and both paths existing fails closed.
 Resume repeats the source workspace. Read the returned run id, paths, disposition, result and artifacts.
 Success requires a completed disposition and retained result. Failed/cancelled dispositions, unavailable
@@ -66,7 +66,7 @@ Pass the literal `/workflows run ...` command as one argv value:
 ["pi", "--mode", "json", "-p", "--no-session", "--approve", prompt]
 ```
 
-Apply that grammar to `target`, `runName`, `outputDir`, and `resumeFromRunId`. Reject a command-token value
+Apply that grammar to `target`, `runName`, `workspaceDir`, and `resumeFromRunId`. Reject a command-token value
 whose first character is `-`; quoting cannot make it a valid option value. Preserve semantic input after
 `--` and never interpolate launch values as shell syntax. Read
 [external process lifecycle](references/external-lifecycle.md) before a launch that must outlive this call.

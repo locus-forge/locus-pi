@@ -30,7 +30,7 @@ import {
   WORKFLOW_RUN_NAME_MAX_CHARS,
   WORKFLOW_RUN_NAME_PATTERN,
   resolveNamedWorkflowWorkspacePath,
-  resolveWorkflowOutputDirectoryPath,
+  resolveWorkflowWorkspaceDirectoryPath,
 } from "../runtime/workflow-output.js";
 import {
   formatOperatorScriptIdentity,
@@ -137,7 +137,7 @@ const WorkflowParams = Type.Object(
           "Optional exact text work units exposed unchanged and in order through dsl.items(); empty strings and duplicates are preserved.",
       }),
     ),
-    outputDir: Type.Optional(
+    workspaceDir: Type.Optional(
       Type.String({
         description:
           "Optional workflow workspace path. Fresh workflows default to unique .locus-pi/workspaces/<generated-run-name> workspaces; resume repeats the source workspace. Existing legacy .locus-pi/plans/<name> paths are accepted only when already present. A task artifacts directory such as .tasks/<task>/artifacts is a legal explicit workspace. Absolute paths must stay inside the project; ./ paths resolve from the agent working directory; other relative paths resolve from the project root.",
@@ -147,7 +147,7 @@ const WorkflowParams = Type.Object(
       Type.String({
         maxLength: WORKFLOW_RUN_NAME_MAX_CHARS,
         pattern: WORKFLOW_RUN_NAME_PATTERN,
-        description: `Optional short workflow run name. The runtime expands new names to ${WORKFLOW_WORKSPACES_STORAGE_PREFIX}<runName> and reuses an existing legacy-only .locus-pi/plans/<runName>. Mutually exclusive with outputDir.`,
+        description: `Optional short workflow run name. The runtime expands new names to ${WORKFLOW_WORKSPACES_STORAGE_PREFIX}<runName> and reuses an existing legacy-only .locus-pi/plans/<runName>. Mutually exclusive with workspaceDir.`,
       }),
     ),
     continuation: Type.Optional(WorkflowContinuationParams),
@@ -182,8 +182,8 @@ function workflowApprovalDetails(args: unknown, projectRoot: string): string[] {
   const record = args !== null && typeof args === "object" ? (args as Record<string, unknown>) : {};
   const target = String(record.name ?? record.scriptPath ?? record.script ?? "unspecified");
   let workspace: string;
-  if (typeof record.outputDir === "string") {
-    workspace = record.outputDir;
+  if (typeof record.workspaceDir === "string") {
+    workspace = record.workspaceDir;
   } else if (typeof record.resumeFromRunId === "string") {
     try {
       workspace = readWorkflowResumeWorkspaceIdentity(projectRoot, record.resumeFromRunId).relativePath;
@@ -286,6 +286,12 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
       if (removedBudgetKey !== undefined) {
         return errorResult(`workflow: ${removedWorkflowBudgetKeyMessage(removedBudgetKey)!}`, { owner: "workflows" });
       }
+      if (typeof params === "object" && params !== null && Object.prototype.hasOwnProperty.call(params, "outputDir")) {
+        return errorResult(
+          "workflow: launch outputDir was removed; use workspaceDir for runtime state and declare meta.outputDir in the root workflow for final files",
+          { owner: "workflows" },
+        );
+      }
       const valid = validateParams(WorkflowParams, params);
       if (!valid.ok) return valid.result;
       const targetFields = [valid.value.name, valid.value.scriptPath, valid.value.script].filter(
@@ -300,14 +306,14 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
           owner: "workflows",
         });
       }
-      if (valid.value.outputDir !== undefined && valid.value.runName !== undefined) {
-        return errorResult("workflow: runName and outputDir are mutually exclusive", { owner: "workflows" });
+      if (valid.value.workspaceDir !== undefined && valid.value.runName !== undefined) {
+        return errorResult("workflow: runName and workspaceDir are mutually exclusive", { owner: "workflows" });
       }
-      if (valid.value.outputDir !== undefined) {
+      if (valid.value.workspaceDir !== undefined) {
         try {
-          resolveWorkflowOutputDirectoryPath(
+          resolveWorkflowWorkspaceDirectoryPath(
             getProjectRoot(ctx),
-            valid.value.outputDir,
+            valid.value.workspaceDir,
             workflowTargetLabel(valid.value),
             getWorkingDirectory(ctx),
           );
@@ -350,7 +356,7 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
           ...(targetBinding === undefined ? {} : { targetBinding }),
           ...(valid.value.input !== undefined ? { input: valid.value.input } : {}),
           ...(valid.value.items !== undefined ? { items: valid.value.items } : {}),
-          ...(valid.value.outputDir !== undefined ? { outputDir: valid.value.outputDir } : {}),
+          ...(valid.value.workspaceDir !== undefined ? { workspaceDir: valid.value.workspaceDir } : {}),
           ...(valid.value.runName !== undefined ? { runName: valid.value.runName } : {}),
           ...(valid.value.budget === undefined ? {} : { budget: valid.value.budget }),
           ...(valid.value.continuation !== undefined ? { continuation: valid.value.continuation } : {}),

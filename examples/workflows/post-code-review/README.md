@@ -70,7 +70,7 @@ replay starts no child and remains marked as not-fresh evidence.
 
 The runtime creates a unique `.locus-pi/workspaces/<generated-run-name>` workspace.
 To provide additional comment and style criteria before launch, select an
-explicit fresh workspace with `--output-dir <path>` and create
+explicit fresh workspace with `--workspace-dir <path>` and create
 `<path>/style.md`. The runtime preserves an existing regular file byte-for-byte
 or creates it empty before the first agent runs. Empty means no extra criteria;
 the style lane still applies live project conventions. A symlink or non-regular

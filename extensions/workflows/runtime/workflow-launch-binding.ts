@@ -22,7 +22,7 @@ import type { WorkflowRunResultEnvelope } from "./workflow-journal.js";
 import { assertWorkflowPhysicalWorkspaceIdentity, isWorkflowPathWithinRoot } from "./workflow-output.js";
 import { parseWorkflowPersistedBinding } from "./workflow-persisted-binding.js";
 
-const WORKFLOW_LAUNCH_BINDING_SCHEMA = "locus-pi.workflow-launch-binding.v1" as const;
+export const WORKFLOW_LAUNCH_BINDING_SCHEMA = "locus-pi.workflow-launch-binding.v2" as const;
 const WORKFLOW_LAUNCH_BINDING_FILENAME = "launch-binding.json";
 const WORKFLOW_LAUNCH_BINDING_TEMP_FILENAME = "launch-binding.json.tmp";
 
@@ -44,6 +44,14 @@ export interface WorkflowLaunchBinding {
     physicalIdentity: string;
     physicalIdentitySchemaVersion: 1;
     explicit: boolean;
+  };
+  output: {
+    absolutePath: string;
+    relativePath: string;
+    physicalPath: string;
+    physicalIdentity: string;
+    physicalIdentitySchemaVersion: 1;
+    source: "declared" | "default";
   };
   semanticInput: {
     present: boolean;
@@ -104,6 +112,11 @@ export function workflowLaunchBindingMatchesResult(
     result.workspacePhysicalIdentity === binding.workspace.physicalIdentity &&
     result.workspacePhysicalIdentitySchemaVersion === 1 &&
     result.workspaceDirExplicit === binding.workspace.explicit &&
+    result.outputDir === binding.output.absolutePath &&
+    result.outputDirRelative === binding.output.relativePath &&
+    result.outputPhysicalIdentity === binding.output.physicalIdentity &&
+    result.outputPhysicalIdentitySchemaVersion === 1 &&
+    result.outputSource === binding.output.source &&
     result.semanticInputPresent === binding.semanticInput.present &&
     result.semanticInputSha256 === binding.semanticInput.sha256
   );
@@ -123,6 +136,7 @@ function parseWorkflowLaunchBinding(
       "target",
       "scriptIdentity",
       "workspace",
+      "output",
       "semanticInput",
       "recoveryInputSha256",
     ]) ||
@@ -153,6 +167,9 @@ function parseWorkflowLaunchBinding(
   if (!isWorkspace(value.workspace, projectRoot)) {
     throw new Error("workflow launch binding workspace is invalid");
   }
+  if (!isOutput(value.output, projectRoot)) {
+    throw new Error("workflow launch binding output is invalid");
+  }
   if (!isSemanticInput(value.semanticInput)) {
     throw new Error("workflow launch binding semantic identity is invalid");
   }
@@ -168,8 +185,27 @@ function parseWorkflowLaunchBinding(
     target: parsed.target,
     scriptIdentity: parsed.scriptIdentity as WorkflowScriptIdentity,
     workspace: value.workspace,
+    output: value.output,
     semanticInput: value.semanticInput,
   };
+}
+
+function isOutput(value: unknown, projectRoot: string): value is WorkflowLaunchBinding["output"] {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "absolutePath",
+      "relativePath",
+      "physicalPath",
+      "physicalIdentity",
+      "physicalIdentitySchemaVersion",
+      "source",
+    ])
+  )
+    return false;
+  if (value.source !== "declared" && value.source !== "default") return false;
+  const { source: _source, ...workspaceShape } = value;
+  return isWorkspace({ ...workspaceShape, explicit: false }, projectRoot);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

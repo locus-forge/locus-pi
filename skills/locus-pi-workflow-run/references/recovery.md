@@ -31,8 +31,8 @@ completion. Process loss with an unconfirmed call requires the reconciliation ro
 Name `continue` or `refuse`, with the evidence supporting it.
 
 Continue the same target with the exact original semantic input and source workspace, using
-`resumeFromRunId` (operator surface: `--resume <runId>`). Repeat an explicit `outputDir` or `runName`
-as `--output-dir <path>` or `--run-name <name>`; do not create a replacement workspace.
+`resumeFromRunId` (operator surface: `--resume <runId>`). Repeat an explicit `workspaceDir` or `runName`
+as `--workspace-dir <path>` or `--run-name <name>`; do not create a replacement workspace.
 Source edits are allowed and expected. Hand source repair to the
 [create skill](../../locus-pi-workflow-create/SKILL.md), preserving unaffected prompts, literal labels,
 order, phases and effective options. Return here after its exact-source gate; authorized Repair + Continue

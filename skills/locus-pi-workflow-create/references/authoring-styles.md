@@ -23,10 +23,10 @@ Pi's public `input` remains one semantic string; it does not accept an `args` ob
 
 Start with the task directory as input. The first agent discovers `task.md`, design and referenced evidence there. Keep concrete filenames inside the relevant brief. A reusable workflow may accept ordinary text naming a task directory and extra context; agents interpret that text. The runnable references use a directory-only input for clarity.
 
-Run Pi in the target repository. A path mentioned in a prompt does not change the child working directory. `--output-dir` (tool `outputDir`) sets the confined workflow workspace; the host separately publishes evidence under the run's `outputs/` and `runtime/`. An authored `out` description is not a substitute for the host option. For an installed project example:
+Run Pi in the target repository. A path mentioned in a prompt does not change the child working directory. `--workspace-dir` (tool `workspaceDir`) sets the confined runtime workspace. Root `meta.outputDir` selects final files; without it, final output is `<workspaceDir>/outputs`. The host separately publishes run evidence under the run's `outputs/` and `runtime/`. For an installed project example:
 
 ```text
-/workflows run adaptive-slices --output-dir .tasks/example/artifacts/implementation -- .tasks/example
+/workflows run adaptive-slices --workspace-dir .tasks/example/artifacts/implementation -- .tasks/example
 ```
 
 Choose a fresh output directory for an independent run. Agents create their working documents there; source does not read paths or files. See [runtime inputs](../../../docs/workflows/authoring.md#workflow-input-and-host-continuation).

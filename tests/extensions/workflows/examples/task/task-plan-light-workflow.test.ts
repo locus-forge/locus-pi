@@ -97,7 +97,8 @@ function runnerFixture() {
       const value = queue.shift();
       labels.push(label);
       tasks.push(request.task);
-      if (label === "workflow-source-seed") writeFileSync(path.join(root, "proof", "workflow.mjs"), generatedSource);
+      if (label === "workflow-source-seed")
+        writeFileSync(path.join(root, "proof", "outputs", "workflow.mjs"), generatedSource);
       return {
         status: "completed",
         agentName: request.agent?.name ?? "sub-agent",
@@ -123,7 +124,7 @@ function runnerFixture() {
         signal: new AbortController().signal,
         name: "task/plan-light",
         input: "Accepted brief.",
-        outputDir: "proof",
+        workspaceDir: "proof",
         createExecutor,
         onEvent: (line) => {
           if (line.kind === "phase" && line.phase !== undefined) phases.push(line.phase);
@@ -135,7 +136,7 @@ function runnerFixture() {
 describe("Package workflow: task/plan-light", () => {
   it("returns the task/plan-light workspace file through the real runner primaryFile boundary", async () => {
     const fixtureRun = runnerFixture();
-    const absolutePath = path.join(fixtureRun.root, "proof", "workflow.mjs");
+    const absolutePath = path.join(fixtureRun.root, "proof", "outputs", "workflow.mjs");
     const result = await fixtureRun.run();
     expect(result.ok, result.error).toBe(true);
     expect(result.primaryFile).toEqual({

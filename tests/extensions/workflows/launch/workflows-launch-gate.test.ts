@@ -47,7 +47,7 @@ describe("/workflows run launch gate", () => {
       await h.commands.get("workflows")!.handler("run post-code-review", h.ctx);
       await waitForBackground(() => spy.mock.calls.length === 1);
       expect(spy.mock.calls[0]?.[0]).toMatchObject({ name: "post-code-review" });
-      expect(spy.mock.calls[0]?.[0].outputDir).toBeUndefined();
+      expect(spy.mock.calls[0]?.[0].workspaceDir).toBeUndefined();
     } finally {
       spy.mockRestore();
       rmSync(root, { recursive: true, force: true });
@@ -74,7 +74,7 @@ describe("/workflows run launch gate", () => {
       await h.commands.get("workflows")!.handler("run post-code-review", h.ctx);
       await waitForBackground(() => spy.mock.calls.length === 1);
       expect(spy.mock.calls[0]?.[0]).toMatchObject({ name: "post-code-review" });
-      expect(spy.mock.calls[0]?.[0].outputDir).toBeUndefined();
+      expect(spy.mock.calls[0]?.[0].workspaceDir).toBeUndefined();
     } finally {
       spy.mockRestore();
       rmSync(root, { recursive: true, force: true });
@@ -245,7 +245,7 @@ describe("/workflows run launch gate", () => {
       const details =
         h.tools.get("workflow")!.formatApprovalDetails?.({
           name: "live-smoke",
-          outputDir: ".locus-pi/workspaces/explicit-resume",
+          workspaceDir: ".locus-pi/workspaces/explicit-resume",
           resumeFromRunId: "20260901-missing-resume",
         }) ?? [];
       expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/explicit-resume");
@@ -567,12 +567,12 @@ describe("/workflows run launch gate", () => {
     try {
       await h.commands
         .get("workflows")!
-        .handler("run live-smoke --output-dir tmp/reviews/review-1 --resume run-old review commit HEAD", h.ctx);
+        .handler("run live-smoke --workspace-dir tmp/reviews/review-1 --resume run-old review commit HEAD", h.ctx);
       expect(approval).not.toHaveBeenCalled();
       expect(spy).toHaveBeenCalledWith(
         expect.objectContaining({
           name: "live-smoke",
-          outputDir: "tmp/reviews/review-1",
+          workspaceDir: "tmp/reviews/review-1",
           resumeFromRunId: "run-old",
           input: "review commit HEAD",
         }),
@@ -598,13 +598,13 @@ describe("/workflows run launch gate", () => {
         resultPersistence: { ok: true, path: "/tmp/run-options/result.json" },
       });
       try {
-        const tail = `live-smoke --output-dir${separator}tmp/reviews/review-1 --resume${separator}run-old request`;
+        const tail = `live-smoke --workspace-dir${separator}tmp/reviews/review-1 --resume${separator}run-old request`;
         await canonical.commands.get("workflows")!.handler(`run ${tail}`, canonical.ctx);
 
         expect(spy).toHaveBeenCalledTimes(1);
         expect(spy.mock.calls[0]?.[0]).toMatchObject({
           name: "live-smoke",
-          outputDir: "tmp/reviews/review-1",
+          workspaceDir: "tmp/reviews/review-1",
           resumeFromRunId: "run-old",
           input: "request",
         });

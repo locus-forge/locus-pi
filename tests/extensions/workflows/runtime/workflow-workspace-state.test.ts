@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -14,14 +15,21 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  acquireWorkflowOutputLease,
   acquireWorkflowRootLease,
   commitWorkflowCompletedCheckpoint,
   readWorkflowCompletedCheckpoint,
+  releaseWorkflowOutputLease,
   releaseWorkflowRootLease,
   WORKFLOW_OUTPUT_LOCK_FILE,
+  WORKFLOW_WORKSPACE_LEASE_FILE,
+  workflowOutputStateDir,
   writeWorkflowWorkspaceRunLink,
 } from "../../../../extensions/workflows/runtime/workflow-workspace-state.js";
-import { resolveWorkflowOutputDirectory } from "../../../../extensions/workflows/runtime/workflow-workspace.js";
+import {
+  resolveWorkflowFinalOutputDirectory,
+  resolveWorkflowOutputDirectory,
+} from "../../../../extensions/workflows/runtime/workflow-workspace.js";
 import { ensureWorkflowRunDir } from "../../../../extensions/workflows/runtime/workflow-run-layout.js";
 import { writeWorkflowRunGroupReport } from "../../../../extensions/workflows/runtime/workflow-run-report.js";
 import { runWorkflowScript } from "../../../../extensions/workflows/runtime/workflow-runner.js";
@@ -29,14 +37,15 @@ import { createHarness } from "../../../test-harness.js";
 import { project, writeWorkflow } from "../../../fixtures/workflow-durable-project.js";
 
 describe("leased workspace navigation under a task artifacts root", () => {
-  it("records that a task artifacts workspace also holds the runtime lease and navigation files", () => {
+  it("keeps the runtime lease under .locus-pi while retaining workspace navigation", () => {
     const root = project();
     const outputDir = ".tasks/T-144-2026-09-08-workflow/artifacts";
     const output = resolveWorkflowOutputDirectory(root, outputDir, "unused", root);
     expect(output.relativePath).toBe(outputDir);
     const groupDir = ensureWorkflowRunDir(root, "tasks-root");
     const lease = acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "tasks-root" });
-    expect(existsSync(path.join(root, outputDir, WORKFLOW_OUTPUT_LOCK_FILE))).toBe(true);
+    expect(existsSync(lease.lockFile)).toBe(true);
+    expect(existsSync(path.join(root, outputDir, WORKFLOW_OUTPUT_LOCK_FILE))).toBe(false);
     writeWorkflowRunGroupReport(
       {
         projectRoot: root,
@@ -50,7 +59,25 @@ describe("leased workspace navigation under a task artifacts root", () => {
     writeWorkflowWorkspaceRunLink(lease, groupDir, "tasks-root");
     expect(existsSync(path.join(root, outputDir, ".workflow-runs.md"))).toBe(true);
     releaseWorkflowRootLease(lease);
-    expect(existsSync(path.join(root, outputDir, WORKFLOW_OUTPUT_LOCK_FILE))).toBe(false);
+    expect(existsSync(lease.lockFile)).toBe(false);
+  });
+});
+
+describe("separate final-output leases", () => {
+  it("blocks two workspaces targeting one declared output without writing runtime state there", () => {
+    const root = project();
+    const firstWorkspace = resolveWorkflowOutputDirectory(root, ".tasks/one/runtime", "unused", root);
+    const secondWorkspace = resolveWorkflowOutputDirectory(root, ".tasks/two/runtime", "unused", root);
+    const firstOutput = resolveWorkflowFinalOutputDirectory(root, ".local/shared-catalog", firstWorkspace);
+    const secondOutput = resolveWorkflowFinalOutputDirectory(root, ".local/shared-catalog", secondWorkspace);
+    const lease = acquireWorkflowOutputLease({ projectRoot: root, output: firstOutput, rootRunId: "first" });
+
+    expect(() => acquireWorkflowOutputLease({ projectRoot: root, output: secondOutput, rootRunId: "second" })).toThrow(
+      "owned by live run first",
+    );
+    expect(lease.lockFile).toContain(path.join(".locus-pi", "workflow-output-state"));
+    expect(readdirSync(firstOutput.absolutePath)).toEqual([]);
+    releaseWorkflowOutputLease(lease);
   });
 });
 
@@ -58,14 +85,15 @@ describe("checkpoint path confinement", () => {
   const identity = {
     parentScriptSha256: "a".repeat(64),
     childScriptSha256: "b".repeat(64),
-    outputDir: "outputs/checkpoint-confinement",
+    workspaceIdentity: "outputs/checkpoint-confinement",
+    outputIdentity: "final/checkpoint-confinement",
     itemKey: "item-one",
     childRunId: "child-one",
   };
 
   it("rejects a valid-looking checkpoint behind an external checkpoints ancestor", () => {
     const root = project();
-    const output = resolveWorkflowOutputDirectory(root, identity.outputDir, "unused", root);
+    const output = resolveWorkflowOutputDirectory(root, identity.workspaceIdentity, "unused", root);
     const lease = acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "checkpoint-root" });
     const checkpoint = commitWorkflowCompletedCheckpoint(lease, identity);
     const checkpoints = path.join(lease.stateDir, "checkpoints");
@@ -88,7 +116,7 @@ describe("checkpoint path confinement", () => {
 
   it("rejects a dangling checkpoint leaf instead of treating it as absent", () => {
     const root = project();
-    const output = resolveWorkflowOutputDirectory(root, identity.outputDir, "unused", root);
+    const output = resolveWorkflowOutputDirectory(root, identity.workspaceIdentity, "unused", root);
     const lease = acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "checkpoint-dangling" });
     commitWorkflowCompletedCheckpoint(lease, identity);
     const checkpoints = path.join(lease.stateDir, "checkpoints");
@@ -177,7 +205,7 @@ describe("fenced output leases and atomic checkpoints", () => {
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "links",
-      outputDir: output.relativePath,
+      workspaceDir: output.relativePath,
     });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/Reserved workflow workspace file/u);
@@ -189,7 +217,9 @@ describe("fenced output leases and atomic checkpoints", () => {
   it("retries the live lock-create-to-write acquisition window", async () => {
     const root = project();
     const output = resolveWorkflowOutputDirectory(root, "outputs/racing-owner", "unused", root);
-    const lockFile = path.join(output.absolutePath, WORKFLOW_OUTPUT_LOCK_FILE);
+    const stateDir = workflowOutputStateDir(root, output.identity);
+    mkdirSync(stateDir, { recursive: true });
+    const lockFile = path.join(stateDir, WORKFLOW_WORKSPACE_LEASE_FILE);
     const child = spawn(
       process.execPath,
       [
@@ -198,9 +228,11 @@ describe("fenced output leases and atomic checkpoints", () => {
 fs.writeFileSync(${JSON.stringify(lockFile)}, "", { flag: "wx" });
 process.stdout.write("ready\\n");
 setTimeout(() => fs.writeFileSync(${JSON.stringify(lockFile)}, JSON.stringify({
-  schema: "locus-pi.workflow-output-lease.v1",
+  schema: "locus-pi.workflow-location-lease.v2",
+  kind: "workspace",
   rootRunId: "racing-owner",
-  outputDir: ${JSON.stringify(output.relativePath)},
+  relativePath: ${JSON.stringify(output.relativePath)},
+  identity: ${JSON.stringify(output.identity)},
   pid: process.pid,
   fencingToken: "racing-token",
   acquiredAt: new Date().toISOString(),
@@ -239,13 +271,16 @@ setTimeout(() => process.exit(0), 150);`,
   it("allows a new owner after the output directory is removed", () => {
     const root = project();
     const output = resolveWorkflowOutputDirectory(root, "outputs/cleared", "unused", root);
-    acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "old-run" });
+    const old = acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "old-run" });
+    releaseWorkflowRootLease(old);
     rmSync(output.absolutePath, { recursive: true, force: true });
 
     const recreated = resolveWorkflowOutputDirectory(root, "outputs/cleared", "unused", root);
     const replacement = acquireWorkflowRootLease({ projectRoot: root, output: recreated, rootRunId: "new-run" });
 
-    expect(replacement.lockFile).toBe(path.join(recreated.absolutePath, WORKFLOW_OUTPUT_LOCK_FILE));
+    expect(replacement.lockFile).toBe(
+      path.join(workflowOutputStateDir(root, recreated.identity), WORKFLOW_WORKSPACE_LEASE_FILE),
+    );
     expect(existsSync(replacement.lockFile)).toBe(true);
     releaseWorkflowRootLease(replacement);
   });
@@ -255,7 +290,7 @@ setTimeout(() => process.exit(0), 150);`,
     const stored = resolveWorkflowOutputDirectory(root, "outputs/CaseAlias", "unused", root);
     const alias = resolveWorkflowOutputDirectory(root, "outputs/casealias", "unused", root);
     const first = acquireWorkflowRootLease({ projectRoot: root, output: stored, rootRunId: "stored-case" });
-    const aliasSeesStoredLock = existsSync(path.join(alias.absolutePath, WORKFLOW_OUTPUT_LOCK_FILE));
+    const aliasSeesStoredLock = alias.identity === stored.identity;
 
     if (aliasSeesStoredLock) {
       expect(() => acquireWorkflowRootLease({ projectRoot: root, output: alias, rootRunId: "alias-case" })).toThrow(
@@ -272,13 +307,17 @@ setTimeout(() => process.exit(0), 150);`,
   it("reclaims a provably dead local owner and refuses an unreadable owner", () => {
     const root = project();
     const output = resolveWorkflowOutputDirectory(root, "outputs/reclaim", "unused", root);
-    const lockFile = path.join(output.absolutePath, WORKFLOW_OUTPUT_LOCK_FILE);
+    const stateDir = workflowOutputStateDir(root, output.identity);
+    mkdirSync(stateDir, { recursive: true });
+    const lockFile = path.join(stateDir, WORKFLOW_WORKSPACE_LEASE_FILE);
     writeFileSync(
       lockFile,
       `${JSON.stringify({
-        schema: "locus-pi.workflow-output-lease.v1",
+        schema: "locus-pi.workflow-location-lease.v2",
+        kind: "workspace",
         rootRunId: "dead",
-        outputDir: output.relativePath,
+        relativePath: output.relativePath,
+        identity: output.identity,
         pid: 2_147_483_647,
         fencingToken: "dead-token",
         acquiredAt: "2026-01-01T00:00:00.000Z",
@@ -300,7 +339,9 @@ setTimeout(() => process.exit(0), 150);`,
     const outside = mkdtempSync(path.join(tmpdir(), "workflow-lease-outside-"));
     const sentinel = path.join(outside, "sentinel.txt");
     writeFileSync(sentinel, "do-not-touch\n", "utf8");
-    const lockFile = path.join(output.absolutePath, WORKFLOW_OUTPUT_LOCK_FILE);
+    const stateDir = workflowOutputStateDir(root, output.identity);
+    mkdirSync(stateDir, { recursive: true });
+    const lockFile = path.join(stateDir, WORKFLOW_WORKSPACE_LEASE_FILE);
     symlinkSync(sentinel, lockFile, "file");
 
     expect(() => acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "symlinked-lease" })).toThrow(
@@ -338,7 +379,8 @@ setTimeout(() => process.exit(0), 150);`,
     const checkpoint = {
       parentScriptSha256: "a".repeat(64),
       childScriptSha256: "b".repeat(64),
-      outputDir: output.identity,
+      workspaceIdentity: output.identity,
+      outputIdentity: "final/fenced",
       itemKey: "item-one",
       childRunId: "child-one",
     };

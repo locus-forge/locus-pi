@@ -44,7 +44,7 @@ describe("shipped workflow skill routes", () => {
     containsAll(run, [
       "Only for an explicit non-interactive request",
       '"pi", "--mode", "json", "-p", "--no-session", "--approve", prompt',
-      "`target`, `runName`, `outputDir`, and `resumeFromRunId`",
+      "`target`, `runName`, `workspaceDir`, and `resumeFromRunId`",
       "Reject a command-token value",
       "first character is `-`",
       'message.customType == "locus-workflow-run"',
@@ -80,7 +80,7 @@ describe("shipped workflow skill routes", () => {
       "`[phase, label, occurrence]`",
       "Name `continue` or `refuse`",
       "exact original semantic input and source workspace",
-      "an explicit `outputDir` or `runName`",
+      "an explicit `workspaceDir` or `runName`",
       "Source edits are allowed and expected",
       "needs no new approval ritual",
       "does not recreate files",

@@ -75,7 +75,8 @@ The remaining standard orchestration primitives are:
 | `publishPrimaryArtifact(name, text)` | One terminal semantic document.                                             |
 | `awaitOperator(declaration)`         | Declare a split-run human gate, then return; no suspended JavaScript stack. |
 | `items()`                            | Immutable exact caller-supplied text units.                                 |
-| `outputDir()`                        | Project-relative workflow workspace selected by the host.                   |
+| `workspaceDir()`                     | Absolute runtime workspace selected by the host.                            |
+| `outputDir()`                        | Absolute final-output directory declared by root metadata or defaulted.     |
 | `invokeWorkflow(declaration)`        | One real saved or exact-Package child run with durable item checkpointing.  |
 | `publishPrimaryFile(path)`           | Validate/reference one non-empty workflow workspace file.                   |
 | `promptFile(path, variables)`        | Long/shared role charter; never routing.                                    |
@@ -196,21 +197,21 @@ These are all rules enforced for `meta.profile: "standard"`:
   and other method calls are rejected.
 - Every allowed DSL call has one exhaustive return classification:
 
-  | Classification     | DSL calls                                                                                                      |
-  | ------------------ | -------------------------------------------------------------------------------------------------------------- |
-  | Runtime control    | `agent({ choice })` exact identity only                                                                        |
-  | Opaque list        | `agent({ handoffs })`, `continuationArtifacts`, `items`, `parallel`, `pipeline`                                |
-  | Saved-child status | `invokeWorkflow`; only its exact `status` identity is control                                                  |
-  | Opaque value       | ordinary/model `agent`, `consumeTextArtifact`, `promptFile`, `workflow`, `workspace`                           |
-  | Runtime/host value | `now`, `random`, `outputDir`, `projectRoot`, `publishArtifact`, `publishPrimaryArtifact`, `publishPrimaryFile` |
-  | Void               | `awaitOperator`, `log`, `phase`                                                                                |
+  | Classification     | DSL calls                                                                                                                      |
+  | ------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+  | Runtime control    | `agent({ choice })` exact identity only                                                                                        |
+  | Opaque list        | `agent({ handoffs })`, `continuationArtifacts`, `items`, `parallel`, `pipeline`                                                |
+  | Saved-child status | `invokeWorkflow`; only its exact `status` identity is control                                                                  |
+  | Opaque value       | ordinary/model `agent`, `consumeTextArtifact`, `promptFile`, `workflow`, `workspace`                                           |
+  | Runtime/host value | `now`, `random`, `workspaceDir`, `outputDir`, `projectRoot`, `publishArtifact`, `publishPrimaryArtifact`, `publishPrimaryFile` |
+  | Void               | `awaitOperator`, `log`, `phase`                                                                                                |
 
   Adding an allowed method without a return category fails closed. Only runtime
   choice, list identity/length, and saved-child status are control primitives.
   Opaque and runtime/host values may be forwarded whole through documented
   prompt, log, publication, scheduling, and return sinks, but may not be
   inspected, branched on, indexed, transformed, or embedded in `Error`.
-  `outputDir()` may flow unchanged into `invokeWorkflow.outputDir`. Publication
+  `invokeWorkflow` accepts no directory field; saved children inherit both root locations. Publication
   references and host paths may flow whole into an agent/log/return. A reference
   returned by `publishArtifact`, `publishPrimaryArtifact`, or
   `publishPrimaryFile` may also appear unchanged as a direct array element only

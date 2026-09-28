@@ -199,7 +199,7 @@ const STANDARD_DSL_RETURN_CASES = [
   { method: "continuationArtifacts", call: "dsl.continuationArtifacts()", category: "list" },
   {
     method: "invokeWorkflow",
-    call: 'dsl.invokeWorkflow({ name: "child", key: "one", keys: ["one"], outputDir: dsl.outputDir() })',
+    call: 'dsl.invokeWorkflow({ name: "child", key: "one", keys: ["one"] })',
     category: "status",
   },
   { method: "items", call: "dsl.items()", category: "list" },
@@ -221,6 +221,7 @@ const STANDARD_DSL_RETURN_CASES = [
   { method: "random", call: "dsl.random()", category: "runtime" },
   { method: "workflow", call: 'dsl.workflow(() => dsl.agent("x"))', category: "opaque" },
   { method: "workspace", call: 'dsl.workspace("work", "HEAD")', category: "opaque" },
+  { method: "workspaceDir", call: "dsl.workspaceDir()", category: "runtime" },
 ] as const;
 
 function installedDslReturnSource(call: string, body: string): string {
@@ -270,12 +271,12 @@ const DSL_RETURN_PROVENANCE_PROBES = [
     accepted: true,
     name: "dsl-choice-status-controls",
     source: installedStandardSource(
-      'export default async function run(dsl) { const route = await dsl.agent("route", { choice: ["yes", "no"] }); if (route === "yes") dsl.log(route); const child = await dsl.invokeWorkflow({ name: "child", key: "one", keys: ["one"], outputDir: dsl.outputDir() }); if (child.status === "completed") return route; return child.status; }',
+      'export default async function run(dsl) { const route = await dsl.agent("route", { choice: ["yes", "no"] }); if (route === "yes") dsl.log(route); const child = await dsl.invokeWorkflow({ name: "child", key: "one", keys: ["one"] }); if (child.status === "completed") return route; return child.status; }',
     ),
   },
   {
-    accepted: true,
-    name: "dsl-bound-output-dir-scheduling",
+    accepted: false,
+    name: "dsl-bound-output-dir-rejected",
     source: installedStandardSource(
       'export default async function run(dsl) { const stableOutputDir = dsl.outputDir(); return dsl.invokeWorkflow({ name: "child", key: "one", keys: ["one"], outputDir: stableOutputDir }); }',
     ),

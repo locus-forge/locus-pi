@@ -155,17 +155,17 @@ function workflowRunOptionCompletions(
 
   const optionCompletions = (partial = ""): CommandArgumentCompletion[] => {
     const stem = `${commandPrefix}${completed.length === 0 ? "" : ` ${completed.join(" ")}`} `;
-    const hasOutputDir = completed.includes("--output-dir");
+    const hasWorkspaceDir = completed.includes("--workspace-dir");
     const hasRunName = completed.includes("--run-name");
     return [
       ...WORKFLOW_RUN_OPTION_DESCRIPTORS.filter(
         (descriptor) =>
-          !(descriptor.field === "runName" && hasOutputDir) && !(descriptor.field === "outputDir" && hasRunName),
+          !(descriptor.field === "runName" && hasWorkspaceDir) && !(descriptor.field === "workspaceDir" && hasRunName),
       ).map((descriptor) => ({
         value: `${stem}${descriptor.name} `,
         label: descriptor.name,
         description:
-          descriptor.field === "outputDir"
+          descriptor.field === "workspaceDir"
             ? "Select a workflow workspace path"
             : descriptor.field === "runName"
               ? `Use ${WORKFLOW_WORKSPACES_STORAGE_PREFIX}<name> for this workflow`
@@ -192,7 +192,7 @@ function workflowRunOptionCompletions(
     }
     const value = tokens[index + 1];
     if (value === undefined) {
-      if (descriptor?.field === "outputDir" || descriptor?.field === "runName") return null;
+      if (descriptor?.field === "workspaceDir" || descriptor?.field === "runName") return null;
       const resumePrefix = `${commandPrefix}${completed.length === 0 ? "" : ` ${completed.join(" ")}`} --resume `;
       return matchingCompletions(
         runIds.map((runId) => ({ value: `${resumePrefix}${runId}`, label: runId })),

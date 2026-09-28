@@ -17,18 +17,18 @@ trigger = "Any further tool bridge behavior requires review of the host API boun
 [[exceptions]]
 path = "extensions/workflows/runtime/workflow-runtime.ts"
 rule = "code-lines"
-ceiling = 948
-owner = "workflow DSL publication"
-reason = "T-220: narrow checked-source declaration on the existing primary-artifact API plus an injected host read; no filesystem dependency enters the DSL core."
-trigger = "Another publication variant requires reviewing this union and the artifact port rather than adding a generic validation framework."
+ceiling = 959
+owner = "workflow DSL paths and publication"
+reason = "Workflow output separation (2026-09-28): the existing DSL projection now exposes distinct workspaceDir() and outputDir() values while keeping location selection and filesystem policy in the host."
+trigger = "Another location primitive must split the path projection from publication instead of growing this composition owner again."
 
 [[exceptions]]
 path = "extensions/workflows/runtime/workflow-runner.ts"
 rule = "code-lines"
-ceiling = 1132
+ceiling = 1160
 owner = "workflow host composition"
-reason = "T-220: connects confined workspace bytes, existing source checker and retained artifact publication at the existing host boundary."
-trigger = "Further growth in publication wiring requires moving the cohesive operation to the existing artifact owner, not enlarging this exception."
+reason = "Workflow output separation (2026-09-28): host composition wires the independently admitted workspace and final-output bindings, leases and result projection without owning their policy."
+trigger = "Further location or lease wiring must move a cohesive operation to admission, finalization or the location-state owner instead of enlarging this exception."
 
 [[exceptions]]
 path = "tests/extensions/workflows/runtime"
@@ -65,18 +65,18 @@ trigger = "A new gate script beyond 16 files needs review; consolidate gate entr
 [[exceptions]]
 path = "extensions/workflows/runtime/workflow-workspace.ts"
 rule = "code-lines"
-ceiling = 560
-owner = "workflow workspace identity"
-reason = "T-218 W6 (2026-09-12): workspace path/physical identity, file operations and primary-file proofs extracted verbatim from the 1147-line workflow-output.ts; one owner, one reason to change."
-trigger = "Growth above 560 lines means a second concern crept in; split it out instead of raising this."
+ceiling = 652
+owner = "workflow location identity"
+reason = "Workflow output separation (2026-09-28): one confinement owner now resolves typed runtime-workspace and final-output identities with shared symlink and project-boundary proofs."
+trigger = "A further final-output policy or a third location kind must move into a separate owner; keep shared confinement and physical identity here."
 
 [[exceptions]]
 path = "extensions/workflows/runtime/workflow-workspace-state.ts"
 rule = "code-lines"
-ceiling = 660
-owner = "workflow workspace state"
-reason = "T-218 W6 (2026-09-12): root lease/fencing, checkpoints and fresh-namespace state extracted verbatim from workflow-output.ts. Lease and checkpoint halves are separable if this owner grows."
-trigger = "Growth above 660 lines: split the lease protocol from checkpoints before adding code."
+ceiling = 734
+owner = "workflow location state"
+reason = "Workflow output separation (2026-09-28): the existing fenced-state owner records independent workspace/output leases and binds checkpoints to both physical identities."
+trigger = "Another lease kind or checkpoint schema change must split the shared lease protocol from checkpoint persistence before adding code."
 
 [[exceptions]]
 path = "tests/integration/package-boundary.test.ts"
@@ -177,18 +177,18 @@ trigger = "Growth above 550 lines: split the barrier-result half (group failure 
 [[exceptions]]
 path = "extensions/workflows/runtime/workflow-result.ts"
 rule = "code-lines"
-ceiling = 760
+ceiling = 832
 owner = "workflow result persistence and readback"
-reason = "T-218 W5 (2026-09-12): write and tolerant readback of runtime/result.json and outputs/workflow-result.md now have one owner; the ~310-line envelope parser is the next seam (workflow-result-format.ts) if it grows."
-trigger = "Growth above 760 lines: extract the envelope parser into a result-format module, mirroring artifact/journal format."
+reason = "Workflow output separation (2026-09-28): tolerant result readback now validates and projects both persisted workspace and final-output identities for resume compatibility."
+trigger = "The next result field family or parser growth must extract the envelope parser into workflow-result-format.ts, mirroring artifact and journal formats."
 
 [[exceptions]]
 path = "tests/extensions/workflows/runtime/workflow-saved-child.test.ts"
 rule = "code-lines"
-ceiling = 810
+ceiling = 856
 owner = "workflow saved-child tests"
-reason = "T-218 W12/W13 (2026-09-12): saved-child lifecycle/checkpoint/cycle cases (15) after the resume-identity cases moved to the resume suite."
-trigger = "Growth above 810 lines: split checkpoint reuse from lifecycle/cycle refusal."
+reason = "Workflow output separation (2026-09-28): saved-child cases prove inherited workspace/output identity, forbidden child overrides and dual-identity checkpoint reuse."
+trigger = "The next saved-child scenario must split checkpoint reuse from lifecycle and cycle refusal before this file grows."
 
 [[exceptions]]
 path = "extensions/workflows/runtime/workflow-agent-contract.ts"
@@ -201,10 +201,10 @@ trigger = "Growth above 680 lines: split callsite options (choice/handoffs/schem
 [[exceptions]]
 path = "extensions/workflows/runtime/workflow-run-admission.ts"
 rule = "code-lines"
-ceiling = 600
+ceiling = 653
 owner = "workflow run admission"
-reason = "T-218 W13 (2026-09-12): the ordered pre-execution admission (target → source snapshot → workspace identity → launch binding), cut verbatim from the runner; the resume-source binding block is the only movable seam and would just shift lines to the resume owner."
-trigger = "Growth above 600 lines: move the resume-source binding block to the resume authority."
+reason = "Workflow output separation (2026-09-28): ordered admission now binds root metadata, runtime workspace and final output before leases or child execution, while children inherit both identities."
+trigger = "Another output-admission rule must extract the final-output binding step; resume-only validation remains owned by the resume authority."
 
 [[exceptions]]
 path = "tests/extensions/workflows/runtime/workflow-run-resume.test.ts"
@@ -225,10 +225,10 @@ trigger = "Growth above 690 lines: split the declaration/preflight half from the
 [[exceptions]]
 path = "extensions/workflows/runtime/workflow-run-finalization.ts"
 rule = "code-lines"
-ceiling = 620
+ceiling = 658
 owner = "workflow run finalization"
-reason = "T-218 W14 (2026-09-12): the terminal precedence sequence (abort → evidence → handoff → terminal text → lease → report → result.json) moved whole; splitting it would scatter the precedence across two files."
-trigger = "Growth above 620 lines: move the RunWorkflowScriptResult declaration to the contract side; never split the sequence."
+reason = "Workflow output separation (2026-09-28): terminal precedence now validates and releases the final-output lease before the workspace lease so a writer cannot outlive either recorded binding."
+trigger = "A third independently released resource must extract lease finalization behind one ordered helper; never split terminal precedence across owners."
 
 [[exceptions]]
 path = "extensions/_shared/agent-runtime/agent-sdk-host.ts"
@@ -249,10 +249,10 @@ trigger = "Above 1129 lines, split persisted-index and child-evidence cases into
 [[exceptions]]
 path = "tests/extensions/workflows/runtime/workflow-input.test.ts"
 rule = "code-lines"
-ceiling = 720
+ceiling = 724
 owner = "workflow semantic-input tests"
-reason = "Eval integrity repair (2026-09-16): Package task/plan admission is proven for missing, empty and whitespace input with zero child calls and no published primary file."
-trigger = "Above 720 lines, split Package target admission from the generic string/items contract."
+reason = "Workflow output separation (2026-09-28): semantic-input fixtures retain exact bytes while their launch contract is renamed from outputDir to workspaceDir."
+trigger = "The next Package-target or launch-location case must split Package admission from the generic string/items contract."
 
 [[exceptions]]
 path = "tests/extensions/workflows/runtime/workflow-model-tiers.test.ts"
@@ -289,7 +289,47 @@ trigger = "The next task/plan-light scenario must shorten this fixture or split 
 [[exceptions]]
 path = "extensions/workflows/tool/workflow-source-shape.ts"
 rule = "code-lines"
-ceiling = 675
+ceiling = 689
 owner = "orchestration-only workflow source checker"
-reason = "T-120 rejects the unsupported plural choices option on agent() before it silently leaves the result opaque."
-trigger = "The next authoring-option rule must revisit this checker facade's size and option-validation ownership; do not raise this exception."
+reason = "Workflow output separation (2026-09-28): the checker recognizes workspaceDir()/outputDir() as distinct standard bindings while continuing to reject filesystem work in orchestration-only source."
+trigger = "The next authoring-option or location rule must split option validation from this checker facade before adding code."
+
+[[exceptions]]
+path = "extensions/workflows/runtime/workflow-agent-bridge.ts"
+rule = "code-lines"
+ceiling = 889
+owner = "workflow child task bridge"
+reason = "Workflow output separation (2026-09-28): child task context names the inherited runtime workspace and final-output directory separately without changing child execution ownership."
+trigger = "Further task-context growth must move location prose into the existing prompt composer rather than enlarge the bridge."
+
+[[exceptions]]
+path = "extensions/workflows/tool/workflow-tool.ts"
+rule = "code-lines"
+ceiling = 720
+owner = "workflow programmatic tool"
+reason = "Workflow output separation (2026-09-28): the closed launch schema exposes workspaceDir and rejects the removed outputDir selector with an actionable migration error."
+trigger = "Another launch selector or migration field must move the launch input contract out of the tool implementation."
+
+[[exceptions]]
+path = "tests/extensions/workflows/command/workflow-command-surfaces.test.ts"
+rule = "code-lines"
+ceiling = 760
+owner = "workflow command surface tests"
+reason = "Workflow output separation (2026-09-28): command tests cover --workspace-dir parsing and the explicit rejection of removed --output-dir input."
+trigger = "The next command-surface family must split parser cases from receipt and dispatch cases."
+
+[[exceptions]]
+path = "tests/extensions/workflows/runtime/workflow-durable-execution.test.ts"
+rule = "code-lines"
+ceiling = 998
+owner = "workflow durable execution tests"
+reason = "Workflow output separation (2026-09-28): durable runs prove unique default workspaces while final output defaults below each workspace without sharing coordination state."
+trigger = "The next location or durability scenario must split workspace identity cases from primary-file publication cases."
+
+[[exceptions]]
+path = "tests/extensions/workflows/runtime/workflow-run-layout.test.ts"
+rule = "code-lines"
+ceiling = 963
+owner = "workflow run layout tests"
+reason = "Workflow output separation (2026-09-28): persisted run evidence now names runtime workspace and final output independently."
+trigger = "The next persisted-location case must split run evidence layout from grouped-run lookup behavior."

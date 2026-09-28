@@ -49,7 +49,6 @@ function project(): string {
   name: "asking",
   key: "child-ask",
   keys: ["child-ask"],
-  outputDir: dsl.outputDir(),
 });
 `,
     "utf8",
@@ -114,7 +113,7 @@ describe("workflow run-level no-operator mode", () => {
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "asking-parent",
-      outputDir: "outputs/no-operator-child",
+      workspaceDir: "outputs/no-operator-child",
       noOperator: true,
     });
     // The child's refusal fails the parent too: invokeWorkflow has no

@@ -101,7 +101,7 @@ export async function runWorkflow(
   options: {
     input?: string;
     resumeFromRunId?: string;
-    outputDir?: string;
+    workspaceDir?: string;
     roles?: Record<string, string>;
     /** Exact work units for `dsl.items()`, separate from semantic input. */
     items?: readonly string[];
@@ -145,7 +145,7 @@ export async function runWorkflow(
     createExecutor,
     ...(options.input !== undefined ? { input: options.input } : {}),
     ...(options.items !== undefined ? { items: options.items } : {}),
-    ...(options.outputDir !== undefined ? { outputDir: options.outputDir } : {}),
+    ...(options.workspaceDir !== undefined ? { workspaceDir: options.workspaceDir } : {}),
     ...(options.resumeFromRunId !== undefined ? { resumeFromRunId: options.resumeFromRunId } : {}),
   });
   expect(res.replay, "every run that reached its script identity reports a replay envelope").toBeDefined();

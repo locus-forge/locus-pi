@@ -240,31 +240,35 @@ describe("string-only workflow input", () => {
   it("documents confined workflow workspaces while leaving path confinement to runtime preflight", () => {
     const { tool } = registerTool();
     const schema = tool.parameters;
-    const outputDirDescription = (schema as { properties?: Record<string, { description?: string }> }).properties
-      ?.outputDir?.description;
-    expect(outputDirDescription).toContain(
+    const workspaceDirDescription = (schema as { properties?: Record<string, { description?: string }> }).properties
+      ?.workspaceDir?.description;
+    expect(workspaceDirDescription).toContain(
       "Fresh workflows default to unique .locus-pi/workspaces/<generated-run-name>",
     );
-    expect(outputDirDescription).toContain("resume repeats the source workspace");
-    expect(outputDirDescription).toContain(".tasks/<task>/artifacts is a legal explicit workspace");
-    expect(outputDirDescription).not.toMatch(/defaults to tmp\/<workflow-name> beneath the Pi working directory\.$/u);
+    expect(workspaceDirDescription).toContain("resume repeats the source workspace");
+    expect(workspaceDirDescription).toContain(".tasks/<task>/artifacts is a legal explicit workspace");
+    expect(workspaceDirDescription).not.toMatch(
+      /defaults to tmp\/<workflow-name> beneath the Pi working directory\.$/u,
+    );
 
-    expect(Value.Check(schema, { name: "demo", outputDir: "outputs/demo" })).toBe(true);
-    expect(Value.Check(schema, { name: "demo", outputDir: "results.v2/task_1" })).toBe(true);
+    expect(Value.Check(schema, { name: "demo", workspaceDir: "outputs/demo" })).toBe(true);
+    expect(Value.Check(schema, { name: "demo", workspaceDir: "results.v2/task_1" })).toBe(true);
     expect(
       Value.Check(schema, {
         name: "task/plan",
-        outputDir: ".locus-pi/workspaces/20260819-120000-a1b2-task-draft",
+        workspaceDir: ".locus-pi/workspaces/20260819-120000-a1b2-task-draft",
       }),
     ).toBe(true);
-    expect(Value.Check(schema, { name: "demo", outputDir: ".tasks/T-144-2026-09-08-workflow/artifacts" })).toBe(true);
+    expect(Value.Check(schema, { name: "demo", workspaceDir: ".tasks/T-144-2026-09-08-workflow/artifacts" })).toBe(
+      true,
+    );
     // No aggregate character cap on the whole path: each component is still checked
     // against the safe alphabet and the path must stay confined, and the real length
     // limits belong to the filesystem, which reports them in its own words.
-    expect(Value.Check(schema, { name: "demo", outputDir: `${"a".repeat(199)}/${"b".repeat(200)}` })).toBe(true);
-    expect(Value.Check(schema, { name: "demo", outputDir: `${"a".repeat(200)}/${"b".repeat(200)}` })).toBe(true);
-    for (const outputDir of ["/tmp/demo", "./demo", "../demo", "outputs/../demo"]) {
-      expect(Value.Check(schema, { name: "demo", outputDir })).toBe(true);
+    expect(Value.Check(schema, { name: "demo", workspaceDir: `${"a".repeat(199)}/${"b".repeat(200)}` })).toBe(true);
+    expect(Value.Check(schema, { name: "demo", workspaceDir: `${"a".repeat(200)}/${"b".repeat(200)}` })).toBe(true);
+    for (const workspaceDir of ["/tmp/demo", "./demo", "../demo", "outputs/../demo"]) {
+      expect(Value.Check(schema, { name: "demo", workspaceDir })).toBe(true);
     }
   });
 
@@ -292,7 +296,7 @@ describe("string-only workflow input", () => {
     try {
       const result = await tool.execute(
         "tool-output-invalid",
-        { name: "live-smoke", outputDir: "../escape" },
+        { name: "live-smoke", workspaceDir: "../escape" },
         new AbortController().signal,
         () => void 0,
         harness.ctx,
@@ -301,7 +305,7 @@ describe("string-only workflow input", () => {
       expect(result.isError).toBe(true);
       expect(result.content[0]).toMatchObject({
         type: "text",
-        text: expect.stringContaining("outputDir escapes the project root"),
+        text: expect.stringContaining("workspaceDir escapes the project root"),
       });
       expect(spy).not.toHaveBeenCalled();
     } finally {
@@ -311,7 +315,7 @@ describe("string-only workflow input", () => {
 
   it("forwards an explicit task workspace without requiring a run id during tool preflight", async () => {
     const { harness, tool } = registerTool();
-    const outputDir = ".locus-pi/workspaces/tool-selected-plan";
+    const workspaceDir = ".locus-pi/workspaces/tool-selected-plan";
     const spy = vi.spyOn(runner, "runWorkflowScript").mockResolvedValue({
       runId: "task-plan-explicit-output",
       runDir: "/tmp/task-plan-explicit-output",
@@ -323,7 +327,7 @@ describe("string-only workflow input", () => {
     try {
       const result = await tool.execute(
         "tool-task-plan-explicit-output",
-        { name: "task/plan", outputDir },
+        { name: "task/plan", workspaceDir },
         new AbortController().signal,
         () => void 0,
         harness.ctx,
@@ -331,7 +335,7 @@ describe("string-only workflow input", () => {
 
       expect(result.isError).not.toBe(true);
       expect(spy).toHaveBeenCalledTimes(1);
-      expect(spy.mock.calls[0]?.[0]).toMatchObject({ name: "task/plan", outputDir });
+      expect(spy.mock.calls[0]?.[0]).toMatchObject({ name: "task/plan", workspaceDir });
     } finally {
       spy.mockRestore();
     }
