@@ -79,6 +79,7 @@ const STANDARD_DSL_RETURN_CATEGORIES = {
   random: "runtime-value",
   workflow: "opaque-value",
   workspace: "opaque-value",
+  workspaceDir: "runtime-value",
 } as const satisfies Record<StandardDslMethod, StandardDslReturnCategory>;
 
 export interface StandardLiteralShadow {

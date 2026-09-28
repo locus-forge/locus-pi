@@ -37,6 +37,7 @@ import {
   isStandardBindingOccurrence,
   isTrustedStandardPhaseCall,
   isVisibleInlineEdgeCallback,
+  nodeWithinStandardNode,
   standardCallArguments,
   standardDslBindings,
   standardLexicalBindings,
@@ -159,6 +160,7 @@ const ORCHESTRATION_ONLY_FORBIDDEN_DSL_METHODS = new Set([
   "publishPrimaryFile",
   "random",
   "workspace",
+  "workspaceDir",
 ]);
 
 /** The workflow-create subset: prompts and orchestration edges, never workflow-side file or host reads. */
@@ -420,6 +422,18 @@ function validateStandardOwnedPolicy(
   for (const pair of root.findAll({ rule: { kind: "pair" } })) {
     const key = staticObjectKey(pair.field("key"));
     if (key === "schema" || key === "validate") errors.add(`standard profile owns no raw ${key}`, pair);
+    if (key === "workspaceDir" || key === "outputDir") {
+      const call = pair.ancestors().find((ancestor) => ancestor.kind() === "call_expression");
+      const callee = call === undefined ? undefined : unwrapStandardParentheses(callCallee(call));
+      if (
+        call !== undefined &&
+        callee !== undefined &&
+        directStandardDslCall(callee, dslBindings) === "invokeWorkflow" &&
+        nodeWithinStandardNode(pair, standardCallArguments(call)[0])
+      ) {
+        errors.add(`invokeWorkflow accepts no ${key} field; saved children inherit root locations`, pair);
+      }
+    }
   }
   for (const property of root.findAll({ rule: { kind: "computed_property_name" } })) {
     errors.add("standard profile uses no computed object keys that hide policy", property);

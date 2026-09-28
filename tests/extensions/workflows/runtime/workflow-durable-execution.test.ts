@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   resolveWorkflowOutputDirectory,
-  WORKFLOW_OUTPUT_LOCK_FILE,
+  WORKFLOW_WORKSPACE_LEASE_FILE,
   workflowOutputStateDir,
 } from "../../../../extensions/workflows/runtime/workflow-output.js";
 import { readWorkflowRunResult } from "../../../../extensions/workflows/runtime/workflow-journal.js";
@@ -134,7 +134,7 @@ describe("stable workflow output paths", () => {
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "empty",
-      outputDir: ".tasks/T-144/artifacts",
+      workspaceDir: ".tasks/T-144/artifacts",
     });
 
     expect(result.ok).toBe(false);
@@ -147,8 +147,8 @@ describe("stable workflow output paths", () => {
   ])("gives every fresh %s run a distinct timestamped task workspace", async (name, slug) => {
     const root = project();
     writeWorkflowTree(root, "task", {
-      draft: `export const meta = { name: "task/draft" };\nexport default (dsl) => dsl.outputDir();\n`,
-      plan: `export const meta = { name: "task/plan" };\nexport default (dsl) => dsl.outputDir();\n`,
+      draft: `export const meta = { name: "task/draft" };\nexport default (dsl) => dsl.workspaceDir();\n`,
+      plan: `export const meta = { name: "task/plan" };\nexport default (dsl) => dsl.workspaceDir();\n`,
     });
 
     const firstHarness = createHarness(root);
@@ -175,10 +175,10 @@ describe("stable workflow output paths", () => {
 
   it("expands one runName to the same planning workspace across workflows", async () => {
     const root = project();
-    writeWorkflow(root, "ordinary", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "ordinary", `export default (dsl) => dsl.workspaceDir();\n`);
     writeWorkflowTree(root, "task", {
-      draft: `export const meta = { name: "task/draft" };\nexport default (dsl) => dsl.outputDir();\n`,
-      plan: `export const meta = { name: "task/plan" };\nexport default (dsl) => dsl.outputDir();\n`,
+      draft: `export const meta = { name: "task/draft" };\nexport default (dsl) => dsl.workspaceDir();\n`,
+      plan: `export const meta = { name: "task/plan" };\nexport default (dsl) => dsl.workspaceDir();\n`,
     });
 
     for (const name of ["ordinary", "task/draft", "task/plan"]) {
@@ -201,7 +201,7 @@ describe("stable workflow output paths", () => {
     const legacyWorkspace = `.locus-pi/plans/${runName}`;
     mkdirSync(path.join(root, legacyWorkspace), { recursive: true });
     writeFileSync(path.join(root, legacyWorkspace, "marker.txt"), "legacy\n", "utf8");
-    writeWorkflow(root, "legacy-named", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "legacy-named", `export default (dsl) => dsl.workspaceDir();\n`);
     const legacyIdentity = resolveWorkflowOutputDirectory(root, legacyWorkspace, "unused", root, {
       create: false,
     }).identity;
@@ -256,7 +256,7 @@ describe("stable workflow output paths", () => {
     const runName = "resume-legacy-builder";
     const legacyWorkspace = `.locus-pi/plans/${runName}`;
     mkdirSync(path.join(root, legacyWorkspace), { recursive: true });
-    writeWorkflow(root, "resume-named", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "resume-named", `export default (dsl) => dsl.workspaceDir();\n`);
     const harness = createHarness(root);
     const first = await runWorkflowScript({
       pi: harness.pi,
@@ -291,7 +291,7 @@ describe("stable workflow output paths", () => {
       if (workspaceKind === "legacy") {
         mkdirSync(path.join(root, ".locus-pi", "plans", runName), { recursive: true });
       }
-      writeWorkflow(root, "resume-name-match", `export default (dsl) => dsl.outputDir();\n`);
+      writeWorkflow(root, "resume-name-match", `export default (dsl) => dsl.workspaceDir();\n`);
       const harness = createHarness(root);
       const first = await runWorkflowScript({
         pi: harness.pi,
@@ -329,7 +329,7 @@ describe("stable workflow output paths", () => {
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "missing-legacy",
-      outputDir: ".locus-pi/plans/missing-legacy",
+      workspaceDir: ".locus-pi/plans/missing-legacy",
       createExecutor: executor(() => {
         calls += 1;
         return "unexpected";
@@ -345,8 +345,10 @@ describe("stable workflow output paths", () => {
   it("persists a bounded lease-release finalization error", async () => {
     const root = project();
     const runName = "lease-finalization";
-    const workspace = path.join(root, ".locus-pi", "workspaces", runName);
-    const lockFile = path.join(workspace, WORKFLOW_OUTPUT_LOCK_FILE);
+    const lockFile = path.join(
+      workflowOutputStateDir(root, `.locus-pi/workspaces/${runName}`),
+      WORKFLOW_WORKSPACE_LEASE_FILE,
+    );
     const outside = mkdtempSync(path.join(tmpdir(), "workflow-lease-finalization-"));
     const sentinel = path.join(outside, "sentinel.txt");
     writeFileSync(sentinel, "do-not-touch\n", "utf8");
@@ -390,12 +392,12 @@ describe("stable workflow output paths", () => {
   it("rejects unsafe and conflicting runName selections", async () => {
     const root = project();
     writeWorkflowTree(root, "task", {
-      draft: `export const meta = { name: "task/draft" };\nexport default (dsl) => dsl.outputDir();\n`,
+      draft: `export const meta = { name: "task/draft" };\nexport default (dsl) => dsl.workspaceDir();\n`,
     });
 
     for (const options of [
       { name: "task/draft", runName: "../escape" },
-      { name: "task/draft", runName: "named", outputDir: "tmp/conflict" },
+      { name: "task/draft", runName: "named", workspaceDir: "tmp/conflict" },
     ]) {
       const harness = createHarness(root);
       const result = await runWorkflowScript({
@@ -409,11 +411,11 @@ describe("stable workflow output paths", () => {
     }
   });
 
-  it("accepts confined absolute and dot-relative outputDir paths", async () => {
+  it("accepts confined absolute and dot-relative workspaceDir paths", async () => {
     const root = project();
     const workingDirectory = path.join(root, "packages", "docs");
     mkdirSync(workingDirectory, { recursive: true });
-    writeWorkflow(root, "paths", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "paths", `export default (dsl) => dsl.workspaceDir();\n`);
 
     const absoluteHarness = createHarness(root);
     const absolute = await runWorkflowScript({
@@ -421,7 +423,7 @@ describe("stable workflow output paths", () => {
       ctx: absoluteHarness.ctx,
       signal: new AbortController().signal,
       name: "paths",
-      outputDir: path.join(root, "custom", "absolute"),
+      workspaceDir: path.join(root, "custom", "absolute"),
     });
     expect(absolute.ok, absolute.error).toBe(true);
     expect(absolute.workspaceDirRelative).toBe("custom/absolute");
@@ -433,19 +435,19 @@ describe("stable workflow output paths", () => {
       ctx: relativeHarness.ctx,
       signal: new AbortController().signal,
       name: "paths",
-      outputDir: "./workspace",
+      workspaceDir: "./workspace",
     });
     expect(relative.ok, relative.error).toBe(true);
     expect(relative.workspaceDirRelative).toBe("packages/docs/workspace");
   });
 
   it.each(["task/draft", "task/plan"])(
-    "lets %s resume reuse an explicit source workspace without repeating outputDir",
+    "lets %s resume reuse an explicit source workspace without repeating workspaceDir",
     async (name) => {
       const root = project();
       writeWorkflowTree(root, "task", {
-        draft: `export const meta = { name: "task/draft" };\nexport default (dsl) => dsl.outputDir();\n`,
-        plan: `export const meta = { name: "task/plan" };\nexport default (dsl) => dsl.outputDir();\n`,
+        draft: `export const meta = { name: "task/draft" };\nexport default (dsl) => dsl.workspaceDir();\n`,
+        plan: `export const meta = { name: "task/plan" };\nexport default (dsl) => dsl.workspaceDir();\n`,
       });
       const selectedWorkspace = ".locus-pi/plans/20260819-120000-a1b2-airflow-dag-builder";
       mkdirSync(path.join(root, selectedWorkspace), { recursive: true });
@@ -455,7 +457,7 @@ describe("stable workflow output paths", () => {
         ctx: firstHarness.ctx,
         signal: new AbortController().signal,
         name,
-        outputDir: selectedWorkspace,
+        workspaceDir: selectedWorkspace,
       });
       expect(first.ok, first.error).toBe(true);
 
@@ -477,11 +479,11 @@ describe("stable workflow output paths", () => {
         ctx: conflictingHarness.ctx,
         signal: new AbortController().signal,
         name,
-        outputDir: ".locus-pi/plans/20260819-120001-b2c3-other-task",
+        workspaceDir: ".locus-pi/plans/20260819-120001-b2c3-other-task",
         resumeFromRunId: first.runId,
       });
       expect(conflicting.ok).toBe(false);
-      expect(conflicting.error).toContain("outputDir must equal the source workspace");
+      expect(conflicting.error).toContain("workspaceDir must equal the source workspace");
     },
   );
 
@@ -490,7 +492,7 @@ describe("stable workflow output paths", () => {
     const workspace = ".locus-pi/plans/20260819-120000-a1b2-task-plan";
     const scriptPath = path.join(root, workspace, "workflow.mjs");
     mkdirSync(path.dirname(scriptPath), { recursive: true });
-    writeFileSync(scriptPath, `export default (dsl) => dsl.outputDir();\n`, "utf8");
+    writeFileSync(scriptPath, `export default (dsl) => dsl.workspaceDir();\n`, "utf8");
 
     const harness = createHarness(root);
     const result = await runWorkflowScript({
@@ -498,19 +500,19 @@ describe("stable workflow output paths", () => {
       ctx: harness.ctx,
       signal: new AbortController().signal,
       scriptPath,
-      outputDir: workspace,
+      workspaceDir: workspace,
     });
 
     expect(result.ok, result.error).toBe(true);
     expect(result.workspaceDirRelative).toBe(workspace);
-    expect(result.result).toBe(workspace);
+    expect(result.result).toBe(path.join(root, workspace));
   });
 
   it("binds an absolute owner path to owner metadata and semantic input on resume", async () => {
     const root = project();
-    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.workspaceDir();\n`);
     const scriptPath = path.join(root, ".locus-pi", "workflows", "post-code-review.workflow.mjs");
-    const outputDir = "tmp/post-code-review/absolute-owner";
+    const workspaceDir = "tmp/post-code-review/absolute-owner";
     const firstHarness = createHarness(root);
     const first = await runWorkflowScript({
       pi: firstHarness.pi,
@@ -518,7 +520,7 @@ describe("stable workflow output paths", () => {
       signal: new AbortController().signal,
       scriptPath,
       input: "review alpha",
-      outputDir,
+      workspaceDir,
     });
     expect(first.ok, first.error).toBe(true);
     expect(first.semanticInputPresent).toBe(true);
@@ -531,7 +533,7 @@ describe("stable workflow output paths", () => {
       signal: new AbortController().signal,
       scriptPath,
       input: "review beta",
-      outputDir,
+      workspaceDir,
       resumeFromRunId: first.runId,
     });
     expect(changed.ok).toBe(false);
@@ -540,7 +542,7 @@ describe("stable workflow output paths", () => {
 
   it("refuses resume from a copied result envelope bound to another run", async () => {
     const root = project();
-    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.workspaceDir();\n`);
     const firstHarness = createHarness(root);
     const first = await runWorkflowScript({
       pi: firstHarness.pi,
@@ -548,7 +550,7 @@ describe("stable workflow output paths", () => {
       signal: new AbortController().signal,
       name: "post-code-review",
       input: "review alpha",
-      outputDir: "tmp/post-code-review/copied-source",
+      workspaceDir: "tmp/post-code-review/copied-source",
     });
     expect(first.ok, first.error).toBe(true);
 
@@ -564,7 +566,7 @@ describe("stable workflow output paths", () => {
       signal: new AbortController().signal,
       name: "post-code-review",
       input: "review alpha",
-      outputDir: "tmp/post-code-review/copied-source",
+      workspaceDir: "tmp/post-code-review/copied-source",
       resumeFromRunId: copiedRunId,
     });
     expect(resumed.ok).toBe(false);
@@ -573,14 +575,14 @@ describe("stable workflow output paths", () => {
 
   it("persists a project-relative physical workspace identity and rejects malformed post-code-review resume evidence", async () => {
     const root = project();
-    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.workspaceDir();\n`);
     const harness = createHarness(root);
     const first = await runWorkflowScript({
       pi: harness.pi,
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "post-code-review",
-      outputDir: "tmp/post-code-review/review-identity",
+      workspaceDir: "tmp/post-code-review/review-identity",
     });
     expect(first.ok, first.error).toBe(true);
     expect(first.workspacePhysicalIdentity).toBe("tmp/post-code-review/review-identity");
@@ -600,7 +602,7 @@ describe("stable workflow output paths", () => {
       ctx: resumeHarness.ctx,
       signal: new AbortController().signal,
       name: "post-code-review",
-      outputDir: "tmp/post-code-review/review-identity",
+      workspaceDir: "tmp/post-code-review/review-identity",
       resumeFromRunId: first.runId,
     });
     expect(resumed.ok).toBe(false);
@@ -615,7 +617,7 @@ describe("stable workflow output paths", () => {
       ctx: schemaResumeHarness.ctx,
       signal: new AbortController().signal,
       name: "post-code-review",
-      outputDir: "tmp/post-code-review/review-identity",
+      workspaceDir: "tmp/post-code-review/review-identity",
       resumeFromRunId: first.runId,
     });
     expect(schemaResumed.ok).toBe(false);
@@ -629,7 +631,7 @@ describe("stable workflow output paths", () => {
       ctx: identityOnlyHarness.ctx,
       signal: new AbortController().signal,
       name: "post-code-review",
-      outputDir: "tmp/post-code-review/review-identity",
+      workspaceDir: "tmp/post-code-review/review-identity",
       resumeFromRunId: first.runId,
     });
     expect(identityOnlyResumed.ok).toBe(false);
@@ -644,7 +646,7 @@ describe("stable workflow output paths", () => {
       ctx: schemaOnlyHarness.ctx,
       signal: new AbortController().signal,
       name: "post-code-review",
-      outputDir: "tmp/post-code-review/review-identity",
+      workspaceDir: "tmp/post-code-review/review-identity",
       resumeFromRunId: first.runId,
     });
     expect(schemaOnlyResumed.ok).toBe(false);
@@ -655,7 +657,7 @@ describe("stable workflow output paths", () => {
     const root = project();
     const workingDirectory = path.join(root, "packages", "docs site");
     mkdirSync(workingDirectory, { recursive: true });
-    writeWorkflow(root, "default-space", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "default-space", `export default (dsl) => dsl.workspaceDir();\n`);
     const sourceHarness = createHarness(root);
     sourceHarness.ctx.session = { ...sourceHarness.ctx.session!, workingDirectory };
     const first = await runWorkflowScript({
@@ -688,14 +690,14 @@ describe("stable workflow output paths", () => {
 
   it("rejects post-code-review resume when the recorded physical identity changed", async () => {
     const root = project();
-    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.workspaceDir();\n`);
     const firstHarness = createHarness(root);
     const first = await runWorkflowScript({
       pi: firstHarness.pi,
       ctx: firstHarness.ctx,
       signal: new AbortController().signal,
       name: "post-code-review",
-      outputDir: "tmp/post-code-review/review-identity-change",
+      workspaceDir: "tmp/post-code-review/review-identity-change",
     });
     expect(first.ok, first.error).toBe(true);
 
@@ -709,7 +711,7 @@ describe("stable workflow output paths", () => {
       ctx: resumeHarness.ctx,
       signal: new AbortController().signal,
       name: "post-code-review",
-      outputDir: "tmp/post-code-review/review-identity-change",
+      workspaceDir: "tmp/post-code-review/review-identity-change",
       resumeFromRunId: first.runId,
     });
     expect(resumed.ok).toBe(false);
@@ -718,15 +720,15 @@ describe("stable workflow output paths", () => {
 
   it("fails closed when a post-code-review workspace ancestor is physically replaced", async () => {
     const root = project();
-    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.workspaceDir();\n`);
     const firstHarness = createHarness(root);
-    const outputDir = "tmp/post-code-review/review-replaced";
+    const workspaceDir = "tmp/post-code-review/review-replaced";
     const first = await runWorkflowScript({
       pi: firstHarness.pi,
       ctx: firstHarness.ctx,
       signal: new AbortController().signal,
       name: "post-code-review",
-      outputDir,
+      workspaceDir,
     });
     expect(first.ok, first.error).toBe(true);
 
@@ -743,11 +745,11 @@ describe("stable workflow output paths", () => {
       ctx: resumeHarness.ctx,
       signal: new AbortController().signal,
       name: "post-code-review",
-      outputDir,
+      workspaceDir,
       resumeFromRunId: first.runId,
     });
     expect(resumed.ok).toBe(false);
-    expect(resumed.error).toMatch(/symlink|physical|outputDir|unavailable|binding/u);
+    expect(resumed.error).toMatch(/symlink|physical|workspaceDir|unavailable|binding/u);
     expect(readFileSync(sentinel, "utf8")).toBe("do-not-touch\n");
 
     rmSync(workspaceParent, { force: true });
@@ -800,8 +802,8 @@ describe("stable workflow output paths", () => {
   });
 
   it.each(["/tmp/escape", "../escape", "outputs/../escape", " outputs/task", "outputs/task/"])(
-    "rejects unsafe outputDir %s before an agent starts",
-    async (outputDir) => {
+    "rejects unsafe workspaceDir %s before an agent starts",
+    async (workspaceDir) => {
       const root = project();
       writeWorkflow(root, "empty", `export default () => "ok";\n`);
       let calls = 0;
@@ -811,7 +813,7 @@ describe("stable workflow output paths", () => {
         ctx: harness.ctx,
         signal: new AbortController().signal,
         name: "empty",
-        outputDir,
+        workspaceDir,
         createExecutor: executor(() => {
           calls += 1;
           return "unused";
@@ -819,12 +821,12 @@ describe("stable workflow output paths", () => {
       });
 
       expect(result.ok).toBe(false);
-      expect(result.error).toMatch(/outputDir|path component|project-relative/u);
+      expect(result.error).toMatch(/workspaceDir|path component|project-relative/u);
       expect(calls).toBe(0);
     },
   );
 
-  it("accepts a long component-valid outputDir instead of refusing it on a character count", async () => {
+  it("accepts a long component-valid workspaceDir instead of refusing it on a character count", async () => {
     // The 400-character gate was an aggregate bound on the whole string, not a filesystem
     // limit: each component was already inside the safe alphabet and the path already
     // confined. What actually bounds a path is the filesystem, and it says so itself.
@@ -836,7 +838,7 @@ describe("stable workflow output paths", () => {
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "empty",
-      outputDir: `${"a".repeat(200)}/${"b".repeat(200)}`,
+      workspaceDir: `${"a".repeat(200)}/${"b".repeat(200)}`,
       createExecutor: executor(() => "unused"),
     });
 
@@ -844,8 +846,8 @@ describe("stable workflow output paths", () => {
   });
 
   it.each([null, true, 1, [], { path: "outputs/task" }])(
-    "terminalizes non-string direct outputDir %j before child work",
-    async (outputDir) => {
+    "terminalizes non-string direct workspaceDir %j before child work",
+    async (workspaceDir) => {
       const root = project();
       writeWorkflow(root, "empty", `export default async (dsl) => dsl.agent("must not run");\n`);
       let calls = 0;
@@ -856,7 +858,7 @@ describe("stable workflow output paths", () => {
         ctx: harness.ctx,
         signal: new AbortController().signal,
         name: "empty",
-        outputDir: outputDir as unknown as string,
+        workspaceDir: workspaceDir as unknown as string,
         createExecutor: executor(() => {
           calls += 1;
           return "unused";
@@ -864,7 +866,7 @@ describe("stable workflow output paths", () => {
       });
 
       expect(result.ok).toBe(false);
-      expect(result.error).toBe("workflow outputDir must be a non-empty trimmed path");
+      expect(result.error).toBe("workflow workspaceDir must be a non-empty trimmed path");
       expect(calls).toBe(0);
       expect(readWorkflowRunResult(root, result.runId)).toMatchObject({
         ok: false,
@@ -887,14 +889,14 @@ describe("stable workflow output paths", () => {
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "empty",
-      outputDir: "outputs/linked/task",
+      workspaceDir: "outputs/linked/task",
     });
 
     expect(result.ok).toBe(false);
     expect(result.error).toContain("symlink");
   });
 
-  it("keeps run-local outputDir compatibility and exposes a distinct stable primary-file reference", async () => {
+  it("publishes primary files beneath the distinct final output directory", async () => {
     const root = project();
     writeWorkflow(
       root,
@@ -905,14 +907,14 @@ describe("stable workflow output paths", () => {
 }\n`,
     );
     const harness = createHarness(root);
-    const stableFile = path.join(root, "outputs", "task", "result.md");
+    const stableFile = path.join(root, "outputs", "task", "outputs", "result.md");
 
     const result = await runWorkflowScript({
       pi: harness.pi,
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "writer",
-      outputDir: "outputs/task",
+      workspaceDir: "outputs/task",
       createExecutor: executor(() => {
         writeFileSync(stableFile, "durable result\n", "utf8");
         return "written";
@@ -922,6 +924,8 @@ describe("stable workflow output paths", () => {
     expect(result.ok, result.error).toBe(true);
     expect(result.stableOutputDir).toBe(path.join(root, "outputs", "task"));
     expect(result.stableOutputDirRelative).toBe("outputs/task");
+    expect(result.outputDir).toBe(path.join(root, "outputs", "task", "outputs"));
+    expect(result.outputDirRelative).toBe("outputs/task/outputs");
     expect(result.primaryFile).toMatchObject({
       relativePath: "result.md",
       absolutePath: stableFile,
@@ -951,7 +955,7 @@ describe("stable workflow output paths", () => {
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "failing-writer",
-      outputDir: "outputs/failed",
+      workspaceDir: "outputs/failed",
       createExecutor: executor(() => {
         writeFileSync(stableFile, "inspectable partial\n", "utf8");
         return "written";
@@ -966,7 +970,7 @@ describe("stable workflow output paths", () => {
   it("rejects missing, empty, and symlinked primary files", async () => {
     const root = project();
     writeWorkflow(root, "primary", `export default (dsl) => dsl.publishPrimaryFile(dsl.items()[0]);\n`);
-    const output = path.join(root, "outputs", "primary-checks");
+    const output = path.join(root, "outputs", "primary-checks", "outputs");
     mkdirSync(output, { recursive: true });
     writeFileSync(path.join(output, "empty.md"), "", "utf8");
     const outside = path.join(root, "outside.md");
@@ -985,7 +989,7 @@ describe("stable workflow output paths", () => {
         signal: new AbortController().signal,
         name: "primary",
         items: [file],
-        outputDir: "outputs/primary-checks",
+        workspaceDir: "outputs/primary-checks",
       });
       expect(result.ok).toBe(false);
       expect(result.error).toContain(error);

@@ -220,15 +220,15 @@ not names installed in the Package command catalog. Copy and adapt them into
 `meta.name` and the reviewed design's entries before running.
 
 After installing the example as `adaptive-slices`, run it from the target
-repository with a task directory and an explicit output workspace:
+repository with a task directory and an explicit runtime workspace:
 
 ```text
-/workflows run adaptive-slices --output-dir .tasks/example/artifacts/implementation -- .tasks/example
+/workflows run adaptive-slices --workspace-dir .tasks/example/artifacts/implementation -- .tasks/example
 ```
 
 Pi's `input` is one semantic string, not an `args` object. The current repository
 establishes the execution context, the input identifies the task directory, and
-`--output-dir` selects the workflow workspace. Naming another repository in a
+`--workspace-dir` selects the workflow workspace. Naming another repository in a
 prompt does not switch the child working directory. Use a fresh workspace for
 an independent run.
 

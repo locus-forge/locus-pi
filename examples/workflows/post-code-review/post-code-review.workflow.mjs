@@ -13,7 +13,6 @@ export const meta = {
 
 export default async function runWorkflow(dsl, input) {
   const keys = ["scope", "boundaries", "simplicity", "contracts", "style", "necessity", "synthesis"];
-  const outputDir = dsl.outputDir();
 
   dsl.phase("scope");
   await dsl.invokeWorkflow({
@@ -21,7 +20,6 @@ export default async function runWorkflow(dsl, input) {
     input,
     keys,
     key: "scope",
-    outputDir,
   });
 
   dsl.phase("audit-barrier");
@@ -32,7 +30,6 @@ export default async function runWorkflow(dsl, input) {
         input,
         keys,
         key: "boundaries",
-        outputDir,
       }),
     () =>
       dsl.invokeWorkflow({
@@ -40,7 +37,6 @@ export default async function runWorkflow(dsl, input) {
         input,
         keys,
         key: "simplicity",
-        outputDir,
       }),
     () =>
       dsl.invokeWorkflow({
@@ -48,7 +44,6 @@ export default async function runWorkflow(dsl, input) {
         input,
         keys,
         key: "contracts",
-        outputDir,
       }),
     () =>
       dsl.invokeWorkflow({
@@ -56,7 +51,6 @@ export default async function runWorkflow(dsl, input) {
         input,
         keys,
         key: "style",
-        outputDir,
       }),
   ]);
 
@@ -66,7 +60,6 @@ export default async function runWorkflow(dsl, input) {
     input,
     keys,
     key: "necessity",
-    outputDir,
   });
 
   dsl.phase("synthesis");
@@ -75,7 +68,6 @@ export default async function runWorkflow(dsl, input) {
     input,
     keys,
     key: "synthesis",
-    outputDir,
   });
 
   dsl.phase("publish");

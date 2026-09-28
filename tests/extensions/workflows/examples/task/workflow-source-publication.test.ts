@@ -39,7 +39,7 @@ function fixture() {
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "author",
-      outputDir: "proof",
+      workspaceDir: "proof",
       createExecutor: () => ({
         run: async (request) => ({
           status: "completed",

@@ -29,7 +29,7 @@ const STANDARD_DSL_RETURN_CASES = [
   { method: "continuationArtifacts", call: "dsl.continuationArtifacts()", category: "list" },
   {
     method: "invokeWorkflow",
-    call: 'dsl.invokeWorkflow({ child: "worker", key: "one", keys: ["one"], outputDir: dsl.outputDir() })',
+    call: 'dsl.invokeWorkflow({ child: "worker", key: "one", keys: ["one"] })',
     category: "status",
   },
   { method: "items", call: "dsl.items()", category: "list" },
@@ -51,6 +51,7 @@ const STANDARD_DSL_RETURN_CASES = [
   { method: "random", call: "dsl.random()", category: "runtime" },
   { method: "workflow", call: 'dsl.workflow(() => dsl.agent("x"))', category: "opaque" },
   { method: "workspace", call: 'dsl.workspace("work", "HEAD")', category: "opaque" },
+  { method: "workspaceDir", call: "dsl.workspaceDir()", category: "runtime" },
 ] as const;
 
 function dslReturnSource(call: string, body: string): string {
@@ -139,7 +140,6 @@ describe("standard workflow source provenance and value uses", () => {
     name: "child",
     key: "one",
     keys: ["one"],
-    outputDir: dsl.outputDir(),
   });
   if (child.status === "completed") return route;
   return child.status;
@@ -148,7 +148,7 @@ describe("standard workflow source provenance and value uses", () => {
     ).toEqual([]);
   });
 
-  it("allows a bound outputDir only in the matching saved-child field", () => {
+  it("rejects directory overrides in saved-child invocations", () => {
     expect(
       standardWorkflowSourceShapeErrors(
         standardSource(`export default async function run(dsl) {
@@ -161,7 +161,7 @@ describe("standard workflow source provenance and value uses", () => {
   });
 }`),
       ),
-    ).toEqual([]);
+    ).toContain("invokeWorkflow accepts no outputDir field; saved children inherit root locations");
   });
 
   it.each([

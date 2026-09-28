@@ -200,7 +200,7 @@ describe("workflow operator handoff service", () => {
       ctx: sourceHarness.ctx,
       signal: new AbortController().signal,
       name: "test-question/answer",
-      outputDir: "outputs/alpha",
+      workspaceDir: "outputs/alpha",
     });
     expect(source.ok, source.error).toBe(true);
 
@@ -315,7 +315,7 @@ describe("workflow operator handoff service", () => {
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "post-code-review",
-      outputDir: "outputs/owner-handoff",
+      workspaceDir: "outputs/owner-handoff",
     });
     expect(source.ok, source.error).toBe(true);
     const launch = vi.fn();

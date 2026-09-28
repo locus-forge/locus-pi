@@ -440,8 +440,8 @@ function workflowContractLines(): string[] {
     'agents: agent() is the single model-calling primitive and returns exact non-empty child text; opts.agent selects a discovered catalog prompt/model role, omitted agent uses role "default", and every workflow child always receives tools ["*"] with write/edit/bash available; legacy capability fields are ignored; opts.schema opts into a validated shaped answer instead of text',
     "resources: promptFile() loads one source-relative .prompt.md containing stable stage instructions plus dynamic handoffs; local prompt bytes are copied once into the run directory with SHA-256 evidence",
     "workspaces: workspace() allocates one retained linked worktree and returns an opaque handle reusable by multiple agent() calls",
-    "DSL: agent(), parallel(), pipeline(), phase(), log(), workflow(), outputDir(), invokeWorkflow(), publishPrimaryFile(), promptFile(), workspace()",
-    "durability: outputDir() selects a confined stable project namespace distinct from run evidence; invokeWorkflow() runs one saved child level with source-bound item checkpoints and shared cancellation/concurrency/physical-call budget; publishPrimaryFile() exposes a verified non-empty file reference",
+    "DSL: agent(), parallel(), pipeline(), phase(), log(), workflow(), workspaceDir(), outputDir(), invokeWorkflow(), publishPrimaryFile(), promptFile(), workspace()",
+    "durability: workspaceDir() holds runtime handoffs and checkpoints; outputDir() selects final files; invokeWorkflow() inherits both and runs one saved child level with source-bound item checkpoints; publishPrimaryFile() exposes a verified final-output reference",
     `resolver: the nearest Project ${WORKFLOW_SAVED_SOURCE_RELATIVE_ROOT} namespace wins at each level; then User ~/${WORKFLOW_SAVED_SOURCE_RELATIVE_ROOT}; then Package`,
     "registration: a canonical folder owns an optional <workflow>.workflow.mjs plus direct child entries; without the root it is a non-runnable group-only namespace; existing flat Project/User entries remain standalone workflows",
   ];

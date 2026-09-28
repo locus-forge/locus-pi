@@ -193,7 +193,7 @@ The checkout is probably registered in both user and project scope. Use `pi list
 
 ### `/workflows run` is rejected before a run starts
 
-Check the target name, required `--output-dir`, safe project-relative path rules, and whether the workflow needs structured fields available only through the `workflow` tool. Use `/workflows info <name>` for the live contract.
+Check the target name, required `--workspace-dir`, safe project-relative path rules, and whether the workflow needs structured fields available only through the `workflow` tool. Use `/workflows info <name>` for the live contract.
 
 ### A workflow is awaiting operator input
 

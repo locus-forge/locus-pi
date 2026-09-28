@@ -21,9 +21,10 @@ import {
 
 const OUTPUT_COMPONENT_SOURCE = "[A-Za-z0-9][A-Za-z0-9._-]{0,199}";
 const OUTPUT_COMPONENT = new RegExp(`^${OUTPUT_COMPONENT_SOURCE}$`, "u");
+const DECLARED_OUTPUT_COMPONENT = /^(?:\.?[A-Za-z0-9][A-Za-z0-9._-]{0,199})$/u;
 const WORKFLOW_LEGACY_WORKSPACES_RELATIVE_ROOT = [WORKFLOW_ROOT_DIRNAME, WORKFLOW_PLANS_DIRNAME].join("/");
 const WORKFLOW_WORKSPACES_RELATIVE_ROOT = [WORKFLOW_ROOT_DIRNAME, WORKFLOW_WORKSPACES_DIRNAME].join("/");
-/** Единственный задачный корень с ведущей точкой, открытый для `--output-dir`. */
+/** Единственный задачный корень с ведущей точкой, открытый для `--workspace-dir`. */
 const WORKFLOW_TASKS_RELATIVE_ROOT = ".tasks";
 /**
  * TypeBox-compatible grammar for the same confined path accepted by the runtime.
@@ -51,6 +52,8 @@ export const WORKFLOW_OUTPUT_DIR_PATTERN =
 // itself, in its own words, instead of this module inventing a number for it.
 export const WORKFLOW_RUN_NAME_MAX_CHARS = 200;
 export const WORKFLOW_RUN_NAME_PATTERN = `^${OUTPUT_COMPONENT_SOURCE}$`;
+/** Public launch grammar. The old constant name is retained only for source compatibility. */
+export const WORKFLOW_WORKSPACE_DIR_PATTERN = WORKFLOW_OUTPUT_DIR_PATTERN;
 
 export interface WorkflowOutputDirectory {
   /** Project-relative path, with `/` separators. */
@@ -62,6 +65,9 @@ export interface WorkflowOutputDirectory {
   /** Canonical project-relative physical identity used for leases and checkpoints. */
   identity: string;
 }
+
+/** Host-selected runtime-state location. */
+export type WorkflowWorkspaceDirectory = WorkflowOutputDirectory;
 
 /** Host-only source workspace proof used by operator-handoff continuation. */
 export interface WorkflowWorkspaceReuseBinding {
@@ -117,6 +123,15 @@ export interface WorkflowOutputDirectoryPath {
   absolutePath: string;
 }
 
+export type WorkflowWorkspaceDirectoryPath = WorkflowOutputDirectoryPath;
+
+export type WorkflowOutputSource = "declared" | "default";
+
+/** Final-output binding selected from root metadata or derived below a workspace. */
+export interface WorkflowFinalOutputDirectory extends WorkflowOutputDirectory {
+  source: WorkflowOutputSource;
+}
+
 /** Resolve a confined project-relative output path without touching the filesystem. */
 export function resolveWorkflowOutputDirectoryPath(
   projectRoot: string,
@@ -131,7 +146,7 @@ export function resolveWorkflowOutputDirectoryPath(
       : assertWorkflowOutputDirPath(normalizeRequestedOutputDir(projectRoot, workingDirectory, requested));
   const root = path.resolve(projectRoot);
   const absolutePath = path.resolve(root, ...relativePath.split("/"));
-  if (!isWorkflowPathWithinRoot(root, absolutePath)) throw new Error("workflow outputDir escapes the project root");
+  if (!isWorkflowPathWithinRoot(root, absolutePath)) throw new Error("workflow workspaceDir escapes the project root");
   return { relativePath, absolutePath };
 }
 
@@ -178,7 +193,7 @@ export function isLegacyWorkflowWorkspacePath(relativePath: string): boolean {
 
 function normalizeRequestedOutputDir(projectRoot: string, workingDirectory: string, requested: string): string {
   if (typeof requested !== "string") {
-    throw new Error("workflow outputDir must be a non-empty trimmed path");
+    throw new Error("workflow workspaceDir must be a non-empty trimmed path");
   }
   const project = path.resolve(projectRoot);
   let absolute: string | undefined;
@@ -189,7 +204,7 @@ function normalizeRequestedOutputDir(projectRoot: string, workingDirectory: stri
   }
   if (absolute === undefined) return requested;
   if (!isWorkflowPathWithinRoot(project, absolute) || absolute === project) {
-    throw new Error("workflow outputDir escapes the project root");
+    throw new Error("workflow workspaceDir escapes the project root");
   }
   return path.relative(project, absolute).split(path.sep).join("/");
 }
@@ -218,17 +233,90 @@ export function resolveWorkflowOutputDirectory(
     physicalRoot = realpathSync(root);
     physicalPath = realpathSync(absolutePath);
   } catch (error) {
-    throw new Error(`workflow outputDir physical identity is unavailable: ${String(error)}`);
+    throw new Error(`workflow workspaceDir physical identity is unavailable: ${String(error)}`);
   }
   if (!isWorkflowPathWithinRoot(physicalRoot, physicalPath)) {
-    throw new Error("workflow outputDir physical target escapes the project root");
+    throw new Error("workflow workspaceDir physical target escapes the project root");
   }
   const identity = path.relative(physicalRoot, physicalPath).split(path.sep).join("/");
-  if (identity === "") throw new Error("workflow outputDir must not resolve to the project root");
+  if (identity === "") throw new Error("workflow workspaceDir must not resolve to the project root");
   return { relativePath, absolutePath, physicalPath, identity };
 }
 
-/** Resolve a previously verified workspace without reclassifying it as public outputDir. */
+/**
+ * Resolve the user-visible final-output directory independently from runtime
+ * workspace state. A declaration is always project-relative; the one default
+ * nesting exception is the exact `<workspace>/outputs` subtree.
+ */
+export function resolveWorkflowFinalOutputDirectory(
+  projectRoot: string,
+  declaredOutputDir: string | undefined,
+  workspace: WorkflowOutputDirectory,
+): WorkflowFinalOutputDirectory {
+  const source: WorkflowOutputSource = declaredOutputDir === undefined ? "default" : "declared";
+  const relativePath =
+    declaredOutputDir === undefined
+      ? `${workspace.relativePath}/outputs`
+      : assertWorkflowDeclaredOutputDirPath(declaredOutputDir);
+  const output = resolveConfinedWorkflowDirectory(projectRoot, relativePath, "workflow outputDir");
+  if (source === "declared") {
+    const outputInsideWorkspace =
+      output.absolutePath === workspace.absolutePath ||
+      isWorkflowPathWithinRoot(workspace.absolutePath, output.absolutePath);
+    const workspaceInsideOutput = isWorkflowPathWithinRoot(output.absolutePath, workspace.absolutePath);
+    if (outputInsideWorkspace || workspaceInsideOutput) {
+      throw new Error("workflow meta.outputDir must be separate from the runtime workspace");
+    }
+  }
+  return { ...output, source };
+}
+
+/** Strict root-metadata path grammar; `.local/...` is intentionally supported. */
+export function assertWorkflowDeclaredOutputDirPath(value: unknown): string {
+  if (typeof value !== "string" || value.trim() === "" || value !== value.trim()) {
+    throw new Error("workflow meta.outputDir must be one non-empty trimmed project-relative path");
+  }
+  if (path.isAbsolute(value) || path.win32.isAbsolute(value) || value.includes("\\")) {
+    throw new Error("workflow meta.outputDir must be project-relative");
+  }
+  const parts = value.split("/");
+  if (parts.some((part) => part === "" || part === "." || part === ".." || !DECLARED_OUTPUT_COMPONENT.test(part))) {
+    throw new Error(`workflow meta.outputDir contains an unsafe path component: ${JSON.stringify(value)}`);
+  }
+  if (parts[0] === WORKFLOW_ROOT_DIRNAME || parts[0] === ".git") {
+    throw new Error(`workflow meta.outputDir uses a runtime-reserved root: ${JSON.stringify(parts[0])}`);
+  }
+  return value;
+}
+
+function resolveConfinedWorkflowDirectory(
+  projectRoot: string,
+  relativePath: string,
+  label: string,
+): WorkflowOutputDirectory {
+  const root = path.resolve(projectRoot);
+  const absolutePath = path.resolve(root, ...relativePath.split("/"));
+  if (absolutePath === root || !isWorkflowPathWithinRoot(root, absolutePath)) {
+    throw new Error(`${label} escapes the project root`);
+  }
+  ensureDirectoryWithoutSymlinks(root, absolutePath);
+  let physicalRoot: string;
+  let physicalPath: string;
+  try {
+    physicalRoot = realpathSync(root);
+    physicalPath = realpathSync(absolutePath);
+  } catch (error) {
+    throw new Error(`${label} physical identity is unavailable: ${String(error)}`);
+  }
+  if (!isWorkflowPathWithinRoot(physicalRoot, physicalPath)) {
+    throw new Error(`${label} physical target escapes the project root`);
+  }
+  const identity = path.relative(physicalRoot, physicalPath).split(path.sep).join("/");
+  if (identity === "") throw new Error(`${label} must not resolve to the project root`);
+  return { relativePath, absolutePath, physicalPath, identity };
+}
+
+/** Resolve a previously verified workspace without reclassifying it as final outputDir. */
 export function resolveWorkflowOutputDirectoryForReuse(
   projectRoot: string,
   binding: WorkflowWorkspaceReuseBinding,
@@ -268,7 +356,7 @@ export function ensureWorkflowWorkspaceFile(output: WorkflowOutputDirectory, rel
   const normalized = assertRelativeOutputPath(relativeFile, "workspace file");
   const absolutePath = path.resolve(output.absolutePath, ...normalized.split("/"));
   if (!isWorkflowPathWithinRoot(output.absolutePath, absolutePath)) {
-    throw new Error("workflow workspace file escapes outputDir");
+    throw new Error("workflow workspace file escapes workspaceDir");
   }
 
   let fd: number;
@@ -372,7 +460,7 @@ function resolveWorkflowOutputPhysicalPathWithoutCreation(
 ): string {
   const relative = path.relative(projectRoot, absolutePath);
   if (relative === "" || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    throw new Error("workflow outputDir escapes the project root");
+    throw new Error("workflow workspaceDir escapes the project root");
   }
   let lexicalCurrent = projectRoot;
   let physicalCurrent = physicalRoot;
@@ -383,11 +471,11 @@ function resolveWorkflowOutputPhysicalPathWithoutCreation(
       return path.join(physicalCurrent, path.basename(lexicalCurrent), path.relative(lexicalCurrent, absolutePath));
     }
     if (stat.isSymbolicLink() || !stat.isDirectory()) {
-      throw new Error(`workflow outputDir is not a regular directory: ${lexicalCurrent}`);
+      throw new Error(`workflow workspaceDir is not a regular directory: ${lexicalCurrent}`);
     }
     physicalCurrent = realpathSync(lexicalCurrent);
     if (!isWorkflowPathWithinRoot(physicalRoot, physicalCurrent)) {
-      throw new Error("workflow outputDir physical target escapes the project root");
+      throw new Error("workflow workspaceDir physical target escapes the project root");
     }
   }
   return physicalCurrent;
@@ -408,12 +496,12 @@ export function resolveWorkflowOutputPhysicalIdentityWithoutCreation(
   const physicalPath = resolveWorkflowOutputPhysicalPathWithoutCreation(root, physicalRoot, absolutePath);
   const identity = path.relative(physicalRoot, physicalPath).split(path.sep).join("/");
   if (identity === "" || identity.startsWith("../") || path.isAbsolute(identity)) {
-    throw new Error("workflow outputDir physical target escapes the project root");
+    throw new Error("workflow workspaceDir physical target escapes the project root");
   }
   return identity;
 }
 
-function assertRelativeOutputPath(value: unknown, label = "outputDir"): string {
+function assertRelativeOutputPath(value: unknown, label = "workspaceDir"): string {
   if (typeof value !== "string" || value === "" || value.trim() !== value) {
     throw new Error(`workflow ${label} must be a non-empty trimmed path`);
   }
@@ -431,7 +519,7 @@ function assertRelativeOutputPath(value: unknown, label = "outputDir"): string {
 /** Validate the complete public outputDir value contract before filesystem access. */
 export function assertWorkflowOutputDirPath(value: unknown): string {
   if (typeof value !== "string") {
-    throw new Error("workflow outputDir must be a non-empty trimmed path");
+    throw new Error("workflow workspaceDir must be a non-empty trimmed path");
   }
   const workspaceRoot = [WORKFLOW_WORKSPACES_RELATIVE_ROOT, WORKFLOW_LEGACY_WORKSPACES_RELATIVE_ROOT].find(
     (candidate) => value.startsWith(`${candidate}/`),
@@ -439,20 +527,23 @@ export function assertWorkflowOutputDirPath(value: unknown): string {
   if (workspaceRoot !== undefined) {
     const workspaceName = value.slice(workspaceRoot.length + 1);
     if (!OUTPUT_COMPONENT.test(workspaceName)) {
-      throw new Error(`workflow outputDir contains an unsafe workspace path component: ${JSON.stringify(value)}`);
+      throw new Error(`workflow workspaceDir contains an unsafe path component: ${JSON.stringify(value)}`);
     }
     return value;
   }
   if (value === WORKFLOW_TASKS_RELATIVE_ROOT || value.startsWith(`${WORKFLOW_TASKS_RELATIVE_ROOT}/`)) {
     const rest = value.slice(WORKFLOW_TASKS_RELATIVE_ROOT.length + 1);
     if (rest === "") {
-      throw new Error(`workflow outputDir must name a directory under ${WORKFLOW_TASKS_RELATIVE_ROOT}`);
+      throw new Error(`workflow workspaceDir must name a directory under ${WORKFLOW_TASKS_RELATIVE_ROOT}`);
     }
     assertRelativeOutputPath(rest);
     return value;
   }
   return assertRelativeOutputPath(value);
 }
+
+/** Expected launch name for the host-selected runtime workspace validator. */
+export const assertWorkflowWorkspaceDirPath = assertWorkflowOutputDirPath;
 
 /**
  * Validate a physical workspace identity persisted by the runtime.
@@ -518,7 +609,7 @@ function assertExistingDirectoryWithoutSymlinks(root: string, target: string): v
   for (const part of path.relative(root, target).split(path.sep).filter(Boolean)) {
     current = path.join(current, part);
     const stat = lstatSync(current, { throwIfNoEntry: false });
-    if (stat === undefined) throw new Error(`workflow outputDir physical identity is unavailable: ${current}`);
+    if (stat === undefined) throw new Error(`workflow workspaceDir physical identity is unavailable: ${current}`);
     if (stat.isSymbolicLink()) throw new Error(`workflow output path contains a symlink: ${current}`);
     if (!stat.isDirectory()) throw new Error(`workflow output path component is not a directory: ${current}`);
   }
@@ -552,3 +643,10 @@ export function isWorkflowPathWithinRoot(root: string, target: string): boolean 
 export function isNodeError(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code;
 }
+
+/** Expected names for runtime-workspace resolution; legacy aliases remain internal-compatible. */
+export const resolveWorkflowWorkspaceDirectoryPath = resolveWorkflowOutputDirectoryPath;
+export const resolveWorkflowWorkspaceDirectory = resolveWorkflowOutputDirectory;
+export const resolveWorkflowWorkspaceDirectoryForReuse = resolveWorkflowOutputDirectoryForReuse;
+export const resolveWorkflowWorkspacePhysicalIdentityWithoutCreation =
+  resolveWorkflowOutputPhysicalIdentityWithoutCreation;

@@ -50,9 +50,9 @@ describe("resume identity and replay admission", () => {
     const root = temporaryProject();
     writeWorkflow(root, "alpha", THREE_STAGE_WORKFLOW);
     writeWorkflow(root, "beta", THREE_STAGE_WORKFLOW);
-    const first = await runWorkflow(root, "alpha", { outputDir: "same-replay-workspace" });
+    const first = await runWorkflow(root, "alpha", { workspaceDir: "same-replay-workspace" });
     const resumed = await runWorkflow(root, "beta", {
-      outputDir: "same-replay-workspace",
+      workspaceDir: "same-replay-workspace",
       resumeFromRunId: first.runId,
     });
 
@@ -78,7 +78,7 @@ describe("resume identity and replay admission", () => {
       ctx: firstHarness.ctx,
       signal: new AbortController().signal,
       scriptPath: "post-code-review-alias.workflow.mjs",
-      outputDir: "post-code-review-alias",
+      workspaceDir: "post-code-review-alias",
       createExecutor: () => ({
         async run(request: AgentRunRequest) {
           return {
@@ -100,7 +100,7 @@ describe("resume identity and replay admission", () => {
       ctx: secondHarness.ctx,
       signal: new AbortController().signal,
       scriptPath: ".locus-pi/workflows/post-code-review.workflow.mjs",
-      outputDir: "post-code-review-alias",
+      workspaceDir: "post-code-review-alias",
       resumeFromRunId: first.runId,
       createExecutor: () => ({
         async run() {
@@ -118,7 +118,7 @@ describe("resume identity and replay admission", () => {
       const root = temporaryProject();
       writeWorkflow(root, "other", THREE_STAGE_WORKFLOW);
       writeWorkflow(root, "post-code-review", THREE_STAGE_WORKFLOW);
-      const first = await runWorkflow(root, "other", { outputDir: "post-code-review-resume" });
+      const first = await runWorkflow(root, "other", { workspaceDir: "post-code-review-resume" });
       if (mode !== "mismatch") {
         const result = JSON.parse(readFileSync(workflowResultFile(first.runDir), "utf8")) as Record<string, unknown>;
         if (mode === "absent") delete result.target;
@@ -133,7 +133,7 @@ describe("resume identity and replay admission", () => {
         ctx: harness.ctx,
         signal: new AbortController().signal,
         name: "post-code-review",
-        outputDir: "post-code-review-resume",
+        workspaceDir: "post-code-review-resume",
         resumeFromRunId: first.runId,
         createExecutor: () => ({
           async run(request: AgentRunRequest) {
@@ -170,14 +170,14 @@ describe("resume identity and replay admission", () => {
     const root = temporaryProject();
     writeWorkflow(root, "post-code-review", THREE_STAGE_WORKFLOW);
     writeWorkflow(root, "other", THREE_STAGE_WORKFLOW);
-    const first = await runWorkflow(root, "post-code-review", { outputDir: "post-code-review-reverse" });
+    const first = await runWorkflow(root, "post-code-review", { workspaceDir: "post-code-review-reverse" });
     const harness = createHarness(root, { sessionId: "exact-resume-reverse" });
     const resumed = await runWorkflowScript({
       pi: harness.pi,
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "other",
-      outputDir: "post-code-review-reverse",
+      workspaceDir: "post-code-review-reverse",
       resumeFromRunId: first.runId,
       createExecutor: () => ({
         async run() {
@@ -298,7 +298,7 @@ describe("resume binds a run to the workspace and input its source proved", () =
     const root = project();
     writeWorkflowTree(root, "composed", {
       worker: `export const meta = { name: "composed/worker", profile: "standard" };
-export default (dsl) => dsl.outputDir();
+export default (dsl) => dsl.workspaceDir();
 `,
     });
     const harness = createHarness(root);
@@ -308,7 +308,7 @@ export default (dsl) => dsl.outputDir();
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "composed/worker",
-      outputDir: legacyWorkspace,
+      workspaceDir: legacyWorkspace,
     });
     expect(first.ok, first.error).toBe(true);
 
@@ -333,8 +333,8 @@ export default (dsl) => dsl.outputDir();
 
   it("does not implicitly reuse a persisted workspace for a different workflow target", async () => {
     const root = project();
-    writeWorkflow(root, "alpha", `export default (dsl) => dsl.outputDir();\n`);
-    writeWorkflow(root, "beta", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "alpha", `export default (dsl) => dsl.workspaceDir();\n`);
+    writeWorkflow(root, "beta", `export default (dsl) => dsl.workspaceDir();\n`);
     const harness = createHarness(root);
     const first = await runWorkflowScript({
       pi: harness.pi,
@@ -360,7 +360,7 @@ export default (dsl) => dsl.outputDir();
     });
 
     expect(resumed.ok).toBe(false);
-    expect(resumed.error).toContain("outputDir must equal the source workspace");
+    expect(resumed.error).toContain("workspaceDir must equal the source workspace");
     expect(resumed.runDir).toBe(path.join(first.runDir, "attempts", resumed.runId));
     expect(resumed.resultPersistence.ok).toBe(true);
     expect(readFileSync(path.join(first.runDir, "README.md"), "utf8")).toBe(originalReadme);
@@ -373,13 +373,13 @@ export default (dsl) => dsl.outputDir();
     const root = project();
     writeWorkflow(root, "child", CHILD);
     writeWorkflow(root, "parent", PARENT);
-    const outputDir = "outputs/resume-source";
+    const workspaceDir = "outputs/resume-source";
     const harness = createHarness(root);
     const calls: string[] = [];
     const createExecutor = executor((prompt) => {
       calls.push(prompt);
       const key = prompt.slice(prompt.lastIndexOf(":") + 1);
-      writeFileSync(path.join(root, outputDir, `${key}.md`), `${prompt}\n`, "utf8");
+      writeFileSync(path.join(root, workspaceDir, "outputs", `${key}.md`), `${prompt}\n`, "utf8");
       return "written";
     });
 
@@ -390,11 +390,11 @@ export default (dsl) => dsl.outputDir();
       name: "parent",
       input: "payload-one",
       items: ["alpha"],
-      outputDir,
+      workspaceDir,
       createExecutor,
     });
     expect(first.ok, first.error).toBe(true);
-    expect(first.workspaceDirRelative).toBe(outputDir);
+    expect(first.workspaceDirRelative).toBe(workspaceDir);
     expect(calls).toHaveLength(1);
 
     calls.length = 0;
@@ -405,25 +405,25 @@ export default (dsl) => dsl.outputDir();
       name: "parent",
       input: "payload-one",
       items: ["alpha"],
-      outputDir,
+      workspaceDir,
       resumeFromRunId: first.runId,
       createExecutor,
     });
 
     expect(resumed.ok, resumed.error).toBe(true);
-    expect(resumed.workspaceDirRelative).toBe(outputDir);
+    expect(resumed.workspaceDirRelative).toBe(workspaceDir);
     expect(calls).toEqual([]);
     expect(resumed.childRuns).toEqual([
       expect.objectContaining({ status: "skipped", key: "alpha", sourceRunId: first.childRuns?.[0]?.runId }),
     ]);
   });
 
-  it("requires repeating an explicit outputDir even when it equals the default", async () => {
+  it("requires repeating an explicit workspaceDir even when it equals the default", async () => {
     const root = project();
-    writeWorkflow(root, "default-resume", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "default-resume", `export default (dsl) => dsl.workspaceDir();\n`);
     const harness = createHarness(root);
-    const outputDir = "tmp/default-resume";
-    const run = (options: { outputDir?: string; resumeFromRunId?: string } = {}) =>
+    const workspaceDir = "tmp/default-resume";
+    const run = (options: { workspaceDir?: string; resumeFromRunId?: string } = {}) =>
       runWorkflowScript({
         pi: harness.pi,
         ctx: harness.ctx,
@@ -432,12 +432,12 @@ export default (dsl) => dsl.outputDir();
         ...options,
       });
 
-    const first = await run({ outputDir });
+    const first = await run({ workspaceDir });
     expect(first.ok, first.error).toBe(true);
-    expect(first.workspaceDirRelative).toBe(outputDir);
+    expect(first.workspaceDirRelative).toBe(workspaceDir);
     expect(first.workspaceDirExplicit).toBe(true);
     expect(readWorkflowRunResult(root, first.runId)).toMatchObject({
-      workspaceDirRelative: outputDir,
+      workspaceDirRelative: workspaceDir,
       workspaceDirExplicit: true,
     });
 
@@ -445,22 +445,22 @@ export default (dsl) => dsl.outputDir();
     expect(omitted.ok).toBe(false);
     expect(omitted.error).toContain("source workspace was selected explicitly");
 
-    const repeated = await run({ outputDir, resumeFromRunId: first.runId });
+    const repeated = await run({ workspaceDir, resumeFromRunId: first.runId });
     expect(repeated.ok, repeated.error).toBe(true);
-    expect(repeated.workspaceDirRelative).toBe(outputDir);
+    expect(repeated.workspaceDirRelative).toBe(workspaceDir);
     expect(repeated.workspaceDirExplicit).toBe(true);
   });
 
   it("fails generic resume when a v2 source identity loses its persisted target", async () => {
     const root = project();
-    writeWorkflow(root, "generic-v2-target", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "generic-v2-target", `export default (dsl) => dsl.workspaceDir();\n`);
     const harness = createHarness(root);
     const first = await runWorkflowScript({
       pi: harness.pi,
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "generic-v2-target",
-      outputDir: "outputs/generic-v2-target",
+      workspaceDir: "outputs/generic-v2-target",
     });
     expect(first.ok, first.error).toBe(true);
     const result = JSON.parse(readFileSync(first.resultPersistence.path, "utf8")) as Record<string, unknown>;
@@ -472,7 +472,7 @@ export default (dsl) => dsl.outputDir();
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "generic-v2-target",
-      outputDir: "outputs/generic-v2-target",
+      workspaceDir: "outputs/generic-v2-target",
       resumeFromRunId: first.runId,
     });
     expect(resumed.ok).toBe(false);
@@ -482,15 +482,15 @@ export default (dsl) => dsl.outputDir();
 
   it.each(["true", 1, null])("fails closed when persisted workspaceDirExplicit has wrong type %j", async (value) => {
     const root = project();
-    writeWorkflow(root, "malformed-explicit", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "malformed-explicit", `export default (dsl) => dsl.workspaceDir();\n`);
     const harness = createHarness(root);
-    const outputDir = "tmp/malformed-explicit";
+    const workspaceDir = "tmp/malformed-explicit";
     const first = await runWorkflowScript({
       pi: harness.pi,
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "malformed-explicit",
-      outputDir,
+      workspaceDir,
     });
     const resultPath = first.resultPersistence.path;
     const persisted = JSON.parse(readFileSync(resultPath, "utf8")) as Record<string, unknown>;
@@ -513,15 +513,15 @@ export default (dsl) => dsl.outputDir();
     writeWorkflow(root, "child", CHILD);
     writeWorkflow(root, "post-code-review", PARENT);
     const harness = createHarness(root);
-    const outputDir = "outputs/post-code-review-input";
+    const workspaceDir = "outputs/post-code-review-input";
     let calls = 0;
     const createExecutor = executor((prompt) => {
       calls += 1;
-      mkdirSync(path.join(root, outputDir), { recursive: true });
-      writeFileSync(path.join(root, outputDir, "alpha.md"), `${prompt}\n`, "utf8");
+      mkdirSync(path.join(root, workspaceDir), { recursive: true });
+      writeFileSync(path.join(root, workspaceDir, "outputs", "alpha.md"), `${prompt}\n`, "utf8");
       return `written:${prompt}`;
     });
-    const run = (input: string, resumeFromRunId?: string, namespace = outputDir) =>
+    const run = (input: string, resumeFromRunId?: string, namespace = workspaceDir) =>
       runWorkflowScript({
         pi: harness.pi,
         ctx: harness.ctx,
@@ -529,7 +529,7 @@ export default (dsl) => dsl.outputDir();
         name: "post-code-review",
         input,
         items: ["alpha"],
-        outputDir: namespace,
+        workspaceDir: namespace,
         ...(resumeFromRunId === undefined ? {} : { resumeFromRunId }),
         createExecutor,
       });
@@ -556,21 +556,21 @@ export default (dsl) => dsl.outputDir();
     expect(changed.primaryFile).toBeUndefined();
     expect(changed.primaryOutputPath).toBeUndefined();
     expect(calls).toBe(firstCalls);
-    expect(existsSync(path.join(root, outputDir, WORKFLOW_OUTPUT_LOCK_FILE))).toBe(false);
+    expect(existsSync(path.join(root, workspaceDir, "outputs", WORKFLOW_OUTPUT_LOCK_FILE))).toBe(false);
   });
 
   it("uses one persisted resume binding for workspace, owner, semantic, and replay checks", async () => {
     const root = project();
-    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.workspaceDir();\n`);
     const harness = createHarness(root);
-    const outputDir = "outputs/resume-binding";
+    const workspaceDir = "outputs/resume-binding";
     const first = await runWorkflowScript({
       pi: harness.pi,
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "post-code-review",
       input: "resume binding",
-      outputDir,
+      workspaceDir,
     });
     expect(first.ok, first.error).toBe(true);
 
@@ -595,7 +595,7 @@ export default (dsl) => dsl.outputDir();
         signal: new AbortController().signal,
         name: "post-code-review",
         input: "resume binding",
-        outputDir,
+        workspaceDir,
         resumeFromRunId: first.runId,
       });
       expect(resumed.ok, resumed.error).toBe(true);
@@ -609,8 +609,8 @@ export default (dsl) => dsl.outputDir();
 
   it("rejects a valid-looking result projection rewrite before owner resume work", async () => {
     const root = project();
-    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.outputDir();\n`);
-    const outputDir = "outputs/launch-binding-result-tamper";
+    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.workspaceDir();\n`);
+    const workspaceDir = "outputs/launch-binding-result-tamper";
     const firstHarness = createHarness(root);
     const first = await runWorkflowScript({
       pi: firstHarness.pi,
@@ -618,7 +618,7 @@ export default (dsl) => dsl.outputDir();
       signal: new AbortController().signal,
       name: "post-code-review",
       input: "original",
-      outputDir,
+      workspaceDir,
     });
     expect(first.ok, first.error).toBe(true);
     expect(existsSync(workflowLaunchBindingFile(first.runDir))).toBe(true);
@@ -638,7 +638,7 @@ export default (dsl) => dsl.outputDir();
       signal: new AbortController().signal,
       name: "post-code-review",
       input: "original",
-      outputDir,
+      workspaceDir,
       resumeFromRunId: first.runId,
       createExecutor: executor(() => {
         calls += 1;
@@ -649,13 +649,13 @@ export default (dsl) => dsl.outputDir();
     expect(resumed.error).toMatch(/no valid host launch binding|malformed persisted metadata/u);
     expect(resumed.childRuns ?? []).toEqual([]);
     expect(calls).toBe(0);
-    expect(existsSync(path.join(root, outputDir, WORKFLOW_OUTPUT_LOCK_FILE))).toBe(false);
+    expect(existsSync(path.join(root, workspaceDir, "outputs", WORKFLOW_OUTPUT_LOCK_FILE))).toBe(false);
   });
 
   it("rejects a tampered host launch binding before owner resume work", async () => {
     const root = project();
-    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.outputDir();\n`);
-    const outputDir = "outputs/launch-binding-sidecar-tamper";
+    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.workspaceDir();\n`);
+    const workspaceDir = "outputs/launch-binding-sidecar-tamper";
     const firstHarness = createHarness(root);
     const first = await runWorkflowScript({
       pi: firstHarness.pi,
@@ -663,7 +663,7 @@ export default (dsl) => dsl.outputDir();
       signal: new AbortController().signal,
       name: "post-code-review",
       input: "original",
-      outputDir,
+      workspaceDir,
     });
     expect(first.ok, first.error).toBe(true);
 
@@ -680,13 +680,13 @@ export default (dsl) => dsl.outputDir();
       signal: new AbortController().signal,
       name: "post-code-review",
       input: "original",
-      outputDir,
+      workspaceDir,
       resumeFromRunId: first.runId,
     });
     expect(resumed.ok).toBe(false);
     expect(resumed.error).toContain("no valid host launch binding");
     expect(resumed.childRuns ?? []).toEqual([]);
-    expect(existsSync(path.join(root, outputDir, WORKFLOW_OUTPUT_LOCK_FILE))).toBe(false);
+    expect(existsSync(path.join(root, workspaceDir, "outputs", WORKFLOW_OUTPUT_LOCK_FILE))).toBe(false);
   });
 
   it.each([
@@ -760,15 +760,15 @@ export default (dsl) => dsl.outputDir();
     },
   ])("rejects launch binding with $label before handoff/resume use", async ({ mutate }) => {
     const root = project();
-    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.outputDir();\n`);
-    const outputDir = "outputs/launch-binding-validation";
+    writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.workspaceDir();\n`);
+    const workspaceDir = "outputs/launch-binding-validation";
     const first = await runWorkflowScript({
       pi: createHarness(root).pi,
       ctx: createHarness(root).ctx,
       signal: new AbortController().signal,
       name: "post-code-review",
       input: "validation",
-      outputDir,
+      workspaceDir,
     });
     expect(first.ok, first.error).toBe(true);
     const bindingPath = workflowLaunchBindingFile(first.runDir);
@@ -783,7 +783,7 @@ export default (dsl) => dsl.outputDir();
       signal: new AbortController().signal,
       name: "post-code-review",
       input: "validation",
-      outputDir,
+      workspaceDir,
       resumeFromRunId: first.runId,
     });
     expect(resumed.ok).toBe(false);
@@ -792,8 +792,8 @@ export default (dsl) => dsl.outputDir();
   });
 
   it.each([undefined, "outputs/resume-other"] as const)(
-    "fails resume before child work when outputDir is %s instead of the source workspace",
-    async (outputDir) => {
+    "fails resume before child work when workspaceDir is %s instead of the source workspace",
+    async (workspaceDir) => {
       const root = project();
       writeWorkflow(root, "child", CHILD);
       writeWorkflow(root, "parent", PARENT);
@@ -801,7 +801,7 @@ export default (dsl) => dsl.outputDir();
       const harness = createHarness(root);
       const createExecutor = executor((prompt) => {
         const key = prompt.slice(prompt.lastIndexOf(":") + 1);
-        writeFileSync(path.join(root, sourceOutputDir, `${key}.md`), `${prompt}\n`, "utf8");
+        writeFileSync(path.join(root, sourceOutputDir, "outputs", `${key}.md`), `${prompt}\n`, "utf8");
         return "written";
       });
 
@@ -812,7 +812,7 @@ export default (dsl) => dsl.outputDir();
         name: "parent",
         input: "payload-one",
         items: ["alpha"],
-        outputDir: sourceOutputDir,
+        workspaceDir: sourceOutputDir,
         createExecutor,
       });
       expect(first.ok, first.error).toBe(true);
@@ -825,7 +825,7 @@ export default (dsl) => dsl.outputDir();
         name: "parent",
         input: "payload-one",
         items: ["alpha"],
-        ...(outputDir === undefined ? {} : { outputDir }),
+        ...(workspaceDir === undefined ? {} : { workspaceDir }),
         resumeFromRunId: first.runId,
         createExecutor: executor(() => {
           calls += 1;
@@ -835,12 +835,12 @@ export default (dsl) => dsl.outputDir();
 
       expect(resumed.ok).toBe(false);
       expect(resumed.error).toContain(
-        outputDir === undefined
+        workspaceDir === undefined
           ? "source workspace was selected explicitly"
-          : "outputDir must equal the source workspace",
+          : "workspaceDir must equal the source workspace",
       );
       expect(calls).toBe(0);
-      const candidateRelative = outputDir ?? "tmp/parent";
+      const candidateRelative = workspaceDir ?? "tmp/parent";
       expect(existsSync(path.join(root, candidateRelative))).toBe(false);
       expect(existsSync(workflowOutputStateDir(root, candidateRelative))).toBe(false);
       expect(readWorkflowRunResult(root, resumed.runId)).toMatchObject({
@@ -860,7 +860,7 @@ export default (dsl) => dsl.outputDir();
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "resume-missing-workspace",
-      outputDir: "outputs/source",
+      workspaceDir: "outputs/source",
     });
     expect(first.ok, first.error).toBe(true);
 
@@ -874,7 +874,7 @@ export default (dsl) => dsl.outputDir();
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "resume-missing-workspace",
-      outputDir: "outputs/source",
+      workspaceDir: "outputs/source",
       resumeFromRunId: first.runId,
     });
 
@@ -889,14 +889,14 @@ export default (dsl) => dsl.outputDir();
 
   it("keeps removed workspaces readable while resume fails physical identity preflight", async () => {
     const root = project();
-    writeWorkflow(root, "removed-workspace", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "removed-workspace", `export default (dsl) => dsl.workspaceDir();\n`);
     const harness = createHarness(root);
     const first = await runWorkflowScript({
       pi: harness.pi,
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "removed-workspace",
-      outputDir: "outputs/removed-workspace",
+      workspaceDir: "outputs/removed-workspace",
     });
     expect(first.ok, first.error).toBe(true);
     rmSync(first.workspaceDir!, { recursive: true, force: true });
@@ -915,7 +915,7 @@ export default (dsl) => dsl.outputDir();
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "removed-workspace",
-      outputDir: "outputs/removed-workspace",
+      workspaceDir: "outputs/removed-workspace",
       resumeFromRunId: first.runId,
     });
     expect(resumed.ok).toBe(false);
@@ -928,14 +928,14 @@ export default (dsl) => dsl.outputDir();
 
   it("fails closed when persisted workspaceDir is relative", async () => {
     const root = project();
-    writeWorkflow(root, "relative-workspace", `export default (dsl) => dsl.outputDir();\n`);
+    writeWorkflow(root, "relative-workspace", `export default (dsl) => dsl.workspaceDir();\n`);
     const harness = createHarness(root);
     const first = await runWorkflowScript({
       pi: harness.pi,
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "relative-workspace",
-      outputDir: "outputs/relative-workspace",
+      workspaceDir: "outputs/relative-workspace",
     });
     expect(first.ok, first.error).toBe(true);
 
@@ -951,7 +951,7 @@ export default (dsl) => dsl.outputDir();
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "relative-workspace",
-      outputDir: "outputs/relative-workspace",
+      workspaceDir: "outputs/relative-workspace",
       resumeFromRunId: first.runId,
     });
     expect(resumed.ok).toBe(false);

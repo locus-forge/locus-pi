@@ -46,6 +46,7 @@ const STANDARD_DSL_METHOD_NAMES = [
   "random",
   "workflow",
   "workspace",
+  "workspaceDir",
 ] as const;
 
 export type StandardDslMethod = (typeof STANDARD_DSL_METHOD_NAMES)[number];

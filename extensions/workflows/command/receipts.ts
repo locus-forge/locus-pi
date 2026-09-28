@@ -12,7 +12,7 @@ export const WORKFLOW_RESULT_CUSTOM_TYPE = "locus-workflow-result";
 
 export type WorkflowTranscriptRejectionCode =
   | "missing_resume_id"
-  | "missing_output_dir"
+  | "missing_workspace_dir"
   | "missing_run_name"
   /** HISTORICAL. No longer emitted: a long semantic request is a task, not a launch
    *  error. Kept in the closed list so receipts written before that removal still read. */

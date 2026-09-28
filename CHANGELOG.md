@@ -4,6 +4,24 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-28
+
+### Changed
+
+- Workflow filesystem locations are now explicit: `workspaceDir` selects runtime
+  state and handoffs, while root `meta.outputDir` selects final files. The DSL
+  exposes absolute `workspaceDir()` and `outputDir()` paths; saved children inherit
+  both and no longer accept directory overrides.
+- `/workflows run --output-dir` and the structured launch `outputDir` field were
+  replaced by `--workspace-dir` and `workspaceDir`. Without root output metadata,
+  final files default to `<workspaceDir>/outputs`.
+
+### Fixed
+
+- Workspace and output identities, leases, checkpoints, results, and resume
+  bindings are now persisted separately. Runtime locks stay beneath `.locus-pi`
+  and never appear in a declared final-output directory.
+
 ## [0.9.5] - 2026-09-28
 
 ### Maintenance
