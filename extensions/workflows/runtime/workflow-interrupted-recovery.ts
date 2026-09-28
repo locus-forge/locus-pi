@@ -149,6 +149,11 @@ export function readInterruptedWorkflowResumeBinding(
     workspaceDirExplicit: binding.workspace.explicit,
     workspacePhysicalIdentity: binding.workspace.physicalIdentity,
     workspacePhysicalIdentitySchemaVersion: 1,
+    outputDir: binding.output.absolutePath,
+    outputDirRelative: binding.output.relativePath,
+    outputPhysicalIdentity: binding.output.physicalIdentity,
+    outputPhysicalIdentitySchemaVersion: 1,
+    outputSource: binding.output.source,
     semanticInputPresent: binding.semanticInput.present,
     semanticInputSha256: binding.semanticInput.sha256,
   };

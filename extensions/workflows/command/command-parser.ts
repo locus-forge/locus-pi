@@ -13,11 +13,12 @@ import type { WorkflowTargetIdentity } from "../runtime/workflow-saved-name.js";
 export interface ParsedRunCommand {
   scriptRef: string;
   input?: string;
-  outputDir?: string;
+  workspaceDir?: string;
   runName?: string;
   resumeFromRunId?: string;
   noOperator?: boolean;
-  missingOutputDir?: boolean;
+  obsoleteOutputDir?: true;
+  missingWorkspaceDir?: boolean;
   missingRunName?: boolean;
   missingResumeId?: boolean;
 }
@@ -29,7 +30,7 @@ export interface ParsedContinueCommand {
 }
 
 const WORKFLOW_RUN_OPTION_USAGE =
-  "[--run-name <name> | --output-dir <path>] [--resume <runId>] [--no-operator|--operator] [--] [input]";
+  "[--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--no-operator|--operator] [--] [input]";
 
 /** Value-less run flag: run-level no-operator mode (operator input fails closed). */
 export const WORKFLOW_RUN_NO_OPERATOR_FLAG = "--no-operator";
@@ -49,7 +50,7 @@ const WORKFLOW_RUN_MODE_FLAGS = [
 
 export const WORKFLOW_RUN_OPTION_DESCRIPTORS = [
   { name: "--run-name", field: "runName" },
-  { name: "--output-dir", field: "outputDir" },
+  { name: "--workspace-dir", field: "workspaceDir" },
   { name: "--resume", field: "resumeFromRunId" },
 ] as const;
 export type WorkflowRunOptionDescriptor = (typeof WORKFLOW_RUN_OPTION_DESCRIPTORS)[number];
@@ -93,17 +94,20 @@ export function workflowRunUsage(target = "<name|path>", command = "/workflows r
 export function workflowRunRecoveryUsage(parsed: ParsedRunCommand): string {
   const parts = ["/workflows run", formatWorkflowCommandToken(parsed.scriptRef)];
   if (parsed.missingRunName === true) {
-    if (parsed.outputDir !== undefined) parts.push("--output-dir", formatWorkflowCommandToken(parsed.outputDir));
+    if (parsed.workspaceDir !== undefined)
+      parts.push("--workspace-dir", formatWorkflowCommandToken(parsed.workspaceDir));
     if (parsed.runName !== undefined) parts.push("--run-name", formatWorkflowCommandToken(parsed.runName));
     parts.push("--run-name", "<name>");
-  } else if (parsed.missingOutputDir === true) {
+  } else if (parsed.missingWorkspaceDir === true) {
     if (parsed.runName !== undefined) parts.push("--run-name", formatWorkflowCommandToken(parsed.runName));
-    if (parsed.outputDir !== undefined) parts.push("--output-dir", formatWorkflowCommandToken(parsed.outputDir));
-    parts.push("--output-dir", "<path>");
+    if (parsed.workspaceDir !== undefined)
+      parts.push("--workspace-dir", formatWorkflowCommandToken(parsed.workspaceDir));
+    parts.push("--workspace-dir", "<path>");
   } else {
     if (parsed.runName !== undefined) parts.push("--run-name", formatWorkflowCommandToken(parsed.runName));
-    else if (parsed.outputDir !== undefined) parts.push("--output-dir", formatWorkflowCommandToken(parsed.outputDir));
-    else parts.push("[--run-name <name> | --output-dir <path>]");
+    else if (parsed.workspaceDir !== undefined)
+      parts.push("--workspace-dir", formatWorkflowCommandToken(parsed.workspaceDir));
+    else parts.push("[--run-name <name> | --workspace-dir <path>]");
   }
   if (parsed.missingResumeId === true) {
     if (parsed.resumeFromRunId !== undefined)
@@ -143,18 +147,18 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
   // Keep one leading separator out of the first token, but retain the raw tail
   // until we know whether `--` switches the rest into semantic-input mode.
   let rest = target.rest.trimStart();
-  let outputDir: string | undefined;
+  let workspaceDir: string | undefined;
   let runName: string | undefined;
   let resumeFromRunId: string | undefined;
   let noOperator: boolean | undefined;
   const missing = (option: WorkflowRunOptionDescriptor): ParsedRunCommand => ({
     scriptRef,
-    ...(outputDir === undefined ? {} : { outputDir }),
+    ...(workspaceDir === undefined ? {} : { workspaceDir }),
     ...(runName === undefined ? {} : { runName }),
     ...(resumeFromRunId === undefined ? {} : { resumeFromRunId }),
     ...(noOperator === undefined ? {} : { noOperator }),
-    ...(option.field === "outputDir"
-      ? { missingOutputDir: true }
+    ...(option.field === "workspaceDir"
+      ? { missingWorkspaceDir: true }
       : option.field === "runName"
         ? { missingRunName: true }
         : { missingResumeId: true }),
@@ -162,6 +166,12 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
   // Match the existing command-option convention: when an option is repeated
   // before semantic input, its last supplied value wins.
   while (true) {
+    if (
+      rest === "--output-dir" ||
+      (rest.startsWith("--output-dir") && /^\s/u.test(rest.slice("--output-dir".length)))
+    ) {
+      return { scriptRef, obsoleteOutputDir: true };
+    }
     const mode = WORKFLOW_RUN_MODE_FLAGS.find(
       (flag) => rest === flag.name || (rest.startsWith(flag.name) && /^\s/u.test(rest.slice(flag.name.length))),
     );
@@ -187,7 +197,7 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
     ) {
       return missing(option);
     }
-    if (option.field === "outputDir") outputDir = value.value;
+    if (option.field === "workspaceDir") workspaceDir = value.value;
     else if (option.field === "runName") runName = value.value;
     else resumeFromRunId = value.value;
     rest = value.rest.trimStart();
@@ -195,7 +205,7 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
   if (rest === "--") {
     return {
       scriptRef,
-      ...(outputDir === undefined ? {} : { outputDir }),
+      ...(workspaceDir === undefined ? {} : { workspaceDir }),
       ...(runName === undefined ? {} : { runName }),
       ...(resumeFromRunId === undefined ? {} : { resumeFromRunId }),
       ...(noOperator === undefined ? {} : { noOperator }),
@@ -205,7 +215,7 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
     const input = rest.slice(3);
     return {
       scriptRef,
-      ...(outputDir === undefined ? {} : { outputDir }),
+      ...(workspaceDir === undefined ? {} : { workspaceDir }),
       ...(runName === undefined ? {} : { runName }),
       ...(resumeFromRunId === undefined ? {} : { resumeFromRunId }),
       ...(noOperator === undefined ? {} : { noOperator }),
@@ -215,7 +225,7 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
   const input = rest.trim();
   return {
     scriptRef,
-    ...(outputDir === undefined ? {} : { outputDir }),
+    ...(workspaceDir === undefined ? {} : { workspaceDir }),
     ...(runName === undefined ? {} : { runName }),
     ...(resumeFromRunId === undefined ? {} : { resumeFromRunId }),
     ...(noOperator === undefined ? {} : { noOperator }),

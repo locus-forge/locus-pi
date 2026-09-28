@@ -191,6 +191,16 @@ export interface WorkflowRunResultEnvelope {
   workspacePhysicalIdentity?: string;
   workspacePhysicalIdentityInvalid?: string;
   workspacePhysicalIdentitySchemaVersion?: 1;
+  outputDir?: string;
+  outputDirRelative?: string;
+  outputDirInvalid?: string;
+  /** Present current-run output was removed/unavailable; readable, not resumable. */
+  outputDirUnavailable?: string;
+  outputPhysicalIdentity?: string;
+  outputPhysicalIdentityInvalid?: string;
+  outputPhysicalIdentitySchemaVersion?: 1;
+  outputSource?: "declared" | "default";
+  outputSourceInvalid?: string;
   semanticInputPresent?: boolean;
   semanticInputSha256?: string;
   semanticInputInvalid?: string;
@@ -254,6 +264,9 @@ export function workflowPersistedResultInvalidity(result: WorkflowRunResultEnvel
     ["workspaceDirExplicit is malformed", result.workspaceDirExplicitInvalid],
     ["semantic input identity is malformed", result.semanticInputInvalid],
     ["workspace physical identity is malformed", result.workspacePhysicalIdentityInvalid],
+    ["output location is malformed", result.outputDirInvalid],
+    ["output physical identity is malformed", result.outputPhysicalIdentityInvalid],
+    ["output source is malformed", result.outputSourceInvalid],
     ["ok field is malformed", result.okInvalid],
     ["error field is malformed", result.errorInvalid],
     ["failure diagnostic is malformed", result.failureDiagnosticInvalid],
@@ -552,6 +565,71 @@ export function readWorkflowRunResult(
         workspaceDirExplicitInvalid = "workspaceDirExplicit must be a boolean";
       }
     }
+    let outputDir: string | undefined;
+    let outputDirRelative: string | undefined;
+    let outputDirInvalid: string | undefined;
+    let outputDirUnavailable: string | undefined;
+    let outputPhysicalIdentity: string | undefined;
+    let outputPhysicalIdentityInvalid: string | undefined;
+    let outputPhysicalIdentitySchemaVersion: 1 | undefined;
+    let outputSource: "declared" | "default" | undefined;
+    let outputSourceInvalid: string | undefined;
+    const outputKeys = [
+      "outputDir",
+      "outputDirRelative",
+      "outputPhysicalIdentity",
+      "outputPhysicalIdentitySchemaVersion",
+      "outputSource",
+    ] as const;
+    const hasOutputBinding = outputKeys.some((key) => Object.prototype.hasOwnProperty.call(record, key));
+    if (hasOutputBinding) {
+      if (
+        typeof record.outputDir !== "string" ||
+        !path.isAbsolute(record.outputDir) ||
+        typeof record.outputDirRelative !== "string"
+      ) {
+        outputDirInvalid = "outputDir must be absolute and paired with outputDirRelative";
+      } else {
+        try {
+          const root = path.resolve(projectRoot);
+          const absolute = path.resolve(record.outputDir);
+          const relative = path.relative(root, absolute).split(path.sep).join("/");
+          const physicalRoot = realpathSync(root);
+          let physicalRelative: string | undefined;
+          try {
+            const physical = realpathSync(absolute);
+            physicalRelative = path.relative(physicalRoot, physical).split(path.sep).join("/");
+            if (!isWorkflowPathWithinRoot(physicalRoot, physical) || !statSync(physical).isDirectory()) {
+              outputDirInvalid = "outputDir is not one confined project directory";
+            }
+          } catch (error) {
+            if (!isWorkspaceUnavailableError(error)) throw error;
+            outputDirUnavailable = `outputDir is unavailable: ${errorMessage(error)}`;
+          }
+          if (relative === "" || relative !== record.outputDirRelative || !isWorkflowPathWithinRoot(root, absolute)) {
+            outputDirInvalid = "outputDir is not one confined project directory";
+          } else if (outputDirInvalid === undefined) {
+            outputDir = absolute;
+            outputDirRelative = relative;
+            if (record.outputPhysicalIdentitySchemaVersion !== 1) {
+              outputPhysicalIdentityInvalid = "unsupported output physical identity schema version";
+            } else if (
+              typeof record.outputPhysicalIdentity !== "string" ||
+              (physicalRelative !== undefined && record.outputPhysicalIdentity !== physicalRelative)
+            ) {
+              outputPhysicalIdentityInvalid = "output physical identity is missing or changed";
+            } else {
+              outputPhysicalIdentity = record.outputPhysicalIdentity;
+              outputPhysicalIdentitySchemaVersion = 1;
+            }
+          }
+        } catch (error) {
+          outputDirInvalid = `outputDir identity is unavailable: ${errorMessage(error)}`;
+        }
+      }
+      if (record.outputSource === "declared" || record.outputSource === "default") outputSource = record.outputSource;
+      else outputSourceInvalid = 'outputSource must be "declared" or "default"';
+    }
     const hasSemanticPresent = Object.prototype.hasOwnProperty.call(record, "semanticInputPresent");
     const hasSemanticHash = Object.prototype.hasOwnProperty.call(record, "semanticInputSha256");
     let semanticInputPresent: boolean | undefined;
@@ -607,6 +685,17 @@ export function readWorkflowRunResult(
       ...(!exposeBindingMetadata || semanticInputPresent === undefined ? {} : { semanticInputPresent }),
       ...(!exposeBindingMetadata || semanticInputSha256 === undefined ? {} : { semanticInputSha256 }),
       ...(semanticInputInvalid === undefined ? {} : { semanticInputInvalid }),
+      ...(!exposeBindingMetadata || outputDir === undefined ? {} : { outputDir }),
+      ...(!exposeBindingMetadata || outputDirRelative === undefined ? {} : { outputDirRelative }),
+      ...(outputDirInvalid === undefined ? {} : { outputDirInvalid }),
+      ...(outputDirUnavailable === undefined ? {} : { outputDirUnavailable }),
+      ...(!exposeBindingMetadata || outputPhysicalIdentity === undefined ? {} : { outputPhysicalIdentity }),
+      ...(outputPhysicalIdentityInvalid === undefined ? {} : { outputPhysicalIdentityInvalid }),
+      ...(!exposeBindingMetadata || outputPhysicalIdentitySchemaVersion === undefined
+        ? {}
+        : { outputPhysicalIdentitySchemaVersion }),
+      ...(!exposeBindingMetadata || outputSource === undefined ? {} : { outputSource }),
+      ...(outputSourceInvalid === undefined ? {} : { outputSourceInvalid }),
       ...(Object.prototype.hasOwnProperty.call(record, "disposition") ? { disposition: record.disposition } : {}),
       ...(Object.prototype.hasOwnProperty.call(record, "result") ? { result: record.result } : {}),
       ...(typeof record.error === "string" ? { error: record.error } : {}),

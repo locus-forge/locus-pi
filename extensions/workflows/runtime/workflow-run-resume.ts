@@ -91,11 +91,56 @@ export interface WorkflowResumeWorkspaceIdentity {
   explicit: boolean;
 }
 
+export interface WorkflowResumeOutputIdentity {
+  relativePath: string;
+  absolutePath: string;
+  physicalPath: string;
+  physicalIdentity: string;
+  source: "declared" | "default";
+}
+
 export interface WorkflowResumeSourceBinding {
   result: WorkflowRunResultEnvelope;
   owner: boolean;
   workspace: WorkflowResumeWorkspaceIdentity;
+  output: WorkflowResumeOutputIdentity;
   launchBinding?: WorkflowLaunchBinding;
+}
+
+export function readWorkflowResumeOutputIdentityFromResult(
+  projectRoot: string,
+  sourceResult: WorkflowRunResultEnvelope | null,
+  runId: string,
+): WorkflowResumeOutputIdentity {
+  if (
+    typeof sourceResult?.outputDir !== "string" ||
+    typeof sourceResult.outputDirRelative !== "string" ||
+    typeof sourceResult.outputPhysicalIdentity !== "string" ||
+    sourceResult.outputPhysicalIdentitySchemaVersion !== 1 ||
+    (sourceResult.outputSource !== "declared" && sourceResult.outputSource !== "default")
+  ) {
+    throw new Error(`Cannot resume workflow: source run ${runId} has no dual workspace/output binding.`);
+  }
+  const root = path.resolve(projectRoot);
+  const absolutePath = path.resolve(sourceResult.outputDir);
+  const physicalRoot = realpathSync(root);
+  const physicalPath = realpathSync(absolutePath);
+  const physicalIdentity = path.relative(physicalRoot, physicalPath).split(path.sep).join("/");
+  if (
+    !isWorkflowPathWithinRoot(root, absolutePath) ||
+    !isWorkflowPathWithinRoot(physicalRoot, physicalPath) ||
+    path.relative(root, absolutePath).split(path.sep).join("/") !== sourceResult.outputDirRelative ||
+    physicalIdentity !== sourceResult.outputPhysicalIdentity
+  ) {
+    throw new Error(`Cannot resume workflow: source run ${runId} output identity changed.`);
+  }
+  return {
+    relativePath: sourceResult.outputDirRelative,
+    absolutePath,
+    physicalPath,
+    physicalIdentity,
+    source: sourceResult.outputSource,
+  };
 }
 
 export interface WorkflowHandoffWorkspaceReuseBinding extends WorkflowWorkspaceReuseBinding {

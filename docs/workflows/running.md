@@ -81,7 +81,7 @@ Resume reuses answers, not file changes or a fresh reading of the project. Use a
 fresh run when you want new observations. After repairing a workflow, check the
 replay markers to see what was actually reused. Parallel calls can change order
 and cause an attempt to execute fresh even when the source is unchanged. If the original run selected a
-workspace with `--run-name` or `--output-dir`, repeat that same selector and value.
+workspace with `--run-name` or `--workspace-dir`, repeat that same selector and value.
 See [replay details](replay.md) and [operator handoffs](recovery-and-continuation.md#human-continuation).
 
 ## How to run
@@ -104,7 +104,7 @@ emergency compatibility alias; every other operation uses `/workflows`.
 /workflows status [runId]         interactive persisted viewer and stage evidence
 /workflows result [runId|last]    whole text the run finished with, scrollable and untruncated
 /workflows run live-smoke         start one background workflow (returns editor)
-/workflows run live-smoke --output-dir tmp/reviews/review-1 <input>  select a fresh project-relative workspace
+/workflows run live-smoke --workspace-dir tmp/reviews/review-1 <input>  select a fresh project-relative workspace
 /workflows run live-smoke -- --resume literal request  pass option-looking input unchanged
 /workflows continue <runId>       answer and continue an actionable handoff
 /workflows stop [runId|last]      request cancellation; terminal state follows settlement
@@ -115,14 +115,19 @@ emergency compatibility alias; every other operation uses `/workflows`.
 
 Every fresh workflow launch receives a unique
 `.locus-pi/workspaces/<generated-run-name>` workspace. This includes
-`post-code-review`, so its normal start command needs no manual `outputDir`.
+`post-code-review`, so its normal start command needs no manual `workspaceDir`.
 Callers may still select another confined project-relative workspace with
-`--output-dir`. A fresh `post-code-review` launch cannot reuse a workspace that
+`--workspace-dir`. A fresh `post-code-review` launch cannot reuse a workspace that
 already has durable review state. Resume binds to the original run's exact
 workspace. Any workflow may select a stable `.locus-pi/workspaces/<name>` workspace
 with `--run-name <name>`. An existing legacy-only `.locus-pi/plans/<name>` is
 reused at its original physical identity; if both roots exist, launch fails
 before child execution.
+
+The launch selector never chooses final output. A root workflow may declare one
+literal project-relative `meta.outputDir`, for example `.local/airflow-dag-catalog`.
+Without it, final files go to `<workspaceDir>/outputs`. Saved children inherit
+both locations and cannot override either one.
 
 Each accepted `post-code-review` workspace also owns one optional operator file,
 `style.md`. Before launch, the operator may place comment and project-style
@@ -133,10 +138,10 @@ operator criteria. A symlink or non-regular leaf fails before review work; the
 style agent treats the file as scoped guidance and cannot use it to expand the
 review boundary or weaken the read-only filesystem contract.
 
-`--output-dir` and `--resume` may appear in either order before semantic input.
+`--workspace-dir` and `--resume` may appear in either order before semantic input.
 If either option is repeated, the last supplied value wins. Use the conventional
 `--` end-of-options delimiter when semantic input begins with `--resume`,
-`--output-dir`, `--`, or another option-looking token; the entire remainder
+`--workspace-dir`, `--`, or another option-looking token; the entire remainder
 after the delimiter is forwarded byte-for-byte as semantic input. The delimiter
 works the same way for `/workflows run`.
 
@@ -209,7 +214,7 @@ the host: an embedder calling `runWorkflowScript` directly opts in itself.
 The installed `locus-pi-workflow-run` skill chooses the execution surface by
 capability. When the structured `workflow` tool is available, the agent calls it
 directly with `name` or `scriptPath` plus optional `input`, `items`,
-`outputDir`, `resumeFromRunId`, or an approved `continuation`. It does not spawn
+`workspaceDir`, `resumeFromRunId`, or an approved `continuation`. It does not spawn
 Pi or translate the request into shell text.
 
 `items` and `continuation` are native-tool-only fields. When either is required
@@ -223,16 +228,16 @@ Use the following JSON print route only when non-interactive execution is explic
 
 ```bash
 pi --mode json -p --no-session --approve \
-  '/workflows run <name|path> [--run-name <name> | --output-dir <path>] [--resume <runId>] [--no-operator|--operator] [--] [input]'
+  '/workflows run <name|path> [--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--no-operator|--operator] [--] [input]'
 ```
 
 The complete slash command is one process argument. A caller should use an argv
 array and must not interpolate the target, an option value, or semantic input as
-shell syntax. Apply one token rule to the target and every `--output-dir` or
+shell syntax. Apply one token rule to the target and every `--workspace-dir` or
 `--resume` value: a simple token remains unchanged; a value containing
 whitespace, quotes, backslashes, or controls uses the command parser's JSON
 string-token form. Reject a command-token value beginning with `-`; quoting does
-not make a reserved Pi option token valid. The output directory remains a safe
+not make a reserved Pi option token valid. The workspace directory remains a safe
 project-relative path and the resume value remains a real saved run id. Semantic
 input remains unchanged after `--`.
 
@@ -285,7 +290,7 @@ arrays, `null`, and unknown top-level fields before Pi's schema conversion can
 coerce them; direct `execute` and runner/runtime callers are revalidated as well.
 An absent list becomes an empty frozen list; a workflow that requires units owns
 a named pre-pipeline guard. The human `/workflows run` grammar exposes the same
-workspace choice through `--output-dir <safe-project-relative-path>` before the
+workspace choice through `--workspace-dir <safe-project-relative-path>` before the
 optional semantic input.
 Cross-run state is a
 separate closed `continuation` control with one origin and one or more complete

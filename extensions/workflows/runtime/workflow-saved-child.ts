@@ -39,6 +39,7 @@ import {
 import { sha256WorkflowBytes, type WorkflowScriptIdentity } from "./workflow-script-identity.js";
 import {
   revalidateWorkflowPrimaryFile,
+  type WorkflowFinalOutputDirectory,
   type WorkflowOutputDirectory,
   type WorkflowPrimaryFileReference,
 } from "./workflow-workspace.js";
@@ -49,6 +50,7 @@ import {
   commitWorkflowCompletedCheckpoint,
   readWorkflowCompletedCheckpoint,
   type WorkflowCheckpointIdentity,
+  type WorkflowOutputLease,
   type WorkflowRootLease,
 } from "./workflow-workspace-state.js";
 
@@ -82,7 +84,9 @@ export interface WorkflowRunnerCoordination {
   parentItemKey?: string;
   sharedExecution: WorkflowSharedExecutionState;
   lease: WorkflowRootLease;
-  output: WorkflowOutputDirectory;
+  outputLease: WorkflowOutputLease;
+  workspace: WorkflowOutputDirectory;
+  output: WorkflowFinalOutputDirectory;
   ancestry: readonly { sourcePath: string; scriptSha256: string }[];
   budget: WorkflowBudget;
   /** Run-level no-operator mode. Lives on coordination so a saved child can
@@ -119,7 +123,6 @@ export interface SavedChildLaunchRequest {
   targetBinding?: ResolvedWorkflowTarget;
   input?: string;
   items: readonly string[];
-  outputDir: string;
   onRunStart: (run: { runId: string; runDir: string }) => void;
   /** Inherited root coordination for the child. The runner attaches it under
    *  its own private symbol; this module never names that symbol. */
@@ -153,6 +156,7 @@ function savedChildResult(evidence: WorkflowChildRunEvidence): WorkflowSavedChil
   return {
     status: evidence.status,
     key: evidence.key,
+    workspaceDir: evidence.workspaceDir,
     outputDir: evidence.outputDir,
     ...(evidence.runId === undefined ? {} : { runId: evidence.runId }),
     ...(evidence.sourceRunId === undefined ? {} : { sourceRunId: evidence.sourceRunId }),
@@ -163,6 +167,7 @@ function savedChildResult(evidence: WorkflowChildRunEvidence): WorkflowSavedChil
 /** One parent-owned source of truth for saved-child evidence and navigation lines. */
 function createSavedChildLifecycleOwner(input: {
   key: string;
+  workspaceDir: string;
   outputDir: string;
   childScriptSha256: string;
   childRuns: WorkflowChildRunEvidence[];
@@ -176,6 +181,7 @@ function createSavedChildLifecycleOwner(input: {
       const evidence: WorkflowChildRunEvidence = {
         status: "skipped",
         key: input.key,
+        workspaceDir: input.workspaceDir,
         outputDir: input.outputDir,
         sourceRunId: checkpoint.childRunId,
         childScriptSha256: input.childScriptSha256,
@@ -193,6 +199,7 @@ function createSavedChildLifecycleOwner(input: {
       const evidence: WorkflowChildRunEvidence = {
         status: "running",
         key: input.key,
+        workspaceDir: input.workspaceDir,
         outputDir: input.outputDir,
         runId: run.runId,
         runDir: run.runDir,
@@ -211,6 +218,7 @@ function createSavedChildLifecycleOwner(input: {
       const evidence: WorkflowChildRunEvidence = {
         status,
         key: input.key,
+        workspaceDir: input.workspaceDir,
         outputDir: input.outputDir,
         runId: child.runId,
         runDir: child.runDir,
@@ -268,12 +276,14 @@ export class SavedChildExecutionOwner {
     const checkpointIdentity = {
       parentScriptSha256: this.options.parentScriptSha256,
       childScriptSha256: source.scriptSha256,
-      outputDir: this.options.coordination.output.identity,
+      workspaceIdentity: this.options.coordination.workspace.identity,
+      outputIdentity: this.options.coordination.output.identity,
       itemKey: validated.key,
     };
     const lifecycle = createSavedChildLifecycleOwner({
       key: validated.key,
-      outputDir: this.options.coordination.output.relativePath,
+      workspaceDir: this.options.coordination.workspace.absolutePath,
+      outputDir: this.options.coordination.output.absolutePath,
       childScriptSha256: source.scriptSha256,
       childRuns: this.options.childRuns,
       record: this.options.record,
@@ -385,6 +395,8 @@ export class SavedChildExecutionOwner {
       parentItemKey: validated.key,
       sharedExecution: this.options.coordination.sharedExecution,
       lease: this.options.coordination.lease,
+      outputLease: this.options.coordination.outputLease,
+      workspace: this.options.coordination.workspace,
       output: this.options.coordination.output,
       ancestry: [...this.options.coordination.ancestry, { sourcePath: source.path, scriptSha256: source.scriptSha256 }],
       budget: this.options.coordination.budget,
@@ -402,7 +414,6 @@ export class SavedChildExecutionOwner {
         ...(input.packageName === undefined ? { targetBinding: source.target } : {}),
         ...(input.input === undefined ? {} : { input: input.input }),
         items: validated.items,
-        outputDir: this.options.coordination.output.relativePath,
         onRunStart: lifecycle.recordStarted,
         coordination: childCoordination,
       });
@@ -438,17 +449,7 @@ export class SavedChildExecutionOwner {
     if (typeof input !== "object" || input === null || Array.isArray(input)) {
       throw new Error("invokeWorkflow requires one closed invocation object");
     }
-    const allowed = new Set([
-      "child",
-      "name",
-      "scriptPath",
-      "packageName",
-      "input",
-      "items",
-      "key",
-      "keys",
-      "outputDir",
-    ]);
+    const allowed = new Set(["child", "name", "scriptPath", "packageName", "input", "items", "key", "keys"]);
     const unknown = Object.keys(input).find((key) => !allowed.has(key));
     if (unknown !== undefined) throw new Error(`invokeWorkflow has no field ${JSON.stringify(unknown)}`);
     const targetCount = [input.child, input.name, input.scriptPath, input.packageName].filter(
@@ -469,11 +470,6 @@ export class SavedChildExecutionOwner {
     if (!keys.includes(key)) throw new Error(`invokeWorkflow key is not present in keys: ${JSON.stringify(key)}`);
     if (this.invokedKeys.has(key)) {
       throw new Error(`invokeWorkflow key was already used in this parent run: ${JSON.stringify(key)}`);
-    }
-    if (input.outputDir !== this.options.coordination.output.relativePath) {
-      throw new Error(
-        `invokeWorkflow outputDir must equal ${JSON.stringify(this.options.coordination.output.relativePath)}`,
-      );
     }
     this.invokedKeys.add(key);
     return { key, items };

@@ -16,10 +16,10 @@ description: "Consolidate workflow contracts at their owning pages and repair ou
 ## Resume and replay
 
 `/workflows run <name> --resume <runId>` reruns the workflow against a recorded
-run. The source result must persist its workspace identity; resume rejects a
-missing or unsafe identity and requires the current resolved workspace to match
-both the recorded project-relative path and its canonical physical target. When
-the source run used an explicit workspace, repeat its exact `--output-dir <path>`;
+run. The source result must persist distinct workspace and output identities;
+resume rejects missing or unsafe identities and requires both current locations
+to match their recorded paths, canonical physical targets, and output provenance. When
+the source run used an explicit workspace, repeat its exact `--workspace-dir <path>`;
 omitting it or naming another workspace fails before child execution. A fresh
 semantic target must use a different path. Every
 `agent()` call whose **position** and **exact request** match the

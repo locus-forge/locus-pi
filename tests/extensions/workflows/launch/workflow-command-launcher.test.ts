@@ -111,7 +111,7 @@ describe("workflow command launcher", () => {
         ctx: harness.ctx,
         scriptRef: "continued",
         input: "answer",
-        outputDir: "tmp/reviews/review-1",
+        workspaceDir: "tmp/reviews/review-1",
         continuation: { originRunId: "source-run", artifactRefs: [] },
       }),
     ).toEqual({ status: "started" });
@@ -132,7 +132,7 @@ describe("workflow command launcher", () => {
     expect(runScript.mock.calls[1]?.[0]).toMatchObject({
       name: "continued",
       input: "answer",
-      outputDir: "tmp/reviews/review-1",
+      workspaceDir: "tmp/reviews/review-1",
       continuation: { originRunId: "source-run", artifactRefs: [] },
     });
     expect(runScript.mock.calls[2]?.[0]).toMatchObject({ scriptPath: scriptPathRef });

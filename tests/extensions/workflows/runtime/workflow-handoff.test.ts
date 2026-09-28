@@ -696,7 +696,7 @@ describe("workflow operator handoff", () => {
       signal: new AbortController().signal,
       name: "post-code-review",
       input: "review alpha",
-      outputDir: "tmp/post-code-review/continuation",
+      workspaceDir: "tmp/post-code-review/continuation",
     });
     expect(source.disposition).toEqual({
       status: "awaiting_operator",

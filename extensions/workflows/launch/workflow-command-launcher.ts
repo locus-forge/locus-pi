@@ -30,6 +30,8 @@ export interface WorkflowCommandLaunchRequest {
   /** Preserves name/path intent when preflight failed and the runner must persist the canonical failure. */
   targetKind?: ResolvedWorkflowTarget["kind"];
   input?: string;
+  workspaceDir?: string;
+  /** @deprecated Rejected legacy launch field. */
   outputDir?: string;
   runName?: string;
   budget?: RunWorkflowScriptOptions["budget"];
@@ -147,6 +149,7 @@ export function createWorkflowCommandLauncher(options: WorkflowCommandLauncherOp
           signal: background.signal,
           ...scriptInput,
           ...(request.input === undefined ? {} : { input: request.input }),
+          ...(request.workspaceDir === undefined ? {} : { workspaceDir: request.workspaceDir }),
           ...(request.outputDir === undefined ? {} : { outputDir: request.outputDir }),
           ...(request.runName === undefined ? {} : { runName: request.runName }),
           ...(request.budget === undefined ? {} : { budget: request.budget }),

@@ -66,6 +66,40 @@ export function readWorkflowMetaDescription(file: string): string {
 }
 
 /**
+ * Read the root workflow's optional final-output declaration without importing
+ * or evaluating trusted workflow code. Unlike the tolerant catalog projection,
+ * this is an admission contract: malformed or duplicate declarations fail.
+ */
+export function readWorkflowDeclaredOutputDir(file: string): string | undefined {
+  const source = readBoundedSource(file);
+  let root: SgNode;
+  try {
+    root = parse(Lang.JavaScript, source).root();
+  } catch (error) {
+    throw new Error(
+      `Workflow meta.outputDir could not be parsed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const values: Array<SgNode | null> = [];
+  for (const statement of root.findAll("export const meta = $META")) {
+    const meta = exportedMetaObject(statement);
+    if (meta === undefined) continue;
+    for (const pair of meta.children()) {
+      if (pair.kind() === "pair" && staticObjectKey(pair.field("key")) === "outputDir") {
+        values.push(pair.field("value"));
+      }
+    }
+  }
+  if (values.length === 0) return undefined;
+  if (values.length !== 1) throw new Error("Workflow meta.outputDir must be declared exactly once");
+  const value = staticStringValue(values[0]);
+  if (value === undefined || value.trim() === "" || value !== value.trim()) {
+    throw new Error("Workflow meta.outputDir must be one non-empty trimmed string literal");
+  }
+  return value;
+}
+
+/**
  * Parse one bounded source prefix and project every accepted literal `meta`
  * field. Both fields come from the same parse; a source with no literal `meta`
  * yields an undefined description and no phases.

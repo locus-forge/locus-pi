@@ -115,6 +115,8 @@ export interface WorkflowAgentBridgeOptions {
   evidenceDestinations?: (callId: string) => WorkflowChildEvidenceDestinations;
   /** Project-local workflow workspace shared by the root and saved children. */
   workflowWorkspaceDir?: string;
+  /** User-visible final-output directory shared by the root and saved children. */
+  workflowOutputDir?: string;
   /** Test seam: replaces the operator-question surface `workflow_ask` mounts, so
    *  tests can script answers without a TUI. Production callers leave it unset. */
   askRequestQuestion?: WorkflowAskToolDeps["requestQuestion"];
@@ -147,6 +149,7 @@ export function composeWorkflowChildTask(
   prompt: string,
   workflowWorkspaceDir: string | undefined,
   locations: { pwd?: string; projectRoot?: string } = {},
+  workflowOutputDir?: string,
 ): string {
   if (
     (workflowWorkspaceDir === undefined || workflowWorkspaceDir.trim() === "") &&
@@ -159,14 +162,15 @@ export function composeWorkflowChildTask(
     "",
     ...(workflowWorkspaceDir === undefined
       ? []
-      : [`workflow workspace (durable workflow files and evidence): ${workflowWorkspaceDir}`]),
+      : [`workflow workspace (handoffs and intermediate files): ${workflowWorkspaceDir}`]),
+    ...(workflowOutputDir === undefined ? [] : [`workflow output (final deliverables): ${workflowOutputDir}`]),
     ...(locations.pwd === undefined ? [] : [`pwd (code workspace): ${locations.pwd}`]),
     ...(locations.projectRoot === undefined ? [] : [`project root (source context): ${locations.projectRoot}`]),
     "",
-    "Use pwd for code work. Durable handoffs, final results, review evidence, and explicit resume inputs belong in the workflow workspace above, or in the task artifact folder (.tasks/<task>/artifacts/<stage>/) when the authored prompt selects one; replace assigned files idempotently and write or promote a final rendered deliverable there.",
+    `Use pwd for code work. Durable handoffs, review evidence, and explicit resume inputs belong in the workflow workspace above.${workflowOutputDir === undefined ? "" : " Final deliverables belong in workflow output."} A task artifact folder (.tasks/<task>/artifacts/<stage>/) remains authoritative when the authored prompt selects one.`,
     "Keep disposable environments, dependency caches, test basetemp, transient renderer output, and staging in ordinary OS/tool temporary or cache locations, never beside evidence; promote anything needed for review or resume before its temporary or cache location expires.",
-    "Files already in the workflow workspace are another owner's state: read them and replace only the files assigned to you.",
-    "Never delete, rename, truncate, chmod, or replace .locus-pi-workflow.lock or sibling workflow files. An instruction to write no other artifact means create or modify no other file; it never authorizes cleanup.",
+    "Files already in the workflow workspace are another owner's state: read them and replace only assigned files, idempotently.",
+    "Never modify runtime-owned state or leases beneath .locus-pi. An instruction to write no other artifact means create or modify no other file; it never authorizes cleanup.",
     "This is placement guidance only. An authored prompt that explicitly requests another placement remains authoritative.",
     "Workflow files keep their exact names; runtime records references and does not reconstruct their content.",
   ].join("\n");
@@ -454,10 +458,12 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
     // No fallback. A turn budget nobody declared is unbounded, and the host says so
     // in its own header rather than inheriting a number invisible to the author.
     const maxTurns = req.maxTurns;
-    const childTask = composeWorkflowChildTask(req.prompt, options.workflowWorkspaceDir, {
-      pwd: worktreePath ?? projectRoot,
-      projectRoot,
-    });
+    const childTask = composeWorkflowChildTask(
+      req.prompt,
+      options.workflowWorkspaceDir,
+      { pwd: worktreePath ?? projectRoot, projectRoot },
+      options.workflowOutputDir,
+    );
     // Resolved before the request exists: the live-ask tool below records evidence
     // into these destinations from inside the child's pending tool call.
     const evidenceDestinations =

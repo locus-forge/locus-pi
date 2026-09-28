@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "../../_shared/host/pi-api.js";
 import { getProjectRoot, getWorkingDirectory } from "../../_shared/host/pi-api.js";
 import { setOperatorWidget } from "../../_shared/operator/widget-render.js";
-import { parseRunCommand, workflowRunRecoveryUsage } from "./command-parser.js";
+import { parseRunCommand, workflowRunRecoveryUsage, workflowRunUsage } from "./command-parser.js";
 import {
   preflightWorkflowCommandTarget,
   isOneShotCommandMode,
@@ -24,6 +24,13 @@ export async function handleWorkflowRunCommand(
     return true;
   };
 
+  if (parsed.obsoleteOutputDir === true) {
+    const message =
+      "--output-dir was removed; use --workspace-dir for runtime state and declare meta.outputDir in the root workflow for final files.";
+    setOperatorWidget(ctx, "workflows", workflowWarningBlock(message, workflowRunUsage(parsed.scriptRef)));
+    return reject("launch_policy_refused", `Workflow not started: ${message}`);
+  }
+
   if (parsed.missingResumeId === true) {
     setOperatorWidget(
       ctx,
@@ -32,16 +39,19 @@ export async function handleWorkflowRunCommand(
     );
     return reject("missing_resume_id", "Workflow not started: missing run id after --resume.");
   }
-  if (parsed.missingOutputDir === true) {
+  if (parsed.missingWorkspaceDir === true) {
     setOperatorWidget(
       ctx,
       "workflows",
       workflowWarningBlock(
-        "Missing project-relative path after --output-dir.",
+        "Missing project-relative path after --workspace-dir.",
         `Retry: ${workflowRunRecoveryUsage(parsed)}`,
       ),
     );
-    return reject("missing_output_dir", "Workflow not started: missing project-relative path after --output-dir.");
+    return reject(
+      "missing_workspace_dir",
+      "Workflow not started: missing project-relative path after --workspace-dir.",
+    );
   }
   if (parsed.missingRunName === true) {
     setOperatorWidget(
@@ -51,8 +61,8 @@ export async function handleWorkflowRunCommand(
     );
     return reject("missing_run_name", "Workflow not started: missing folder name after --run-name.");
   }
-  if (parsed.outputDir !== undefined && parsed.runName !== undefined) {
-    const message = "--run-name and --output-dir are mutually exclusive.";
+  if (parsed.workspaceDir !== undefined && parsed.runName !== undefined) {
+    const message = "--run-name and --workspace-dir are mutually exclusive.";
     setOperatorWidget(ctx, "workflows", workflowWarningBlock(message, workflowRunRecoveryUsage(parsed)));
     return reject("launch_policy_refused", `Workflow not started: ${message}`);
   }
@@ -90,7 +100,7 @@ export async function handleWorkflowRunCommand(
     ...(targetPreflight.status === "runner-durable-failure" ? { targetKind: targetPreflight.targetKind } : {}),
     ...(target === undefined ? {} : { target }),
     ...(parsed.input === undefined ? {} : { input: parsed.input }),
-    ...(parsed.outputDir === undefined ? {} : { outputDir: parsed.outputDir }),
+    ...(parsed.workspaceDir === undefined ? {} : { workspaceDir: parsed.workspaceDir }),
     ...(parsed.runName === undefined ? {} : { runName: parsed.runName }),
     ...(parsed.resumeFromRunId === undefined ? {} : { resumeFromRunId: parsed.resumeFromRunId }),
     // Headless launches default to the no-operator mode: a `print`/`json`

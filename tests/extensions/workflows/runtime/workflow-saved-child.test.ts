@@ -53,7 +53,6 @@ export default (dsl) => dsl.invokeWorkflow({
   key: "package-smoke",
   keys: ["package-smoke"],
   input: "package child proof",
-  outputDir: dsl.outputDir(),
 });
 `;
 
@@ -66,7 +65,7 @@ export default (dsl) => dsl.invokeWorkflow({
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "package-parent",
-      outputDir: "outputs/package-child",
+      workspaceDir: "outputs/package-child",
       createExecutor: executor((prompt) => {
         calls.push(prompt);
         return "package child completed";
@@ -93,7 +92,7 @@ export default (dsl) => dsl.invokeWorkflow({
       ctx: shadowHarness.ctx,
       signal: new AbortController().signal,
       name: "package-parent",
-      outputDir: "outputs/package-shadow",
+      workspaceDir: "outputs/package-shadow",
       createExecutor: executor((prompt) => {
         shadowCalls.push(prompt);
         return "must not run";
@@ -114,7 +113,6 @@ export default (dsl) => dsl.invokeWorkflow({
   key: "worker",
   keys: ["worker"],
   input: "owned child",
-  outputDir: dsl.outputDir(),
 });
 `,
       worker: `export const meta = { name: "composed/worker", profile: "standard" };
@@ -128,7 +126,7 @@ export default (dsl, input) => dsl.agent(input);
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "composed",
-      outputDir: "outputs/composed",
+      workspaceDir: "outputs/composed",
       createExecutor: executor((prompt) => {
         calls.push(prompt);
         return "done";
@@ -187,7 +185,7 @@ export default (dsl, input) => dsl.agent(input);
       calls.push(prompt);
       const payload = prompt.slice("write:".length);
       const key = payload.slice(payload.lastIndexOf(":") + 1);
-      writeFileSync(path.join(root, "outputs", "resume", `${key}.md`), `${payload}\n`, "utf8");
+      writeFileSync(path.join(root, "outputs", "resume", "outputs", `${key}.md`), `${payload}\n`, "utf8");
       return "written";
     });
 
@@ -198,7 +196,7 @@ export default (dsl, input) => dsl.agent(input);
       name: "parent",
       input: "payload-one",
       items: ["alpha", "beta"],
-      outputDir: "outputs/resume",
+      workspaceDir: "outputs/resume",
       createExecutor,
     });
 
@@ -237,7 +235,7 @@ export default (dsl, input) => dsl.agent(input);
       name: "parent",
       input: "payload-two",
       items: ["alpha", "beta"],
-      outputDir: "outputs/resume",
+      workspaceDir: "outputs/resume",
       createExecutor,
     });
 
@@ -255,7 +253,9 @@ export default (dsl, input) => dsl.agent(input);
     expect(resumed.journal.some((line) => line.message?.includes(`sourceRunId=${first.childRuns?.[0]?.runId}`))).toBe(
       true,
     );
-    expect(readFileSync(path.join(root, "outputs", "resume", "alpha.md"), "utf8")).toBe("payload-one:alpha\n");
+    expect(readFileSync(path.join(root, "outputs", "resume", "outputs", "alpha.md"), "utf8")).toBe(
+      "payload-one:alpha\n",
+    );
     expect(resumed.journal.some((event) => event.message?.includes("[workflow:project-source] policy=live"))).toBe(
       true,
     );
@@ -268,12 +268,12 @@ export default (dsl, input) => dsl.agent(input);
       name: "parent",
       input: "payload-two",
       items: ["alpha", "beta"],
-      outputDir: "outputs/fresh",
+      workspaceDir: "outputs/fresh",
       createExecutor: executor((prompt) => {
         freshCalls.push(prompt);
         const payload = prompt.slice("write:".length);
         const key = payload.slice(payload.lastIndexOf(":") + 1);
-        writeFileSync(path.join(root, "outputs", "fresh", `${key}.md`), `${payload}\n`, "utf8");
+        writeFileSync(path.join(root, "outputs", "fresh", "outputs", `${key}.md`), `${payload}\n`, "utf8");
         return "written";
       }),
     });
@@ -284,7 +284,9 @@ export default (dsl, input) => dsl.agent(input);
       expect.objectContaining({ status: "completed", key: "alpha" }),
       expect.objectContaining({ status: "completed", key: "beta" }),
     ]);
-    expect(readFileSync(path.join(root, "outputs", "fresh", "alpha.md"), "utf8")).toBe("payload-two:alpha\n");
+    expect(readFileSync(path.join(root, "outputs", "fresh", "outputs", "alpha.md"), "utf8")).toBe(
+      "payload-two:alpha\n",
+    );
   });
 
   it("retries only an incomplete key and invalidates checkpoints when child source changes", async () => {
@@ -298,7 +300,7 @@ export default (dsl, input) => dsl.agent(input);
       calls.push(prompt);
       const key = prompt.slice(prompt.lastIndexOf(":") + 1);
       if (key === "beta" && failBeta) throw new Error("interrupted beta");
-      writeFileSync(path.join(root, "outputs", "retry", `${key}.md`), `${prompt}\n`, "utf8");
+      writeFileSync(path.join(root, "outputs", "retry", "outputs", `${key}.md`), `${prompt}\n`, "utf8");
       return "written";
     });
     const run = (resumeFromRunId?: string) =>
@@ -309,7 +311,7 @@ export default (dsl, input) => dsl.agent(input);
         name: "parent",
         input: "payload",
         items: ["alpha", "beta"],
-        outputDir: "outputs/retry",
+        workspaceDir: "outputs/retry",
         ...(resumeFromRunId === undefined ? {} : { resumeFromRunId }),
         createExecutor,
       });
@@ -353,7 +355,7 @@ export default (dsl, input) => dsl.agent(input);
     writeWorkflow(root, "child", CHILD);
     writeWorkflow(root, "parent", PARENT);
     const harness = createHarness(root);
-    const stableFile = path.join(root, "outputs", "stale-primary", "alpha.md");
+    const stableFile = path.join(root, "outputs", "stale-primary", "outputs", "alpha.md");
     let calls = 0;
     const run = () =>
       runWorkflowScript({
@@ -363,7 +365,7 @@ export default (dsl, input) => dsl.agent(input);
         name: "parent",
         input: "payload",
         items: ["alpha"],
-        outputDir: "outputs/stale-primary",
+        workspaceDir: "outputs/stale-primary",
         createExecutor: executor(() => {
           calls += 1;
           writeFileSync(stableFile, `version ${calls}\n`, "utf8");
@@ -392,7 +394,7 @@ export default (dsl, input) => dsl.agent(input);
     writeWorkflow(root, "child", CHILD);
     writeWorkflow(root, "parent", PARENT);
     const harness = createHarness(root);
-    const stableFile = path.join(root, "outputs", "corrupt-checkpoint", "alpha.md");
+    const stableFile = path.join(root, "outputs", "corrupt-checkpoint", "outputs", "alpha.md");
     let calls = 0;
     const run = () =>
       runWorkflowScript({
@@ -402,7 +404,7 @@ export default (dsl, input) => dsl.agent(input);
         name: "parent",
         input: "payload",
         items: ["alpha"],
-        outputDir: "outputs/corrupt-checkpoint",
+        workspaceDir: "outputs/corrupt-checkpoint",
         createExecutor: executor(() => {
           calls += 1;
           writeFileSync(stableFile, `version ${calls}\n`, "utf8");
@@ -438,7 +440,7 @@ export default (dsl, input) => dsl.agent(input);
     writeWorkflow(root, "child", CHILD);
     writeWorkflow(root, "parent", PARENT);
     const harness = createHarness(root);
-    const stableFile = path.join(root, "outputs", "invalid-child-run-id", "alpha.md");
+    const stableFile = path.join(root, "outputs", "invalid-child-run-id", "outputs", "alpha.md");
     let calls = 0;
     const run = () =>
       runWorkflowScript({
@@ -448,7 +450,7 @@ export default (dsl, input) => dsl.agent(input);
         name: "parent",
         input: "payload",
         items: ["alpha"],
-        outputDir: "outputs/invalid-child-run-id",
+        workspaceDir: "outputs/invalid-child-run-id",
         createExecutor: executor(() => {
           calls += 1;
           writeFileSync(stableFile, `version ${calls}\n`, "utf8");
@@ -480,7 +482,7 @@ export default (dsl, input) => dsl.agent(input);
     writeWorkflow(root, "child", CHILD);
     writeWorkflow(root, "parent", PARENT);
     const harness = createHarness(root);
-    const stableFile = path.join(root, "outputs", "checkpoint-io-error", "alpha.md");
+    const stableFile = path.join(root, "outputs", "checkpoint-io-error", "outputs", "alpha.md");
     let calls = 0;
     const run = () =>
       runWorkflowScript({
@@ -490,7 +492,7 @@ export default (dsl, input) => dsl.agent(input);
         name: "parent",
         input: "payload",
         items: ["alpha"],
-        outputDir: "outputs/checkpoint-io-error",
+        workspaceDir: "outputs/checkpoint-io-error",
         createExecutor: executor(() => {
           calls += 1;
           writeFileSync(stableFile, "complete\n", "utf8");
@@ -521,7 +523,7 @@ export default (dsl, input) => dsl.agent(input);
     writeWorkflow(root, "child", CHILD);
     writeWorkflow(root, "parent", PARENT);
     const harness = createHarness(root);
-    const stableFile = path.join(root, "outputs", "checkpoint-permission", "alpha.md");
+    const stableFile = path.join(root, "outputs", "checkpoint-permission", "outputs", "alpha.md");
     let calls = 0;
     const run = () =>
       runWorkflowScript({
@@ -531,7 +533,7 @@ export default (dsl, input) => dsl.agent(input);
         name: "parent",
         input: "payload",
         items: ["alpha"],
-        outputDir: "outputs/checkpoint-permission",
+        workspaceDir: "outputs/checkpoint-permission",
         createExecutor: executor(() => {
           calls += 1;
           writeFileSync(stableFile, "complete\n", "utf8");
@@ -573,7 +575,7 @@ export default (dsl, input) => dsl.agent(input);
       name: "parent",
       input: "payload",
       items,
-      outputDir: `outputs/${_label}`,
+      workspaceDir: `outputs/${_label}`,
       createExecutor: executor(() => {
         calls += 1;
         return "must not run";
@@ -599,12 +601,12 @@ export default (dsl, input) => dsl.agent(input);
       name: "parent",
       input: "payload",
       items: ["alpha", "beta"],
-      outputDir: "outputs/shared-budget",
+      workspaceDir: "outputs/shared-budget",
       budget: { totalAgents: 1 },
       createExecutor: executor((prompt) => {
         calls += 1;
         const key = prompt.slice(prompt.lastIndexOf(":") + 1);
-        writeFileSync(path.join(root, "outputs", "shared-budget", `${key}.md`), "done\n", "utf8");
+        writeFileSync(path.join(root, "outputs", "shared-budget", "outputs", `${key}.md`), "done\n", "utf8");
         return "written";
       }),
     });
@@ -624,7 +626,7 @@ export default (dsl, input) => dsl.agent(input);
       `export default async function run(dsl) {
   const items = dsl.items();
   return dsl.parallel(items.map((item) => () => dsl.invokeWorkflow({
-    name: "child", key: item, keys: items, input: item, items: [item], outputDir: dsl.outputDir(),
+    name: "child", key: item, keys: items, input: item, items: [item],
   })));
 }\n`,
     );
@@ -638,14 +640,14 @@ export default (dsl, input) => dsl.agent(input);
       signal: new AbortController().signal,
       name: "parallel-parent",
       items: ["alpha", "beta"],
-      outputDir: "outputs/shared-concurrency",
+      workspaceDir: "outputs/shared-concurrency",
       budget: { concurrency: 1 },
       createExecutor: executor(async (prompt) => {
         active += 1;
         peak = Math.max(peak, active);
         await new Promise<void>((resolve) => setTimeout(resolve, 10));
         const key = prompt.slice("write:".length);
-        writeFileSync(path.join(root, "outputs", "shared-concurrency", `${key}.md`), "done\n", "utf8");
+        writeFileSync(path.join(root, "outputs", "shared-concurrency", "outputs", `${key}.md`), "done\n", "utf8");
         active -= 1;
         return "written";
       }),
@@ -674,7 +676,7 @@ export default (dsl, input) => dsl.agent(input);
       name: "parent",
       input: "payload",
       items: ["alpha"],
-      outputDir: "outputs/cancelled",
+      workspaceDir: "outputs/cancelled",
       createExecutor: () => ({
         async run(request, signal) {
           childSignal = signal;
@@ -729,7 +731,7 @@ export default (dsl, input) => dsl.agent(input);
       name: "parent",
       input: "payload",
       items: ["alpha"],
-      outputDir: "outputs/source-race",
+      workspaceDir: "outputs/source-race",
       createExecutor: executor(() => {
         calls += 1;
         return "must not run";
@@ -764,18 +766,18 @@ export default (dsl, input) => dsl.agent(input);
     writeWorkflow(
       root,
       "self",
-      `export default (dsl) => dsl.invokeWorkflow({ name: "self", key: "one", keys: ["one"], items: [], outputDir: dsl.outputDir() });\n`,
+      `export default (dsl) => dsl.invokeWorkflow({ name: "self", key: "one", keys: ["one"], items: [] });\n`,
     );
     writeWorkflow(root, "grandchild", `export default async (dsl) => dsl.agent("must not run");\n`);
     writeWorkflow(
       root,
       "nested-child",
-      `export default (dsl) => dsl.invokeWorkflow({ name: "grandchild", key: "one", keys: ["one"], items: [], outputDir: dsl.outputDir() });\n`,
+      `export default (dsl) => dsl.invokeWorkflow({ name: "grandchild", key: "one", keys: ["one"], items: [] });\n`,
     );
     writeWorkflow(
       root,
       "nested-parent",
-      `export default (dsl) => dsl.invokeWorkflow({ name: "nested-child", key: "one", keys: ["one"], items: [], outputDir: dsl.outputDir() });\n`,
+      `export default (dsl) => dsl.invokeWorkflow({ name: "nested-child", key: "one", keys: ["one"], items: [] });\n`,
     );
     const harness = createHarness(root);
     let calls = 0;
@@ -789,7 +791,7 @@ export default (dsl, input) => dsl.agent(input);
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "self",
-      outputDir: "outputs/direct-cycle",
+      workspaceDir: "outputs/direct-cycle",
       createExecutor,
     });
     const nested = await runWorkflowScript({
@@ -797,7 +799,7 @@ export default (dsl, input) => dsl.agent(input);
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "nested-parent",
-      outputDir: "outputs/nested-cycle",
+      workspaceDir: "outputs/nested-cycle",
       createExecutor,
     });
 
@@ -805,6 +807,50 @@ export default (dsl, input) => dsl.agent(input);
     expect(direct.error).toContain("cycle detected");
     expect(nested.ok).toBe(false);
     expect(nested.error).toContain("may not invoke another");
+    expect(calls).toBe(0);
+  });
+
+  it.each(["workspaceDir", "outputDir"])("rejects an invokeWorkflow %s override", async (field) => {
+    const root = project();
+    writeWorkflow(root, "child", `export default () => "must not run";\n`);
+    writeWorkflow(
+      root,
+      "parent",
+      `export default (dsl) => dsl.invokeWorkflow({ name: "child", key: "one", keys: ["one"], ${field}: "override" });\n`,
+    );
+    const harness = createHarness(root);
+    const result = await runWorkflowScript({
+      pi: harness.pi,
+      ctx: harness.ctx,
+      signal: new AbortController().signal,
+      name: "parent",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain(`invokeWorkflow has no field ${JSON.stringify(field)}`);
+  });
+
+  it("rejects child meta.outputDir before child agent work", async () => {
+    const root = project();
+    writeWorkflowTree(root, "owned", {
+      owned: `export default (dsl) => dsl.invokeWorkflow({ child: "child", key: "one", keys: ["one"] });\n`,
+      child:
+        `export const meta = { name: "owned/child", outputDir: ".local/child" };\n` +
+        `export default (dsl) => dsl.agent("must not run");\n`,
+    });
+    const harness = createHarness(root);
+    let calls = 0;
+    const result = await runWorkflowScript({
+      pi: harness.pi,
+      ctx: harness.ctx,
+      signal: new AbortController().signal,
+      name: "owned",
+      createExecutor: executor(() => {
+        calls += 1;
+        return "must not run";
+      }),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("saved child workflow meta.outputDir is forbidden");
     expect(calls).toBe(0);
   });
 });

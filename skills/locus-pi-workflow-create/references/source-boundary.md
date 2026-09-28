@@ -71,11 +71,11 @@ the host supplies the actual workspace. Package task drafting and planning use t
 saved children and later manual stages share the selected named path. The host also supplies source context. Do not add permission/tool fields,
 another default writable root, a path parser, or an information-gathering script.
 
-The workflow workspace is the durable location for handoffs, final results,
-review evidence, and explicit resume inputs. Keep disposable environments,
+The workflow workspace is the durable location for handoffs, review evidence,
+and explicit resume inputs. Final results and deliverables belong in `dsl.outputDir()`. Keep disposable environments,
 dependency caches, test basetemp, transient renderer output, and staging in the
 ordinary OS or tool temporary and cache locations. When renderer output is the
-final deliverable, write or promote it into the workflow workspace. Promote any
+final deliverable, write or promote it into the output directory. Promote any
 scratch output needed for review or resume before its temporary or cache location
 expires. This guidance reduces accidental mixing; an authored prompt that
 explicitly requests another placement remains authoritative.
@@ -84,9 +84,9 @@ When a workflow carries one task, the task's own artifact folder is a legitimate
 and usually preferable durable root: `.tasks/<task>/artifacts/<stage>/` keeps
 stage reports beside the task text a human already reads, and later stages read
 earlier ones from there instead of receiving them again as prompt text.
-`--output-dir .tasks/<task>/artifacts` is accepted by the operator surface (see
-[workflow manual](../../../docs/workflows/index.md)); the runtime places its own lock and run marker inside
-whatever root is selected. Nothing changes for disposable output: environments,
+`--workspace-dir .tasks/<task>/artifacts` is accepted by the operator surface (see
+[workflow manual](../../../docs/workflows/index.md)); runtime leases and checkpoints stay beneath `.locus-pi`,
+outside user-declared final output. Nothing changes for disposable output: environments,
 dependency caches, test basetemp and staging stay in ordinary OS or tool
 temporary and cache locations, never beside evidence.
 

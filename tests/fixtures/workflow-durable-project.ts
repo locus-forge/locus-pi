@@ -78,7 +78,6 @@ export default async function run(dsl, input) {
       keys: items,
       input: input + ":" + item,
       items: [item],
-      outputDir: dsl.outputDir(),
     }));
   }
   return results;

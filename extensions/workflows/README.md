@@ -11,7 +11,7 @@
 /workflows info [name]
 /workflows status [runId]
 /workflows result [runId|last]
-/workflows run <name|path> [--run-name <name> | --output-dir <path>] [--resume <runId>] [--no-operator|--operator] [--] [input]
+/workflows run <name|path> [--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--no-operator|--operator] [--] [input]
 /workflows continue <runId>
 /workflows stop [runId|last]
 /workflows skills <sync|status|remove> [--host codex|claude|all] [--scope user|project]

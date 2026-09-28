@@ -17,7 +17,10 @@ import {
   readWorkflowOperatorHandoff,
 } from "../../../../extensions/workflows/runtime/workflow-handoff.js";
 import { workflowJournalFile } from "../../../../extensions/workflows/runtime/workflow-run-layout.js";
-import { WORKFLOW_OUTPUT_LOCK_FILE } from "../../../../extensions/workflows/runtime/workflow-output.js";
+import {
+  WORKFLOW_WORKSPACE_LEASE_FILE,
+  workflowOutputStateDir,
+} from "../../../../extensions/workflows/runtime/workflow-output.js";
 import { workflowReportDir } from "../../../../extensions/workflows/runtime/workflow-run-report.js";
 import { workflowResultFile } from "../../../../extensions/workflows/runtime/workflow-result.js";
 import { runWorkflowScript } from "../../../../extensions/workflows/runtime/workflow-runner.js";
@@ -132,8 +135,10 @@ describe("workflow run finalization", () => {
   it("fails the run on a stale workspace lease and then releases nothing", async () => {
     const root = trackProject();
     const runName = "stale-fencing";
-    const workspace = path.join(root, ".locus-pi", "workspaces", runName);
-    const lockFile = path.join(workspace, WORKFLOW_OUTPUT_LOCK_FILE);
+    const lockFile = path.join(
+      workflowOutputStateDir(root, `.locus-pi/workspaces/${runName}`),
+      WORKFLOW_WORKSPACE_LEASE_FILE,
+    );
     writeWorkflow(root, "stale-fencing", `export default (dsl) => dsl.agent("break the lease");\n`);
     const harness = createHarness(root);
 
@@ -165,7 +170,10 @@ describe("workflow run finalization", () => {
   it("releases the workspace lease exactly once and leaves the workspace claimable", async () => {
     const root = trackProject();
     const runName = "released-lease";
-    const lockFile = path.join(root, ".locus-pi", "workspaces", runName, WORKFLOW_OUTPUT_LOCK_FILE);
+    const lockFile = path.join(
+      workflowOutputStateDir(root, `.locus-pi/workspaces/${runName}`),
+      WORKFLOW_WORKSPACE_LEASE_FILE,
+    );
     writeWorkflow(root, "released-lease", `export default async function run() { return "done"; }\n`);
     const harness = createHarness(root);
 

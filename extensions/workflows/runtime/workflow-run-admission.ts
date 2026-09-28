@@ -26,6 +26,7 @@
  */
 import path from "node:path";
 import { realpathSync } from "node:fs";
+import { readWorkflowDeclaredOutputDir } from "../catalog/workflow-meta.js";
 import type { WorkflowContinuation } from "./workflow-artifacts.js";
 import type { WorkflowBudget } from "./workflow-budget.js";
 import {
@@ -42,6 +43,7 @@ import {
   workflowLaunchBindingExists,
   workflowLaunchBindingMatchesResult,
   writeWorkflowLaunchBinding,
+  WORKFLOW_LAUNCH_BINDING_SCHEMA,
   type WorkflowLaunchBinding,
 } from "./workflow-launch-binding.js";
 import {
@@ -53,7 +55,9 @@ import {
   resolveWorkflowOutputDirectory,
   resolveWorkflowOutputDirectoryPath,
   resolveWorkflowOutputDirectoryForReuse,
+  resolveWorkflowFinalOutputDirectory,
   resolveNamedWorkflowWorkspacePath,
+  type WorkflowFinalOutputDirectory,
   type WorkflowOutputDirectory,
 } from "./workflow-output.js";
 import { verifyWorkflowPersistedSnapshot } from "./workflow-persisted-binding.js";
@@ -66,6 +70,7 @@ import {
 import {
   isPostCodeReviewTarget,
   persistedTargetIdentityKey,
+  readWorkflowResumeOutputIdentityFromResult,
   readWorkflowResumeSemanticInputIdentity,
   readWorkflowResumeWorkspaceIdentityFromResult,
   assertWorkflowHandoffWorkspaceReuse,
@@ -102,6 +107,8 @@ export interface WorkflowRunAdmissionLaunch {
   scriptPath?: string;
   script?: string;
   input?: string;
+  workspaceDir?: string;
+  /** @deprecated Legacy launch field; rejected by admission when supplied. */
   outputDir?: string;
   runName?: string;
   continuation?: WorkflowContinuation;
@@ -140,8 +147,9 @@ export interface WorkflowRunAdmissionState {
   interruptedRecovery: boolean;
   resumeSourceWorkspace?: WorkflowResumeWorkspaceIdentity;
   resumeSourceBinding?: WorkflowResumeSourceBinding;
-  handoffReuseOutput?: WorkflowOutputDirectory;
-  stableOutput?: WorkflowOutputDirectory;
+  handoffReuseWorkspace?: WorkflowOutputDirectory;
+  stableWorkspace?: WorkflowOutputDirectory;
+  stableOutput?: WorkflowFinalOutputDirectory;
 }
 
 export type WorkflowRunAdmissionOutcome =
@@ -149,7 +157,8 @@ export type WorkflowRunAdmissionOutcome =
       admitted: true;
       target: ResolvedWorkflowTarget;
       scriptIdentity: WorkflowScriptIdentity;
-      stableOutput: WorkflowOutputDirectory;
+      stableWorkspace: WorkflowOutputDirectory;
+      stableOutput: WorkflowFinalOutputDirectory;
     })
   | (WorkflowRunAdmissionState & {
       admitted: false;
@@ -180,23 +189,30 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
     launch: opts,
   } = request;
 
-  let selectedOutputDir = opts.outputDir;
+  let selectedWorkspaceDir = inheritedCoordination?.workspace.relativePath ?? opts.workspaceDir;
   let interruptedRecovery = false;
   let resumeSourceWorkspace: WorkflowResumeWorkspaceIdentity | undefined;
   let resumeSourceBinding: WorkflowResumeSourceBinding | undefined;
-  let handoffReuseOutput: WorkflowOutputDirectory | undefined;
-  let stableOutput: WorkflowOutputDirectory | undefined = inheritedCoordination?.output;
+  let handoffReuseWorkspace: WorkflowOutputDirectory | undefined;
+  let stableWorkspace: WorkflowOutputDirectory | undefined = inheritedCoordination?.workspace;
+  let stableOutput: WorkflowFinalOutputDirectory | undefined = inheritedCoordination?.output;
   const state = (): WorkflowRunAdmissionState => ({
     interruptedRecovery,
     ...(resumeSourceWorkspace === undefined ? {} : { resumeSourceWorkspace }),
     ...(resumeSourceBinding === undefined ? {} : { resumeSourceBinding }),
-    ...(handoffReuseOutput === undefined ? {} : { handoffReuseOutput }),
+    ...(handoffReuseWorkspace === undefined ? {} : { handoffReuseWorkspace }),
+    ...(stableWorkspace === undefined ? {} : { stableWorkspace }),
     ...(stableOutput === undefined ? {} : { stableOutput }),
   });
 
   // --- 1. target binding ---------------------------------------------------
   let target: ResolvedWorkflowTarget;
   try {
+    if (opts.outputDir !== undefined) {
+      throw new Error(
+        "workflow launch outputDir was removed; declare meta.outputDir and use workspaceDir for runtime state",
+      );
+    }
     if (opts.targetBinding !== undefined) {
       target = assertWorkflowTargetBinding(
         opts.targetBinding,
@@ -216,8 +232,8 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
       target = resolveWorkflowTarget(targetInput, projectRoot, workingDirectory);
     }
     if (opts.runName !== undefined) {
-      if (opts.outputDir !== undefined) {
-        throw new Error("workflow runName and outputDir are mutually exclusive");
+      if (opts.workspaceDir !== undefined) {
+        throw new Error("workflow runName and workspaceDir are mutually exclusive");
       }
       assertWorkflowRunName(opts.runName);
     }
@@ -227,8 +243,13 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
 
   // --- 2. source snapshot / script identity --------------------------------
   let scriptIdentity: WorkflowScriptIdentity;
+  let declaredOutputDir: string | undefined;
   try {
     scriptIdentity = createWorkflowScriptSnapshot(target.path, runtimeDir);
+    declaredOutputDir = readWorkflowDeclaredOutputDir(scriptIdentity.snapshotPath);
+    if (inheritedCoordination !== undefined && declaredOutputDir !== undefined) {
+      throw new Error("saved child workflow meta.outputDir is forbidden; children inherit the root outputDir");
+    }
     if (inheritedCoordination?.expectedChildSource !== undefined) {
       const actualCanonicalPath = realpathSync(target.path);
       const expected = inheritedCoordination.expectedChildSource;
@@ -266,7 +287,7 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
         throw new Error("Workflow handoff workspace reuse requires a validated claim and continuation");
       }
       assertWorkflowHandoffClaimEligibility(opts.operatorHandoffClaim, { target, scriptIdentity });
-      handoffReuseOutput = assertWorkflowHandoffWorkspaceReuse(
+      handoffReuseWorkspace = assertWorkflowHandoffWorkspaceReuse(
         projectRoot,
         opts.operatorHandoffWorkspaceReuse,
         opts.operatorHandoffClaim,
@@ -328,6 +349,11 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
           workspacePhysicalIdentity: sourceLaunchBinding.workspace.physicalIdentity,
           workspacePhysicalIdentitySchemaVersion: 1,
           workspaceDirExplicit: sourceLaunchBinding.workspace.explicit,
+          outputDir: sourceLaunchBinding.output.absolutePath,
+          outputDirRelative: sourceLaunchBinding.output.relativePath,
+          outputPhysicalIdentity: sourceLaunchBinding.output.physicalIdentity,
+          outputPhysicalIdentitySchemaVersion: 1,
+          outputSource: sourceLaunchBinding.output.source,
           semanticInputPresent: sourceLaunchBinding.semanticInput.present,
           semanticInputSha256: sourceLaunchBinding.semanticInput.sha256,
         };
@@ -405,6 +431,7 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
           result: sourceResult,
           owner: sourceOwner,
           workspace: readWorkflowResumeWorkspaceIdentityFromResult(projectRoot, sourceResult, resumeFromRunId),
+          output: readWorkflowResumeOutputIdentityFromResult(projectRoot, sourceResult, resumeFromRunId),
           ...(sourceLaunchBinding === undefined ? {} : { launchBinding: sourceLaunchBinding }),
         };
       }
@@ -416,17 +443,18 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
           result: sourceResult,
           owner: false,
           workspace: readWorkflowResumeWorkspaceIdentityFromResult(projectRoot, sourceResult, resumeFromRunId),
+          output: readWorkflowResumeOutputIdentityFromResult(projectRoot, sourceResult, resumeFromRunId),
         };
       }
       resumeSourceWorkspace = resumeSourceBinding.workspace;
     }
     if (
       resumeSourceWorkspace?.explicit === true &&
-      selectedOutputDir === undefined &&
+      selectedWorkspaceDir === undefined &&
       !(target.kind === "name" && isTaskWorkspaceName(target.ref))
     ) {
       throw new Error(
-        "Cannot resume workflow: the source workspace was selected explicitly; repeat it with outputDir.",
+        "Cannot resume workflow: the source workspace was selected explicitly; repeat it with workspaceDir.",
       );
     }
     const resumeSourceTargetMatches =
@@ -449,53 +477,53 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
         );
       }
     }
-    const resumeReuseOutput =
-      resumeSourceWorkspace !== undefined && selectedOutputDir === undefined && resumeSourceTargetMatches
+    const resumeReuseWorkspace =
+      resumeSourceWorkspace !== undefined && selectedWorkspaceDir === undefined && resumeSourceTargetMatches
         ? resolveWorkflowOutputDirectoryForReuse(projectRoot, resumeSourceWorkspace, { create: false })
         : undefined;
     if (
       opts.runName !== undefined &&
       resumeSourceWorkspace === undefined &&
-      handoffReuseOutput === undefined &&
+      handoffReuseWorkspace === undefined &&
       inheritedCoordination === undefined
     ) {
-      selectedOutputDir = resolveNamedWorkflowWorkspacePath(projectRoot, opts.runName);
+      selectedWorkspaceDir = resolveNamedWorkflowWorkspacePath(projectRoot, opts.runName);
     }
-    const candidateOutputPath =
-      handoffReuseOutput ??
-      resumeReuseOutput ??
+    const candidateWorkspacePath =
+      handoffReuseWorkspace ??
+      resumeReuseWorkspace ??
       resolveWorkflowOutputDirectoryPath(
         projectRoot,
-        selectedOutputDir,
+        selectedWorkspaceDir,
         workflowDefaultOutputName(target),
         workingDirectory,
         { runId },
       );
-    const reusesLegacyWorkspace = isLegacyWorkflowWorkspacePath(candidateOutputPath.relativePath);
+    const reusesLegacyWorkspace = isLegacyWorkflowWorkspacePath(candidateWorkspacePath.relativePath);
     if (
       resumeSourceWorkspace !== undefined &&
-      candidateOutputPath.relativePath !== resumeSourceWorkspace.relativePath
+      candidateWorkspacePath.relativePath !== resumeSourceWorkspace.relativePath
     ) {
       throw new Error(
-        `Cannot resume workflow: outputDir must equal the source workspace ` +
+        `Cannot resume workflow: workspaceDir must equal the source workspace ` +
           `${JSON.stringify(resumeSourceWorkspace.relativePath)} ` +
-          `(got ${JSON.stringify(candidateOutputPath.relativePath)}).`,
+          `(got ${JSON.stringify(candidateWorkspacePath.relativePath)}).`,
       );
     }
     const freshOwnerLaunch =
       inheritedCoordination === undefined &&
       !hasResume &&
-      handoffReuseOutput === undefined &&
+      handoffReuseWorkspace === undefined &&
       isPostCodeReviewTarget(target, projectRoot);
     if (freshOwnerLaunch) {
-      assertFreshWorkflowOutputNamespacePath({ projectRoot, output: candidateOutputPath });
+      assertFreshWorkflowOutputNamespacePath({ projectRoot, output: candidateWorkspacePath });
     }
-    const resolvedOutput =
-      handoffReuseOutput ??
-      resumeReuseOutput ??
+    const resolvedWorkspace =
+      handoffReuseWorkspace ??
+      resumeReuseWorkspace ??
       resolveWorkflowOutputDirectory(
         projectRoot,
-        selectedOutputDir,
+        selectedWorkspaceDir,
         workflowDefaultOutputName(target),
         workingDirectory,
         {
@@ -504,15 +532,15 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
         },
       );
     if (freshOwnerLaunch) {
-      assertFreshWorkflowOutputNamespace({ projectRoot, output: resolvedOutput });
+      assertFreshWorkflowOutputNamespace({ projectRoot, output: resolvedWorkspace });
     }
     if (
       inheritedCoordination !== undefined &&
-      (resolvedOutput.identity !== inheritedCoordination.output.identity ||
-        resolvedOutput.physicalPath !== inheritedCoordination.output.physicalPath)
+      (resolvedWorkspace.identity !== inheritedCoordination.workspace.identity ||
+        resolvedWorkspace.physicalPath !== inheritedCoordination.workspace.physicalPath)
     ) {
       throw new Error(
-        `saved child outputDir must equal the root outputDir ${JSON.stringify(inheritedCoordination.output.relativePath)}`,
+        `saved child workspaceDir must equal the root workspaceDir ${JSON.stringify(inheritedCoordination.workspace.relativePath)}`,
       );
     }
     if (resumeFromRunId !== undefined) {
@@ -533,26 +561,43 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
     }
     if (
       resumeSourceWorkspace !== undefined &&
-      (resumeSourceWorkspace.relativePath !== resolvedOutput.relativePath ||
-        resumeSourceWorkspace.physicalPath !== resolvedOutput.physicalPath ||
-        resumeSourceWorkspace.physicalIdentity !== resolvedOutput.identity)
+      (resumeSourceWorkspace.relativePath !== resolvedWorkspace.relativePath ||
+        resumeSourceWorkspace.physicalPath !== resolvedWorkspace.physicalPath ||
+        resumeSourceWorkspace.physicalIdentity !== resolvedWorkspace.identity)
     ) {
       throw new Error(
-        `Cannot resume workflow: outputDir must equal the source workspace ` +
+        `Cannot resume workflow: workspaceDir must equal the source workspace ` +
           `${JSON.stringify(resumeSourceWorkspace.relativePath)} ` +
-          `(got ${JSON.stringify(resolvedOutput.relativePath)}).`,
+          `(got ${JSON.stringify(resolvedWorkspace.relativePath)}).`,
       );
     }
-    stableOutput = inheritedCoordination?.output ?? resolvedOutput;
+    stableWorkspace = inheritedCoordination?.workspace ?? resolvedWorkspace;
+    stableOutput =
+      inheritedCoordination?.output ??
+      resolveWorkflowFinalOutputDirectory(projectRoot, declaredOutputDir, stableWorkspace);
+    if (
+      resumeSourceBinding !== undefined &&
+      (resumeSourceBinding.output.relativePath !== stableOutput.relativePath ||
+        resumeSourceBinding.output.absolutePath !== stableOutput.absolutePath ||
+        resumeSourceBinding.output.physicalPath !== stableOutput.physicalPath ||
+        resumeSourceBinding.output.physicalIdentity !== stableOutput.identity ||
+        resumeSourceBinding.output.source !== stableOutput.source)
+    ) {
+      throw new Error(
+        `Cannot resume workflow: outputDir must equal the source output ` +
+          `${JSON.stringify(resumeSourceBinding.output.relativePath)} ` +
+          `(got ${JSON.stringify(stableOutput.relativePath)}).`,
+      );
+    }
     if (inheritedCoordination === undefined && isPostCodeReviewTarget(target, projectRoot)) {
-      ensureWorkflowWorkspaceFile(stableOutput, "style.md");
+      ensureWorkflowWorkspaceFile(stableWorkspace, "style.md");
     }
     // Persist the independent owner binding before acquiring the lease or
     // starting any child work. The result envelope written at terminal time is
     // only a projection and cannot be the source of resume/handoff authority.
     if (inheritedCoordination === undefined) {
       const launchBinding: WorkflowLaunchBinding = {
-        schema: "locus-pi.workflow-launch-binding.v1",
+        schema: WORKFLOW_LAUNCH_BINDING_SCHEMA,
         runId,
         recoveryInputSha256: workflowRecoveryInputHash({
           ...(opts.input === undefined ? {} : { input: opts.input }),
@@ -563,15 +608,23 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
         target: { kind: target.kind, ref: target.ref, source: target.source },
         scriptIdentity,
         workspace: {
+          absolutePath: stableWorkspace.absolutePath,
+          relativePath: stableWorkspace.relativePath,
+          physicalPath: stableWorkspace.physicalPath,
+          physicalIdentity: stableWorkspace.identity,
+          physicalIdentitySchemaVersion: 1,
+          explicit:
+            handoffReuseWorkspace === undefined
+              ? opts.workspaceDir !== undefined
+              : opts.operatorHandoffWorkspaceReuse?.explicit === true,
+        },
+        output: {
           absolutePath: stableOutput.absolutePath,
           relativePath: stableOutput.relativePath,
           physicalPath: stableOutput.physicalPath,
           physicalIdentity: stableOutput.identity,
           physicalIdentitySchemaVersion: 1,
-          explicit:
-            handoffReuseOutput === undefined
-              ? opts.outputDir !== undefined
-              : opts.operatorHandoffWorkspaceReuse?.explicit === true,
+          source: stableOutput.source,
         },
         semanticInput: requestedSemanticInput,
       };
@@ -587,7 +640,7 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
         };
       }
     }
-    return { admitted: true, target, scriptIdentity, ...state(), stableOutput };
+    return { admitted: true, target, scriptIdentity, ...state(), stableWorkspace, stableOutput };
   } catch (err) {
     return {
       admitted: false,

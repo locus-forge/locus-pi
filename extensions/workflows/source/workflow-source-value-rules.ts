@@ -582,9 +582,7 @@ function isUnchangedScheduledValueUse(
   const pair = identifier.ancestors().find((ancestor) => ancestor.kind() === "pair");
   const shorthand = identifier.kind() === "shorthand_property_identifier" ? identifier : undefined;
   const propertyName = pair === undefined ? shorthand?.text() : staticObjectKey(pair.field("key"));
-  if (propertyName === "outputDir") {
-    if (provenance.kind !== "runtime-value" || provenance.sourceMethod !== "outputDir") return false;
-  } else if (!["input", "item", "items", "key", "keys"].includes(propertyName ?? "")) {
+  if (!["input", "item", "items", "key", "keys"].includes(propertyName ?? "")) {
     return false;
   }
   const container = pair ?? shorthand;
