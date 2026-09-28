@@ -4,6 +4,8 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-28
+
 ### Changed
 
 - Workflow filesystem locations are now explicit: `workspaceDir` selects runtime
