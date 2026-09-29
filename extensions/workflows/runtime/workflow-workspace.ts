@@ -4,9 +4,9 @@
  * This module owns where a workflow workspace lives (the current and retired
  * named roots), its physical identity under the project root, and the evidence
  * proving that a workspace file or primary file is the same regular file that
- * was opened. Durable fenced state keyed by that identity is owned separately
- * by `workflow-workspace-state.ts`, which imports this module and never the
- * other way around.
+ * was opened. `location-state/workflow-location-lease.ts` owns fencing keyed by
+ * that identity; `workflow-workspace-state.ts` owns checkpoints and navigation.
+ * Both import this module, never the other way around.
  */
 
 import { createHash } from "node:crypto";

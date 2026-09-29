@@ -103,6 +103,7 @@ export async function handleWorkflowRunCommand(
     ...(parsed.workspaceDir === undefined ? {} : { workspaceDir: parsed.workspaceDir }),
     ...(parsed.runName === undefined ? {} : { runName: parsed.runName }),
     ...(parsed.resumeFromRunId === undefined ? {} : { resumeFromRunId: parsed.resumeFromRunId }),
+    ...(parsed.force === true ? { force: true as const } : {}),
     // Headless launches default to the no-operator mode: a `print`/`json`
     // session has no operator to reach, so a request for operator input can
     // only park the run until the turn is disposed. An explicit `--operator`

@@ -61,15 +61,15 @@ export const WORKFLOW_SAFE_COMPONENT_PATTERN = "^[A-Za-z0-9][A-Za-z0-9._-]{0,127
  * An artifact `name` is the author's DISPLAY label; `artifactId` is the storage id every
  * path is built from. So a name carries no length or alphabet policy — `Design review.md`
  * is a legitimate name — and the only rules left are confinement ones: it must say
- * something (a non-whitespace character), it must not act like a path (`/`, `\`), and it
- * must not smuggle control characters. Writers and readers share this one definition so a
- * published name cannot become an unreadable reference one layer later.
+ * something (a non-whitespace character), not act like a path (`/`, `\`), or smuggle control
+ * characters. Writers and readers share this definition so a published name stays readable.
  */
 export const WORKFLOW_ARTIFACT_DISPLAY_NAME_PATTERN =
   "^[^\\u0000-\\u001f\\u007f/\\\\]*[^\\u0000-\\u001f\\u007f/\\\\\\s][^\\u0000-\\u001f\\u007f/\\\\]*$";
 export const WORKFLOW_RUN_GROUP_STORAGE_PATTERN = ".locus-pi/runs/<storageRootRunId>/";
 export const WORKFLOW_NESTED_RUN_STORAGE_PATTERN = ".locus-pi/runs/<storageRootRunId>/{children,attempts}/<runId>/";
 export const WORKFLOW_WORKSPACES_STORAGE_PREFIX = ".locus-pi/workspaces/";
+export const WORKFLOW_LEGACY_PLANS_STORAGE_PREFIX = ".locus-pi/plans/";
 
 const WORKFLOW_RUN_COMPONENT_REGEX = new RegExp(WORKFLOW_SAFE_COMPONENT_PATTERN, "u");
 const WORKFLOW_ARTIFACT_DISPLAY_NAME_REGEX = new RegExp(WORKFLOW_ARTIFACT_DISPLAY_NAME_PATTERN, "u");

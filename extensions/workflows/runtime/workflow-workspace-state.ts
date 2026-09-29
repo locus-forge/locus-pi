@@ -1,51 +1,52 @@
 /**
- * Fenced durable state for one workflow workspace.
+ * Checkpoints and navigation written under an already fenced workflow workspace.
  *
- * The workspace-local single-root lease, its fencing token, runtime backlinks,
- * and atomic completed-item checkpoints all live under a namespace keyed by the
- * physical workspace identity. That identity is computed only by
- * `workflow-workspace.ts`; this module consumes it and adds no path resolution
- * of its own.
+ * `location-state/workflow-location-lease.ts` owns the lease protocol. This
+ * module consumes its opaque lease, then owns runtime backlinks and atomic
+ * completed-item checkpoints keyed by the physical workspace identity.
  */
 
 import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
   constants,
-  fstatSync,
   fsyncSync,
   lstatSync,
   openSync,
   readFileSync,
-  readSync,
   realpathSync,
   renameSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { assertWorkflowRunId, workflowRunDir, workflowRootDir } from "./workflow-run-layout.js";
+import { assertWorkflowRunId, workflowRunDir } from "./workflow-run-layout.js";
 import {
   ensureDirectoryWithoutSymlinks,
   isNodeError,
   isWorkflowPathWithinRoot,
   resolveWorkflowOutputPhysicalIdentityWithoutCreation,
-  type WorkflowFinalOutputDirectory,
   type WorkflowOutputDirectory,
   type WorkflowOutputDirectoryPath,
   type WorkflowPrimaryFileReference,
 } from "./workflow-workspace.js";
+import {
+  assertWorkflowRootLease,
+  workflowOutputStateDir,
+  type WorkflowRootLease,
+} from "./location-state/workflow-location-lease.js";
+import {
+  assertWorkflowStatePath,
+  fsyncDirectory,
+  InvalidJsonContentError,
+  readJson,
+  writeNewDurableJson,
+} from "./location-state/workflow-state-files.js";
 
 const ITEM_KEY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u;
 const CHECKPOINT_SCHEMA = "locus-pi.workflow-checkpoint.v2" as const;
-const LEASE_SCHEMA = "locus-pi.workflow-location-lease.v2" as const;
-export const WORKFLOW_WORKSPACE_LEASE_FILE = "lease.json";
-export const WORKFLOW_OUTPUT_LEASE_FILE = "lease.json";
 /** @deprecated Runtime locks no longer live in workspace or output directories. */
 export const WORKFLOW_OUTPUT_LOCK_FILE = ".locus-pi-workflow.lock";
-const LEASE_OWNER_READ_ATTEMPTS = 20;
-const LEASE_OWNER_READ_RETRY_MS = 5;
-const LEASE_OWNER_READ_WAIT = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
 const WORKFLOW_WORKSPACE_RUNS_MARKER = "<!-- locus-pi:workflow-workspace-runs:v1 -->";
 // Retained only to read and upgrade navigation written by earlier versions.
 const LEGACY_WORKFLOW_WORKSPACE_RUNS_HEADER =
@@ -55,9 +56,6 @@ const LEGACY_WORKFLOW_WORKSPACE_RUNS_HEADER =
 const WORKFLOW_WORKSPACE_RUNS_HEADER =
   `${WORKFLOW_WORKSPACE_RUNS_MARKER}\n# Linked workflow runs\n\n` +
   `Status and history are stored in group directories; this file contains links only.\n\n`;
-
-class InvalidJsonContentError extends Error {}
-class UnstableJsonReadError extends Error {}
 
 export interface WorkflowCheckpointIdentity {
   parentScriptSha256: string;
@@ -73,35 +71,6 @@ export interface WorkflowCompletedCheckpoint extends WorkflowCheckpointIdentity 
   childRunId: string;
   completedAt: string;
   primaryFile?: WorkflowPrimaryFileReference;
-}
-
-interface WorkflowLeaseRecord {
-  schema: typeof LEASE_SCHEMA;
-  kind: "workspace" | "output";
-  rootRunId: string;
-  relativePath: string;
-  identity: string;
-  pid: number;
-  fencingToken: string;
-  acquiredAt: string;
-}
-
-/** Opaque host-only context. Workflow source never receives this object. */
-export interface WorkflowRootLease {
-  readonly projectRoot: string;
-  readonly stateDir: string;
-  readonly workspaceDir: string;
-  readonly lockFile: string;
-  readonly record: WorkflowLeaseRecord;
-}
-
-/** Independent final-output writer fence. It never stores state below outputDir. */
-export interface WorkflowOutputLease {
-  readonly projectRoot: string;
-  readonly stateDir: string;
-  readonly outputDir: string;
-  readonly lockFile: string;
-  readonly record: WorkflowLeaseRecord;
 }
 
 export function assertWorkflowItemKey(key: string): string {
@@ -121,141 +90,6 @@ export function assertUniqueWorkflowItemKeys(keys: readonly string[]): readonly 
     seen.add(key);
   }
   return Object.freeze([...keys]);
-}
-
-/** Atomically acquire exclusive ownership of one workflow workspace. */
-export function acquireWorkflowRootLease(input: {
-  projectRoot: string;
-  output: WorkflowOutputDirectory;
-  rootRunId: string;
-}): WorkflowRootLease {
-  const acquired = acquireWorkflowLocationLease({
-    projectRoot: input.projectRoot,
-    location: input.output,
-    rootRunId: input.rootRunId,
-    kind: "workspace",
-  });
-  return { ...acquired, workspaceDir: input.output.absolutePath };
-}
-
-/** Atomically acquire exclusive ownership of one final output directory. */
-export function acquireWorkflowOutputLease(input: {
-  projectRoot: string;
-  output: WorkflowFinalOutputDirectory;
-  rootRunId: string;
-}): WorkflowOutputLease {
-  const acquired = acquireWorkflowLocationLease({
-    projectRoot: input.projectRoot,
-    location: input.output,
-    rootRunId: input.rootRunId,
-    kind: "output",
-  });
-  return { ...acquired, outputDir: input.output.absolutePath };
-}
-
-function acquireWorkflowLocationLease(input: {
-  projectRoot: string;
-  location: WorkflowOutputDirectory;
-  rootRunId: string;
-  kind: "workspace" | "output";
-}): Omit<WorkflowRootLease, "workspaceDir"> {
-  const projectRoot = path.resolve(input.projectRoot);
-  const stateDir =
-    input.kind === "workspace"
-      ? workflowOutputStateDir(projectRoot, input.location.identity)
-      : workflowFinalOutputStateDir(projectRoot, input.location.identity);
-  ensureDirectoryWithoutSymlinks(projectRoot, stateDir);
-  assertWorkflowStatePath(projectRoot, stateDir, stateDir, "directory", true);
-  const lockFile = path.join(
-    stateDir,
-    input.kind === "workspace" ? WORKFLOW_WORKSPACE_LEASE_FILE : WORKFLOW_OUTPUT_LEASE_FILE,
-  );
-  const record: WorkflowLeaseRecord = {
-    schema: LEASE_SCHEMA,
-    kind: input.kind,
-    rootRunId: input.rootRunId,
-    relativePath: input.location.relativePath,
-    identity: input.location.identity,
-    pid: process.pid,
-    fencingToken: randomUUID(),
-    acquiredAt: new Date().toISOString(),
-  };
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      assertWorkflowStatePath(projectRoot, stateDir, lockFile, "file", false);
-      try {
-        writeNewDurableJson(lockFile, record, { syncParentDirectory: true });
-      } catch (error) {
-        // An owner may have won the create-to-write window. Leave its lock
-        // intact so the outer EEXIST path can inspect it.
-        if (!isNodeError(error, "EEXIST")) removeLeaseFile(projectRoot, stateDir, lockFile);
-        throw error;
-      }
-      return { projectRoot, stateDir, lockFile, record };
-    } catch (error) {
-      if (!isNodeError(error, "EEXIST")) throw error;
-      const current = readLeaseRecordDuringAcquisition(projectRoot, stateDir, lockFile);
-      if (current === undefined) continue;
-      const liveness = processLiveness(current.pid);
-      if (liveness === "alive") {
-        throw new Error(
-          `workflow ${input.kind} ${JSON.stringify(input.location.relativePath)} is owned by live run ${current.rootRunId} (pid ${current.pid}); stop that run or choose another ${input.kind === "workspace" ? "workspaceDir" : "outputDir"}`,
-        );
-      }
-      if (liveness === "unverifiable") {
-        throw new Error(
-          `workflow ${input.kind} ${JSON.stringify(input.location.relativePath)} has an unverifiable owner pid ${current.pid}; verify the process and remove ${lockFile} only after proving it stopped`,
-        );
-      }
-      const staleFile = `${lockFile}.stale-${randomUUID()}`;
-      assertWorkflowStatePath(projectRoot, stateDir, lockFile, "file", true);
-      assertWorkflowStatePath(projectRoot, stateDir, staleFile, "file", false);
-      try {
-        renameSync(lockFile, staleFile);
-      } catch (renameError) {
-        if (isNodeError(renameError, "ENOENT")) continue;
-        throw renameError;
-      }
-      removeLeaseFile(projectRoot, stateDir, staleFile);
-    }
-  }
-  throw new Error(
-    `workflow ${input.kind} lease contention did not settle for ${JSON.stringify(input.location.relativePath)}`,
-  );
-}
-
-export function assertWorkflowRootLease(lease: WorkflowRootLease): void {
-  assertWorkflowLocationLease(lease);
-}
-
-export function assertWorkflowOutputLease(lease: WorkflowOutputLease): void {
-  assertWorkflowLocationLease(lease);
-}
-
-function assertWorkflowLocationLease(
-  lease: Pick<WorkflowRootLease, "projectRoot" | "stateDir" | "lockFile" | "record">,
-): void {
-  const current = readLeaseRecord(lease.projectRoot, lease.stateDir, lease.lockFile);
-  if (
-    current.fencingToken !== lease.record.fencingToken ||
-    current.rootRunId !== lease.record.rootRunId ||
-    current.pid !== lease.record.pid
-  ) {
-    throw new Error(
-      `workflow ${lease.record.kind} lease fencing token is stale for ${JSON.stringify(lease.record.relativePath)}`,
-    );
-  }
-}
-
-export function releaseWorkflowRootLease(lease: WorkflowRootLease): void {
-  assertWorkflowRootLease(lease);
-  removeLeaseFile(lease.projectRoot, lease.stateDir, lease.lockFile);
-}
-
-export function releaseWorkflowOutputLease(lease: WorkflowOutputLease): void {
-  assertWorkflowOutputLease(lease);
-  removeLeaseFile(lease.projectRoot, lease.stateDir, lease.lockFile);
 }
 
 /** Runtime-owned atomic backlinks. Never replace a pre-existing user document. */
@@ -391,16 +225,6 @@ export function commitWorkflowCompletedCheckpoint(
   return record;
 }
 
-export function workflowOutputStateDir(projectRoot: string, canonicalOutputIdentity: string): string {
-  const namespace = createHash("sha256").update(canonicalOutputIdentity).digest("hex");
-  return path.join(workflowRootDir(path.resolve(projectRoot)), "workflow-state", "v1", namespace);
-}
-
-export function workflowFinalOutputStateDir(projectRoot: string, canonicalOutputIdentity: string): string {
-  const namespace = createHash("sha256").update(canonicalOutputIdentity).digest("hex");
-  return path.join(workflowRootDir(path.resolve(projectRoot)), "workflow-output-state", "v1", namespace);
-}
-
 /**
  * Fresh semantic targets must not inherit any prior durable state in a named
  * namespace. This is intentionally opt-in: ordinary workflows retain their
@@ -471,67 +295,6 @@ function checkpointFile(lease: WorkflowRootLease, identity: WorkflowCheckpointId
   return path.join(lease.stateDir, "checkpoints", `${digest}.json`);
 }
 
-type WorkflowStateLeafKind = "file" | "directory";
-
-/** Prove a state path's complete lexical and physical ancestor chain. */
-function assertWorkflowStatePath(
-  projectRoot: string,
-  stateDir: string,
-  target: string,
-  leafKind: WorkflowStateLeafKind,
-  mustExist: boolean,
-): boolean {
-  const lexicalRoot = path.resolve(projectRoot);
-  const lexicalStateDir = path.resolve(stateDir);
-  const lexicalFile = path.resolve(target);
-  if (!isWorkflowPathWithinRoot(lexicalRoot, lexicalStateDir)) {
-    throw new Error("workflow state directory escapes the project root");
-  }
-  if (!isWorkflowPathWithinRoot(lexicalStateDir, lexicalFile)) {
-    throw new Error("workflow state path escapes the leased state directory");
-  }
-
-  const rootStat = lstatSync(lexicalRoot, { throwIfNoEntry: false });
-  if (rootStat === undefined) {
-    throw new Error("workflow state project root is not a regular directory");
-  }
-  const physicalRoot = realpathSync(lexicalRoot);
-  const physicalRootStat = lstatSync(physicalRoot, { throwIfNoEntry: false });
-  if (physicalRootStat === undefined || physicalRootStat.isSymbolicLink() || !physicalRootStat.isDirectory()) {
-    throw new Error("workflow state project root is not a regular directory");
-  }
-  const relative = path.relative(lexicalRoot, lexicalFile);
-  const parts = relative.split(path.sep).filter(Boolean);
-  if (parts.length === 0) throw new Error("workflow state path must name a leaf");
-
-  let current = lexicalRoot;
-  for (const [index, part] of parts.entries()) {
-    current = path.join(current, part);
-    const isLeaf = index === parts.length - 1;
-    const stat = lstatSync(current, { throwIfNoEntry: false });
-    if (stat === undefined) {
-      if (mustExist) throw new Error(`workflow state path is missing: ${current}`);
-      return false;
-    }
-    if (stat.isSymbolicLink()) {
-      throw new Error(`workflow state path contains a symlink: ${current}`);
-    }
-    const leafIsWrongType = leafKind === "file" ? !stat.isFile() : !stat.isDirectory();
-    if (isLeaf ? leafIsWrongType : !stat.isDirectory()) {
-      throw new Error(
-        isLeaf
-          ? `workflow state path is not a regular ${leafKind}: ${current}`
-          : `workflow state path ancestor is not a directory: ${current}`,
-      );
-    }
-    const physicalCurrent = realpathSync(current);
-    if (!isWorkflowPathWithinRoot(physicalRoot, physicalCurrent)) {
-      throw new Error(`workflow state path escapes the physical project root: ${current}`);
-    }
-  }
-  return true;
-}
-
 /**
  * Prove the checkpoint path remains inside the leased project/state namespace.
  * `readJson()` protects the leaf descriptor; this proof protects every path
@@ -539,45 +302,6 @@ function assertWorkflowStatePath(
  */
 function assertCheckpointPath(lease: WorkflowRootLease, file: string, mustExist: boolean): boolean {
   return assertWorkflowStatePath(lease.projectRoot, lease.stateDir, file, "file", mustExist);
-}
-
-function readLeaseRecord(projectRoot: string, workspaceDir: string, lockFile: string): WorkflowLeaseRecord {
-  let value: unknown;
-  try {
-    assertWorkflowStatePath(projectRoot, workspaceDir, lockFile, "file", true);
-    value = readJson(lockFile);
-  } catch (error) {
-    throw new Error(
-      `workflow output lease owner is unreadable at ${lockFile}; verify no writer is active before manual removal: ${String(error)}`,
-    );
-  }
-  if (!isLeaseRecord(value)) {
-    throw new Error(
-      `workflow output lease owner is unverifiable at ${lockFile}; verify no writer is active before removal`,
-    );
-  }
-  return value;
-}
-
-/** A new owner creates its lock before durable JSON is complete; tolerate only that bounded window. */
-function readLeaseRecordDuringAcquisition(
-  projectRoot: string,
-  workspaceDir: string,
-  lockFile: string,
-): WorkflowLeaseRecord | undefined {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < LEASE_OWNER_READ_ATTEMPTS; attempt += 1) {
-    try {
-      return readLeaseRecord(projectRoot, workspaceDir, lockFile);
-    } catch (error) {
-      lastError = error;
-      if (!assertWorkflowStatePath(projectRoot, workspaceDir, lockFile, "file", false)) return undefined;
-      if (attempt + 1 < LEASE_OWNER_READ_ATTEMPTS) {
-        Atomics.wait(LEASE_OWNER_READ_WAIT, 0, 0, LEASE_OWNER_READ_RETRY_MS);
-      }
-    }
-  }
-  throw lastError;
 }
 
 function quarantineWorkflowCheckpoint(lease: WorkflowRootLease, file: string): void {
@@ -593,32 +317,6 @@ function quarantineWorkflowCheckpoint(lease: WorkflowRootLease, file: string): v
   fsyncDirectory(path.dirname(file));
 }
 
-function processLiveness(pid: number): "alive" | "dead" | "unverifiable" {
-  if (!Number.isSafeInteger(pid) || pid < 1) return "unverifiable";
-  try {
-    process.kill(pid, 0);
-    return "alive";
-  } catch (error) {
-    if (isNodeError(error, "ESRCH")) return "dead";
-    return "unverifiable";
-  }
-}
-
-function removeLeaseFile(projectRoot: string, workspaceDir: string, lockFile: string): void {
-  if (assertWorkflowStatePath(projectRoot, workspaceDir, lockFile, "file", false)) unlinkSync(lockFile);
-}
-
-function writeNewDurableJson(file: string, value: unknown, options: { syncParentDirectory?: boolean } = {}): void {
-  const fd = openSync(file, "wx", 0o600);
-  try {
-    writeFileSync(fd, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  if (options.syncParentDirectory) fsyncDirectory(path.dirname(file));
-}
-
 function writeNewDurableText(file: string, text: string): void {
   const fd = openSync(file, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
   try {
@@ -627,61 +325,6 @@ function writeNewDurableText(file: string, text: string): void {
   } finally {
     closeSync(fd);
   }
-}
-
-function fsyncDirectory(directory: string): void {
-  const fd = openSync(directory, "r");
-  try {
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-}
-
-function readJson(file: string): unknown {
-  const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    const before = fstatSync(fd);
-    if (!before.isFile()) throw new Error(`JSON state path is not a regular file: ${file}`);
-    if (before.size > 1024 * 1024) throw new InvalidJsonContentError(`JSON state file exceeds 1 MiB: ${file}`);
-    const bytes = Buffer.alloc(before.size);
-    let offset = 0;
-    while (offset < bytes.length) {
-      const count = readSync(fd, bytes, offset, bytes.length - offset, offset);
-      if (count === 0) {
-        throw new UnstableJsonReadError(`JSON state file changed during read: ${file}`);
-      }
-      offset += count;
-    }
-    const after = fstatSync(fd);
-    if (after.size !== before.size || after.mtimeMs !== before.mtimeMs) {
-      throw new UnstableJsonReadError(`JSON state file changed during read: ${file}`);
-    }
-    try {
-      return JSON.parse(bytes.toString("utf8"));
-    } catch (error) {
-      throw new InvalidJsonContentError(
-        `JSON state file contains invalid JSON: ${file}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  } finally {
-    closeSync(fd);
-  }
-}
-
-function isLeaseRecord(value: unknown): value is WorkflowLeaseRecord {
-  if (typeof value !== "object" || value === null) return false;
-  const record = value as Partial<WorkflowLeaseRecord>;
-  return (
-    record.schema === LEASE_SCHEMA &&
-    (record.kind === "workspace" || record.kind === "output") &&
-    typeof record.rootRunId === "string" &&
-    typeof record.relativePath === "string" &&
-    typeof record.identity === "string" &&
-    Number.isSafeInteger(record.pid) &&
-    typeof record.fencingToken === "string" &&
-    typeof record.acquiredAt === "string"
-  );
 }
 
 function isCompletedCheckpoint(value: unknown): value is WorkflowCompletedCheckpoint {

@@ -112,6 +112,7 @@ const SHARED_LAYER_MEMBERS: Record<SharedLayer, readonly string[]> = {
 // ---------------------------------------------------------------------------
 
 const WORKFLOW_READ_FACADE = "extensions/workflows/run/run-read.ts";
+const WORKFLOW_LOCATION_FACADE = "extensions/workflows/runtime/workflow-output.ts";
 
 // ---------------------------------------------------------------------------
 // Feature-internal modules (rule 6)
@@ -125,6 +126,34 @@ interface FeatureInternalEntry {
 }
 
 const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
+  {
+    module: "extensions/workflows/runtime/workflow-workspace-state.ts",
+    owner: "extensions/workflows",
+    facade: WORKFLOW_LOCATION_FACADE,
+    reason:
+      "workspace checkpoints and navigation consume the opaque workflow lease; other features consume them only through the stable location facade.",
+  },
+  {
+    module: "extensions/workflows/runtime/location-state/workflow-location-lease.ts",
+    owner: "extensions/workflows",
+    facade: WORKFLOW_LOCATION_FACADE,
+    reason:
+      "workspace/output writer fencing is a workflow-runtime authority; other features consume only the stable location facade.",
+  },
+  {
+    module: "extensions/workflows/runtime/location-state/workflow-lease-evidence.ts",
+    owner: "extensions/workflows",
+    facade: WORKFLOW_LOCATION_FACADE,
+    reason:
+      "same-host liveness and terminal-result force proof are internal lease policy, not cross-feature run evidence APIs.",
+  },
+  {
+    module: "extensions/workflows/runtime/location-state/workflow-state-files.ts",
+    owner: "extensions/workflows",
+    facade: WORKFLOW_LOCATION_FACADE,
+    reason:
+      "symlink-safe state file primitives serve only workflow lease/checkpoint owners and are not a shared filesystem layer.",
+  },
   {
     module: "extensions/workflows/runtime/workflow-journal.ts",
     owner: "extensions/workflows",
