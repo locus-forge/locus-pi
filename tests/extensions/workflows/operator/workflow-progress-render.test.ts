@@ -973,11 +973,11 @@ describe("workflow progress rendering and viewport", () => {
       expect(rendered).toContain("1 failed");
       expect(rendered).toMatch(/parallel \(2\).*↑7 ↓8/);
       // SDK child agent row: petname + title, model+effort badge (provider stripped),
-      // no `on task`/`/effort=`/`args=`/`turns=`/`flags=`/`[current task]` sub-line.
+      // no `on task`/`thinking=`/`args=`/`turns=`/`flags=`/`[current task]` sub-line.
       expect(rendered).toContain("SDK child session");
       expect(rendered).toContain("strong high");
       expect(rendered).not.toContain("on task");
-      expect(rendered).not.toContain("/effort=");
+      expect(rendered).not.toContain("thinking=");
       expect(rendered).not.toContain("[current task]");
       expect(rendered).not.toContain("turns=");
       expect(rendered).not.toContain("flags=");

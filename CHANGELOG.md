@@ -4,6 +4,16 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-29
+
+### Changed
+
+- The status line keeps Pi's default `Ctrl+D` exit and `Ctrl+Z` suspend hints
+  visible, adding rows only when the terminal is too narrow for one line.
+- The minimum supported Pi version is now `0.84.3`, where Pi provides the
+  built-in `/thinking` selector. The Locus `/effort` alias has been removed;
+  use `/thinking` for session changes and `Ctrl+S` there to save the default.
+
 ## [0.10.0] - 2026-09-28
 
 ### Changed

@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import * as sdk from "@earendil-works/pi-coding-agent";
 import { getModel } from "@earendil-works/pi-ai/compat";
-import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, normalizeContext } from "@earendil-works/pi-ai";
 import { configureCliSessionDeadline } from "../../../extensions/_shared/agent-runtime/agent-sdk-host.js";
 
 async function createChild(config: Parameters<typeof sdk.SettingsManager.inMemory>[0] = {}) {
@@ -60,7 +60,7 @@ describe("CLI child transport deadlines through the real Pi SDK", () => {
     const before = settings.getGlobalSettings();
     try {
       configureCliSessionDeadline(session, request);
-      await session.agent.streamFunction(model, { messages: [] }, {});
+      await session.agent.streamFunction(model, normalizeContext({ messages: [] }), {});
       const options = stream.mock.calls[0]?.[2];
       if (expected === undefined) expect(options).not.toHaveProperty("timeoutMs");
       else expect(options?.timeoutMs).toBe(expected);
@@ -81,18 +81,14 @@ describe("CLI child transport deadlines through the real Pi SDK", () => {
       try {
         configureCliSessionDeadline(session, requestTimeoutMs);
         for (const timeoutMs of [1234, 300_000]) {
-          await session.agent.streamFunction(
-            model,
-            { messages: [] },
-            {
-              timeoutMs,
-              signal: controller.signal,
-              headers: { "x-fixture": "value" },
-              onPayload,
-              onResponse,
-              websocketConnectTimeoutMs: 4321,
-            },
-          );
+          await session.agent.streamFunction(model, normalizeContext({ messages: [] }), {
+            timeoutMs,
+            signal: controller.signal,
+            headers: { "x-fixture": "value" },
+            onPayload,
+            onResponse,
+            websocketConnectTimeoutMs: 4321,
+          });
           expect(stream.mock.lastCall?.[2]).toMatchObject({
             timeoutMs,
             signal: controller.signal,
@@ -108,7 +104,11 @@ describe("CLI child transport deadlines through the real Pi SDK", () => {
         expect(headers).toMatchObject({ "x-provider": "kept" });
         controller.abort();
         expect(stream.mock.lastCall?.[2]?.signal?.aborted).toBe(true);
-        await session.agent.streamFunction({ ...model, baseUrl: "https://api.example" }, { messages: [] }, {});
+        await session.agent.streamFunction(
+          { ...model, baseUrl: "https://api.example" },
+          normalizeContext({ messages: [] }),
+          {},
+        );
         expect(stream.mock.lastCall?.[2]?.timeoutMs).toBe(settings.getHttpIdleTimeoutMs());
         expect(settings.getRetrySettings().enabled).toBe(false);
       } finally {
@@ -124,7 +124,7 @@ describe("CLI child transport deadlines through the real Pi SDK", () => {
       configureCliSessionDeadline(child.session);
       child.session.modelRuntime.streamSimple(child.model, { messages: [] }, { timeoutMs: 300_000 });
       expect(child.stream.mock.lastCall?.[2]?.timeoutMs).toBe(300_000);
-      await other.session.agent.streamFunction(other.model, { messages: [] }, {});
+      await other.session.agent.streamFunction(other.model, normalizeContext({ messages: [] }), {});
       expect(other.stream.mock.lastCall?.[2]?.timeoutMs).toBe(300_000);
     } finally {
       child.session.dispose();

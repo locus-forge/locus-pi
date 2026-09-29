@@ -201,12 +201,12 @@ describe("fleet row grammar (REQ-001)", () => {
     );
   });
 
-  it("drops [Working], on task, activity=, args={, /effort=, steps=, and the #hash tail", () => {
+  it("drops [Working], on task, activity=, args={, thinking=, steps=, and the #hash tail", () => {
     expect(line).not.toContain("[Working]");
     expect(line).not.toContain("on task");
     expect(line).not.toContain("activity=");
     expect(line).not.toContain("args={");
-    expect(line).not.toContain("/effort=");
+    expect(line).not.toContain("thinking=");
     expect(line).not.toContain("steps=");
     expect(line).not.toContain("childSession=");
     expect(line).not.toMatch(/#[a-f0-9]{6}/);

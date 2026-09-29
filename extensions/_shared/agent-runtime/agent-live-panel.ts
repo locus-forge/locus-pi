@@ -496,7 +496,7 @@ export function formatRoundBadge(row: { round?: number }): string | undefined {
 /**
  * Model badge (REQ-005): short model name (provider prefix stripped) + effort as
  * a bare word, e.g. `{model:"anthropic/claude-fable-5", thinking:"medium"}` →
- * `claude-fable-5 medium`. No `/effort=` label.
+ * `claude-fable-5 medium`. No `thinking=` label.
  */
 export function formatModelBadge(model: { model?: string; thinking?: string }): string {
   const parts: string[] = [];

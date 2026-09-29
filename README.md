@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@locus-forge/locus-pi?color=2D4A6E)](https://www.npmjs.com/package/@locus-forge/locus-pi)
 [![License: MIT](https://img.shields.io/badge/license-MIT-6B8E7F)](LICENSE)
 [![Node.js: >=22.19.0](https://img.shields.io/badge/Node.js-%E2%89%A522.19.0-C99A3A)](docs/getting-started.md)
-[![Pi: >=0.83.0](https://img.shields.io/badge/Pi-%E2%89%A50.83.0-C0482E)](docs/getting-started.md)
+[![Pi: >=0.84.3](https://img.shields.io/badge/Pi-%E2%89%A50.84.3-C0482E)](docs/getting-started.md)
 
 **Describe a task. Let an agent build a reusable workflow. Run it in Pi.**
 
@@ -62,7 +62,7 @@ or choose the resources you need with [package filters](docs/getting-started.md#
 
 ## Install
 
-Requires Node.js `>=22.19.0`, Pi `>=0.83.0`, and a configured model provider.
+Requires Node.js `>=22.19.0`, Pi `>=0.84.3`, and a configured model provider.
 
 **From Git:**
 
