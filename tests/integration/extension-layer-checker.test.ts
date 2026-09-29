@@ -77,6 +77,31 @@ describe("extension layer checker negative rules", () => {
     await expectRule(root, "rule 6 (feature-internal facade)");
   });
 
+  it.each(["workflow-location-lease", "workflow-lease-evidence", "workflow-state-files"])(
+    "rejects a cross-feature import of location-state owner %s",
+    async (moduleName) => {
+      const root = await extensionFixture();
+      await appendFile(
+        path.join(root, CROSS_FEATURE_READER),
+        `\nimport "../workflows/runtime/location-state/${moduleName}.js";\n`,
+        "utf8",
+      );
+
+      await expectRule(root, "rule 6 (feature-internal facade)");
+    },
+  );
+
+  it("rejects a cross-feature import of workflow workspace state", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, CROSS_FEATURE_READER),
+      '\nimport "../workflows/runtime/workflow-workspace-state.js";\n',
+      "utf8",
+    );
+
+    await expectRule(root, "rule 6 (feature-internal facade)");
+  });
+
   it("rejects a cross-feature import of the journal event format", async () => {
     const root = await extensionFixture();
     await appendFile(

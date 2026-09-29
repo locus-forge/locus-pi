@@ -43,15 +43,13 @@ import {
   type WorkflowOutputDirectory,
   type WorkflowPrimaryFileReference,
 } from "./workflow-workspace.js";
+import { assertWorkflowRootLease, type WorkflowOutputLease, type WorkflowRootLease } from "./workflow-output.js";
 import {
   assertUniqueWorkflowItemKeys,
   assertWorkflowItemKey,
-  assertWorkflowRootLease,
   commitWorkflowCompletedCheckpoint,
   readWorkflowCompletedCheckpoint,
   type WorkflowCheckpointIdentity,
-  type WorkflowOutputLease,
-  type WorkflowRootLease,
 } from "./workflow-workspace-state.js";
 
 // ---------------------------------------------------------------------------

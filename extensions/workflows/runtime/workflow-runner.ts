@@ -81,8 +81,7 @@ import {
   type WorkflowScriptIdentity,
 } from "./workflow-script-identity.js";
 import {
-  acquireWorkflowOutputLease,
-  acquireWorkflowRootLease,
+  acquireWorkflowLocationLeases,
   referenceWorkflowPrimaryFile,
   type WorkflowFinalOutputDirectory,
   type WorkflowOutputLease,
@@ -189,6 +188,7 @@ export interface RunWorkflowScriptOptions {
   resumeFromRunId?: string;
   /** Explicit conservative hard-crash admission; absent terminal result, identical serial source, no in-flight effects. */
   recoverInterrupted?: boolean;
+  force?: true;
   /**
    * Approved defaults: concurrency=4, plus totalAgents=10_000 for print/json roots.
    * Other undeclared axes are unbounded. Applied values and raises are journaled.
@@ -630,12 +630,11 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   // stays the mutable projection the terminal-result closures read.
   const admittedWorkspace = admission.stableWorkspace;
   const admittedOutput = admission.stableOutput;
-  // The root lease is acquired only AFTER a successful admission and BEFORE the
-  // shared execution state exists, so no agent can start inside an unadmitted run.
+  // Acquire root leases after admission and before shared state, so no agent starts in an unadmitted run.
   try {
     if (inheritedCoordination === undefined) {
-      rootLease = acquireWorkflowRootLease({ projectRoot, output: admittedWorkspace, rootRunId: runId });
-      outputLease = acquireWorkflowOutputLease({ projectRoot, output: admittedOutput, rootRunId: runId });
+      // prettier-ignore
+      [rootLease, outputLease] = acquireWorkflowLocationLeases(projectRoot, admittedWorkspace, admittedOutput, runId, opts.force === true);
       if (interruptedRecovery && resumeFromRunId !== undefined) {
         readInterruptedWorkflowResumeBinding(projectRoot, resumeFromRunId, {
           target: { kind: target.kind, ref: target.ref, source: target.source },

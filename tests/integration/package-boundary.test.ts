@@ -358,8 +358,8 @@ describe("npm public package boundary", () => {
     ]);
     // Directory-owned means the dotfiles inside a listed directory ship with it:
     // `skills/.ignore` rides along under `skills/` and is counted here.
-    // Retired eleven redundant docs and the effort alias; recovery has one conditionally loaded owner; the enabledModels gate is gone.
-    expect(dryRun.files).toHaveLength(250);
+    // Four location/tool owners were extracted without widening the directory-owned allowlist.
+    expect(dryRun.files).toHaveLength(254);
   });
 
   it("ships every prompt resource a curated workflow renders", () => {

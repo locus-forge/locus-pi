@@ -13,17 +13,19 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   acquireWorkflowOutputLease,
   acquireWorkflowRootLease,
-  commitWorkflowCompletedCheckpoint,
-  readWorkflowCompletedCheckpoint,
   releaseWorkflowOutputLease,
   releaseWorkflowRootLease,
-  WORKFLOW_OUTPUT_LOCK_FILE,
   WORKFLOW_WORKSPACE_LEASE_FILE,
   workflowOutputStateDir,
+} from "../../../../extensions/workflows/runtime/workflow-output.js";
+import {
+  commitWorkflowCompletedCheckpoint,
+  readWorkflowCompletedCheckpoint,
+  WORKFLOW_OUTPUT_LOCK_FILE,
   writeWorkflowWorkspaceRunLink,
 } from "../../../../extensions/workflows/runtime/workflow-workspace-state.js";
 import {

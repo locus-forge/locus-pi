@@ -1,12 +1,11 @@
 /**
  * Compatibility surface for stable workflow outputs and cross-run coordination.
  *
- * Two owners stand behind this name and change for different reasons:
- * `workflow-workspace.ts` resolves where a workspace is and proves what its
- * files are, and `workflow-workspace-state.ts` owns the fenced lease and the
- * atomic checkpoints keyed by that workspace identity. This module adds no
- * behavior; it re-exports both owners under the names existing callers already
- * import. Import the owning module directly in new code.
+ * Three owners stand behind this name and change for different reasons:
+ * `workflow-workspace.ts` resolves and proves locations,
+ * `location-state/workflow-location-lease.ts` owns writer fencing, and
+ * `workflow-workspace-state.ts` owns atomic checkpoints and navigation. This
+ * module adds no behavior; it re-exports those owners for existing callers.
  */
 
 export {
@@ -46,27 +45,27 @@ export type {
 
 export {
   acquireWorkflowOutputLease,
+  acquireWorkflowLocationLeases,
   acquireWorkflowRootLease,
+  assertWorkflowOutputLease,
+  assertWorkflowRootLease,
+  releaseWorkflowOutputLease,
+  releaseWorkflowRootLease,
+  WORKFLOW_OUTPUT_LEASE_FILE,
+  WORKFLOW_WORKSPACE_LEASE_FILE,
+  workflowFinalOutputStateDir,
+  workflowOutputStateDir,
+} from "./location-state/workflow-location-lease.js";
+export type { WorkflowOutputLease, WorkflowRootLease } from "./location-state/workflow-location-lease.js";
+
+export {
   assertFreshWorkflowOutputNamespace,
   assertFreshWorkflowOutputNamespacePath,
   assertUniqueWorkflowItemKeys,
   assertWorkflowItemKey,
-  assertWorkflowOutputLease,
-  assertWorkflowRootLease,
   commitWorkflowCompletedCheckpoint,
   readWorkflowCompletedCheckpoint,
-  releaseWorkflowOutputLease,
-  releaseWorkflowRootLease,
-  WORKFLOW_OUTPUT_LEASE_FILE,
   WORKFLOW_OUTPUT_LOCK_FILE,
-  WORKFLOW_WORKSPACE_LEASE_FILE,
-  workflowFinalOutputStateDir,
-  workflowOutputStateDir,
   writeWorkflowWorkspaceRunLink,
 } from "./workflow-workspace-state.js";
-export type {
-  WorkflowCheckpointIdentity,
-  WorkflowCompletedCheckpoint,
-  WorkflowOutputLease,
-  WorkflowRootLease,
-} from "./workflow-workspace-state.js";
+export type { WorkflowCheckpointIdentity, WorkflowCompletedCheckpoint } from "./workflow-workspace-state.js";

@@ -132,6 +132,7 @@ describe("workflow command argument completion", () => {
       expect.objectContaining({ value: "run alpha --run-name ", label: "--run-name" }),
       expect.objectContaining({ value: "run alpha --workspace-dir ", label: "--workspace-dir" }),
       expect.objectContaining({ value: "run alpha --resume ", label: "--resume" }),
+      expect.objectContaining({ value: "run alpha --force ", label: "--force" }),
       expect.objectContaining({ value: "run alpha -- ", label: "--" }),
     ]);
     expect(complete("run task/draft ")).toContainEqual(
@@ -141,6 +142,7 @@ describe("workflow command argument completion", () => {
       expect.objectContaining({ value: 'run "alpha workflow" --run-name ', label: "--run-name" }),
       expect.objectContaining({ value: 'run "alpha workflow" --workspace-dir ', label: "--workspace-dir" }),
       expect.objectContaining({ value: 'run "alpha workflow" --resume ', label: "--resume" }),
+      expect.objectContaining({ value: 'run "alpha workflow" --force ', label: "--force" }),
       expect.objectContaining({ value: 'run "alpha workflow" -- ', label: "--" }),
     ]);
     expect(complete("run alpha --work")).toEqual([
@@ -150,6 +152,7 @@ describe("workflow command argument completion", () => {
       expect.objectContaining({ value: "run alpha --run-name ", label: "--run-name" }),
       expect.objectContaining({ value: "run alpha --workspace-dir ", label: "--workspace-dir" }),
       expect.objectContaining({ value: "run alpha --resume ", label: "--resume" }),
+      expect.objectContaining({ value: "run alpha --force ", label: "--force" }),
       expect.objectContaining({ value: "run alpha -- ", label: "--" }),
     ]);
     expect(complete("run alpha --")).toBeNull();
@@ -163,6 +166,7 @@ describe("workflow command argument completion", () => {
         label: "--workspace-dir",
       }),
       expect.objectContaining({ value: "run alpha --workspace-dir tmp/review --resume ", label: "--resume" }),
+      expect.objectContaining({ value: "run alpha --workspace-dir tmp/review --force ", label: "--force" }),
       expect.objectContaining({ value: "run alpha --workspace-dir tmp/review -- ", label: "--" }),
     ]);
     expect(complete("run alpha --workspace-dir tmp/review --res")).toEqual([
@@ -174,6 +178,7 @@ describe("workflow command argument completion", () => {
         label: "--workspace-dir",
       }),
       expect.objectContaining({ value: 'run alpha --workspace-dir "tmp/review 1" --resume ', label: "--resume" }),
+      expect.objectContaining({ value: 'run alpha --workspace-dir "tmp/review 1" --force ', label: "--force" }),
       expect.objectContaining({ value: 'run alpha --workspace-dir "tmp/review 1" -- ', label: "--" }),
     ]);
     expect(complete('run alpha --workspace-dir "tmp/review 1" --res')).toEqual([
@@ -208,6 +213,10 @@ describe("workflow command argument completion", () => {
         label: "--resume",
       }),
       expect.objectContaining({
+        value: "run alpha --resume 20260724-130000-new --force ",
+        label: "--force",
+      }),
+      expect.objectContaining({
         value: "run alpha --resume 20260724-130000-new -- ",
         label: "--",
       }),
@@ -221,6 +230,10 @@ describe("workflow command argument completion", () => {
       expect.objectContaining({
         value: "run alpha --resume 20260724-130000-new --workspace-dir tmp/review --resume ",
         label: "--resume",
+      }),
+      expect.objectContaining({
+        value: "run alpha --resume 20260724-130000-new --workspace-dir tmp/review --force ",
+        label: "--force",
       }),
       expect.objectContaining({
         value: "run alpha --resume 20260724-130000-new --workspace-dir tmp/review -- ",
@@ -333,6 +346,7 @@ describe("workflow command argument completion", () => {
     expect(workflowFlatCommandCompletions("run", "alpha --workspace-dir tmp/review ", root, root)).toEqual([
       expect.objectContaining({ value: "alpha --workspace-dir tmp/review --workspace-dir ", label: "--workspace-dir" }),
       expect.objectContaining({ value: "alpha --workspace-dir tmp/review --resume ", label: "--resume" }),
+      expect.objectContaining({ value: "alpha --workspace-dir tmp/review --force ", label: "--force" }),
       expect.objectContaining({ value: "alpha --workspace-dir tmp/review -- ", label: "--" }),
     ]);
     expect(workflowFlatCommandCompletions("run", 'alpha --workspace-dir "tmp/review 1" ', root, root)).toEqual([
@@ -341,6 +355,7 @@ describe("workflow command argument completion", () => {
         label: "--workspace-dir",
       }),
       expect.objectContaining({ value: 'alpha --workspace-dir "tmp/review 1" --resume ', label: "--resume" }),
+      expect.objectContaining({ value: 'alpha --workspace-dir "tmp/review 1" --force ', label: "--force" }),
       expect.objectContaining({ value: 'alpha --workspace-dir "tmp/review 1" -- ', label: "--" }),
     ]);
     expect(workflowFlatCommandCompletions("run", 'alpha --workspace-dir "tmp/review 1" --res', root, root)).toEqual([
@@ -350,6 +365,7 @@ describe("workflow command argument completion", () => {
       expect.objectContaining({ value: "alpha --run-name ", label: "--run-name" }),
       expect.objectContaining({ value: "alpha --workspace-dir ", label: "--workspace-dir" }),
       expect.objectContaining({ value: "alpha --resume ", label: "--resume" }),
+      expect.objectContaining({ value: "alpha --force ", label: "--force" }),
       expect.objectContaining({ value: "alpha -- ", label: "--" }),
     ]);
     expect(workflowFlatCommandCompletions("run", "alpha --", root, root)).toBeNull();
@@ -365,6 +381,10 @@ describe("workflow command argument completion", () => {
       expect.objectContaining({
         value: "alpha --resume 20260724-130000-new --resume ",
         label: "--resume",
+      }),
+      expect.objectContaining({
+        value: "alpha --resume 20260724-130000-new --force ",
+        label: "--force",
       }),
       expect.objectContaining({
         value: "alpha --resume 20260724-130000-new -- ",
@@ -401,6 +421,10 @@ describe("workflow command argument completion", () => {
       expect.objectContaining({
         value: "alpha --resume 20260724-130000-new --workspace-dir tmp/review --resume ",
         label: "--resume",
+      }),
+      expect.objectContaining({
+        value: "alpha --resume 20260724-130000-new --workspace-dir tmp/review --force ",
+        label: "--force",
       }),
       expect.objectContaining({
         value: "alpha --resume 20260724-130000-new --workspace-dir tmp/review -- ",

@@ -69,7 +69,7 @@ describe("readable workflow authoring references", () => {
 
   it("keeps CLI syntax target-first on every active manual speaker", () => {
     const canonical =
-      "/workflows run <name|path> [--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--no-operator|--operator] [--] [input]";
+      "/workflows run <name|path> [--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--force] [--no-operator|--operator] [--] [input]";
     expect(source("docs/workflows/running.md")).toContain(canonical);
     expect(source("docs/workflows/running.md")).not.toContain("/workflow-run <name|path>");
     const running = source("docs/workflows/running.md");

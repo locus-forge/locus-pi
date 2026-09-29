@@ -37,6 +37,8 @@ Supply exactly one of `name` or `scriptPath`, plus the original semantic `input`
 Do not spawn Pi or translate the request into a slash command when the structured tool exists.
 Use `resumeFromRunId` only through [run recovery](references/recovery.md), not as a general retry switch.
 `continuation` carries a real operator answer to a recorded handoff; never synthesize that answer.
+Use `force: true` only for a lease error whose named run already has complete matching terminal evidence;
+it is not a process-stop switch and must remain fail-closed for active, unverifiable, partial or ambiguous owners.
 
 Choose either `workspaceDir` or `runName`, never both. A name selects `.locus-pi/workspaces/<name>`;
 a legacy-only `.locus-pi/plans/<name>` stays bound in place, and both paths existing fails closed.

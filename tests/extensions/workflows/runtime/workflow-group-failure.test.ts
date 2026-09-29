@@ -22,6 +22,36 @@ const okRunner: WorkflowAgentRunner = async (request) => ({
 });
 
 describe("workflow group failure contract", () => {
+  it("deduplicates identical human previews while preserving every structured failure", () => {
+    const repeated = "invokeWorkflow outputDir must equal .local/dags";
+    const error = new WorkflowGroupFailureError("parallel", "parallel-1", [
+      { index: 0, status: "failed", failure: { index: 0, kind: "thrown", message: repeated } },
+      { index: 1, status: "failed", failure: { index: 1, kind: "thrown", message: repeated } },
+      { index: 2, status: "failed", failure: { index: 2, kind: "thrown", message: "second cause" } },
+    ]);
+
+    expect(error.message).toBe(`parallel failed in 3/3 branch(es): branches 0, 1: ${repeated}; branch 2: second cause`);
+    expect(error.message.match(/invokeWorkflow outputDir/gu)).toHaveLength(1);
+    expect(error.toEnvelope().failures).toHaveLength(3);
+    expect(error.toEnvelope().slots).toHaveLength(3);
+  });
+
+  it("limits the human preview by distinct cause while retaining all branch failures", () => {
+    const error = new WorkflowGroupFailureError("parallel", "parallel-1", [
+      { index: 0, status: "failed", failure: { index: 0, kind: "thrown", message: "first" } },
+      { index: 1, status: "failed", failure: { index: 1, kind: "thrown", message: "second" } },
+      { index: 2, status: "failed", failure: { index: 2, kind: "thrown", message: "third" } },
+      { index: 3, status: "failed", failure: { index: 3, kind: "thrown", message: "fourth" } },
+      { index: 4, status: "failed", failure: { index: 4, kind: "thrown", message: "fourth" } },
+    ]);
+
+    expect(error.message).toBe(
+      "parallel failed in 5/5 branch(es): branch 0: first; branch 1: second; branch 2: third; +1 more distinct failure(s)",
+    );
+    expect(error.message).not.toContain("fourth");
+    expect(error.toEnvelope().failures).toHaveLength(5);
+  });
+
   it("keeps mapped pipeline and nested member contexts distinct across awaits", async () => {
     const requests: WorkflowAgentRequest[] = [];
     const { dsl } = createWorkflowRuntime({

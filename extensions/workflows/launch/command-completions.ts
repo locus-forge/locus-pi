@@ -14,6 +14,7 @@ import {
   parseWorkflowCommandToken,
   scanWorkflowRunOptionTokens,
   workflowRunOptionDescriptor,
+  WORKFLOW_RUN_FORCE_FLAG,
   WORKFLOW_RUN_OPTION_DESCRIPTORS,
 } from "../command/command-parser.js";
 import { WORKFLOW_WORKSPACES_STORAGE_PREFIX } from "../runtime/workflow-run-layout.js";
@@ -171,6 +172,15 @@ function workflowRunOptionCompletions(
               ? `Use ${WORKFLOW_WORKSPACES_STORAGE_PREFIX}<name> for this workflow`
               : "Resume from a prior run",
       })),
+      ...(completed.includes(WORKFLOW_RUN_FORCE_FLAG)
+        ? []
+        : [
+            {
+              value: `${stem}${WORKFLOW_RUN_FORCE_FLAG} `,
+              label: WORKFLOW_RUN_FORCE_FLAG,
+              description: "Reclaim a leaked lease only after terminal evidence proves the prior run settled",
+            },
+          ]),
       {
         value: `${stem}-- `,
         label: "--",
@@ -185,6 +195,11 @@ function workflowRunOptionCompletions(
       // End-of-options switches the rest to opaque semantic input. Never offer
       // option completions once that boundary has been crossed.
       return null;
+    }
+    if (token === WORKFLOW_RUN_FORCE_FLAG) {
+      completed.push(token);
+      index += 1;
+      continue;
     }
     const descriptor = workflowRunOptionDescriptor(token);
     if (descriptor === undefined) {

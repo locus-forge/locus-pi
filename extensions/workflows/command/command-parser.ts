@@ -16,6 +16,7 @@ export interface ParsedRunCommand {
   workspaceDir?: string;
   runName?: string;
   resumeFromRunId?: string;
+  force?: true;
   noOperator?: boolean;
   obsoleteOutputDir?: true;
   missingWorkspaceDir?: boolean;
@@ -30,7 +31,10 @@ export interface ParsedContinueCommand {
 }
 
 const WORKFLOW_RUN_OPTION_USAGE =
-  "[--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--no-operator|--operator] [--] [input]";
+  "[--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--force] [--no-operator|--operator] [--] [input]";
+
+/** Reclaim only a leaked lease whose matching terminal envelope proves the prior run settled. */
+export const WORKFLOW_RUN_FORCE_FLAG = "--force";
 
 /** Value-less run flag: run-level no-operator mode (operator input fails closed). */
 export const WORKFLOW_RUN_NO_OPERATOR_FLAG = "--no-operator";
@@ -120,6 +124,7 @@ export function workflowRunRecoveryUsage(parsed: ParsedRunCommand): string {
   }
   if (parsed.noOperator === true) parts.push(WORKFLOW_RUN_NO_OPERATOR_FLAG);
   else if (parsed.noOperator === false) parts.push(WORKFLOW_RUN_OPERATOR_FLAG);
+  if (parsed.force === true) parts.push(WORKFLOW_RUN_FORCE_FLAG);
   parts.push("[--]", "[input]");
   return parts.join(" ");
 }
@@ -150,12 +155,14 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
   let workspaceDir: string | undefined;
   let runName: string | undefined;
   let resumeFromRunId: string | undefined;
+  let force = false;
   let noOperator: boolean | undefined;
   const missing = (option: WorkflowRunOptionDescriptor): ParsedRunCommand => ({
     scriptRef,
     ...(workspaceDir === undefined ? {} : { workspaceDir }),
     ...(runName === undefined ? {} : { runName }),
     ...(resumeFromRunId === undefined ? {} : { resumeFromRunId }),
+    ...(force ? { force: true as const } : {}),
     ...(noOperator === undefined ? {} : { noOperator }),
     ...(option.field === "workspaceDir"
       ? { missingWorkspaceDir: true }
@@ -171,6 +178,14 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
       (rest.startsWith("--output-dir") && /^\s/u.test(rest.slice("--output-dir".length)))
     ) {
       return { scriptRef, obsoleteOutputDir: true };
+    }
+    if (
+      rest === WORKFLOW_RUN_FORCE_FLAG ||
+      (rest.startsWith(WORKFLOW_RUN_FORCE_FLAG) && /^\s/u.test(rest.slice(WORKFLOW_RUN_FORCE_FLAG.length)))
+    ) {
+      force = true;
+      rest = rest === WORKFLOW_RUN_FORCE_FLAG ? "" : rest.slice(WORKFLOW_RUN_FORCE_FLAG.length).trimStart();
+      continue;
     }
     const mode = WORKFLOW_RUN_MODE_FLAGS.find(
       (flag) => rest === flag.name || (rest.startsWith(flag.name) && /^\s/u.test(rest.slice(flag.name.length))),
@@ -193,6 +208,7 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
       value.value === "" ||
       value.value === "--" ||
       WORKFLOW_RUN_OPTION_DESCRIPTORS.some((descriptor) => value.value === descriptor.name) ||
+      value.value === WORKFLOW_RUN_FORCE_FLAG ||
       WORKFLOW_RUN_MODE_FLAGS.some((flag) => value.value === flag.name)
     ) {
       return missing(option);
@@ -208,6 +224,7 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
       ...(workspaceDir === undefined ? {} : { workspaceDir }),
       ...(runName === undefined ? {} : { runName }),
       ...(resumeFromRunId === undefined ? {} : { resumeFromRunId }),
+      ...(force ? { force: true as const } : {}),
       ...(noOperator === undefined ? {} : { noOperator }),
     };
   }
@@ -218,6 +235,7 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
       ...(workspaceDir === undefined ? {} : { workspaceDir }),
       ...(runName === undefined ? {} : { runName }),
       ...(resumeFromRunId === undefined ? {} : { resumeFromRunId }),
+      ...(force ? { force: true as const } : {}),
       ...(noOperator === undefined ? {} : { noOperator }),
       ...(input === "" ? {} : { input }),
     };
@@ -228,6 +246,7 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
     ...(workspaceDir === undefined ? {} : { workspaceDir }),
     ...(runName === undefined ? {} : { runName }),
     ...(resumeFromRunId === undefined ? {} : { resumeFromRunId }),
+    ...(force ? { force: true as const } : {}),
     ...(noOperator === undefined ? {} : { noOperator }),
     ...(input === "" ? {} : { input }),
   };
