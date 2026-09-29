@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import statusLine from "../../../extensions/status-line/index.js";
 import {
+  defaultControlHints,
   LocusFooterComponent,
   renderStatusLines,
   type StatusLineSnapshot,
@@ -16,6 +17,7 @@ function snapshot(overrides: Partial<StatusLineSnapshot> = {}): StatusLineSnapsh
     effort: "high",
     cwd: "~/projects/locus-pi",
     branch: "codex/subagent-interactive-view",
+    controls: defaultControlHints("darwin"),
     contextTokens: 63_200,
     contextWindow: 200_000,
     contextPercent: 31.6,
@@ -29,6 +31,7 @@ describe("status-line footer", () => {
     const wide = renderStatusLines(snapshot(), 240);
     expect(wide).toHaveLength(1);
     expect(wide[0]).toMatch(/^~\/projects\/locus-pi \(codex\/subagent-interactive-view\)/u);
+    expect(wide[0]).toContain("Ctrl+D exit (empty) · Ctrl+Z suspend");
     expect(wide[0]).toMatch(/31\.6%\/200k \(pi:auto\) gpt-5\.6-sol high$/u);
     expect(wide[0]).not.toContain("tok:");
     expect(wide[0]).not.toContain("ctx:");
@@ -37,13 +40,26 @@ describe("status-line footer", () => {
     const overflow = renderStatusLines(snapshot(), 80);
     expect(overflow).toHaveLength(2);
     expect(overflow[0]).toBe("~/projects/locus-pi (codex/subagent-interactive-view)");
+    expect(overflow[1]).toContain("Ctrl+D exit (empty) · Ctrl+Z suspend");
     expect(overflow[1]).toMatch(/31\.6%\/200k \(pi:auto\) gpt-5\.6-sol high$/u);
 
     const narrow = renderStatusLines(snapshot(), 48);
-    expect(narrow).toHaveLength(2);
+    expect(narrow).toHaveLength(3);
     expect(narrow[0]).toMatch(/^locus-pi/u);
-    expect(narrow[1]).toHaveLength(48);
-    expect(narrow[1]).toMatch(/31\.6%\/200k \(pi:auto\) gpt-5\.6-sol high$/u);
+    expect(narrow[1]).toBe("Ctrl+D exit (empty) · Ctrl+Z suspend");
+    expect(narrow[2]).toHaveLength(48);
+    expect(narrow[2]).toMatch(/31\.6%\/200k \(pi:auto\) gpt-5\.6-sol high$/u);
+    expect(narrow.every((line) => line.length <= 48)).toBe(true);
+  });
+
+  it("mirrors Pi's platform defaults without claiming suspend on Windows", () => {
+    expect(defaultControlHints("darwin")).toBe("Ctrl+D exit (empty) · Ctrl+Z suspend");
+    expect(defaultControlHints("linux")).toBe("Ctrl+D exit (empty) · Ctrl+Z suspend");
+    expect(defaultControlHints("win32")).toBe("Ctrl+D exit (empty)");
+
+    const windows = renderStatusLines(snapshot({ controls: defaultControlHints("win32") }), 240).join("\n");
+    expect(windows).toContain("Ctrl+D exit (empty)");
+    expect(windows).not.toContain("Ctrl+Z suspend");
   });
 
   it("renders honest compacting and post-compaction measuring states", () => {
@@ -82,9 +98,9 @@ describe("status-line footer", () => {
     expect(rendered[0]).toContain("\u001b[48;2;42;27;61m");
     expect(rendered[0]).toContain("5%/200k (pi:auto) gpt-5.6-sol high");
     const narrow = component?.render(40) ?? [];
-    expect(narrow).toHaveLength(2);
+    expect(narrow).toHaveLength(3);
     expect(narrow.every((line) => line.match(/\u001b\[0m/gu)?.length === 1)).toBe(true);
-    expect(viewerExternalRows()).toBe(1);
+    expect(viewerExternalRows()).toBe(2);
     expect(component?.render(240)).toHaveLength(1);
     expect(viewerExternalRows()).toBe(0);
 

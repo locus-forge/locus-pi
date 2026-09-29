@@ -48,7 +48,7 @@ terminal evidence, a static source check or a process exit code alone are not se
 
 Model choice belongs to the operator. Preserve the current Pi session and its configured defaults
 unless the user or project requests a provider, model, thinking level or role override.
-The native tool has no per-run model field: use `/model` and `/effort` for an authorized session change.
+The native tool has no per-run model field: use Pi's `/model` and `/thinking` controls for an authorized session change.
 Before an explicit selector or role override, read
 [model configuration](../../docs/workflows/models.md#inspect-model-configuration).
 Verify resolution and actual child routing; do not change them silently.

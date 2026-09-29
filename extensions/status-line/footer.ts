@@ -25,6 +25,7 @@ export interface StatusLineSnapshot {
   effort: string;
   cwd: string;
   branch?: string;
+  controls: string;
   contextTokens: number | null;
   contextWindow: number;
   contextPercent: number | null;
@@ -99,6 +100,7 @@ export function snapshotStatusLine(
     effort: ctx.thinkingLevel ?? "off",
     cwd: formatStatusCwd(cwd),
     ...(branch === null ? {} : { branch }),
+    controls: defaultControlHints(),
     contextTokens: context?.tokens ?? null,
     contextWindow: context?.contextWindow ?? numericField(ctx.model, "contextWindow") ?? 0,
     contextPercent: context?.percent ?? null,
@@ -120,7 +122,8 @@ export function renderStatusLines(snapshot: StatusLineSnapshot, width: number): 
     `${context} ${snapshot.effort}`,
   ];
 
-  const fullLine = alignStatusGroups(leftCandidates[0] ?? "", rightCandidates[0] ?? "", safeWidth);
+  const fullLeft = `${leftCandidates[0] ?? ""}  ${snapshot.controls}`;
+  const fullLine = alignStatusGroups(fullLeft, rightCandidates[0] ?? "", safeWidth);
   if (fullLine !== undefined) return [fullLine];
 
   const left =
@@ -128,7 +131,16 @@ export function renderStatusLines(snapshot: StatusLineSnapshot, width: number): 
   const right =
     rightCandidates.find((candidate) => visibleWidth(candidate) <= safeWidth) ??
     truncatePlain(rightCandidates.at(-1) ?? "", safeWidth);
-  return [left, right.padStart(safeWidth)];
+  const controlsWithStatus = rightCandidates
+    .map((candidate) => alignStatusGroups(snapshot.controls, candidate, safeWidth))
+    .find((candidate) => candidate !== undefined);
+  if (controlsWithStatus !== undefined) return [left, controlsWithStatus];
+  return [left, truncatePlain(snapshot.controls, safeWidth), right.padStart(safeWidth)];
+}
+
+export function defaultControlHints(platform: NodeJS.Platform = process.platform): string {
+  const exit = "Ctrl+D exit (empty)";
+  return platform === "win32" ? exit : `${exit} · Ctrl+Z suspend`;
 }
 
 function formatStatusCwd(cwd: string): string {

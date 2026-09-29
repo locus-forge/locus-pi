@@ -26,7 +26,7 @@ session or workflow is already running. Reattach or inspect that session instead
 of creating another writer. A request merely to open Pi creates no workflow run.
 A stopped workflow requires the run skill's recovery decision before launch.
 
-Use the operator's configured Pi installation and roles. Keep model/effort choices
+Use the operator's configured Pi installation and roles. Keep model and thinking choices
 unchanged unless requested. Use `--approve` only for the authorized project;
 project trust is broader than one workflow. Do not copy credentials into launch
 records. If Pi or the required supervisor is unavailable, report that prerequisite.

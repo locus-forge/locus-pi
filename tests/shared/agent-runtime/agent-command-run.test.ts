@@ -222,7 +222,7 @@ describe("agent command run (unified live surface)", () => {
       expect(rowLine).toContain("Review this");
       expect(rowLine).toContain("strong"); // provider prefix stripped from `test/strong`
       expect(rowLine).not.toContain("on task");
-      expect(rowLine).not.toContain("/effort=");
+      expect(rowLine).not.toContain("thinking=");
       expect(rowLine).not.toMatch(/reviewer#\w+/);
     }
     expect(slashRow.model).toBe(toolRow.model);

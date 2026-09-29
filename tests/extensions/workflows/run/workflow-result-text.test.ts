@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   readWorkflowRunResultText,
@@ -20,6 +21,7 @@ import workflows from "../../../../extensions/workflows/index.js";
 import { createHarness } from "../../../test-harness.js";
 
 const roots: string[] = [];
+initTheme(undefined, false);
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });

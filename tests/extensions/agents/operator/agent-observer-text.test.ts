@@ -67,6 +67,16 @@ describe("agent observer text", () => {
     expect(renderAgentObserverText()).not.toContain("tools=");
   });
 
+  it("labels the executed thinking level without the removed effort command name", () => {
+    agentLiveStore.begin({ id: "a", label: "alpha" });
+    agentLiveStore.patch("a", { status: "working", thinking: "high" });
+
+    const text = renderAgentObserverText();
+
+    expect(text).toContain("thinking=high");
+    expect(text).not.toContain("/effort=");
+  });
+
   it("collapses repeated event lines and says how many earlier ones it dropped", () => {
     agentLiveStore.reset();
     agentLiveStore.begin({ id: "a", label: "alpha" });

@@ -14,7 +14,6 @@ import {
   type AppliedModelRoleState,
 } from "../../../extensions/model/model-role-selector.js";
 import { modelRoleStatusContribution } from "../../../extensions/model/operator-surface.js";
-import { buildEffortOperatorBlock, type EffortCommandOutcome } from "../../../extensions/model/operator-ui.js";
 import {
   buildModelRolesState,
   getModelRolesConfigPath,
@@ -26,8 +25,6 @@ import {
   unassignedAgentTierNote,
 } from "../../../extensions/_shared/model/model-settings.js";
 import { sessionJsonlPath } from "../../../extensions/_shared/host/files.js";
-import { renderOperatorBlockPlain } from "../../../extensions/_shared/operator/operator-ui.js";
-import type { CustomUiComponent } from "../../../extensions/_shared/host/pi-api.js";
 import { createHarness, emit, type Harness } from "../../test-harness.js";
 
 const ENTER = "\r";
@@ -71,10 +68,12 @@ describe("model extension", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it("registers only /model-roles and /effort in the model namespace", () => {
-    expect([...harness.commands.keys()].sort()).toEqual(["effort", "model-roles"]);
+  it("registers only /model-roles and leaves model/thinking controls to Pi", () => {
+    expect([...harness.commands.keys()]).toEqual(["model-roles"]);
     expect(harness.commands.has("model")).toBe(false);
     expect(harness.commands.has("models")).toBe(false);
+    expect(harness.commands.has("thinking")).toBe(false);
+    expect(harness.commands.has("effort")).toBe(false);
   });
 
   it("publishes source-backed capability labels for all six roles", () => {
@@ -560,170 +559,6 @@ describe("model extension", () => {
     expect(contribution?.wide).toContain("DEFAULT=gpt-5.6");
     expect(contribution?.wide).not.toMatch(/current=|effort|high|cwd|context/);
     expect(contribution?.compact).not.toMatch(/current=|effort|high|cwd|context/);
-  });
-
-  it("/effort validates model capability before calling Pi", async () => {
-    harness.ctx.model = { provider: "test", id: "plain", name: "Plain", reasoning: false };
-
-    await harness.commands.get("effort")!.handler("high", harness.ctx);
-
-    expect(harness.thinkingLevel).toBeUndefined();
-    expect(harness.widgets.get("effort")).toContain("[ERROR]");
-    expect(harness.widgets.get("effort")).toContain("test/plain does not support high");
-    expect(harness.widgets.get("effort")).toContain("Supported: off");
-    expect(harness.notifications).toEqual([]);
-  });
-
-  it("/effort offers capability-backed levels and verifies the result", async () => {
-    harness.ctx.model = REASONING_MODELS[0]!;
-    harness.selectQueue.push("xhigh");
-
-    await harness.commands.get("effort")!.handler("", harness.ctx);
-
-    expect(harness.selectCalls[0]?.title).toBe("[SELECT] Thinking effort · current off · test/fast");
-    expect(harness.selectCalls[0]?.options).toEqual(["off", "minimal", "low", "medium", "high", "xhigh"]);
-    expect(harness.thinkingLevel).toBe("xhigh");
-    expect(harness.widgets.get("effort")).toContain("[CHANGE]");
-    expect(harness.widgets.get("effort")).toContain("registry");
-    expect(harness.notifications).toEqual([]);
-  });
-
-  it.each(["off", "minimal", "low", "medium", "high", "xhigh"] as const)(
-    "/effort starts on the current %s level and Enter is idempotent",
-    async (current) => {
-      harness.ctx.model = REASONING_MODELS[0]!;
-      harness.pi.setThinkingLevel?.(current);
-
-      await harness.commands.get("effort")!.handler("", harness.ctx);
-
-      expect(harness.selectCalls[0]?.title).toContain(`current ${current}`);
-      expect(harness.selectCalls[0]?.options[0]).toBe(current);
-      expect(harness.thinkingLevel).toBe(current);
-      expect(harness.widgets.get("effort")).toContain("[VIEW]");
-      expect(harness.widgets.get("effort")).toContain(`Current session effort remains ${current}.`);
-      expect(harness.widgets.get("effort")).not.toContain("[CHANGE]");
-    },
-  );
-
-  it("/effort cancel leaves session effort unchanged and emits no result surface", async () => {
-    harness.ctx.model = REASONING_MODELS[0]!;
-    let selectTitle = "";
-    harness.ctx.ui.select = async (title) => {
-      selectTitle = title;
-      return { value: "high", cancelled: true };
-    };
-
-    await harness.commands.get("effort")!.handler("", harness.ctx);
-
-    expect(selectTitle).toContain("[SELECT] Thinking effort");
-    expect(harness.thinkingLevel).toBeUndefined();
-    expect(harness.widgetPayloads.get("effort")).toBeUndefined();
-    expect(harness.notifications).toEqual([]);
-  });
-
-  it("/effort no-arg in RPC mode gives an explicit typed recovery without opening a selector", async () => {
-    const rpc = createHarness(join(root, "rpc-no-arg"), { models: REASONING_MODELS, mode: "rpc" });
-    rpc.ctx.hasUI = true;
-    rpc.ctx.model = REASONING_MODELS[0]!;
-    model(rpc.pi);
-
-    await rpc.commands.get("effort")!.handler("", rpc.ctx);
-
-    expect(rpc.selectCalls).toHaveLength(0);
-    expect(rpc.widgets.get("effort")).toContain("[WARN] Thinking effort");
-    expect(rpc.widgets.get("effort")).toContain("Use an explicit level: /effort <level>");
-    expect(rpc.thinkingLevel).toBeUndefined();
-  });
-
-  it.each([
-    ["control", "thinking-level control"],
-    ["verification", "thinking-level verification"],
-  ] as const)("/effort reports missing host %s as a typed error without mutation", async (operation, message) => {
-    harness.ctx.model = REASONING_MODELS[0]!;
-    if (operation === "control") delete harness.pi.setThinkingLevel;
-    else delete harness.pi.getThinkingLevel;
-
-    await harness.commands.get("effort")!.handler("high", harness.ctx);
-
-    expect(harness.thinkingLevel).toBeUndefined();
-    expect(harness.widgets.get("effort")).toContain("[ERROR]");
-    expect(harness.widgets.get("effort")).toContain(message);
-    expect(harness.notifications).toEqual([]);
-  });
-
-  it("/effort reports a host clamp as WARN and does not claim the request succeeded", async () => {
-    harness.ctx.model = REASONING_MODELS[0]!;
-    harness.pi.setThinkingLevel = () => {
-      harness.thinkingLevel = "medium";
-    };
-    harness.pi.getThinkingLevel = () => harness.thinkingLevel ?? "off";
-
-    await harness.commands.get("effort")!.handler("high", harness.ctx);
-
-    expect(harness.thinkingLevel).toBe("medium");
-    expect(harness.widgets.get("effort")).toContain("[WARN]");
-    expect(harness.widgets.get("effort")).toContain("Pi kept medium; high was not accepted.");
-    expect(harness.widgets.get("effort")).not.toContain("[CHANGE]");
-    expect(harness.notifications).toEqual([]);
-  });
-
-  it("/effort renders its actual CHANGE widget safely at 146/80/48 columns", async () => {
-    harness.ctx.model = REASONING_MODELS[0]!;
-
-    await harness.commands.get("effort")!.handler("high", harness.ctx);
-
-    const payload = harness.widgetPayloads.get("effort");
-    expect(typeof payload).toBe("function");
-    const component = (payload as (_tui: unknown, theme: unknown) => CustomUiComponent)(
-      { requestRender() {}, terminal: { rows: 40, columns: 146 } },
-      {},
-    );
-    for (const width of [146, 80, 48]) {
-      const lines = component.render(width);
-      const text = lines.join("\n");
-      expect(text).toContain("[CHANGE]");
-      expect(text).toContain("Current session effort is now high.");
-      expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
-    }
-    expect(harness.widgetOptions.get("effort")).toEqual({ placement: "aboveEditor" });
-    expect(harness.notifications).toEqual([]);
-  });
-
-  it("/effort emits the same typed hierarchy as plain RPC output", async () => {
-    const rpc = createHarness(join(root, "rpc"), { models: REASONING_MODELS, mode: "rpc" });
-    model(rpc.pi);
-    rpc.ctx.model = REASONING_MODELS[0]!;
-
-    await rpc.commands.get("effort")!.handler("high", rpc.ctx);
-
-    const payload = rpc.widgetPayloads.get("effort");
-    expect(Array.isArray(payload)).toBe(true);
-    expect((payload as string[]).join("\n")).toContain("[CHANGE] Thinking effort");
-    expect((payload as string[]).every((line) => visibleWidth(line) <= 80)).toBe(true);
-    expect(rpc.notifications).toEqual([]);
-  });
-});
-
-describe("effort operator surfaces", () => {
-  const outcomes: EffortCommandOutcome[] = [
-    { kind: "unknown", requested: "turbo", supported: ["off", "high"] },
-    { kind: "unsupported", requested: "xhigh", model: "test/plain", supported: ["off"] },
-    { kind: "unavailable", operation: "control", supported: ["off", "high"] },
-    { kind: "unavailable", operation: "verification", supported: ["off", "high"] },
-    { kind: "clamped", requested: "xhigh", actual: "high", supported: ["off", "high"] },
-    { kind: "unchanged", level: "high", supported: ["off", "high"], capability: "registry" },
-    { kind: "changed", level: "high", supported: ["off", "high"], capability: "registry" },
-  ];
-
-  it.each([146, 80, 48])("keeps every plain outcome typed and width-safe at %i columns", (width) => {
-    for (const outcome of outcomes) {
-      const block = buildEffortOperatorBlock(outcome);
-      const lines = renderOperatorBlockPlain(block, width);
-      const normalized = lines.join(" ");
-      expect(normalized).toContain(`[${block.type}] Thinking effort`);
-      expect(normalized).toContain(block.primary);
-      expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
-    }
   });
 });
 

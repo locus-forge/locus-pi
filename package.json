@@ -70,17 +70,17 @@
     "@sinclair/typebox": "^0.34.41"
   },
   "peerDependencies": {
-    "@earendil-works/pi-agent-core": ">=0.83.0",
-    "@earendil-works/pi-ai": ">=0.83.0",
-    "@earendil-works/pi-coding-agent": ">=0.83.0",
-    "@earendil-works/pi-tui": ">=0.83.0",
+    "@earendil-works/pi-agent-core": ">=0.84.3",
+    "@earendil-works/pi-ai": ">=0.84.3",
+    "@earendil-works/pi-coding-agent": ">=0.84.3",
+    "@earendil-works/pi-tui": ">=0.84.3",
     "typebox": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-agent-core": "0.84.1",
-    "@earendil-works/pi-ai": "0.84.1",
-    "@earendil-works/pi-coding-agent": "0.84.1",
-    "@earendil-works/pi-tui": "0.84.1",
+    "@earendil-works/pi-agent-core": "0.87.1",
+    "@earendil-works/pi-ai": "0.87.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@earendil-works/pi-tui": "0.87.1",
     "@types/node": "^24.0.0",
     "lint-staged": "^16.4.0",
     "prettier": "^3.9.5",

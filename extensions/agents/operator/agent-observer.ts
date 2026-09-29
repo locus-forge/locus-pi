@@ -68,9 +68,9 @@ function formatAgentObserverRow(row: AgentLiveRow): string[] {
   const agent = row.agentName === undefined ? "" : ` agent=${formatAgentIdentity(row)}`;
   const tools = activeTools.length === 0 ? "" : ` tools=${activeTools.join(",")}`;
   const model = row.model === undefined ? "" : ` model=${row.model}`;
-  const effort = row.thinking === undefined ? "" : ` /effort=${row.thinking}`;
+  const thinking = row.thinking === undefined ? "" : ` thinking=${row.thinking}`;
   return [
-    `- ${row.id}${agent}${model}${effort} status=${formatAgentObserverStatus(row.status)} label=${JSON.stringify(row.label)}`,
+    `- ${row.id}${agent}${model}${thinking} status=${formatAgentObserverStatus(row.status)} label=${JSON.stringify(row.label)}`,
     `  elapsed=${formatAgentObserverElapsed(row)} steps=${row.stepCount}(events)${tools}`,
     `  events: ${formatAgentObserverDigest(row.eventLines)}`,
   ];
