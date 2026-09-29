@@ -177,21 +177,6 @@ describe("model command surfaces", () => {
     expect(effort).toContain(`${fill}\x1b[38;2;248;241;255moff\x1b[0m`);
   });
 
-  it("names mode, current level and supported levels when the effort selector cannot open", async () => {
-    const rpc = createHarness(join(root, "rpc-effort"), { models: REASONING_MODELS, mode: "rpc" });
-    rpc.ctx.model = REASONING_MODELS[0]!;
-    model(rpc.pi);
-
-    await rpc.commands.get("effort")!.handler("", rpc.ctx);
-
-    const widget = (rpc.widgetPayloads.get("effort") as string[]).join("\n");
-    expect(widget).toContain("[WARN] Thinking effort");
-    expect(widget).toContain("Interactive effort selection is unavailable in rpc mode.");
-    expect(widget).toContain("Current: off");
-    expect(widget).toContain("Scope: current Pi session");
-    expect(rpc.thinkingLevel).toBeUndefined();
-  });
-
   it("clears the routes status contribution while every role is unassigned", async () => {
     await emit(harness, "session_start");
 

@@ -2,11 +2,11 @@
 title: Recovery and operator continuation
 type: guide
 status: active
-updated: "2026-09-22T17:02:16Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=46"
-description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
+updated: "2026-09-29T12:16:18Z"
+source_commit: "35d8e1d2589d"
+update_event: "user_request"
+context: "changes=XL files=30"
+description: "Align the documented workflow host floor with Pi 0.84.3."
 ---
 
 # Recovery and operator continuation
@@ -163,7 +163,7 @@ Mode behavior stays explicit:
 | JSON/print         | Readable one-way lifecycle output              | `/workflows continue … --answer …` only    |
 | Embedded child SDK | Existing `session.subscribe(...)` observation  | Not applicable                             |
 
-The minimum supported host floor for automatic questions is Pi 0.83.0. The exact tested Pi version is pinned in the development dependencies and may be newer. Locus
+The minimum supported host floor for automatic questions is Pi 0.84.3. The exact tested Pi version is pinned in the development dependencies and may be newer. Locus
 serializes its own inline components and rechecks the current idle session before
 mounting. Pi exposes no global custom-UI lock for unrelated third-party
 extensions, so `/workflows` opens the recovery menu if another extension

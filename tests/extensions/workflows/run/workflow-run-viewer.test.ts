@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -20,6 +21,7 @@ import { WorkflowRunViewer } from "../../../../extensions/workflows/run/run-view
 import { createHarness } from "../../../test-harness.js";
 
 const roots: string[] = [];
+initTheme(undefined, false);
 
 afterEach(() => {
   clearViewerExternalRows("test-workflow-run");
@@ -190,8 +192,7 @@ describe("workflow persisted evidence viewer", () => {
       vi.fn(),
       runId,
     );
-    const stages = viewer.render(100).join("\n");
-    expect(stages).toContain(`${runId} · unknown · stages`);
+    expect(viewer.render(100).join("\n")).toContain(`${runId} · unknown · stages`);
     viewer.handleInput("enter");
     const rendered = viewer.render(100).join("\n");
     expect(rendered).toContain("Malformed persisted metadata");
@@ -262,8 +263,7 @@ describe("workflow persisted evidence viewer", () => {
     );
     expect(() => viewer.render(100)).not.toThrow();
     expect(viewer.render(100).join("\n")).toContain("journal corruption (5)");
-    viewer.handleInput("enter");
-    viewer.handleInput("enter");
+    for (let index = 0; index < 2; index += 1) viewer.handleInput("enter");
     const rendered = viewer.render(100).join("\n");
     expect(rendered).toContain("Journal corruption detected: 5");
     expect(rendered).toContain("line 3: Field phase must be string.");

@@ -1,5 +1,10 @@
 import { runAgentLoop, type StreamFn } from "@earendil-works/pi-agent-core";
-import { createAssistantMessageEventStream, type AssistantMessage, type Message } from "@earendil-works/pi-ai";
+import {
+  createAssistantMessageEventStream,
+  normalizeContext,
+  type AssistantMessage,
+  type Message,
+} from "@earendil-works/pi-ai";
 import { getModel } from "@earendil-works/pi-ai/compat";
 import { describe, expect, it, vi } from "vitest";
 import { AgentLivePanel } from "../../../extensions/_shared/agent-runtime/agent-live-panel.js";
@@ -40,7 +45,7 @@ describe("external provider progress runtime contract", () => {
     const observedEvents: string[] = [];
     const run = runAgentLoop(
       [{ role: "user", content: "Review source", timestamp: 0 }],
-      { systemPrompt: "Test", messages: [], tools: [] },
+      { messages: normalizeContext({ systemPrompt: "Test", messages: [] }).messages, tools: [] },
       { model, convertToLlm: (messages) => messages as Message[] },
       (event) => {
         observedEvents.push(event.type);

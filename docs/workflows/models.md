@@ -2,11 +2,11 @@
 title: Agent catalog and model selection
 type: guide
 status: active
-updated: "2026-09-22T17:02:16Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=46"
-description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
+updated: "2026-09-29T12:16:18Z"
+source_commit: "35d8e1d2589d"
+update_event: "user_request"
+context: "changes=XL files=30"
+description: "Use Pi's built-in thinking selector instead of the removed Locus effort alias."
 ---
 
 # Agent catalog and model selection
@@ -18,7 +18,7 @@ description: "Consolidate workflow contracts at their owning pages and repair ou
 Model roles keep workflow source independent of the models you have configured.
 For example, assign a fast model to `smol` and a model for more demanding work to
 `slow` through `/model-roles`. The [model extension guide](../../extensions/model/README.md)
-explains the selector and effort controls.
+explains the role and thinking controls.
 
 A stage can then request a role:
 
@@ -54,13 +54,12 @@ owner's existing authorization or report the concrete prerequisite; do not silen
 fall back to an API key, another provider or another model. Keep executed-route
 evidence separate from the requested route.
 
-In an existing Pi session, `/model` selects the main model and `/effort <level>`
-directly changes its session-only thinking level; see the
-[model extension guide](../../extensions/model/README.md). On Pi `0.84.3` and
-newer, `/thinking` opens the built-in selector: `Enter` applies a session choice
-and `Ctrl+S` saves the highlighted level as Pi's global default. The `/model`
-selector uses the same `Enter` versus `Ctrl+S` distinction. These controls do
-not replace explicit workflow child routes.
+In an existing Pi session, `/model` selects the main model and `/thinking`
+selects its thinking level; see the
+[model extension guide](../../extensions/model/README.md). In either built-in
+selector, `Enter` applies a session choice and `Ctrl+S` saves the highlighted
+choice as Pi's global default. These controls do not replace explicit workflow
+child routes.
 
 List the models Pi can currently resolve before using an explicit selector:
 
@@ -90,7 +89,7 @@ Workflow child roles have one persistent source:
 `provider/model[:thinking]`. Project `.pi/model-roles/config.json`, Pi
 `settings.json#modelRoles`, and session evidence do not override this file.
 
-Use user-configured default model/effort routing unless the user or project explicitly
+Use user-configured default model and thinking routing unless the user or project explicitly
 requests an override. Do not add model brands, tiers, or role substitutions at launch.
 
 A model-less child with no assigned `agent` role inherits the live main session

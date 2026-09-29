@@ -4,6 +4,12 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+### Changed
+
+- The minimum supported Pi version is now `0.84.3`, where Pi provides the
+  built-in `/thinking` selector. The Locus `/effort` alias has been removed;
+  use `/thinking` for session changes and `Ctrl+S` there to save the default.
+
 ## [0.10.0] - 2026-09-28
 
 ### Changed

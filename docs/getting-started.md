@@ -4,16 +4,16 @@ type: guide
 status: active
 owner: locus-pi maintainers
 tags: [installation, getting-started]
-updated: "2026-09-26T00:20:02Z"
-source_commit: "dfed8d3519fb"
+updated: "2026-09-29T12:16:18Z"
+source_commit: "35d8e1d2589d"
 update_event: "user_request"
-context: "changes=S files=2"
-description: "Reflect the published npm package and distinguish release documentation from repository changes."
+context: "changes=XL files=30"
+description: "Raise the supported Pi floor to the first release with the built-in thinking selector."
 ---
 
 # Getting started
 
-Requires Node.js `>=22.19.0`, Pi `>=0.83.0`, and a configured model provider.
+Requires Node.js `>=22.19.0`, Pi `>=0.84.3`, and a configured model provider.
 Choose one installation source: a Git checkout or the published npm package.
 The npm release can lag this repository. Use the documentation bundled with your
 installed version when checking its available workflows and skills.
