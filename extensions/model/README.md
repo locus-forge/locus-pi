@@ -15,7 +15,9 @@ It does not enforce Pi's `enabledModels` setting. That list keeps its Pi meaning
 
 The selector uses the shared [TUI visual language](../../docs/tui-design.md). Its purple frame and provider pill identify the active selection surface. Strong row focus moves from model to role to effort, while saved assignments remain green and unset routes remain warnings.
 
-`/effort` changes only the current session model's supported thinking level. The extension checks model capability before applying and verifies the host result instead of reporting a clamped value as success.
+`/effort` changes only the current session model's supported thinking level. It remains useful as a direct command such as `/effort high`, checks model capability before applying, verifies the host result instead of reporting a clamped value as success, and works across the package's Pi `>=0.83.0` compatibility range.
+
+Pi `0.84.3` and newer also provide `/thinking`. In that selector, `Enter` changes only the current session and `Ctrl+S` saves the highlighted level as Pi's global default. Use that built-in saved-default path when the choice must survive a new Pi process; `/effort` deliberately does not rewrite Pi settings.
 
 ## Persistence
 

@@ -54,9 +54,13 @@ owner's existing authorization or report the concrete prerequisite; do not silen
 fall back to an API key, another provider or another model. Keep executed-route
 evidence separate from the requested route.
 
-In an existing Pi session, `/model` selects the main model and `/effort` changes
-its thinking level; see the [model extension guide](../../extensions/model/README.md).
-These controls do not replace explicit workflow child routes.
+In an existing Pi session, `/model` selects the main model and `/effort <level>`
+directly changes its session-only thinking level; see the
+[model extension guide](../../extensions/model/README.md). On Pi `0.84.3` and
+newer, `/thinking` opens the built-in selector: `Enter` applies a session choice
+and `Ctrl+S` saves the highlighted level as Pi's global default. The `/model`
+selector uses the same `Enter` versus `Ctrl+S` distinction. These controls do
+not replace explicit workflow child routes.
 
 List the models Pi can currently resolve before using an explicit selector:
 

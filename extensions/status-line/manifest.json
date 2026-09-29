@@ -4,7 +4,8 @@
     "Pi custom footer API (minimum host floor 0.83.0)",
     "Pi footer data provider for Git branch",
     "Pi context-usage API",
-    "session_before_compact and session_compact lifecycle events"
+    "session_before_compact and session_compact lifecycle events",
+    "Pi default Ctrl+D exit and POSIX Ctrl+Z suspend bindings, shown as orientation hints rather than a custom keymap"
   ],
   "stateUsed": ["read-only current working directory and Git branch", "ephemeral compaction display state"],
   "provides": {
