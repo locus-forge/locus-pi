@@ -4,7 +4,6 @@
  */
 
 import path from "node:path";
-import { Type } from "@sinclair/typebox";
 import {
   type ExtensionAPI,
   type ThemeLike,
@@ -24,11 +23,8 @@ import { applyWorkflowJournalLineToAgentLiveStore } from "../runtime/workflow-li
 import { runWorkflowScript, type RunWorkflowScriptResult } from "../runtime/workflow-runner.js";
 import { readWorkflowResumeWorkspaceIdentity } from "../runtime/workflow-run-resume.js";
 import { resolveWorkflowTarget, type ResolvedWorkflowTarget } from "../runtime/workflow-discovery.js";
-import { WORKFLOW_SAVED_NAME_MAX_CHARS, WORKFLOW_SAVED_NAME_PATTERN } from "../runtime/workflow-saved-name.js";
 import type { WorkflowJournalLine } from "../runtime/workflow-runtime.js";
 import {
-  WORKFLOW_RUN_NAME_MAX_CHARS,
-  WORKFLOW_RUN_NAME_PATTERN,
   resolveNamedWorkflowWorkspacePath,
   resolveWorkflowWorkspaceDirectoryPath,
 } from "../runtime/workflow-output.js";
@@ -52,8 +48,6 @@ import {
   readWorkflowRunTextFile,
   WORKFLOW_NESTED_RUN_STORAGE_PATTERN,
   WORKFLOW_RUN_GROUP_STORAGE_PATTERN,
-  WORKFLOW_ARTIFACT_DISPLAY_NAME_PATTERN,
-  WORKFLOW_SAFE_COMPONENT_PATTERN,
   WORKFLOW_WORKSPACES_STORAGE_PREFIX,
   workflowRunOutputsDir,
 } from "../runtime/workflow-run-layout.js";
@@ -61,123 +55,8 @@ import {
   resolveWorkflowBudget,
   WORKFLOW_BUDGET_AXES,
   removedWorkflowBudgetKeyMessage,
-  WORKFLOW_AGENT_MAX_TURNS,
 } from "../runtime/workflow-budget.js";
-const WorkflowBudgetParams = Type.Object(
-  {
-    concurrency: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
-    totalAgents: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
-    runtimeMs: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
-    // No policy ceiling: a long explicit deadline runs as a chain of representable
-    // waits, so the only bound left is what a number can be.
-    timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
-    toolCalls: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
-    turns: Type.Optional(Type.Integer({ minimum: 1, maximum: WORKFLOW_AGENT_MAX_TURNS })),
-  },
-  { additionalProperties: false },
-);
-const WorkflowArtifactRefParams = Type.Object(
-  {
-    runId: Type.String({ pattern: WORKFLOW_SAFE_COMPONENT_PATTERN }),
-    artifactId: Type.String({ pattern: WORKFLOW_SAFE_COMPONENT_PATTERN }),
-    // `artifactId` is the storage id; `name` is the published display label, so it
-    // carries confinement (no path separators, no control characters, not blank) and
-    // no alphabet or length policy. `Design review.md` is a valid continuation ref.
-    name: Type.String({
-      description: "Published artifact display label, exactly as the origin run recorded it",
-      pattern: WORKFLOW_ARTIFACT_DISPLAY_NAME_PATTERN,
-    }),
-    sha256: Type.String({ pattern: "^[a-f0-9]{64}$" }),
-  },
-  { additionalProperties: false },
-);
-
-const WorkflowContinuationParams = Type.Object(
-  {
-    originRunId: Type.String({ pattern: WORKFLOW_SAFE_COMPONENT_PATTERN }),
-    // At least one ref, and no upper bound: a continuation carries the work the origin
-    // run actually produced, and refusing the ninth complete reference would drop evidence
-    // the operator already paid for. Identity, completeness and same-origin stay enforced.
-    artifactRefs: Type.Array(WorkflowArtifactRefParams, { minItems: 1 }),
-  },
-  { additionalProperties: false },
-);
-
-const WorkflowParams = Type.Object(
-  {
-    name: Type.Optional(
-      Type.String({
-        description:
-          "Exact saved workflow ref: <workflow> or <workflow>/<child>, 1-200 characters total, interior whitespace allowed, with no edge whitespace, backslash, control characters, or .mjs suffix",
-        maxLength: WORKFLOW_SAVED_NAME_MAX_CHARS,
-        pattern: WORKFLOW_SAVED_NAME_PATTERN,
-      }),
-    ),
-    // No aggregate character cap on a path. Confinement (inside the project, no
-    // traversal, no symlink escape) is the real rule, and the filesystem owns the
-    // component and path-length limits — a deep but legal tree is not a bad request.
-    scriptPath: Type.Optional(
-      Type.String({
-        description: "Project-relative .mjs workflow script path",
-      }),
-    ),
-    script: Type.Optional(
-      Type.String({
-        description: "Legacy compatibility alias for name or project-relative scriptPath",
-      }),
-    ),
-    input: Type.Optional(
-      Type.String({
-        description: "Optional human semantic request passed unchanged to runWorkflow(dsl, input).",
-      }),
-    ),
-    items: Type.Optional(
-      Type.Array(Type.String(), {
-        description:
-          "Optional exact text work units exposed unchanged and in order through dsl.items(); empty strings and duplicates are preserved.",
-      }),
-    ),
-    workspaceDir: Type.Optional(
-      Type.String({
-        description:
-          "Optional workflow workspace path. Fresh workflows default to unique .locus-pi/workspaces/<generated-run-name> workspaces; resume repeats the source workspace. Existing legacy .locus-pi/plans/<name> paths are accepted only when already present. A task artifacts directory such as .tasks/<task>/artifacts is a legal explicit workspace. Absolute paths must stay inside the project; ./ paths resolve from the agent working directory; other relative paths resolve from the project root.",
-      }),
-    ),
-    runName: Type.Optional(
-      Type.String({
-        maxLength: WORKFLOW_RUN_NAME_MAX_CHARS,
-        pattern: WORKFLOW_RUN_NAME_PATTERN,
-        description: `Optional short workflow run name. The runtime expands new names to ${WORKFLOW_WORKSPACES_STORAGE_PREFIX}<runName> and reuses an existing legacy-only .locus-pi/plans/<runName>. Mutually exclusive with workspaceDir.`,
-      }),
-    ),
-    continuation: Type.Optional(WorkflowContinuationParams),
-    budget: Type.Optional(WorkflowBudgetParams),
-    recoverInterrupted: Type.Optional(
-      Type.Boolean({
-        description:
-          "Explicit recovery of a confirmed serial prefix after hard crash; requires resumeFromRunId and identical source/inputs.",
-      }),
-    ),
-    resumeFromRunId: Type.Optional(
-      Type.String({
-        description: "Optional prior workflow run id used as persisted retry metadata",
-        pattern: WORKFLOW_SAFE_COMPONENT_PATTERN,
-      }),
-    ),
-    noOperator: Type.Optional(
-      Type.Boolean({
-        description:
-          "Run-level no-operator mode for unattended launches: any request for operator input " +
-          "(dsl.awaitOperator or an agent({ ask: true }) stage) fails closed with a named reason " +
-          "instead of pausing the run. Saved children inherit the mode and cannot unset it. " +
-          "Defaults to true in a headless (print/json) host, where no operator can be reached; " +
-          "pass false there to keep the designed awaitOperator split-run pause.",
-      }),
-    ),
-  },
-  { additionalProperties: false },
-);
-
+import { WorkflowParams } from "./workflow-tool-params.js";
 function workflowApprovalDetails(args: unknown, projectRoot: string): string[] {
   const record = args !== null && typeof args === "object" ? (args as Record<string, unknown>) : {};
   const target = String(record.name ?? record.scriptPath ?? record.script ?? "unspecified");
@@ -220,6 +99,9 @@ function workflowApprovalDetails(args: unknown, projectRoot: string): string[] {
     ...(record.recoverInterrupted === true
       ? ["Recovery: explicit hard-crash recovery of a confirmed serial prefix; no unresolved child effects allowed"]
       : []),
+    ...(record.force === true
+      ? ["Lease recovery: force only with a complete matching terminal result; active/unverifiable owners stay fenced"]
+      : []),
     "Surface: trusted-file workflow runner",
     "Trust: reviewed JavaScript with full Node.js/module access in the Pi host process",
     "Isolation: none — exec approval is consent, not a sandbox",
@@ -256,6 +138,7 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
     description:
       `Run a reviewed trusted-file workflow script by saved name or project-relative path with an optional explicit shared budget, optional semantic text, ` +
       `optional exact text work units exposed through dsl.items(), an optional confined workflow workspace, and optional host-verified continuation artifacts. ` +
+      `An optional force flag reclaims only a leaked lease whose matching run has complete terminal evidence; it never overwrites an active or unverifiable owner. ` +
       `Fresh workflows default to unique .locus-pi/workspaces/<generated-run-name> workspaces; runName selects .locus-pi/workspaces/<runName> for new names and ` +
       `reuses an existing legacy-only .locus-pi/plans/<runName>; resume repeats the original workspace. Root evidence is stored under ` +
       `${WORKFLOW_RUN_GROUP_STORAGE_PATTERN}{outputs,runtime}; saved children and resume attempts use ${WORKFLOW_NESTED_RUN_STORAGE_PATTERN}{outputs,runtime}. ` +
@@ -364,6 +247,7 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
           ...(valid.value.recoverInterrupted === undefined
             ? {}
             : { recoverInterrupted: valid.value.recoverInterrupted }),
+          ...(valid.value.force === true ? { force: true as const } : {}),
           // Same default as the command surface: in a headless (`print`/`json`)
           // host there is no operator to reach, so the mode is on unless the
           // caller explicitly passes `noOperator: false`.

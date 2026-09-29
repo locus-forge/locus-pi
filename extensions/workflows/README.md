@@ -11,7 +11,7 @@
 /workflows info [name]
 /workflows status [runId]
 /workflows result [runId|last]
-/workflows run <name|path> [--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--no-operator|--operator] [--] [input]
+/workflows run <name|path> [--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--force] [--no-operator|--operator] [--] [input]
 /workflows continue <runId>
 /workflows stop [runId|last]
 /workflows skills <sync|status|remove> [--host codex|claude|all] [--scope user|project]
@@ -44,8 +44,12 @@ Create-only returns checked source and a command without execution. An authorize
 - Any workflow supports `--run-name <name>` to select `.locus-pi/workspaces/<name>/`; an existing legacy-only `.locus-pi/plans/<name>/` stays in place so resume and checkpoint identity remain stable.
 - Explicit output directories must remain safe, project-relative paths.
 - Run evidence and the workflow workspace are separate ownership zones.
-- `.locus-pi/workflow-state/v1/<hash>/` is active lease and saved-child checkpoint state. A normal run can leave an empty state directory after releasing its temporary workspace lock.
+- `.locus-pi/workflow-state/v1/<hash>/` owns the runtime-workspace `lease.json`, short-lived `reclaim.json`, and saved-child checkpoints. A normal run can leave an empty state directory after releasing its temporary workspace lock.
+- `.locus-pi/workflow-output-state/v1/<hash>/` independently owns the final-output `lease.json` and short-lived `reclaim.json`. The two state roots fence different write targets and are not aliases or old/new migration names.
+- `.locus-pi/logs/errors.jsonl` is the shared host error journal. Removing it loses diagnostics but neither releases nor acquires workflow ownership.
 - Loose `.locus-pi/plans/*.md` files are plan documents left by the removed `plan` extension; they are user data, not workflow workspace storage.
+
+`--force` reclaims only a leaked lease whose exact run has a complete matching terminal envelope written after lease release. It never kills a process, overwrites an active/unverifiable owner, or removes an existing reclaim guard. See [operator recovery](../../docs/workflows/running.md#workspace-and-output-ownership-recovery).
 
 ## Trust
 

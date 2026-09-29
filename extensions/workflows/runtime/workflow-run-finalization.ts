@@ -55,7 +55,15 @@ import {
   type WorkflowFinalizationError,
   type WorkflowResultDiagnosticSentinel,
 } from "./workflow-outcome.js";
-import type { WorkflowPrimaryFileReference } from "./workflow-output.js";
+import {
+  assertWorkflowOutputLease,
+  assertWorkflowRootLease,
+  releaseWorkflowOutputLease,
+  releaseWorkflowRootLease,
+  type WorkflowOutputLease,
+  type WorkflowPrimaryFileReference,
+  type WorkflowRootLease,
+} from "./workflow-output.js";
 import type { WorkflowReplayEnvelope } from "./workflow-replay.js";
 import type { WorkflowResourceEvidence } from "./workflow-resources.js";
 import {
@@ -73,14 +81,6 @@ import {
 } from "./workflow-run-report.js";
 import type { WorkflowChildRunEvidence, WorkflowRunLineage } from "./workflow-saved-child.js";
 import type { WorkflowScriptIdentity } from "./workflow-script-identity.js";
-import {
-  assertWorkflowOutputLease,
-  assertWorkflowRootLease,
-  releaseWorkflowOutputLease,
-  releaseWorkflowRootLease,
-  type WorkflowOutputLease,
-  type WorkflowRootLease,
-} from "./workflow-workspace-state.js";
 import type { WorkflowWorkspaceEvidence } from "./workflow-worktree.js";
 
 // ---------------------------------------------------------------------------

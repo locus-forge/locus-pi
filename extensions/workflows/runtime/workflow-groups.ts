@@ -104,14 +104,9 @@ export class WorkflowGroupFailureError<T = unknown> extends Error {
       .map((slot) => slot.failure);
     const total = slots.length;
     const failed = failures.length;
-    const preview = failures
-      .slice(0, 3)
-      .map(
-        (failure) =>
-          `branch ${failure.index}${failure.stageIndex === undefined ? "" : ` stage ${failure.stageIndex}`}: ${failure.message}`,
-      )
-      .join("; ");
-    const suffix = failures.length > 3 ? `; +${failures.length - 3} more` : "";
+    const distinctFailures = groupedFailurePreviews(failures);
+    const preview = distinctFailures.slice(0, 3).join("; ");
+    const suffix = distinctFailures.length > 3 ? `; +${distinctFailures.length - 3} more distinct failure(s)` : "";
     super(`${groupKind} failed in ${failed}/${total} branch(es): ${preview}${suffix}`);
     this.name = "WorkflowGroupFailureError";
     this.groupKind = groupKind;
@@ -147,6 +142,21 @@ export class WorkflowGroupFailureError<T = unknown> extends Error {
       failures: this.failures.map((failure) => ({ ...failure })),
     };
   }
+}
+
+function groupedFailurePreviews(failures: readonly WorkflowBranchFailure[]): string[] {
+  const groups = new Map<string, WorkflowBranchFailure[]>();
+  for (const failure of failures) {
+    const matching = groups.get(failure.message);
+    if (matching === undefined) groups.set(failure.message, [failure]);
+    else matching.push(failure);
+  }
+  return [...groups.entries()].map(([message, matching]) => {
+    const locations = matching
+      .map((failure) => `${failure.index}${failure.stageIndex === undefined ? "" : ` stage ${failure.stageIndex}`}`)
+      .join(", ");
+    return `${matching.length === 1 ? "branch" : "branches"} ${locations}: ${message}`;
+  });
 }
 
 export function workflowGroupFailureEnvelope(value: unknown): WorkflowGroupFailureEnvelope | undefined {

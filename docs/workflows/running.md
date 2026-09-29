@@ -110,6 +110,7 @@ emergency compatibility alias; every other operation uses `/workflows`.
 /workflows stop [runId|last]      request cancellation; terminal state follows settlement
 /workflows skills status         inspect external-agent skill links
 /workflows run live-smoke --resume <runId>  replay that run's recorded agent calls (see "Resume and replay")
+/workflows run live-smoke --force          reclaim a leaked lease only when terminal evidence proves the prior run settled
 /workflows run plan --no-operator <input>   unattended launch: any operator-input request fails closed
 ```
 
@@ -160,6 +161,75 @@ a detached run would lose the ctx its child sessions need — so the command hol
 the turn open until the run settles and its result is persisted. A headless
 invocation therefore blocks for the whole run and there is no concurrent
 `/workflows stop`; cancel it with the host's own interrupt.
+
+### Workspace and output ownership recovery
+
+Every root run owns two independent single-writer leases:
+
+- `.locus-pi/workflow-state/v1/<hash>/lease.json` protects the runtime
+  workspace and the saved-child checkpoints stored beside it.
+- `.locus-pi/workflow-output-state/v1/<hash>/lease.json` protects the final
+  output directory selected by root `meta.outputDir` (or the default workspace
+  `outputs/` directory).
+
+The runtime also uses a short-lived `reclaim.json` in the same namespace when
+replacing a proven stale lease. It never removes an existing reclaim guard
+automatically. If a process is killed inside that short critical section, the
+next error names the exact guard and, when its record is readable, the PID and
+acquisition time. An unreadable partial guard still names its exact path so the
+operator can verify that no writer remains and remove only that file.
+
+`Ctrl+Z` on POSIX suspends Pi's process group; it does not exit Pi and cannot run
+JavaScript cleanup. Recover in this order:
+
+1. If the run belongs to the current responsive Pi session, use
+   `/workflows stop <runId>` and wait for terminal settlement.
+2. If Pi was suspended in the original terminal, return there, run `fg`, then
+   exit Pi normally. Session shutdown aborts and drains the run before releasing
+   both leases.
+3. For another POSIX process, inspect the PID printed by the error:
+
+   ```bash
+   ps -p <pid> -o pid,stat,lstart,command
+   ```
+
+   Prefer the original terminal and `fg`. Only after confirming that the PID is
+   the Pi process-group leader may an operator use `kill -TERM <pid>` followed
+   by `kill -CONT -<pid>` so the suspended group can handle termination.
+
+4. On Windows, inspect with `tasklist /FI "PID eq <pid>"` and exit Pi in its own
+   window. The forceful fallback is `taskkill /PID <pid> /T /F`; its dead lease
+   is reclaimed by the next launch.
+5. A PID can be reused. If inspection proves the PID is not Pi, or its start
+   time is later than the lease's `acquiredAt`, run the printed removal command
+   from the project root to remove only the exact `lease.json` or `reclaim.json`
+   named by the error, then retry. Do not delete a state namespace while another
+   launch may be starting.
+
+`--force` is narrower than process termination. It does not kill or overwrite a
+live owner. It reclaims a live-PID lease only when that lease's exact run has one
+complete, parseable, internally consistent terminal result envelope written
+after the release phase. Missing, partial, ambiguous, malformed, or foreign run
+evidence fails closed. The structured `workflow` tool exposes the same behavior
+as `force: true`.
+
+Automatic PID liveness and stale reclaim are same-host only. Do not share or
+sync `.locus-pi` between machines and expect this lease protocol to coordinate
+them.
+
+The project-local state map is:
+
+| Path                               | Owner and cleanup meaning                                                                                                                             |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.locus-pi/workflows/`             | Saved workflow definitions. Deleting it deletes user-authored workflows.                                                                              |
+| `.locus-pi/workspaces/`            | Default/named working directories. Remove one only after its run has settled and its files are no longer needed.                                      |
+| `.locus-pi/runs/`                  | Run evidence, journals, results, artifacts, children, and attempts. Removing it loses inspection/resume evidence; it does not release a live process. |
+| `.locus-pi/workflow-state/`        | Workspace leases, reclaim guards, and saved-child checkpoints. Empty lease namespaces are rebuildable; checkpoints are durable reuse state.           |
+| `.locus-pi/workflow-output-state/` | Independent final-output leases and reclaim guards. Empty namespaces are rebuildable.                                                                 |
+| `.locus-pi/logs/errors.jsonl`      | Shared host error journal. Deleting the journal loses diagnostics but does not change ownership.                                                      |
+
+The two lease roots intentionally remain separate because they fence different
+write targets. There is no legacy-to-new migration in this release.
 
 ### No-operator mode — `--no-operator` / `--operator`
 
@@ -214,7 +284,7 @@ the host: an embedder calling `runWorkflowScript` directly opts in itself.
 The installed `locus-pi-workflow-run` skill chooses the execution surface by
 capability. When the structured `workflow` tool is available, the agent calls it
 directly with `name` or `scriptPath` plus optional `input`, `items`,
-`workspaceDir`, `resumeFromRunId`, or an approved `continuation`. It does not spawn
+`workspaceDir`, `resumeFromRunId`, `force`, or an approved `continuation`. It does not spawn
 Pi or translate the request into shell text.
 
 `items` and `continuation` are native-tool-only fields. When either is required
@@ -228,7 +298,7 @@ Use the following JSON print route only when non-interactive execution is explic
 
 ```bash
 pi --mode json -p --no-session --approve \
-  '/workflows run <name|path> [--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--no-operator|--operator] [--] [input]'
+  '/workflows run <name|path> [--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--force] [--no-operator|--operator] [--] [input]'
 ```
 
 The complete slash command is one process argument. A caller should use an argv

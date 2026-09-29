@@ -37,6 +37,8 @@ export interface WorkflowCommandLaunchRequest {
   budget?: RunWorkflowScriptOptions["budget"];
   resumeFromRunId?: string;
   recoverInterrupted?: boolean;
+  /** Reclaim only a leaked lease backed by complete terminal run evidence. */
+  force?: true;
   /** Run-level no-operator mode (operator input fails closed). */
   noOperator?: true;
   continuation?: WorkflowContinuation;
@@ -155,6 +157,7 @@ export function createWorkflowCommandLauncher(options: WorkflowCommandLauncherOp
           ...(request.budget === undefined ? {} : { budget: request.budget }),
           ...(request.resumeFromRunId === undefined ? {} : { resumeFromRunId: request.resumeFromRunId }),
           ...(request.recoverInterrupted === undefined ? {} : { recoverInterrupted: request.recoverInterrupted }),
+          ...(request.force === undefined ? {} : { force: request.force }),
           ...(request.noOperator === undefined ? {} : { noOperator: request.noOperator }),
           ...(request.continuation === undefined ? {} : { continuation: request.continuation }),
           ...(request.operatorHandoffClaim === undefined ? {} : { operatorHandoffClaim: request.operatorHandoffClaim }),

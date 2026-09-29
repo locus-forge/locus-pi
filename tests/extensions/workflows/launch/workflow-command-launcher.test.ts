@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import path from "node:path";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import type {
   RunWorkflowScriptOptions,
   RunWorkflowScriptResult,
 } from "../../../../extensions/workflows/runtime/workflow-runner.js";
 import { createWorkflowCommandLauncher } from "../../../../extensions/workflows/launch/workflow-command-launcher.js";
+import { runWorkflowScript } from "../../../../extensions/workflows/runtime/workflow-runner.js";
 import { createHarness } from "../../../test-harness.js";
+import { executor, project, writeWorkflow } from "../../../fixtures/workflow-durable-project.js";
 
 function completedResult(runId: string): RunWorkflowScriptResult {
   return {
@@ -20,6 +23,69 @@ function completedResult(runId: string): RunWorkflowScriptResult {
 }
 
 describe("workflow command launcher", () => {
+  it("shutdown waits for the real runner to persist cancellation and release both leases", async () => {
+    const root = project();
+    writeWorkflow(
+      root,
+      "shutdown-real",
+      `export const meta = { outputDir: ".local/shutdown-real" };
+export default (dsl) => dsl.agent("wait for shutdown");
+`,
+    );
+    const harness = createHarness(root);
+    let entered!: () => void;
+    const running = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let terminalResult: RunWorkflowScriptResult | undefined;
+    const launcher = createWorkflowCommandLauncher({
+      pi: harness.pi,
+      runScript: async (options) => {
+        terminalResult = await runWorkflowScript({
+          ...options,
+          runName: "shutdown-real",
+          createExecutor: executor(
+            async (_prompt, _request, signal) =>
+              await new Promise<string>((resolve) => {
+                entered();
+                signal.addEventListener("abort", () => resolve("stopped"), { once: true });
+              }),
+          ),
+        });
+        return terminalResult;
+      },
+      createObserver: () => ({
+        onRunStart() {},
+        onEvent() {},
+        onResult() {},
+        onError() {},
+        onFinally() {},
+        onRejected() {},
+      }),
+      onTerminal() {},
+    });
+    launcher.startSession(harness.ctx);
+
+    try {
+      expect(launcher.launch({ ctx: harness.ctx, scriptRef: "shutdown-real" })).toEqual({ status: "started" });
+      await running;
+      const workspaceLeases = stateLeaseFiles(root, "workflow-state");
+      const outputLeases = stateLeaseFiles(root, "workflow-output-state");
+      expect(workspaceLeases).toHaveLength(1);
+      expect(outputLeases).toHaveLength(1);
+      expect(workspaceLeases.every(existsSync)).toBe(true);
+      expect(outputLeases.every(existsSync)).toBe(true);
+
+      await launcher.shutdown();
+
+      expect(workspaceLeases.some(existsSync)).toBe(false);
+      expect(outputLeases.some(existsSync)).toBe(false);
+      expect(terminalResult?.disposition).toEqual({ status: "cancelled", reason: "session_shutdown" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it.each(["command", "tool"] as const)("shutdown cancels and drains a %s run before host exit", async (kind) => {
     const harness = createHarness();
     let signal!: AbortSignal;
@@ -112,6 +178,7 @@ describe("workflow command launcher", () => {
         scriptRef: "continued",
         input: "answer",
         workspaceDir: "tmp/reviews/review-1",
+        force: true,
         continuation: { originRunId: "source-run", artifactRefs: [] },
       }),
     ).toEqual({ status: "started" });
@@ -133,6 +200,7 @@ describe("workflow command launcher", () => {
       name: "continued",
       input: "answer",
       workspaceDir: "tmp/reviews/review-1",
+      force: true,
       continuation: { originRunId: "source-run", artifactRefs: [] },
     });
     expect(runScript.mock.calls[2]?.[0]).toMatchObject({ scriptPath: scriptPathRef });
@@ -234,3 +302,9 @@ describe("workflow command launcher", () => {
     }
   });
 });
+
+function stateLeaseFiles(root: string, namespace: "workflow-state" | "workflow-output-state"): string[] {
+  const versionRoot = path.join(root, ".locus-pi", namespace, "v1");
+  if (!existsSync(versionRoot)) return [];
+  return readdirSync(versionRoot).map((identity) => path.join(versionRoot, identity, "lease.json"));
+}

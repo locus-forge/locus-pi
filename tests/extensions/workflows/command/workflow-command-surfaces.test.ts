@@ -427,7 +427,7 @@ describe("/workflows help and unknown commands", () => {
     expect(description).toBe("Open the workflow command menu, or run, inspect, continue, and stop workflow runs.");
     expect(description).not.toContain(workflowRunUsage("<name|path>", "run"));
     expect(workflowRunUsage()).toBe(
-      "/workflows run <name|path> [--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--no-operator|--operator] [--] [input]",
+      "/workflows run <name|path> [--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--force] [--no-operator|--operator] [--] [input]",
     );
     expect(h.commands.has("workflow-run")).toBe(false);
     expect(h.commands.get("workflow-stop")?.description).toBe(
