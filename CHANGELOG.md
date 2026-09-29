@@ -4,6 +4,24 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-09-29
+
+### Changed
+
+- Workflow ownership errors now identify the run, PID, project-relative lease or
+  reclaim-guard path, and the next safe recovery action, including `fg` after
+  suspending Pi with `Ctrl+Z`.
+- Repeated identical `parallel()` or `pipeline()` failures are shown once with
+  all affected branch indexes, while structured results retain every failure.
+
+### Fixed
+
+- `/workflows run --force` and structured workflow launches can reclaim a leaked
+  lease only when the exact prior run has a complete, consistent terminal result;
+  live or unverifiable owners remain fenced.
+- Handled cancellation and shutdown release both workspace and final-output
+  leases, so the next run does not require manual state deletion.
+
 ## [0.11.0] - 2026-09-29
 
 ### Changed
