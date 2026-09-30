@@ -40,7 +40,7 @@ Use `resumeFromRunId` only through [run recovery](references/recovery.md), not a
 Use `force: true` only for a lease error whose named run already has complete matching terminal evidence;
 it is not a process-stop switch and must remain fail-closed for active, unverifiable, partial or ambiguous owners.
 
-Choose either `workspaceDir` or `runName`, never both. A name selects `.locus-pi/workspaces/<name>`;
+Choose either `workspaceDir` or `runName`, never both, and neither for a workflow whose root declares `meta.outputDir`. A name selects `.locus-pi/workspaces/<name>`;
 a legacy-only `.locus-pi/plans/<name>` stays bound in place, and both paths existing fails closed.
 Resume repeats the source workspace. Read the returned run id, paths, disposition, result and artifacts.
 Success requires a completed disposition and retained result. Failed/cancelled dispositions, unavailable

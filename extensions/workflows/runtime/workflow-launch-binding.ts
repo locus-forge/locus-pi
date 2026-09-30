@@ -19,7 +19,12 @@ import {
 } from "./workflow-run-layout.js";
 import type { WorkflowScriptIdentity } from "./workflow-script-identity.js";
 import type { WorkflowRunResultEnvelope } from "./workflow-journal.js";
-import { assertWorkflowPhysicalWorkspaceIdentity, isWorkflowPathWithinRoot } from "./workflow-output.js";
+import {
+  assertWorkflowPhysicalWorkspaceIdentity,
+  isWorkflowPathWithinRoot,
+  type WorkflowFinalOutputDirectory,
+  type WorkflowOutputDirectory,
+} from "./workflow-output.js";
 import { parseWorkflowPersistedBinding } from "./workflow-persisted-binding.js";
 
 export const WORKFLOW_LAUNCH_BINDING_SCHEMA = "locus-pi.workflow-launch-binding.v2" as const;
@@ -31,6 +36,12 @@ export interface WorkflowLaunchBinding {
   runId: string;
   /** New root launches bind exact recovery inputs; old bindings remain readable, not crash-resumable. */
   recoveryInputSha256?: string;
+  /**
+   * Original root run id of this launch lineage: a fresh launch records its own
+   * run id, every resume copies the source value unchanged. Optional under the
+   * same schema so bindings written before it existed stay readable.
+   */
+  rootLineageId?: string;
   target: {
     kind: "name" | "scriptPath";
     ref: string;
@@ -69,6 +80,55 @@ export function workflowLaunchBindingExists(projectRoot: string, runId: string, 
   return workflowRunFileExists(runDir, workflowLaunchBindingFile(runDir));
 }
 
+/** Assemble the binding from launch values admission has already validated. */
+export function createWorkflowLaunchBinding(input: {
+  runId: string;
+  rootLineageId: string;
+  recoveryInputSha256: string;
+  target: WorkflowLaunchBinding["target"];
+  scriptIdentity: WorkflowScriptIdentity;
+  workspace: WorkflowOutputDirectory;
+  workspaceExplicit: boolean;
+  output: WorkflowFinalOutputDirectory;
+  semanticInput: WorkflowLaunchBinding["semanticInput"];
+}): WorkflowLaunchBinding {
+  const location = ({ absolutePath, relativePath, physicalPath, identity }: WorkflowOutputDirectory) => ({
+    absolutePath,
+    relativePath,
+    physicalPath,
+    physicalIdentity: identity,
+    physicalIdentitySchemaVersion: 1 as const,
+  });
+  return {
+    schema: WORKFLOW_LAUNCH_BINDING_SCHEMA,
+    runId: input.runId,
+    rootLineageId: input.rootLineageId,
+    recoveryInputSha256: input.recoveryInputSha256,
+    target: input.target,
+    scriptIdentity: input.scriptIdentity,
+    workspace: { ...location(input.workspace), explicit: input.workspaceExplicit },
+    output: { ...location(input.output), source: input.output.source },
+    semanticInput: input.semanticInput,
+  };
+}
+
+/**
+ * The original root run id a launch continues. A fresh launch starts its own
+ * lineage; resume and workspace-reusing handoff continuation copy the source
+ * binding's value unchanged. A source binding written before the field existed
+ * (or unreadable) anchors the lineage at the source run itself, which can only
+ * cost checkpoint reuse, never reuse another lineage's work.
+ */
+export function readWorkflowRootLineageId(
+  projectRoot: string,
+  runId: string,
+  sourceRunId: string | undefined,
+  sourceBinding?: WorkflowLaunchBinding,
+): string {
+  if (sourceRunId === undefined) return runId;
+  return (sourceBinding ?? readWorkflowLaunchBinding(projectRoot, sourceRunId))?.rootLineageId ?? sourceRunId;
+}
+
 /** Write once, atomically, after all launch values passed runtime validation. */
 export function writeWorkflowLaunchBinding(runDir: string, binding: WorkflowLaunchBinding): void {
   assertWorkflowRunId(binding.runId);
@@ -96,6 +156,30 @@ export function readWorkflowLaunchBinding(
   } catch {
     return null;
   }
+}
+
+/** The result envelope an owner resume reads, with every host-owned fact taken from the binding. */
+export function projectWorkflowLaunchBindingOntoResult(
+  result: WorkflowRunResultEnvelope,
+  binding: WorkflowLaunchBinding,
+): WorkflowRunResultEnvelope {
+  return {
+    ...result,
+    target: binding.target,
+    scriptIdentity: binding.scriptIdentity,
+    workspaceDir: binding.workspace.absolutePath,
+    workspaceDirRelative: binding.workspace.relativePath,
+    workspacePhysicalIdentity: binding.workspace.physicalIdentity,
+    workspacePhysicalIdentitySchemaVersion: 1,
+    workspaceDirExplicit: binding.workspace.explicit,
+    outputDir: binding.output.absolutePath,
+    outputDirRelative: binding.output.relativePath,
+    outputPhysicalIdentity: binding.output.physicalIdentity,
+    outputPhysicalIdentitySchemaVersion: 1,
+    outputSource: binding.output.source,
+    semanticInputPresent: binding.semanticInput.present,
+    semanticInputSha256: binding.semanticInput.sha256,
+  };
 }
 
 /** Verify mutable result projections still match host-owned launch facts. */
@@ -139,6 +223,7 @@ function parseWorkflowLaunchBinding(
       "output",
       "semanticInput",
       "recoveryInputSha256",
+      "rootLineageId",
     ]) ||
     value.schema !== WORKFLOW_LAUNCH_BINDING_SCHEMA ||
     value.runId !== runId
@@ -178,9 +263,11 @@ function parseWorkflowLaunchBinding(
     (typeof value.recoveryInputSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(value.recoveryInputSha256))
   )
     throw new Error("workflow recovery input identity is invalid");
+  if (value.rootLineageId !== undefined) assertWorkflowRunId(value.rootLineageId);
   return {
     schema: WORKFLOW_LAUNCH_BINDING_SCHEMA,
     ...(value.recoveryInputSha256 === undefined ? {} : { recoveryInputSha256: value.recoveryInputSha256 as string }),
+    ...(value.rootLineageId === undefined ? {} : { rootLineageId: value.rootLineageId as string }),
     runId,
     target: parsed.target,
     scriptIdentity: parsed.scriptIdentity as WorkflowScriptIdentity,

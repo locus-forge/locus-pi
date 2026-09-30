@@ -10,6 +10,7 @@ import {
   type WorkflowFinalOutputDirectory,
   type WorkflowOutputDirectory,
 } from "../workflow-workspace.js";
+import { isBoundWorkflowDirectory } from "./workflow-bound-directory.js";
 import { inspectLeaseOwner, leaseMayBeReclaimed, workflowLeaseOwnershipError } from "./workflow-lease-evidence.js";
 import {
   assertWorkflowStatePath,
@@ -102,8 +103,11 @@ export function acquireWorkflowLocationLeases(
   output: WorkflowFinalOutputDirectory,
   rootRunId: string,
   force: boolean,
-): [WorkflowRootLease, WorkflowOutputLease] {
+): [WorkflowRootLease, WorkflowOutputLease | undefined] {
   const rootLease = acquireWorkflowRootLease({ projectRoot, output: workspace, rootRunId, force });
+  // A root meta.outputDir binds workspace and output to one directory: its one
+  // workspace lease fences every writer of that directory.
+  if (isBoundWorkflowDirectory(workspace, output)) return [rootLease, undefined];
   try {
     return [rootLease, acquireWorkflowOutputLease({ projectRoot, output, rootRunId, force })];
   } catch (error) {

@@ -73,6 +73,16 @@ the host supplies the actual workspace. Package task drafting and planning use t
 saved children and later manual stages share the selected named path. The host also supplies source context. Do not add permission/tool fields,
 another default writable root, a path parser, or an information-gathering script.
 
+When the root declares `meta.outputDir` (for example `.local/review`), that
+directory is the single workflow directory: `dsl.workspaceDir()` equals
+`dsl.outputDir()`. Interpolate it into every prompt, keep handoffs under its
+`artifacts/` subdirectory, and give each agent one instruction of the form
+"write a handoff for another agent: replace exactly `artifacts/<name>.md` with one
+complete write and write no other file". Relative paths in prompts resolve
+against that directory, never project root. The directory persists across runs,
+so a consumer that must not read an earlier run's handoff needs a freshness
+check the workflow owns, such as a commit id every handoff repeats.
+
 The workflow workspace is the durable location for handoffs, review evidence,
 and explicit resume inputs. Final results and deliverables belong in `dsl.outputDir()`. Keep disposable environments,
 dependency caches, test basetemp, transient renderer output, and staging in the

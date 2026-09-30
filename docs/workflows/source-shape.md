@@ -66,7 +66,7 @@ The remaining standard orchestration primitives are:
 | `publishPrimaryArtifact(name, text)` | One terminal semantic document.                                             |
 | `awaitOperator(declaration)`         | Declare a split-run human gate, then return; no suspended JavaScript stack. |
 | `items()`                            | Immutable exact caller-supplied text units.                                 |
-| `workspaceDir()`                     | Absolute runtime workspace selected by the host.                            |
+| `workspaceDir()`                     | Absolute workflow directory; equals `outputDir()` when declared by root.    |
 | `outputDir()`                        | Absolute final-output directory declared by root metadata or defaulted.     |
 | `invokeWorkflow(declaration)`        | One real saved or exact-Package child run with durable item checkpointing.  |
 | `publishPrimaryFile(path)`           | Validate/reference one non-empty workflow workspace file.                   |

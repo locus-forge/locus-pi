@@ -4,6 +4,22 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+### Changed
+
+- A root `meta.outputDir` is now the run's single workflow directory:
+  `workspaceDir()` and `outputDir()` return the same path, children are told
+  that one directory and that relative handoff paths resolve against it, and no
+  `.locus-pi/workspaces/...` directory is created. Run evidence, leases and
+  checkpoints stay under `.locus-pi/`. Saved-child checkpoints of such a root
+  are scoped to one launch lineage, so a fresh launch re-executes items while
+  resume reuses them. Workflows without `meta.outputDir` are unchanged.
+
+### Removed
+
+- **Breaking:** `workspaceDir` and `runName` are refused for a workflow whose
+  root declares `meta.outputDir`, and a run recorded with a separate workspace
+  and declared output can no longer be resumed; start a fresh run.
+
 ## [0.12.0] - 2026-09-30
 
 ### Removed

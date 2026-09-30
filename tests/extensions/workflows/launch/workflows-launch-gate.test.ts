@@ -113,7 +113,7 @@ describe("/workflows run launch gate", () => {
     expect(tool.formatApprovalDetails?.({ name: "reviewed-workflow", items: ["alpha", "beta"] })).toEqual([
       "Workflow: reviewed-workflow",
       "Items: 2",
-      "Workflow workspace: .locus-pi/workspaces/<generated-run-name>",
+      "Workflow workspace: .locus-pi/workspaces/<generated-run-name> unless meta.outputDir",
       "Surface: trusted-file workflow runner",
       "Trust: reviewed JavaScript with full Node.js/module access in the Pi host process",
       "Isolation: none — exec approval is consent, not a sandbox",
@@ -124,7 +124,7 @@ describe("/workflows run launch gate", () => {
     const h = registerHarness();
     const details = h.tools.get("workflow")!.formatApprovalDetails?.({ name: "post-code-review" }) ?? [];
 
-    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
+    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name> unless meta.outputDir");
   });
 
   it.each(["current", "legacy"] as const)(
@@ -261,7 +261,7 @@ describe("/workflows run launch gate", () => {
         scriptPath: path.join(process.cwd(), ".agents", "workflows", "post-code-review.workflow.mjs"),
       }) ?? [];
 
-    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
+    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name> unless meta.outputDir");
   });
 
   it.each([
@@ -271,7 +271,7 @@ describe("/workflows run launch gate", () => {
     const h = registerHarness();
     const details = h.tools.get("workflow")!.formatApprovalDetails?.({ script }) ?? [];
 
-    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
+    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name> unless meta.outputDir");
   });
 
   it.each([
@@ -283,7 +283,7 @@ describe("/workflows run launch gate", () => {
     const h = registerHarness();
     const details = h.tools.get("workflow")!.formatApprovalDetails?.(args) ?? [];
 
-    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
+    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name> unless meta.outputDir");
   });
 
   it("does not classify escaping owner-looking paths in approval details", () => {
@@ -293,7 +293,7 @@ describe("/workflows run launch gate", () => {
         scriptPath: "../.locus-pi/workflows/post-code-review.workflow.mjs",
       }) ?? [];
 
-    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
+    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name> unless meta.outputDir");
   });
 
   it("does not overmatch a nested non-owner suffix in approval details", () => {
@@ -303,7 +303,7 @@ describe("/workflows run launch gate", () => {
         scriptPath: "nested/post-code-review.workflow.mjs",
       }) ?? [];
 
-    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
+    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name> unless meta.outputDir");
   });
 
   it("runs an explicit operator command without a second approval prompt", async () => {

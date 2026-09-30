@@ -41,6 +41,7 @@ Create-only returns checked source and a command without execution. An authorize
 - Each execution has a separate `runId`. The status/result/resume commands find it regardless of nesting; old flat runs remain in place and readable without migration.
 - The workspace file `.workflow-runs.md` contains backlinks to groups. The README and backlink are replaced atomically only under the active root lease. An incomplete runtime-owned README is restored, while an incomplete backlink requires explicit recovery without losing earlier links. This is navigation, not a current-status summary: each execution's state is in its `runtime/result.json` and `runtime/journal.ndjson`.
 - Default workflow workspace: a unique `.locus-pi/workspaces/<generated-run-name>/` directory.
+- A root `meta.outputDir` such as `.local/airflow-review` is instead the run's single workflow directory: handoffs under `artifacts/`, final files, and the `.workflow-runs.md` backlink; `workspaceDir` and `runName` are refused for such a workflow, and no `.locus-pi/workspaces/` directory is created.
 - Any workflow supports `--run-name <name>` to select `.locus-pi/workspaces/<name>/`; an existing legacy-only `.locus-pi/plans/<name>/` stays in place so resume and checkpoint identity remain stable.
 - Explicit output directories must remain safe, project-relative paths.
 - Run evidence and the workflow workspace are separate ownership zones.

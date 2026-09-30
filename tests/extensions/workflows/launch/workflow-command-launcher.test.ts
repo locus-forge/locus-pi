@@ -28,8 +28,7 @@ describe("workflow command launcher", () => {
     writeWorkflow(
       root,
       "shutdown-real",
-      `export const meta = { outputDir: ".local/shutdown-real" };
-export default (dsl) => dsl.agent("wait for shutdown");
+      `export default (dsl) => dsl.agent("wait for shutdown");
 `,
     );
     const harness = createHarness(root);
