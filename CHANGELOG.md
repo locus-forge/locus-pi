@@ -4,6 +4,8 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-30
+
 ### Changed
 
 - A root `meta.outputDir` is now the run's single workflow directory:
