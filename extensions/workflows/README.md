@@ -60,7 +60,7 @@ Workflow modules execute in the Pi Node.js host and are not sandboxed. Review pr
 - [Operator workflow guide](../../docs/workflows/running.md)
 - [Readable authoring contract](../../docs/workflows/create.md)
 - [Advanced runtime and DSL reference](../../docs/workflows/index.md)
-- [Output acceptance](../../docs/workflows/agent-results.md) — the shaped-result API, and the
+- [Output acceptance](../../docs/workflows/agent-results.md) — the text and choice result modes, and the
   single statement of what the runtime does and does not bound
 - [Packaged examples](../../examples/workflows/README.md)
 - [Manifest](manifest.json)

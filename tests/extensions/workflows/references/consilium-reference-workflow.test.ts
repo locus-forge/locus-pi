@@ -83,6 +83,10 @@ const ADVICE: Record<string, string> = {
   "alternative advisor": "## The alternative\nAn in-process plugin system, because rich objects cross the seam.",
 };
 
+function verifierReport(verdict: "accept" | "reject", reason: string): string {
+  return `Verdict: ${verdict}\n${reason}`;
+}
+
 /** Answer every stage; the verifier's verdict is the one thing a case varies. */
 function stageAnswers(verdict: "accept" | "reject", reason: string) {
   return (request: WorkflowAgentRequest): string => {
@@ -90,7 +94,8 @@ function stageAnswers(verdict: "accept" | "reject", reason: string) {
     if (label === "frame the question") return "## Question\nOwn plugin API or separate executables?";
     if (label in ADVICE) return ADVICE[label]!;
     if (label === "synthesize the document") return SYNTHESIS;
-    if (label === "verify the synthesis") return JSON.stringify({ verdict, reason });
+    if (label === "verify the synthesis") return verifierReport(verdict, reason);
+    if (label === "route the verification") return JSON.stringify(verdict);
     throw new Error(`unexpected stage label: ${label}`);
   };
 }
@@ -115,8 +120,17 @@ describe("consilium reference workflow", () => {
       "alternative advisor",
       "synthesize the document",
       "verify the synthesis",
+      "route the verification",
     ]);
-    expect(calls.map((call) => call.phase)).toEqual(["frame", "advise", "advise", "advise", "synthesize", "verify"]);
+    expect(calls.map((call) => call.phase)).toEqual([
+      "frame",
+      "advise",
+      "advise",
+      "advise",
+      "synthesize",
+      "verify",
+      "verify",
+    ]);
     // Workflow source declares no capability subset; runtime supplies all tools.
     expect(calls.every((call) => call.readOnly === undefined)).toBe(true);
     expect(calls.every((call) => call.tools?.join(",") === "*")).toBe(true);
@@ -153,6 +167,17 @@ describe("consilium reference workflow", () => {
     // The verifier is a fresh reader of the document, not its author.
     expect(calls[5]?.prompt).toContain(SYNTHESIS);
     expect(calls[4]?.prompt).not.toContain(SYNTHESIS);
+    // Only the router carries a return contract, and it reads the report, not the sources.
+    expect(calls.map((call) => call.returnContract?.choices ?? null)).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      ["accept", "reject"],
+    ]);
+    expect(calls[6]?.prompt).toContain(verifierReport("accept", "Every claim traces to an advisor."));
 
     expect(artifactStore.list().map(({ kind, name }) => `${kind}:${name}`)).toEqual([
       "answer:brief.md",
@@ -160,7 +185,8 @@ describe("consilium reference workflow", () => {
       "answer:advisor-risk.md",
       "answer:advisor-alternative.md",
       "answer:synthesis-draft.md",
-      "answer:verification.json",
+      "answer:verification.md",
+      "answer:route-the-verification",
       "published:consilium.md",
     ]);
 
@@ -192,7 +218,7 @@ describe("consilium reference workflow", () => {
     expect(result.ok).toBe(true);
     expect(["accept", "reject"]).toContain(result.verdict);
     expect(result.verdict).toBe("accept");
-    expect(result.reason).toBe("Every claim traces to an advisor.");
+    expect(result.reason).toBe(verifierReport("accept", "Every claim traces to an advisor."));
 
     const record = artifactStore.list().find(({ name }) => name === "consilium.md");
     expect(record?.kind).toBe("published");
@@ -218,34 +244,43 @@ describe("consilium reference workflow", () => {
     expect(result.ok).toBe(false);
     expect(result.verdict).toBe("reject");
     // The verifier's own words reach the operator; the script never rewrites them.
-    expect(result.reason).toBe(reason);
+    expect(result.reason).toBe(verifierReport("reject", reason));
     expect(result.summary).toContain(reason);
     // Fail closed means nothing terminal was published.
     expect(artifactStore.list().some(({ name }) => name === "consilium.md")).toBe(false);
   });
 
-  it("takes the verifier's declared verdict and nothing else, at any reply size", async () => {
-    // The old bound existed because `schema` used to EXTRACT a value out of a final text
-    // message, so a valid JSON block could arrive wrapped in a megabyte of prose that then
-    // became this stage's persisted artifact. With same-session acceptance the verdict IS
-    // the tool argument: there is no surrounding reply to bound, and no size to police.
-    const verdict = { verdict: "accept" as const, reason: "Every claim traces to an advisor." };
-    const answer = stageAnswers("accept", verdict.reason);
+  it("routes on the declared choice and nothing else, at any verifier report size", async () => {
+    // The script never reads the verifier's prose. A long report whose words suggest one
+    // verdict still ends on the router's exact declared choice.
+    const longReport = `Verdict: accept\n${"Checked every attributed claim. ".repeat(12_000)}`;
+    const answer = stageAnswers("accept", "unused");
     const { dsl, artifactStore } = runtimeWith(async (request) =>
-      completed(request, request.label === "verify the synthesis" ? JSON.stringify(verdict) : answer(request)),
+      completed(
+        request,
+        request.label === "verify the synthesis"
+          ? longReport
+          : request.label === "route the verification"
+            ? JSON.stringify("reject")
+            : answer(request),
+      ),
     );
 
-    await expect((await loadWorkflow())(dsl, FIXTURE_QUESTION)).resolves.toMatchObject({ ok: true });
-    expect(artifactStore.list().some(({ name }) => name === "consilium.md")).toBe(true);
+    await expect((await loadWorkflow())(dsl, FIXTURE_QUESTION)).resolves.toMatchObject({
+      ok: false,
+      verdict: "reject",
+      reason: longReport,
+    });
+    expect(artifactStore.list().some(({ name }) => name === "consilium.md")).toBe(false);
   });
 
-  it("still fails closed and publishes nothing when the verdict is off-shape", async () => {
+  it("still fails closed and publishes nothing when the routed verdict is off-list", async () => {
     const answer = stageAnswers("accept", "Every claim traces to an advisor.");
     const { dsl, artifactStore } = runtimeWith(async (request) =>
-      completed(request, request.label === "verify the synthesis" ? '{"verdict":"maybe"}' : answer(request)),
+      completed(request, request.label === "route the verification" ? JSON.stringify("maybe") : answer(request)),
     );
 
-    await expect((await loadWorkflow())(dsl, FIXTURE_QUESTION)).rejects.toThrow(/schema mismatch/u);
+    await expect((await loadWorkflow())(dsl, FIXTURE_QUESTION)).rejects.toThrow(/choice mismatch/u);
     expect(artifactStore.list().some(({ name }) => name === "consilium.md")).toBe(false);
   });
 
@@ -301,6 +336,7 @@ describe("consilium reference workflow", () => {
       "alternative advisor",
       "synthesize the document",
       "verify the synthesis",
+      "route the verification",
     ]);
     // Whole, not summarized and not trimmed.
     expect(calls[0]!.prompt).toContain(longQuestion.trim());
@@ -322,11 +358,12 @@ describe("consilium reference workflow", () => {
   it("keeps the verifier's verdict a declared value the script never has to read prose for", () => {
     const source = readFileSync(workflowPath, "utf8");
 
-    // The single branch is on one runtime-validated enum member. A regex over the
+    // The single branch is on one runtime-validated exact choice. A regex over the
     // verifier's prose would be the exact failure this reference exists to avoid.
-    expect(source).toContain('enum: ["accept", "reject"]');
-    expect(source).toContain('verification.verdict === "reject"');
-    expect(source).not.toMatch(/verification\.reason\s*\.\s*(includes|match|test)/u);
+    expect(source).toContain('choice: ["accept", "reject"]');
+    expect(source).toContain('verdict === "reject"');
+    expect(source).not.toMatch(/verification\s*\.\s*(includes|match|test|startsWith)/u);
+    expect(source).not.toMatch(/\bschema\s*:/u);
     expect(source).not.toContain("JSON.parse");
     // Portable tiers, not concrete workstation-specific selectors.
     expect(source).not.toMatch(/^\s*model:/mu);

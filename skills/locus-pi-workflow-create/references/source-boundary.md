@@ -9,8 +9,8 @@ Keep stable stage option groups together near the top. Keep prompts, calls,
 branches, and handoffs visible at their execution edges. Stage prompts own their
 roles; package agent names are never required.
 
-Use the create skill's consumer rule: narrative stays whole; only a real branch or work queue
-needs a shaped result. The [structured-results guide](structured-results.md) explains the distinction.
+Use the create skill's consumer rule: narrative stays whole; only a real branch needs a
+`choice`, and a work queue lives in a named workspace file. The [structured-results guide](structured-results.md) explains the distinction.
 Keep chosen bounds with their consuming edge and their reason in the design; the
 [budget policy](../../../docs/workflows/budgets.md#run-budget) owns launch defaults.
 
@@ -44,7 +44,9 @@ export default async function run({ agent, parallel, phase, publishPrimaryArtifa
 
 The workflow orchestrates but does not interpret or format agent results:
 
-- an extraction agent returns the complete textual finding or list;
+- an extraction agent returns one complete textual finding as exact text;
+  several findings belong in a named workspace file that later agents read,
+  and source never consumes a list carried in a model answer;
 - a composer returns the complete Markdown document;
 - a reviewer returns the complete corrected replacement;
 - the script passes these values unchanged and publishes accepted text exactly.

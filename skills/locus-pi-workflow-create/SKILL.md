@@ -64,9 +64,10 @@ Reviewers inspect the complete actual diff, including uncommitted work, before a
 Commit only when authorized. Preparation and baseline tests do not complete an implementation.
 A blocker needs a concrete obstacle or observed resource limit; unfinished work alone is not a blocker.
 
-Choose results by their consumer: plain `agent()` text for narrative, `choice` for a branch, and
-`handoffs` for discovered work units, including a sequential slice queue. Do not wrap reports in singleton
-lists, parse their prose or turn an empty queue into success. Read
+Choose results by their consumer: plain `agent()` text for narrative and `choice` for a branch.
+Richer results — discovered units, a sequential slice queue, records — go to named workspace files that
+later agents read; caller-owned units come from `dsl.items()`. Do not parse prose or turn an empty queue
+into success. Read
 [structured results](references/structured-results.md) before any decision handoff; the arbiter owns
 the decision, and a translator copies it without adding criteria or owner approval.
 
@@ -74,15 +75,15 @@ For substantive review, an arbiter judges findings and may accept or reject them
 request correction, retry review or disclose a limitation. Preserve completed, failed, missing and
 skipped checks. Use `agent(prompt, { result: "report" })` when eligible reviewer failures must reach it;
 read [report eligibility](../../docs/workflows/agent-results.md#agent-execution-reports).
-Forward the entire report; it is not acceptance and cannot combine with shaped output.
+Forward the entire report; it is not acceptance and cannot combine with `choice`.
 Keep bounded correction and fresh review after changes. Exhaustion preserves the latest reviewed
 artifact, unmet criteria and next action; an incomplete required outcome stays non-successful.
 An agent returns the exact `choice` string; the workflow maps a refusal branch to `{ ok: false, status }`.
 Use `throw` for execution errors, not ordinary review decisions.
 
-The runtime has no answer-size policy. Declare size fields only for a named consuming limit, not a
-narrative preference; never disguise a cap as a prompt instruction. Do not emit `maxItemChars`,
-`maxAnswerChars`, `schemaMaxLength` or `returnVia`. Budgets stop spending, not answers.
+The runtime has no answer-size policy; never disguise a cap as a prompt instruction. Do not emit
+`handoffs`, `schema`, `validate`, `output`, `repair`, `returnVia`, `maxItemChars`, `maxAnswerChars` or
+`schemaMaxLength`; the runtime refuses each by name. Budgets stop spending, not answers.
 The [budget policy](../../docs/workflows/budgets.md#run-budget) owns launch-mode defaults.
 Any chosen override needs a reason in the design; do not copy example numbers or raise limits automatically.
 For output-contract or turn-budget failures, read the matching section of Repair + Continue.

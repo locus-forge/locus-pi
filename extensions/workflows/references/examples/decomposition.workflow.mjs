@@ -1,27 +1,26 @@
 export const meta = {
   name: "decomposition",
-  description: "Bounded discovery followed by ordered independent work",
+  description: "Caller-owned independent work units run in parallel and combined in order",
   profile: "standard",
 };
 
 export default async function runWorkflow(dsl, input) {
-  const units = await dsl.agent(
-    `Discover independent complete work handoffs for this goal; no more than four units:\n${input}`,
-    {
-      label: "discover",
-      // A real consumer contract, and the prompt says the same thing in words: this
-      // workflow fans the units out and combines them, so zero units has nothing to
-      // combine and a fifth unit has no worker. The bound is on the COUNT of work
-      // units, never on how long one unit may be — a complete brief is accepted at
-      // whatever length it needs.
-      handoffs: { minItems: 1, maxItems: 4 },
-    },
-  );
+  // The caller owns the work units: launch with one complete brief per item. A model
+  // answer never decides how many workers start, so discovery belongs to an earlier
+  // run or stage that writes a named file the operator turns into items.
+  const units = dsl.items();
+  if (units.length === 0)
+    return { ok: false, status: "blocked", summary: "Supply one complete independent work unit per item." };
   const results = await dsl.parallel(
-    units.map((unit) => async () => dsl.agent(`Perform only this work unit:\n${unit}`, { label: "unit-worker" })),
+    units.map(
+      (unit) => async () =>
+        dsl.agent(`Perform only this work unit for the goal below.\nGoal:\n${input}\nWork unit:\n${unit}`, {
+          label: "unit-worker",
+        }),
+    ),
     {
       concurrency: 2,
-      title: "Independent discovered units",
+      title: "Independent caller-supplied units",
     },
   );
   const result = await dsl.agent(

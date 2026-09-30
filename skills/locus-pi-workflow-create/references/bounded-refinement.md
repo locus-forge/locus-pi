@@ -2,7 +2,7 @@
 
 Use this card when a worker may leave concrete work unfinished. Avoid it without acceptance criteria, when effects cannot be safely repeated, or when only an operator has authority. Do not use worker self-approval for a higher-risk adaptive result.
 
-Graph: fresh worker → independent reviewer → shaped decision; continue → fresh worker with exact handoff. One review, at most one correction and one recheck is the two-round case (`round <= 2`) inside a fixed graph. Complete → primary output; failed, cap or no-progress → honest non-success; needs_operator → stop and return.
+Graph: fresh worker → independent reviewer → exact choice; continue → fresh worker with exact handoff. One review, at most one correction and one recheck is the two-round case (`round <= 2`) inside a fixed graph. Complete → primary output; failed, cap or no-progress → honest non-success; needs_operator → stop and return.
 
 Cost: the recipe uses 3R logical calls and sequential depth 3R. Output clarification remains in that call's own session and still costs tokens/turns/tools; it never adds a physical child. No transport retries are declared in the example.
 
@@ -14,6 +14,6 @@ The example chooses three rounds and stops on two consecutive continue_stalled d
 
 Failure: complete publishes the reviewed primary result. At cap/no-progress return `ok:false`, `status:"blocked"` and evidence; never publish the last unreviewed edit as success. A child error propagates; no reviewer-approved fallback can invent missing execution. `needs_operator` declares awaiting_operator and immediately returns. The example's reason-only stop is not an automatic resumable human handoff.
 
-Primitives: agent, choice, literal bounded for, publishArtifact, publishPrimaryArtifact, log, awaitOperator. Whole-value carry is allowed only by the canonical bounded-loop provenance rules in [source contract](../../../docs/workflows/source-shape.md#bounded-carry-and-author-owned-records). Raw schema/validate remain advanced compatibility.
+Primitives: agent, choice, literal bounded for, publishArtifact, publishPrimaryArtifact, log, awaitOperator. Whole-value carry is allowed only by the canonical bounded-loop provenance rules in [source contract](../../../docs/workflows/source-shape.md#bounded-carry-and-author-owned-records). The reviewer's decision reaches source only as that exact `choice`; `schema` and `validate` were removed and are refused by name.
 
 [Runnable refinement example](../../../extensions/workflows/references/examples/refinement.workflow.mjs). Every round artifact records the original goal, work, review, decision and next-worker feedback. Choose an explicit shared budget at launch; see [execution controls](../../../docs/workflows/dsl.md). Replay is separate: see [recovery](../../../docs/workflows/recovery-and-continuation.md).

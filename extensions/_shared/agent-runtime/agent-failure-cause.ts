@@ -73,7 +73,9 @@ export const AGENT_FAILURE_CAUSES = [
    *  list stays closed over it so a journal or result written before that removal still
    *  validates and stays readable instead of degrading to `unclassified`. */
   "answer-too-long",
-  /** A replayed answer the CURRENT workflow script validator rejects. */
+  /** HISTORICAL. A replayed answer the workflow script's `validate` callback rejected.
+   *  Nothing produces it since shaped agent results were removed, but the list stays
+   *  closed over it so a journal or result written before that removal still validates. */
   "script-rejected",
   /** Cause not separately identified. NEVER retried; promoting a cause out of here is
    *  its own evidenced change, not a widening of the default. */

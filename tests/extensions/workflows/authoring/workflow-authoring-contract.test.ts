@@ -178,7 +178,7 @@ describe("readable workflow authoring references", () => {
   it("checks canonical AUTHORING fragments while keeping the installed router code-free", () => {
     const authoring = javascriptDocSnippets("docs/workflows/source-shape.md");
     const skill = javascriptDocSnippets("skills/locus-pi-workflow-create/SKILL.md");
-    expect(authoring).toHaveLength(3);
+    expect(authoring).toHaveLength(2);
     expect(skill).toHaveLength(0); // Entrypoint routes to tested complete examples; it duplicates no harness.
 
     const fragments = [
@@ -189,14 +189,7 @@ ${authoring[0] ?? ""}
   return route;
 }`),
       },
-      {
-        label: "AUTHORING handoffs fragment",
-        source: standardSource(`export default async function run({ agent }) {
-${authoring[1] ?? ""}
-  return units;
-}`),
-      },
-      ...authoring.slice(2).map((snippet, index) => ({
+      ...authoring.slice(1).map((snippet, index) => ({
         label: `AUTHORING complete snippet ${index + 1}`,
         source: snippet,
       })),
@@ -250,7 +243,7 @@ ${authoring[1] ?? ""}
     const output = source("docs/workflows/agent-results.md");
     expect(authoring).toContain("exact text");
     expect(authoring).toContain("choice:");
-    expect(authoring).toContain("handoffs:");
+    expect(authoring).not.toMatch(/handoffs:\s*\{/u);
     expect(authoring).toContain("literal `label`");
     expect(authoring).toContain("provenance");
     expect(authoring).toContain("Markdown/table/report renderers");
@@ -294,7 +287,6 @@ ${authoring[1] ?? ""}
 
   it("keeps the surviving runtime defaults in the runtime owner, not the router", () => {
     const manual = source("docs/workflows/budgets.md");
-    expect(source("docs/workflows/agent-results.md")).toContain("MAX_DAGS_IN_SCOPE");
     const policy = manual.split("## Run budget\n")[1]?.split("\n---\n")[0] ?? "";
     expect(policy).toMatch(/Workflow `concurrency`\s*\| 4\s*\|/u);
     expect(policy).toMatch(/Workflow `totalAgents`\s*\| \*\*10,000 in headless; unbounded in TUI\/RPC\*\*/u);
@@ -322,7 +314,7 @@ ${authoring[1] ?? ""}
         expect(mention, file).toContain("refused by name");
     }
     expect(source("docs/workflows/budgets.md")).toMatch(/all six resolved axes/u);
-    expect(source("docs/workflows/agent-results.md")).toContain("`maxItems` may be omitted entirely");
+    expect(source("docs/workflows/agent-results.md")).toContain("## Removed shaped-result options");
   });
 
   it("ships the graph cards and focused authoring references without empty redirects", () => {
@@ -374,8 +366,8 @@ ${authoring[1] ?? ""}
 
   it("distinguishes recorded discovery replay from unsafe rediscovered checkpoint identity", () => {
     const card = source("skills/locus-pi-workflow-create/references/decomposition.md");
-    expect(card).toContain("agent({ handoffs })");
-    expect(card).toContain("complete non-blank unique text unit");
+    expect(card).toContain("dsl.items()");
+    expect(card).toContain("named workspace file");
     expect(card).toContain("prefix");
     expect(card).toContain("keys");
     expect(card).not.toContain("intentionally non-resumable");

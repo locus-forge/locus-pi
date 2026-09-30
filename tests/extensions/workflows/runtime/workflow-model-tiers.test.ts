@@ -54,14 +54,6 @@ afterEach(() => {
   restoreGlobalModelRolesHome();
 });
 
-/** The shape the post-child validator cases hand the runtime, so `validate` is reached at all. */
-const COUNT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["count"],
-  properties: { count: { type: "integer" } },
-} as const;
-
 /**
  * A project that owns every agent it names.
  *
@@ -1062,7 +1054,7 @@ describe("executed-model evidence", () => {
    * The mirror of every rule above.
    *
    * Those cases stop a REQUEST being published as a result. These two stop a real
-   * RESULT being thrown away: a script `validate` callback or the artifact writer can
+   * RESULT being thrown away: the artifact writer can
    * fail after the child has already answered, and the runtime ends such a call with an
    * `error` line rather than an `agent_end`. If that line carries no `executedModel`,
    * every read side keyed on it — the live row here, the reader's report — concludes no
@@ -1070,46 +1062,9 @@ describe("executed-model evidence", () => {
    * disappears. Both assert the journal line AND the row the operator actually watches,
    * because the defect needed both halves to be visible.
    */
-  it("keeps the readback on the error line when a script validator throws after the child ran", async () => {
-    const h = await harnessWithRoles();
-    const probe = sdkProbe(FAST, '{"count":3}', false);
-    const runner = createWorkflowAgentRunner({
-      pi: h.pi,
-      ctx: h.ctx,
-      signal: new AbortController().signal,
-      createExecutor: probe.createExecutor,
-      workflowRunId: "tier-validator-threw",
-    });
-    const { dsl, getJournal } = createWorkflowRuntime({ runId: "tier-validator-threw", agentRunner: runner });
-
-    await expect(
-      (dsl.agent as (prompt: string, opts: unknown) => Promise<unknown>)("cheap work", {
-        agent: "bare",
-        model: "test/fast:high",
-        schema: COUNT_SCHEMA,
-        validate: () => {
-          throw new Error("validator exploded after the child had already answered");
-        },
-      }),
-    ).rejects.toThrow(/validator exploded/);
-
-    const journal: readonly WorkflowJournalLine[] = getJournal();
-    const failure = journal.find((line) => line.kind === "error");
-    expect(probe.captured).toHaveLength(1); // the child really ran
-    expect(failure?.source).toBe("script");
-    expect(failure?.executedModel).toBe("test/fast");
-
-    for (const line of journal) applyWorkflowJournalLineToAgentLiveStore(line);
-    const start = journal.find((line) => line.kind === "agent_start")!;
-    const row = agentLiveStore.rows.get(workflowAgentLiveRowId(start));
-    expect(row).toMatchObject({ status: "error", model: "test/fast" });
-    expect(row?.thinking).toBeUndefined(); // the requested `high` was never read back
-    expect([...agentLiveStore.rows.values()].some((child) => child.parentRowId === row?.id)).toBe(true);
-  });
-
-  it("round-trips usage on the sole error line when a validator throws after execution", async () => {
+  it("round-trips usage on the sole error line when evidence recording fails after execution", async () => {
     const root = tieredProject();
-    const runId = "tier-validator-usage";
+    const runId = "tier-evidence-usage";
     const { dsl } = createWorkflowRuntime({
       runId,
       journal: createWorkflowJournalSink(root, runId),
@@ -1122,20 +1077,21 @@ describe("executed-model evidence", () => {
         agent: request.agent,
         executedModel: "test/fast",
         usage: { input: 20, output: 10, totalTokens: 30, costTotal: 0 },
-        ...(request.returnContract === undefined
-          ? {}
-          : { outputAcceptance: { source: "tool" as const, attempts: 1, toolName: "workflow_return" as const } }),
       }),
+      artifactPorts: {
+        recordAgentEvidence: () => {
+          throw new Error("evidence store failed after measured execution");
+        },
+        publishText: () => {
+          throw new Error("unused");
+        },
+        consumeText: () => {
+          throw new Error("unused");
+        },
+      },
     });
 
-    await expect(
-      (dsl.agent as (prompt: string, opts: unknown) => Promise<unknown>)("cheap work", {
-        schema: COUNT_SCHEMA,
-        validate: () => {
-          throw new Error("validator exploded after measured execution");
-        },
-      }),
-    ).rejects.toThrow(/measured execution/u);
+    await expect(dsl.agent("cheap work")).rejects.toThrow(/measured execution/u);
 
     const persisted = readWorkflowRunJournalState(root, runId);
     expect(persisted.diagnostics).toEqual([]);

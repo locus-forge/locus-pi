@@ -232,14 +232,13 @@ export async function retriesOn(cause: AgentFailureCause | undefined): Promise<b
  */
 export async function runAcceptanceHost(config: {
   submissions?: (readonly unknown[])[];
-  maxAttempts?: number;
   maxTurns?: number;
   workTurns?: number[];
   withRestriction?: boolean;
 }) {
+  // Every exact member a probe submits; anything else is a correctable non-member.
   const contract = normalizeWorkflowReturnContract({
-    output: { type: "string", singleLine: true },
-    repair: { maxAttempts: config.maxAttempts ?? 1 },
+    choices: ["complete review", "only answer", "first answer", "second answer"],
   });
   const { tool, acceptance } = createWorkflowReturnController(contract);
   const exportDir = mkdtempSync(path.join(tmpdir(), "locus-transport-acceptance-"));

@@ -25,7 +25,11 @@ async function example(name: string, overrides: Record<string, unknown[]> = {}) 
   const counts: Record<string, number> = {};
   const answers: Record<string, unknown[]> = {
     "design-route": ["revise", "revise", "ready"],
-    cut: [["slice A: replace parser", "slice B: obsolete follow-up"], ["slice C: verify new caller"], []],
+    cut: [
+      "remaining-queue.md: 1. slice A: replace parser 2. slice B: obsolete follow-up",
+      "remaining-queue.md: 1. slice C: verify new caller",
+      "remaining-queue.md: no items",
+    ],
     scope: ["work", "work", "complete"],
     route: ["fix", "fix", "accept", "accept"],
     verdict: ["complete"],
@@ -72,9 +76,14 @@ describe("actual adaptive references with real runtime and scripted children", (
     expect(result).toMatchObject({ ok: true, status: "complete" });
     const workers = h.seen.filter((r) => r.label === "implement");
     expect(workers).toHaveLength(2);
-    expect(workers[0]!.prompt).toContain("slice A: replace parser");
-    expect(workers[1]!.prompt).toContain("slice C: verify new caller");
-    expect(workers[1]!.prompt).not.toContain("slice B: obsolete follow-up");
+    // Source never reads the queue: every worker is pointed at the file the cut agent owns.
+    for (const worker of workers)
+      expect(worker.prompt).toContain("Slice:\nthe first numbered item of workspace remaining-queue.md");
+    const assessments = h.seen.filter((r) => r.label === "scope-assessment");
+    expect(assessments[0]!.prompt).toContain("slice A: replace parser");
+    expect(assessments[1]!.prompt).toContain("slice C: verify new caller");
+    expect(assessments[1]!.prompt).not.toContain("slice B: obsolete follow-up");
+    expect(assessments[0]!.prompt).toContain("An empty queue is not proof of completion");
     expect(h.counts.correct).toBe(2);
     expect(h.counts.review).toBe(4);
     const labels = h.seen.map((r) => r.label);
@@ -98,7 +107,7 @@ describe("actual adaptive references with real runtime and scripted children", (
   });
   it("reaches final verification after three twice-corrected slices within the teaching allowance", async () => {
     const h = await example("adaptive-slices", {
-      cut: [["A"], ["B"], ["C"], []],
+      cut: ["1. A", "1. B", "1. C", "no items"],
       scope: ["work", "work", "work", "complete"],
       route: ["fix", "fix", "accept", "fix", "fix", "accept", "fix", "fix", "accept"],
     });
@@ -109,22 +118,29 @@ describe("actual adaptive references with real runtime and scripted children", (
     expect(h.seen).toHaveLength(57);
   });
   it("bounds recuts cumulatively and returns the untruncated remainder", async () => {
-    const remaining = ["still required A", "still required B", "still required C", "still required D"];
-    const h = await example("adaptive-slices", { cut: [remaining], scope: ["work"], route: ["accept"] });
-    expect(await h.run()).toMatchObject({ ok: false, status: "incomplete", reason: "slice_allowance", remaining });
+    const h = await example("adaptive-slices", {
+      cut: ["1. still required A 2. still required B 3. still required C 4. still required D"],
+      scope: ["work"],
+      route: ["accept"],
+    });
+    // The remainder is the whole queue file the cut agent owns, never a truncated copy.
+    expect(await h.run()).toMatchObject({
+      ok: false,
+      status: "incomplete",
+      reason: "slice_allowance",
+      remaining: "remaining-queue.md",
+    });
     expect(h.counts.implement).toBe(3);
     expect(h.counts.cut).toBe(4);
   });
-  it.each([
-    { scope: ["needs_owner"] },
-    { scope: ["blocked"] },
-    { scope: ["work"], cut: [[]] },
-    { scope: ["complete"], cut: [["unfinished"]] },
-  ])("does not implement an inconsistent scope: %j", async (overrides) => {
-    const h = await example("adaptive-slices", overrides);
-    expect(await h.run()).toMatchObject({ ok: false });
-    expect(h.counts.implement).toBeUndefined();
-  });
+  it.each([{ scope: ["needs_owner"] }, { scope: ["blocked"] }])(
+    "does not implement a stopped scope: %j",
+    async (overrides) => {
+      const h = await example("adaptive-slices", overrides);
+      expect(await h.run()).toMatchObject({ ok: false, remaining: "remaining-queue.md" });
+      expect(h.counts.implement).toBeUndefined();
+    },
+  );
   it("returns the latest reviewed work when repeated correction uses the allowance", async () => {
     const h = await example("adaptive-slices", { route: ["fix"] });
     expect(await h.run()).toMatchObject({

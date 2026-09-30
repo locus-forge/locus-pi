@@ -59,7 +59,7 @@ describe("workflow tool: removed budget options", () => {
     expect(result.isError).toBe(true);
     expect(text).toContain("answerChars was removed");
     expect(text).toContain("no longer bounds the SIZE of an answer");
-    expect(text).toContain("output.maxLength");
+    expect(text).toContain("length requirement in the stage prompt");
     // Not the schema's generic complaint.
     expect(text).not.toMatch(/unexpected|additional propert/iu);
   });

@@ -93,12 +93,14 @@ its first agent call, plain text included**, reported as `key-mismatch` at that 
 exception is a run that declared each of those budgets explicitly: nothing was inherited,
 the keys are unchanged, and it replays exactly as before.
 
-**The shaped return contract carries a version, and this release is v2.** The ceilings
-the runtime used to add to every shaped call are gone, so the contract text a shaped call
-sends is not the text an older record was written under. Resuming such a run does not
-silently reuse the record and does not blame the script for a key mismatch it did not
-cause: the call reports `return-contract-changed`, the journal names the release
-boundary, and that call runs fresh. In a mixed run this is the miss an operator sees only
+**The return contract carries a version, and this release is v3.** `workflow_return`
+now carries only one exact declared choice, so the contract a choice call sends is not
+the contract an older record was written under. Resuming such a run does not silently
+reuse the record and does not blame the script for a key mismatch it did not cause: the
+call reports `return-contract-changed`, the journal names the release boundary, and that
+call runs fresh. A resumed source that still declares a removed option — `handoffs`,
+`schema`, `validate`, `output`, `repair` or `returnVia` — fails before the replay lookup
+with the same named error as a fresh run; an old shaped receipt is never reinterpreted. In a mixed run this is the miss an operator sees only
 when the budgets were explicit — otherwise the budget boundary above has already ended
 reuse earlier.
 

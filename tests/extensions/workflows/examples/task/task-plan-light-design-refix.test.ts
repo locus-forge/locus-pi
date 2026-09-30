@@ -11,7 +11,7 @@ function runWithResidual(mechanical: "passed" | "failed", design: "accept" | "fa
     "workflow-source-seed": ["Seed"],
     "workflow-source-seed-check": ["Seed passed"],
     "workflow-source-seed-route": ["passed"],
-    "workflow-source-cut": [["state handoff slice"], []],
+    "workflow-source-cut": ["1. state handoff slice", "no items"],
     "workflow-source-queue-assessment": ["One unmet slice", "Whole graph complete"],
     "workflow-source-queue-route": ["work", "complete"],
     "workflow-source-slice": ["Source edit"],
@@ -58,7 +58,7 @@ describe("task/plan-light bounded design recheck repair", () => {
     expect(fixture.calls.filter((call) => call.label === "workflow-source-design-refix")).toHaveLength(1);
     const refix = fixture.calls.find((call) => call.label === "workflow-source-design-refix")?.prompt;
     expect(refix).toContain("Correctable residual: correction still uses initial, not current state");
-    expect(refix).toContain("state handoff slice");
+    expect(refix).toContain("do not implement future queue members");
     expect(refix).toContain("second and final semantic repair allowance");
     expect(fixture.calls.find((call) => call.label === "workflow-source-design-rerecheck")?.prompt).toContain(
       "latest whole state",
@@ -120,7 +120,7 @@ function failedMechanicalRepair() {
     "workflow-source-seed": ["Seed"],
     "workflow-source-seed-check": ["Seed passed"],
     "workflow-source-seed-route": ["passed"],
-    "workflow-source-cut": [["state carry slice"]],
+    "workflow-source-cut": ["1. state carry slice"],
     "workflow-source-queue-assessment": ["Queue valid"],
     "workflow-source-queue-route": ["work"],
     "workflow-source-slice": ["Source edited"],
@@ -194,11 +194,11 @@ async function promptsThroughMechanicalFix() {
     "workflow-source-seed": ["Seed"],
     "workflow-source-seed-check": ["Seed passed"],
     "workflow-source-seed-route": ["passed"],
-    "workflow-source-cut": [["review loop slice"]],
+    "workflow-source-cut": ["1. review loop slice"],
     "workflow-source-queue-assessment": ["Queue valid"],
     // A conflicting first route exercises the reconciliation prompts too.
     "workflow-source-queue-route": ["queue_conflict"],
-    "workflow-source-queue-repair": [["review loop slice"]],
+    "workflow-source-queue-repair": ["1. review loop slice"],
     "workflow-source-queue-recheck": ["Queue valid"],
     "workflow-source-queue-recheck-route": ["work"],
     "workflow-source-slice": ["Source edited"],

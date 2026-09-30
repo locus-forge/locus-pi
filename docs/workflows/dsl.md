@@ -19,31 +19,31 @@ A workflow receives `dsl` and optional exact text `input` in its default async f
 
 **Runtime support and authoring permission are different.** Runtime means trusted JavaScript can call the method; standard means `meta.profile: "standard"` passes the compatibility source grammar; orchestration-only is the stricter checker mode used by the create skill. The table describes method admission, not permission to inspect every returned value: standard source still treats host results as opaque. A method's presence in `WorkflowDsl` does not make it legal in generated source. Read [the source contract](source-shape.md) for grammar, opaque model text, literal call labels, and permitted control flow.
 
-| Method                                              | Runtime       | Standard                        | Orchestration-only                              |
-| --------------------------------------------------- | ------------- | ------------------------------- | ----------------------------------------------- |
-| [`agent`](#agent)                                   | Yes           | Yes, except raw schema/validate | Same; unique literal label per callsite         |
-| [`fusion`](#fusion)                                 | Yes           | No                              | No                                              |
-| [`items`](#items)                                   | Yes           | Yes                             | Yes                                             |
-| [`parallel`](#parallel)                             | Yes           | Yes                             | Yes                                             |
-| [`pipeline`](#pipeline)                             | Yes           | Yes                             | Yes                                             |
-| [`workflow`](#workflow)                             | Yes           | Yes                             | Yes                                             |
-| [`invokeWorkflow`](#invokeworkflow)                 | Yes           | Yes                             | Method admitted; see workspace constraint below |
-| [`phase`](#phase)                                   | Yes           | Yes                             | Yes                                             |
-| [`log`](#log)                                       | Yes           | Yes                             | Yes                                             |
-| [`publishArtifact`](#publishartifact)               | Yes           | Yes                             | Yes, in-memory text                             |
-| [`publishPrimaryArtifact`](#publishprimaryartifact) | Yes           | Yes, both overloads             | Both admitted; create skill uses in-memory text |
-| [`awaitOperator`](#awaitoperator)                   | Yes           | Yes                             | Yes; requires operator-capable launch           |
-| [`workspaceDir`](#workspacedir)                     | Yes           | Yes                             | No                                              |
-| [`outputDir`](#outputdir)                           | Yes           | Yes                             | No                                              |
-| [`projectRoot`](#projectroot)                       | Yes           | Yes                             | No                                              |
-| [`promptFile`](#promptfile)                         | Yes           | Yes                             | No                                              |
-| [`workspace`](#workspace)                           | Yes           | Yes                             | No                                              |
-| [`publishPrimaryFile`](#publishprimaryfile)         | Yes           | Yes                             | No                                              |
-| [`consumeTextArtifact`](#consumetextartifact)       | Yes           | Yes; result remains opaque      | No                                              |
-| [`continuationArtifacts`](#continuationartifacts)   | Yes           | Yes; entries remain opaque      | No                                              |
-| [`now`](#now)                                       | Yes           | Yes                             | No                                              |
-| [`random`](#random)                                 | Yes           | Yes                             | No                                              |
-| [`runWorkspaceDir`](#runworkspacedir)               | Always throws | No                              | No                                              |
+| Method                                              | Runtime       | Standard                   | Orchestration-only                              |
+| --------------------------------------------------- | ------------- | -------------------------- | ----------------------------------------------- |
+| [`agent`](#agent)                                   | Yes           | Yes                        | Same; unique literal label per callsite         |
+| [`fusion`](#fusion)                                 | Yes           | No                         | No                                              |
+| [`items`](#items)                                   | Yes           | Yes                        | Yes                                             |
+| [`parallel`](#parallel)                             | Yes           | Yes                        | Yes                                             |
+| [`pipeline`](#pipeline)                             | Yes           | Yes                        | Yes                                             |
+| [`workflow`](#workflow)                             | Yes           | Yes                        | Yes                                             |
+| [`invokeWorkflow`](#invokeworkflow)                 | Yes           | Yes                        | Method admitted; see workspace constraint below |
+| [`phase`](#phase)                                   | Yes           | Yes                        | Yes                                             |
+| [`log`](#log)                                       | Yes           | Yes                        | Yes                                             |
+| [`publishArtifact`](#publishartifact)               | Yes           | Yes                        | Yes, in-memory text                             |
+| [`publishPrimaryArtifact`](#publishprimaryartifact) | Yes           | Yes, both overloads        | Both admitted; create skill uses in-memory text |
+| [`awaitOperator`](#awaitoperator)                   | Yes           | Yes                        | Yes; requires operator-capable launch           |
+| [`workspaceDir`](#workspacedir)                     | Yes           | Yes                        | No                                              |
+| [`outputDir`](#outputdir)                           | Yes           | Yes                        | No                                              |
+| [`projectRoot`](#projectroot)                       | Yes           | Yes                        | No                                              |
+| [`promptFile`](#promptfile)                         | Yes           | Yes                        | No                                              |
+| [`workspace`](#workspace)                           | Yes           | Yes                        | No                                              |
+| [`publishPrimaryFile`](#publishprimaryfile)         | Yes           | Yes                        | No                                              |
+| [`consumeTextArtifact`](#consumetextartifact)       | Yes           | Yes; result remains opaque | No                                              |
+| [`continuationArtifacts`](#continuationartifacts)   | Yes           | Yes; entries remain opaque | No                                              |
+| [`now`](#now)                                       | Yes           | Yes                        | No                                              |
+| [`random`](#random)                                 | Yes           | Yes                        | No                                              |
+| [`runWorkspaceDir`](#runworkspacedir)               | Always throws | No                         | No                                              |
 
 Entries describe ordinary runtime behavior; a custom host that omits a required artifact store, resource loader, workspace manager, child runner, or operator callback fails with a named “not configured” error. Static checking proves source shape, not semantic correctness or successful execution.
 
@@ -51,28 +51,25 @@ Entries describe ordinary runtime behavior; a custom host that omits a required 
 
 ### agent
 
-**Signature:** `agent(prompt: string, options?) -> Promise<string>`; output-mode overloads below change the result to an exact choice, `string[]`, or validated `unknown`. Run a clean child by default, or select a catalog persona with `agent`. Prompt must be nonblank task text; no implicit answer length limit exists. Ordinary success returns the exact non-empty final answer. Execution failures throw `WorkflowAgentExecutionError`; invalid declarations fail before a child starts.
+**Signature:** `agent(prompt: string, options?) -> Promise<string>`; the `choice` overload narrows the result to one exact declared member. Run a clean child by default, or select a catalog persona with `agent`. Prompt must be nonblank task text; no implicit answer length limit exists. Ordinary success returns the exact non-empty final answer. Execution failures throw `WorkflowAgentExecutionError`; invalid declarations fail before a child starts.
 
-| Output mode / options                                 | Result and defaults                                                                                    | Availability and important constraints                                                                                                              |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Omit shape options                                    | Exact final text, `Promise<string>`                                                                    | All three modes; no parsing or truncation                                                                                                           |
-| `choice: ["accept", "revise"]`                        | One exact member; a TypeScript readonly tuple infers its member union, dynamic lists return `string`   | All three; at least two unique nonblank strings; no option-count or text-length ceiling                                                             |
-| `choiceFallback: "revise"` with `choice`              | Declared member after invalid answers exhaust repair                                                   | Must belong to `choice`; never substitutes for transport or host failure                                                                            |
-| `handoffs: { minItems?, maxItems? }`                  | Complete nonblank text units; duplicates preserved, `Promise<string[]>`; minimum 0, no default maximum | All three; `minItems` is a nonnegative safe integer; optional `maxItems` is a positive safe integer ≥ `minItems`; `maxItemChars` is refused by name |
-| `result: "report"`                                    | Opaque host-rendered observation, `Promise<string>`                                                    | All three; accepted answer or eligible terminal failure, not semantic approval; excludes every shape/repair/returnVia option                        |
-| `output: { type: "string", singleLine?, maxLength? }` | Accepted nonblank string; multiline allowed and no length bound by default                             | All three; an explicit maximum must be a positive safe integer required by a consumer                                                               |
-| `schema: { … }, validate?`                            | Validated untransformed JSON value, `Promise<unknown>`                                                 | Runtime compatibility only; raw `schema` and `validate` are rejected by both source-check modes                                                     |
+| Result mode / options                    | Result and defaults                                                                                  | Availability and important constraints                                                  |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Omit result options                      | Exact final text, `Promise<string>`                                                                  | All three modes; no parsing or truncation                                               |
+| `choice: ["accept", "revise"]`           | One exact member; a TypeScript readonly tuple infers its member union, dynamic lists return `string` | All three; at least two unique nonblank strings; no option-count or text-length ceiling |
+| `choiceFallback: "revise"` with `choice` | Declared member after the one same-session correction is exhausted                                   | Must belong to `choice`; never substitutes for transport or host failure                |
+| `result: "report"`                       | Opaque host-rendered observation, `Promise<string>`                                                  | All three; accepted answer or eligible terminal failure, not semantic approval          |
 
-Declare exactly one of `choice`, `handoffs`, `output`, or `schema`. Those modes use `workflow_return` inside the same child session. `repair: { maxAttempts, clarification? }` defaults to two submissions, including the first: one proposal plus one same-session correction. Exhaustion throws `SchemaValidationError` unless an exact choice fallback applies. `validate(value) -> readonly string[]` requires `schema`, must be pure/synchronous/deterministic, returns violations rather than throwing, and cannot call the DSL. A transport without the required return tool capability fails closed. See [acceptance, schema keywords, repair, and report eligibility](agent-results.md).
+A choice call uses `workflow_return` inside the same child session with one package-owned correction turn; exhaustion throws `SchemaValidationError` unless `choiceFallback` applies. A transport without the return-tool capability fails closed. `handoffs`, `schema`, `validate`, `output`, `repair` and `returnVia` were removed and are refused by name before any child starts; richer results live in named workspace files, and caller-owned work units come from [`items()`](#items). See [agent results](agent-results.md#removed-shaped-result-options).
 
-**Example — orchestration-only:** a complete module; every agent edge has a distinct literal label. Handoff strings go unchanged to each worker, reports stay opaque, and only the exact choice controls the branch.
+**Example — orchestration-only:** a complete module; every agent edge has a distinct literal label. Caller-supplied items go unchanged to each worker, reports stay opaque, and only the exact choice controls the branch.
 
 <!-- dsl-example: orchestration-only -->
 
 ```js
 export const meta = { name: "review-units", profile: "standard" };
-export default async function run({ agent, parallel, publishPrimaryArtifact }, input) {
-  const units = await agent(input, { label: "discover", handoffs: { minItems: 1 } });
+export default async function run({ agent, items, parallel, publishPrimaryArtifact }, input) {
+  const units = items();
   const reports = await parallel(units.map((unit) => () => agent(unit, { label: "review-unit", result: "report" })));
   const decision = await agent(`Choose the next action from these reports:\n${reports.join("\n\n")}`, {
     label: "decide",
@@ -88,9 +85,7 @@ export default async function run({ agent, parallel, publishPrimaryArtifact }, i
 }
 ```
 
-**Example — constrained string:** `await agent("Return a single-line heading.", { label: "heading", output: { type: "string", singleLine: true } })`.
-
-**Example — runtime schema, rejected by standard and orchestration-only:** the profile is deliberately present to demonstrate the checker refusal; do not copy this declaration into generated source.
+**Example — removed schema, rejected by both source-check modes and by the runtime:** the profile is deliberately present to demonstrate the refusal; do not copy this declaration.
 
 <!-- dsl-example: rejected-schema -->
 
@@ -105,28 +100,26 @@ export default async function run({ agent }, input) {
 
 Output fields and their combinations are covered above. Additional call options:
 
-| Field                                     | Default                                            | Meaning / refusal                                                                                                                                                                                |
-| ----------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `agent: string`                           | Clean child                                        | Catalog persona; [catalog lookup](catalog.md)                                                                                                                                                    |
-| `model: string`                           | Effective configured model, otherwise parent model | Concrete `provider/id` selector with optional `:off\|minimal\|low\|medium\|high\|xhigh`; unresolved selector fails before dispatch                                                               |
-| `modelRole: string`                       | Effective configured model, otherwise parent model | Portable tier name; unassigned role falls back with recorded evidence; assigned malformed selector fails; [model precedence](models.md)                                                          |
-| `requireModelRole: true`                  | Off                                                | Requires explicit `modelRole`, refuses missing assignment, cannot combine with `model`; replay may reuse recorded evidence                                                                       |
-| `label: string`, `title: string`          | Unset                                              | Literal label identifies callsite; title is display only and may use author-owned records. Orchestration-only requires unique nonblank literal labels                                            |
-| `artifact: string`                        | Safe derived label/agent name                      | Logical automatic-answer artifact name; nonempty display label, no path separators/control characters                                                                                            |
-| `phase: string`                           | Current phase                                      | Override the call's journal/UI phase                                                                                                                                                             |
-| `ask: true`                               | Off                                                | Inject live `workflow_ask` only for this child; interactive parents only; unavailable/no-operator hosts fail closed; [live questions](running.md#live-operator-questions--agent-ask-true)        |
-| `timeoutMs`, `maxTurns`, `maxToolCalls`   | Unbounded unless run supplied a default            | Positive safe integer per-child-attempt limits: wall clock (including operator waits), SDK model cycles, tool starts. Expiry aborts rather than returning partial success; [budgets](budgets.md) |
-| `attempts: number`                        | 1                                                  | Positive safe integer physical transport attempts; only named retryable transport failures retry, never a weak answer. Values above 1 are refused for worktree modes or workspace handles        |
-| `workspaceMode`                           | `"project"`                                        | `"project"`, `"worktree"`, or `"temporary-worktree"`; isolation for file review, not security                                                                                                    |
-| `workspaceHandle: string`                 | Unset                                              | Opaque retained worktree handle from `workspace()`; reuse across stages                                                                                                                          |
-| `repair: { maxAttempts, clarification? }` | 2 submissions                                      | Shaped-output correction in the same session; positive safe integer and optional nonblank clarification; distinct from transport `attempts`                                                      |
-| `readOnly`, `tools`, `permissionMode`     | Ignored compatibility fields                       | Children inherit parent permissions and receive all tools; these cannot restrict them                                                                                                            |
-| `sandbox`                                 | Unset                                              | Deprecated workspace alias: `"read-only"` → project, `"workspace-write"` → worktree; explicit `workspaceMode` wins; no security boundary                                                         |
-| `returnVia: "tool"`                       | Unset                                              | Redundant compatibility option, ignored with deprecation evidence; `"text"` is refused                                                                                                           |
+| Field                                   | Default                                            | Meaning / refusal                                                                                                                                                                                |
+| --------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `agent: string`                         | Clean child                                        | Catalog persona; [catalog lookup](catalog.md)                                                                                                                                                    |
+| `model: string`                         | Effective configured model, otherwise parent model | Concrete `provider/id` selector with optional `:off\|minimal\|low\|medium\|high\|xhigh`; unresolved selector fails before dispatch                                                               |
+| `modelRole: string`                     | Effective configured model, otherwise parent model | Portable tier name; unassigned role falls back with recorded evidence; assigned malformed selector fails; [model precedence](models.md)                                                          |
+| `requireModelRole: true`                | Off                                                | Requires explicit `modelRole`, refuses missing assignment, cannot combine with `model`; replay may reuse recorded evidence                                                                       |
+| `label: string`, `title: string`        | Unset                                              | Literal label identifies callsite; title is display only and may use author-owned records. Orchestration-only requires unique nonblank literal labels                                            |
+| `artifact: string`                      | Safe derived label/agent name                      | Logical automatic-answer artifact name; nonempty display label, no path separators/control characters                                                                                            |
+| `phase: string`                         | Current phase                                      | Override the call's journal/UI phase                                                                                                                                                             |
+| `ask: true`                             | Off                                                | Inject live `workflow_ask` only for this child; interactive parents only; unavailable/no-operator hosts fail closed; [live questions](running.md#live-operator-questions--agent-ask-true)        |
+| `timeoutMs`, `maxTurns`, `maxToolCalls` | Unbounded unless run supplied a default            | Positive safe integer per-child-attempt limits: wall clock (including operator waits), SDK model cycles, tool starts. Expiry aborts rather than returning partial success; [budgets](budgets.md) |
+| `attempts: number`                      | 1                                                  | Positive safe integer physical transport attempts; only named retryable transport failures retry, never a weak answer. Values above 1 are refused for worktree modes or workspace handles        |
+| `workspaceMode`                         | `"project"`                                        | `"project"`, `"worktree"`, or `"temporary-worktree"`; isolation for file review, not security                                                                                                    |
+| `workspaceHandle: string`               | Unset                                              | Opaque retained worktree handle from `workspace()`; reuse across stages                                                                                                                          |
+| `readOnly`, `tools`, `permissionMode`   | Ignored compatibility fields                       | Children inherit parent permissions and receive all tools; these cannot restrict them                                                                                                            |
+| `sandbox`                               | Unset                                              | Deprecated workspace alias: `"read-only"` → project, `"workspace-write"` → worktree; explicit `workspaceMode` wins; no security boundary                                                         |
 
 ### fusion
 
-**Signatures:** `fusion(question: string, options) -> Promise<string>`; `fusion(question, { …options, schema, validate? }) -> Promise<unknown>`. **Runtime only:** neither checker permits `fusion`. Ask at least two isolated members, then a separately selected judge; return the judge's exact text or validate only its final value. Required `mode` is `"tool-free"` or `"agent"`; required `members` and `judge` each select exactly one `model` or `modelRole`, optionally a catalog `agent`. Member labels and selectors must be unique, and the judge cannot repeat a member selector. Invalid declarations, unresolvable selectors, failed member legs, unavailable capability readback, or insufficient run budget fail before a judge result.
+**Signature:** `fusion(question: string, options) -> Promise<string>`; `schema` and `validate` were removed and are refused by name before any leg starts. **Runtime only:** neither checker permits `fusion`. Ask at least two isolated members, then a separately selected judge; return the judge's exact text. Required `mode` is `"tool-free"` or `"agent"`; required `members` and `judge` each select exactly one `model` or `modelRole`, optionally a catalog `agent`. Member labels and selectors must be unique, and the judge cannot repeat a member selector. Invalid declarations, unresolvable selectors, failed member legs, unavailable capability readback, or insufficient run budget fail before a judge result.
 
 `strategy` defaults to `"replicate"`; `"roles"` requires a nonblank `lens` per member. `context` defaults to `{ mode: "prompt-only" }`; `{ mode: "provided", text }` passes explicit nonblank context. Optional `output` is an instruction for the judge only, defaulting to a direct answer in the question's format. `memberLimits` and `judgeLimits` accept `timeoutMs`, `maxTurns`, and `attempts` (1 by default), not answer length caps. Judge label defaults to `"judge"`. See [Fusion](fusion.md) for complete isolation and evidence behavior.
 

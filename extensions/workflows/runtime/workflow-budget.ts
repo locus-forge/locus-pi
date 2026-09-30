@@ -33,8 +33,8 @@ export { NODE_TIMER_MAX_DELAY_MS };
  * `answerChars` was the seventh and is deliberately gone: it refused a completed
  * child's answer for its length, which is a size policy over a result already paid
  * for rather than a budget over what a run may spend. A consumer that genuinely
- * needs a bounded value declares it as a contract (`output.maxLength`, a schema
- * `maxLength`/`maxItems`), where the child is told and can correct it in-session.
+ * needs a bounded answer states that requirement in the stage prompt, where the
+ * child is told before it writes.
  *
  * Tokens and cost are absent for a different reason: the host reports no price, so
  * a limit over them would be a gate that reports "under budget" forever. Observed
@@ -184,7 +184,7 @@ export function removedWorkflowBudgetKeyMessage(key: string): string | undefined
   const replacement = REMOVED_WORKFLOW_BUDGET_KEYS[key];
   return replacement === null
     ? `workflow budget axis ${key} was removed: a workflow run no longer bounds the SIZE of an answer. ` +
-        "Declare a consumer contract on the call instead (output.maxLength, or maxLength/maxItems inside a schema)"
+        "State the length requirement in the stage prompt instead"
     : `workflow budget option ${key} was removed; use budget.${replacement} instead`;
 }
 

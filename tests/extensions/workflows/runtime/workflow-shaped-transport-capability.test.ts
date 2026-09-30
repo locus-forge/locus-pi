@@ -142,7 +142,7 @@ describe("transport session-tool capability", () => {
   });
 });
 
-describe("shaped call on a transport that cannot host session tools", () => {
+describe("choice call on a transport that cannot host session tools", () => {
   it("refuses with output-contract-unavailable before any child session exists", async () => {
     const h = harness();
     const probe = sdkProbe();
@@ -183,7 +183,7 @@ describe("shaped call on a transport that cannot host session tools", () => {
     expect(probe.captured[0]?.model).toEqual(CLAUDE_CLI);
   });
 
-  it("lets a shaped call through on a transport that does host session tools", async () => {
+  it("lets a choice call through on a transport that does host session tools", async () => {
     const h = harness();
     const probe = sdkProbe();
     const runner = createWorkflowAgentRunner({
@@ -208,20 +208,7 @@ describe("shaped call on a transport that cannot host session tools", () => {
 });
 
 describe("composition preflight", () => {
-  it("refuses a shaped judge on the incapable transport before any member runs", async () => {
-    const h = harness();
-    const preflight = createWorkflowAgentPreflight({
-      pi: h.pi,
-      ctx: h.ctx,
-      signal: new AbortController().signal,
-    });
-
-    await expect(
-      preflight([{ model: "test/fast" }, { model: "claude-code/sonnet", expectsShapedResult: true }]),
-    ).rejects.toThrow(WORKFLOW_SHAPED_TRANSPORT_REFUSAL);
-  });
-
-  it("accepts the same transport as an unshaped panel member", async () => {
+  it("accepts the incapable transport as a panel member: every Fusion leg is plain text", async () => {
     const h = harness();
     const preflight = createWorkflowAgentPreflight({
       pi: h.pi,

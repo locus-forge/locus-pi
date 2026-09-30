@@ -36,7 +36,7 @@ on a live human answer never shares a record with one that may not. Display titl
 are not execution identity; see [model routing](models.md#model-selection-execution-versus-metadata)
 for the distinction between declared selectors and the model that actually ran.
 
-A shaped call includes its versioned `returnContract` in the canonical request.
+A choice call includes its versioned `returnContract` in the canonical request.
 It does not encode that contract by appending it to the prompt or parsing model
 text. Same-session clarification stays within the same logical call and does not
 create another replay ordinal. Transport retries also share that logical ordinal;
@@ -69,7 +69,7 @@ author never labeled cannot be located in a program that changed under it.
 | `no-record`               | the record has no entry at this position                              |
 | `unnamed-node`            | source changed and either the entry or the current call has no name   |
 | `node-mismatch`           | source changed and the names differ                                   |
-| `return-contract-changed` | the recorded shaped-return contract predates the current version      |
+| `return-contract-changed` | the recorded choice-return contract predates the current version      |
 | `key-mismatch`            | the resolved request differs from the recorded one                    |
 | `recorded-failure`        | the recorded call failed; a failure is never served back as an answer |
 | `side-effecting-call`     | the call writes to a worktree, so its record cannot stand in for it   |

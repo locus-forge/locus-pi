@@ -311,67 +311,6 @@ describe("dsl.fusion", () => {
     expect(freshCalls).toBe(4);
   });
 
-  it("marks a replayed judge validator throw as replayed terminal evidence", async () => {
-    const schema = {
-      type: "object",
-      additionalProperties: false,
-      required: ["answer"],
-      properties: { answer: { type: "string", minLength: 1 } },
-    };
-    const sourceDir = temporaryRunDir("workflow-fusion-validator-source-", "fusion-validator-source");
-    const source = createWorkflowRuntime({
-      runId: "fusion-validator-source",
-      replay: createWorkflowReplayController({ runDir: sourceDir }),
-      agentRunner: async (request) =>
-        success(request, request.model === "test/judge" ? '{"answer":"safe"}' : `candidate ${request.model}`),
-    });
-    await source.dsl.fusion("question", { ...BASE, schema, validate: () => [] });
-    const recorded = readFileSync(workflowReplayFile(sourceDir), "utf8")
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-
-    let freshCalls = 0;
-    const resumedRoot = temporaryRoot("workflow-fusion-validator-resumed-");
-    const resumedRunId = "fusion-validator-resumed";
-    const resumed = createWorkflowRuntime({
-      runId: resumedRunId,
-      projectRoot: resumedRoot,
-      journal: createWorkflowJournalSink(resumedRoot, resumedRunId),
-      replay: createWorkflowReplayController({
-        runDir: ensureWorkflowRunDir(resumedRoot, resumedRunId),
-        recorded,
-      }),
-      replaySourceRunId: "fusion-validator-source",
-      agentRunner: async (request) => {
-        freshCalls += 1;
-        return success(request, "unexpected fresh answer");
-      },
-    });
-
-    await expect(
-      resumed.dsl.fusion("question", {
-        ...BASE,
-        schema,
-        validate: () => {
-          throw new Error("validator exploded after replay");
-        },
-      }),
-    ).rejects.toThrow("validator exploded after replay");
-    expect(freshCalls).toBe(0);
-    const [terminal] = resumed.getJournal().filter((line) => line.kind === "error");
-    expect(terminal).toMatchObject({
-      source: "script",
-      replayed: true,
-      capabilityMode: "agent",
-      message: "validator exploded after replay",
-    });
-    expect(terminal?.activeToolNames).toBeUndefined();
-    const persisted = readWorkflowRunJournalState(resumedRoot, resumedRunId);
-    expect(persisted.diagnostics).toEqual([]);
-    expect(persisted.lines.find((line) => line.kind === "error")).toMatchObject({ replayed: true });
-  });
-
   it("marks replayed answer adoption failures as replayed terminal evidence", async () => {
     const sourceDir = temporaryRunDir("workflow-fusion-adoption-source-", "fusion-adoption-source");
     const source = createWorkflowRuntime({

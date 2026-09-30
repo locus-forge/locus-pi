@@ -4,8 +4,9 @@
  * leaf-agent gate, deadline — in `workflow-execution-state.ts`, and `parallel()`/`pipeline()`
  * with their own per-group scheduler in `workflow-groups.ts`. Both moved out whole; every
  * public name they took is re-exported below under the identifier it has always had. The
- * SHAPED half of `agent()` — declaration dispatch and acceptance from the confirmed
- * `workflow_return` receipt — is `workflow-agent-output.ts`, composed the same way, and
+ * RESULT-MODE half of `agent()` — declaration dispatch, removed-option refusals and choice
+ * acceptance from the confirmed `workflow_return` receipt — is `workflow-agent-output.ts`,
+ * composed the same way, and
  * `fusion()` — the panel's declaration, its member and judge prompts, and the order its
  * legs run in — is `workflow-fusion.ts`, which composes the `agent()` below rather than
  * running anything of its own.
@@ -148,14 +149,12 @@ import {
   normalizeTimeoutMs,
   type WorkflowAgentAnyOptions,
   type WorkflowAgentChoiceOptions,
-  type WorkflowAgentHandoffOptions,
   type WorkflowAgentOptions,
   type WorkflowAgentPreflight,
   type WorkflowAgentReportOptions,
   type WorkflowAgentRequest,
   type WorkflowAgentResult,
   type WorkflowAgentRunner,
-  type WorkflowAgentSchemaOptions,
 } from "./workflow-agent-contract.js";
 export {
   SchemaValidationError,
@@ -167,8 +166,6 @@ export {
 } from "./workflow-agent-contract.js";
 export type {
   WorkflowAgentChoiceOptions,
-  WorkflowAgentHandoffBounds,
-  WorkflowAgentHandoffOptions,
   WorkflowAgentOptions,
   WorkflowAgentPreflight,
   WorkflowAgentPreflightRequest,
@@ -176,15 +173,13 @@ export type {
   WorkflowAgentRequest,
   WorkflowAgentResult,
   WorkflowAgentRunner,
-  WorkflowAgentSchemaOptions,
-  WorkflowAgentValidate,
 } from "./workflow-agent-contract.js";
 
-// The SHAPED-OUTPUT half of a call — turning `choice`/`handoffs`/`schema`/`output`/
-// `validate` into the request, and accepting a value ONLY from the confirmed
+// The RESULT-MODE half of a call — plain text or one exact `choice`, the named refusal of
+// every removed shaped-result option, and accepting a choice ONLY from the confirmed
 // `workflow_return` receipt — is owned by `workflow-agent-output.ts`. It is its own owner
-// rather than part of the call because "what shape was declared, and was this answer
-// accepted" is a different question from "which call is this, and may it repeat". The
+// rather than part of the call because "which result mode was declared, and was this
+// choice accepted" is a different question from "which call is this, and may it repeat". The
 // core value-imports it, so rule 7 of `scripts/check-extension-layers.ts` holds it to the
 // same `node:fs`-free proof transitively, and every public name it took is re-exported
 // below under the identifier it has always had.
@@ -234,11 +229,7 @@ export function workflowOperatorInputForbiddenError(reason: string): string {
 // transitively. Every public name it took is re-exported below under the identifier it has
 // always had, so `fusion/runner.ts`, `fusion/config.ts` and every script importer are
 // unaffected by the move.
-import {
-  createWorkflowFusion,
-  type WorkflowFusionOptions,
-  type WorkflowFusionSchemaOptions,
-} from "./workflow-fusion.js";
+import { createWorkflowFusion, type WorkflowFusionOptions } from "./workflow-fusion.js";
 export { WORKFLOW_FUSION_MIN_MEMBERS } from "./workflow-fusion.js";
 export type {
   WorkflowFusionCallLimits,
@@ -247,7 +238,6 @@ export type {
   WorkflowFusionMember,
   WorkflowFusionModelSelector,
   WorkflowFusionOptions,
-  WorkflowFusionSchemaOptions,
 } from "./workflow-fusion.js";
 
 export interface WorkflowDsl {
@@ -260,16 +250,8 @@ export interface WorkflowDsl {
   ): Promise<Choices[number]>;
   /** Dynamic choice lists keep runtime validation but cannot expose a literal union. */
   agent(prompt: string, opts: WorkflowAgentChoiceOptions): Promise<string>;
-  /** Discover a bounded runtime list of complete text handoffs for downstream fan-out. */
-  agent(prompt: string, opts: WorkflowAgentHandoffOptions): Promise<string[]>;
-  /** Run one child agent under a declared answer shape. Success resolves to the
-   *  VALIDATED value (not text); exhausting the retry budget throws SchemaValidationError. */
-  agent(prompt: string, opts: WorkflowAgentSchemaOptions): Promise<unknown>;
   /** Run one child agent. Success resolves to its exact non-empty final text. */
   agent(prompt: string, opts?: WorkflowAgentOptions): Promise<string>;
-  /** Ask a bounded panel of explicitly selected models, then have a separate judge
-   *  synthesize their ordered answers under the existing schema contract. */
-  fusion(question: string, opts: WorkflowFusionSchemaOptions): Promise<unknown>;
   /** Ask a bounded panel of explicitly selected models and return the judge's exact text. */
   fusion(question: string, opts: WorkflowFusionOptions): Promise<string>;
   /** Render one neighboring .prompt.md resource from the original workflow source. */
@@ -489,10 +471,6 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
 
   const journalMirror: WorkflowJournalLine[] = [];
   let _currentPhase: string | undefined;
-  /** Set while a script `validate` callback is running. The callback sits between the
-   *  child answer and agent_end, before artifact recording and replay journaling, so a
-   *  nested child call there has no defined position in either sequence. */
-  let insideValidate = false;
   const groups: WorkflowGroupExecution = createWorkflowGroupExecution({
     runId,
     now: nowFn,
@@ -603,32 +581,22 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
     ...(options.replay === undefined ? {} : { replay: options.replay }),
     currentPhase,
     branchContext: () => groups.branchContext(),
-    insideValidate: () => insideValidate,
     workspaceManagerConfigured: () => options.workspaceManager !== undefined,
     defaults: { maxToolCalls: defaultMaxToolCalls, timeoutMs: defaultTimeoutMs, maxTurns: defaultMaxTurns },
     journalPerCallRaises,
     runPhysicalAgentAttempt,
   });
 
-  // The SHAPED-OUTPUT owner. It sees exactly four named capabilities — the journal
-  // fan-out, branch identity, the validator re-entrancy latch and the ONE logical call —
-  // and never this root, so the acceptance of a shaped answer has a single definition
-  // that cannot reach back into the DSL it decides for.
-  const shapedOutput = createWorkflowAgentOutput({
+  // The RESULT-MODE owner. It sees exactly three named capabilities — the journal fan-out,
+  // branch identity and the ONE logical call — and never this root, so the acceptance of a
+  // choice has a single definition that cannot reach back into the DSL it decides for.
+  const resultMode = createWorkflowAgentOutput({
     runId,
     now: nowFn,
     emit,
     currentPhase,
     branchContext: () => groups.branchContext(),
     activeGroupFields: () => groups.activeGroupFields(),
-    runScriptValidate: (run) => {
-      insideValidate = true;
-      try {
-        return run();
-      } finally {
-        insideValidate = false;
-      }
-    },
     runAgentAttempt,
   });
 
@@ -643,7 +611,6 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
     now: nowFn,
     emit,
     currentPhase,
-    insideValidate: () => insideValidate,
     journalBudgetStop,
     sharedExecution,
     runParallel: groups.parallel,
@@ -655,42 +622,31 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
   });
 
   /**
-   * `agent()` — exact text by default, one shaped acceptance path for everything else.
+   * `agent()` — exact text by default, one exact `choice` when workflow source must branch.
    *
-   * Without a shape this is one child run resolving to the child's EXACT final text: no
+   * Without a choice this is one child run resolving to the child's EXACT final text: no
    * prompt augmentation, no parsing, no length policy, unchanged journal. A complete
-   * report comes back complete, however long it is.
+   * report comes back complete, however long it is. Anything richer than text belongs in
+   * a named workspace file the next agent reads, not in a model-serialized value.
    *
-   * With `choice`, `handoffs`, `schema` or `output` the value is accepted inside the
-   * child's own session through the `workflow_return` tool (see `workflow-agent-output.ts`).
-   * There is exactly ONE structured path now: the former text transport — which appended
-   * a shape block to the prompt, parsed the final message, and spawned a FRESH child to
-   * fix the format of an answer the previous child had already found — is deleted. A
-   * fresh session cannot repair a form it has no memory of producing, and the two
-   * dialects of "how a structured answer travels" could drift apart.
-   *
-   * `validate` extends the accepted contract to rules a schema cannot declare —
-   * referential integrity, cross-field agreement, graph shape. It now runs inside the
-   * same session, so a violation is a clarification the child can answer rather than a
-   * new child that starts from nothing.
-   *
-   * `returnVia` is no longer needed: `"tool"` is accepted for one release and diagnosed
-   * as redundant, and `"text"` is refused by name.
+   * With `choice` the child picks one declared string inside its own session through the
+   * `workflow_return` tool (see `workflow-agent-output.ts`). The general shaped results —
+   * `handoffs`, `schema`, `validate`, `output`, `repair`, `returnVia` — are removed and
+   * refused by name before a child starts.
    */
   function agentDsl<const Choices extends readonly [string, string, ...string[]]>(
     prompt: string,
     opts: WorkflowAgentChoiceOptions<Choices>,
   ): Promise<Choices[number]>;
   function agentDsl(prompt: string, opts: WorkflowAgentChoiceOptions): Promise<string>;
-  function agentDsl(prompt: string, opts: WorkflowAgentHandoffOptions): Promise<string[]>;
-  function agentDsl(prompt: string, opts: WorkflowAgentSchemaOptions): Promise<unknown>;
   function agentDsl(prompt: string, opts: WorkflowAgentReportOptions): Promise<string>;
   function agentDsl(prompt: string, opts?: WorkflowAgentOptions): Promise<string>;
-  async function agentDsl(prompt: string, opts?: WorkflowAgentAnyOptions): Promise<unknown> {
-    // Declaration dispatch, every refusal it fires, and the whole shaped acceptance belong
-    // to `workflow-agent-output.ts`. This root only routes the two paths it names, so the
+  async function agentDsl(prompt: string, opts?: WorkflowAgentAnyOptions): Promise<string> {
+    // Declaration dispatch, every refusal it fires, and the whole choice acceptance belong
+    // to `workflow-agent-output.ts`. This root only routes the two modes it names, so the
     // plain call keeps returning the child's exact full text through the logical call.
-    if (shapedOutput.dispatchWorkflowAgentShape(opts) === "shaped") return shapedOutput.runShapedAgent(prompt, opts!);
+    if (resultMode.dispatchWorkflowAgentShape(opts) === "choice")
+      return resultMode.runChoiceAgent(prompt, opts as WorkflowAgentChoiceOptions);
     return (await runAgentAttempt(prompt, opts)).text;
   }
 

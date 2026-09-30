@@ -104,7 +104,7 @@ describe("workflow DSL reader reference", () => {
   });
 
   it.each([
-    ["rejected-schema", "raw schema"],
+    ["rejected-schema", "agent schema was removed"],
     ["rejected-fusion", "calls only direct DSL primitives"],
   ])("refuses the documented runtime-only %s example in both authoring modes", (name, reason) => {
     for (const check of [standardWorkflowSourceShapeDiagnostics, orchestrationOnlyWorkflowSourceShapeDiagnostics]) {

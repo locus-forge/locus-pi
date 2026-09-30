@@ -144,6 +144,24 @@ describe("dsl.fusion", () => {
     ).rejects.toThrow(/fusion memberLimits: agent maxAnswerChars was removed/u);
   });
 
+  it("refuses a removed limit key declared with an undefined value before any leg starts", async () => {
+    let calls = 0;
+    const { dsl } = createWorkflowRuntime({
+      runId: "fusion-removed-undefined-limit",
+      agentRunner: async (request) => {
+        calls += 1;
+        return success(request, "must not run");
+      },
+    });
+    await expect(
+      dsl.fusion("question", { ...BASE, memberLimits: { attempts: 1, maxAnswerChars: undefined } } as never),
+    ).rejects.toThrow(/fusion memberLimits: agent maxAnswerChars was removed/u);
+    await expect(dsl.fusion("question", { ...BASE, judgeLimits: { schema: undefined } } as never)).rejects.toThrow(
+      /fusion judgeLimits: agent schema was removed/u,
+    );
+    expect(calls).toBe(0);
+  });
+
   it("reserves the complete invocation budget across overlapping Fusion calls", async () => {
     const requests: WorkflowAgentRequest[] = [];
     const { dsl } = createWorkflowRuntime({
