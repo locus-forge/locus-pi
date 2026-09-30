@@ -359,8 +359,9 @@ describe("npm public package boundary", () => {
     // Directory-owned means the dotfiles inside a listed directory ship with it:
     // `skills/.ignore` rides along under `skills/` and is counted here.
     // Four location/tool owners were extracted without widening the directory-owned allowlist;
-    // removing the shaped-result schema owner (workflow-schema.ts) took one file out.
-    expect(dryRun.files).toHaveLength(253);
+    // removing the shaped-result schema owner (workflow-schema.ts) took one file out;
+    // the bound-directory and child-task-note owners under location-state/ add two.
+    expect(dryRun.files).toHaveLength(255);
   });
 
   it("ships every prompt resource a curated workflow renders", () => {

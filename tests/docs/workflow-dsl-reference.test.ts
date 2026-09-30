@@ -97,7 +97,7 @@ describe("workflow DSL reader reference", () => {
       expect.arrayContaining([
         expect.objectContaining({
           severity: "error",
-          message: expect.stringContaining("orchestration-only authoring does not call outputDir()"),
+          message: expect.stringContaining("orchestration-only authoring does not call workspaceDir()"),
         }),
       ]),
     );

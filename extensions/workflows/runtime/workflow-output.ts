@@ -1,8 +1,9 @@
 /**
  * Compatibility surface for stable workflow outputs and cross-run coordination.
  *
- * Three owners stand behind this name and change for different reasons:
+ * Four owners stand behind this name and change for different reasons:
  * `workflow-workspace.ts` resolves and proves locations,
+ * `location-state/workflow-bound-directory.ts` binds a root `meta.outputDir` as the one workflow directory,
  * `location-state/workflow-location-lease.ts` owns writer fencing, and
  * `workflow-workspace-state.ts` owns atomic checkpoints and navigation. This
  * module adds no behavior; it re-exports those owners for existing callers.
@@ -25,13 +26,17 @@ export {
   resolveWorkflowWorkspaceDirectoryForReuse,
   resolveWorkflowWorkspaceDirectoryPath,
   resolveWorkflowWorkspacePhysicalIdentityWithoutCreation,
-  resolveWorkflowFinalOutputDirectory,
   revalidateWorkflowPrimaryFile,
   WORKFLOW_OUTPUT_DIR_PATTERN,
   WORKFLOW_WORKSPACE_DIR_PATTERN,
   WORKFLOW_RUN_NAME_MAX_CHARS,
   WORKFLOW_RUN_NAME_PATTERN,
 } from "./workflow-workspace.js";
+export {
+  isBoundWorkflowDirectory,
+  resolveWorkflowBoundDirectory,
+  resolveWorkflowFinalOutputDirectory,
+} from "./location-state/workflow-bound-directory.js";
 export type {
   WorkflowOutputDirectory,
   WorkflowOutputDirectoryPath,

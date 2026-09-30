@@ -15,11 +15,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
-  acquireWorkflowOutputLease,
+  acquireWorkflowLocationLeases,
   acquireWorkflowRootLease,
   releaseWorkflowOutputLease,
   releaseWorkflowRootLease,
   WORKFLOW_WORKSPACE_LEASE_FILE,
+  workflowFinalOutputStateDir,
   workflowOutputStateDir,
 } from "../../../../extensions/workflows/runtime/workflow-output.js";
 import {
@@ -29,9 +30,10 @@ import {
   writeWorkflowWorkspaceRunLink,
 } from "../../../../extensions/workflows/runtime/workflow-workspace-state.js";
 import {
+  resolveWorkflowBoundDirectory,
   resolveWorkflowFinalOutputDirectory,
-  resolveWorkflowOutputDirectory,
-} from "../../../../extensions/workflows/runtime/workflow-workspace.js";
+} from "../../../../extensions/workflows/runtime/location-state/workflow-bound-directory.js";
+import { resolveWorkflowOutputDirectory } from "../../../../extensions/workflows/runtime/workflow-workspace.js";
 import { ensureWorkflowRunDir } from "../../../../extensions/workflows/runtime/workflow-run-layout.js";
 import { writeWorkflowRunGroupReport } from "../../../../extensions/workflows/runtime/workflow-run-report.js";
 import { runWorkflowScript } from "../../../../extensions/workflows/runtime/workflow-runner.js";
@@ -65,21 +67,43 @@ describe("leased workspace navigation under a task artifacts root", () => {
   });
 });
 
-describe("separate final-output leases", () => {
-  it("blocks two workspaces targeting one declared output without writing runtime state there", () => {
+describe("bound workflow directory leases", () => {
+  it("fences one bound directory with one workspace lease and writes no runtime state there", () => {
     const root = project();
-    const firstWorkspace = resolveWorkflowOutputDirectory(root, ".tasks/one/runtime", "unused", root);
-    const secondWorkspace = resolveWorkflowOutputDirectory(root, ".tasks/two/runtime", "unused", root);
-    const firstOutput = resolveWorkflowFinalOutputDirectory(root, ".local/shared-catalog", firstWorkspace);
-    const secondOutput = resolveWorkflowFinalOutputDirectory(root, ".local/shared-catalog", secondWorkspace);
-    const lease = acquireWorkflowOutputLease({ projectRoot: root, output: firstOutput, rootRunId: "first" });
+    const directory = resolveWorkflowBoundDirectory(root, ".local/shared-catalog");
+    const output = resolveWorkflowFinalOutputDirectory(root, ".local/shared-catalog", directory);
+    const [lease, outputLease] = acquireWorkflowLocationLeases(root, directory, output, "first", false);
 
-    expect(() => acquireWorkflowOutputLease({ projectRoot: root, output: secondOutput, rootRunId: "second" })).toThrow(
+    expect(outputLease).toBeUndefined();
+    expect(lease.lockFile).toContain(path.join(".locus-pi", "workflow-state"));
+    expect(existsSync(workflowFinalOutputStateDir(root, output.identity))).toBe(false);
+    expect(() => acquireWorkflowLocationLeases(root, directory, output, "second", false)).toThrow(
       "owned by live run first",
     );
-    expect(lease.lockFile).toContain(path.join(".locus-pi", "workflow-output-state"));
-    expect(readdirSync(firstOutput.absolutePath)).toEqual([]);
-    releaseWorkflowOutputLease(lease);
+    expect(readdirSync(directory.absolutePath)).toEqual([]);
+    releaseWorkflowRootLease(lease);
+  });
+
+  it("keeps two leases for an unbound workspace and its default output", () => {
+    const root = project();
+    const workspace = resolveWorkflowOutputDirectory(root, ".tasks/one/runtime", "unused", root);
+    const output = resolveWorkflowFinalOutputDirectory(root, undefined, workspace);
+    const [lease, outputLease] = acquireWorkflowLocationLeases(root, workspace, output, "first", false);
+
+    expect(output.relativePath).toBe(".tasks/one/runtime/outputs");
+    expect(outputLease?.lockFile).toContain(path.join(".locus-pi", "workflow-output-state"));
+    releaseWorkflowOutputLease(outputLease!);
+    releaseWorkflowRootLease(lease);
+  });
+
+  it("refuses a declared output that is not the runtime workspace, nested or disjoint", () => {
+    const root = project();
+    const workspace = resolveWorkflowOutputDirectory(root, ".tasks/one/runtime", "unused", root);
+    for (const declared of [".tasks/one/runtime/final", ".tasks/one", ".local/elsewhere"]) {
+      expect(() => resolveWorkflowFinalOutputDirectory(root, declared, workspace)).toThrow(
+        "must be the same directory",
+      );
+    }
   });
 });
 

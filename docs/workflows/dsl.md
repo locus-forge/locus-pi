@@ -242,11 +242,11 @@ export default async function run({ continuationArtifacts, parallel, agent }) {
 
 ### workspaceDir
 
-**Signature:** `workspaceDir() -> string`. Standard compatibility only. Return the absolute runtime workspace shared by the execution tree. Use it for handoffs and intermediate files. The host selects it through `runName`, `workspaceDir`, or the generated `.locus-pi/workspaces/<run-id>-<workflow>` default. Runtime navigation and checkpoint identity belong to this workspace, not to final output. **Example:** `const handoffDir = workspaceDir();`.
+**Signature:** `workspaceDir() -> string`. Standard compatibility only. Return the absolute workflow directory shared by the execution tree. Use it for handoffs and intermediate files. When the root declares `meta.outputDir`, that directory is the single [bound workflow directory](#bound-workflow-directory) and `workspaceDir()` equals `outputDir()`. Otherwise the host selects it through `runName`, `workspaceDir`, or the generated `.locus-pi/workspaces/<run-id>-<workflow>` default. Runtime navigation and checkpoint identity belong to this directory. **Example:** `const handoffDir = workspaceDir();`.
 
 ### outputDir
 
-**Signature:** `outputDir() -> string`. Standard compatibility only. Return the absolute final-output directory shared by the execution tree. The root may declare a project-relative literal `meta.outputDir`; `.local/...` is supported. Without a declaration, output is exactly `<workspaceDir>/outputs`. Children inherit it and may not override it. **Example:** `const finalDir = outputDir();`. [Workspace details](#workspace-and-saved-child-contract) define confinement and ownership.
+**Signature:** `outputDir() -> string`. Standard compatibility only. Return the absolute final-output directory shared by the execution tree. The root may declare a project-relative literal `meta.outputDir`; `.local/...` is supported, and the declared directory is then also `workspaceDir()`. Without a declaration, output is exactly `<workspaceDir>/outputs`. Children inherit it and may not override it. **Example:** `const finalDir = outputDir();`. [Workspace details](#workspace-and-saved-child-contract) define confinement and ownership.
 
 ### projectRoot
 
@@ -278,14 +278,73 @@ export default async function run({ continuationArtifacts, parallel, agent }) {
 
 ```js
 export const meta = { name: "workspace-review", profile: "standard", outputDir: ".local/review" };
-export default async function run({ agent, workspaceDir, outputDir }, input) {
-  const handoffs = workspaceDir();
-  const finals = outputDir();
-  return agent(`Review ${input}. Handoffs: ${handoffs}. Final files: ${finals}.`, { label: "review" });
+export default async function run({ agent, workspaceDir }, input) {
+  const dir = workspaceDir(); // the bound .local/review directory; outputDir() returns the same path
+  return agent(
+    `Workflow directory: ${dir}\nReview ${input}. Write the final report to review.md in the workflow directory with one complete write and write no other file.`,
+    { label: "review" },
+  );
 }
 ```
 
 ## Workspace and saved-child contract
+
+### Bound workflow directory
+
+A root that declares `meta.outputDir` runs in exactly one directory. For
+`meta.outputDir: ".local/airflow-review"`, `workspaceDir()` and `outputDir()`
+both return `<project>/.local/airflow-review`, and the runtime creates no
+`.locus-pi/workspaces/...` directory for the run. The path is checked only by
+the `meta.outputDir` grammar: project-relative, safe components, not beneath
+`.locus-pi` or `.git`. Every child task names this one directory:
+
+```text
+workflow directory (handoffs under artifacts/, final files): /abs/project/.local/airflow-review
+
+Relative handoff paths named in this task (for example artifacts/scope/scope.md) resolve against the workflow directory above, never against pwd or project root.
+```
+
+Write handoffs for other agents beneath `artifacts/` and final deliverables in
+the directory itself. Name the directory in the authored prompt as well, and
+give each agent one exact handoff instruction, for example: _You write a
+handoff for another agent: replace exactly `artifacts/scope/scope.md` with one
+complete write and write no other file._ `artifacts/` is an authoring
+convention; the runtime does not create, validate, or clean it.
+
+```text
+.local/airflow-review/
+  feature-x.md                  final report
+  .workflow-runs.md             runtime backlinks to .locus-pi/runs/<run-id>
+  artifacts/scope/scope.md      handoffs written by agents
+  artifacts/review/secrets.md
+```
+
+The directory is stable across runs, so earlier runs' files stay until an
+agent replaces them. The runtime never deletes them. When a later agent must
+not read a previous run's handoff, the workflow owns that check: for example,
+the first agent records the commit it reviewed, every handoff repeats it, and
+every consumer refuses a mismatch.
+
+Run evidence, leases, and checkpoints stay under `.locus-pi/`; only the
+`.workflow-runs.md` backlink appears in the workflow directory. One workspace
+lease fences the directory, so a second run targeting the same directory is
+refused while the first is live. Saved-child checkpoints of a bound root belong
+to one launch lineage: a fresh launch re-executes every item, while `--resume`
+(including a resume of a resume) and a workspace-reusing operator continuation
+reuse completed items.
+
+A bound root refuses `workspaceDir` and `runName` before any child starts:
+
+```text
+workflow declares meta.outputDir ".local/airflow-review", which is its workflow directory; workspaceDir and runName are not accepted for this workflow
+```
+
+A run recorded before this contract, with a separate workspace and declared
+output, cannot be resumed after the upgrade; the error names both recorded
+paths and asks for a fresh run. Workflows without `meta.outputDir` are
+unchanged.
+
+### Unbound workspace
 
 `workspaceDir()` returns the absolute runtime workspace. Fresh runs default to
 `.locus-pi/workspaces/<generated-run-name>` under the project root. The

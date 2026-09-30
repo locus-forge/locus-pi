@@ -21,7 +21,6 @@ import {
 
 const OUTPUT_COMPONENT_SOURCE = "[A-Za-z0-9][A-Za-z0-9._-]{0,199}";
 const OUTPUT_COMPONENT = new RegExp(`^${OUTPUT_COMPONENT_SOURCE}$`, "u");
-const DECLARED_OUTPUT_COMPONENT = /^(?:\.?[A-Za-z0-9][A-Za-z0-9._-]{0,199})$/u;
 const WORKFLOW_LEGACY_WORKSPACES_RELATIVE_ROOT = [WORKFLOW_ROOT_DIRNAME, WORKFLOW_PLANS_DIRNAME].join("/");
 const WORKFLOW_WORKSPACES_RELATIVE_ROOT = [WORKFLOW_ROOT_DIRNAME, WORKFLOW_WORKSPACES_DIRNAME].join("/");
 /** Единственный задачный корень с ведущей точкой, открытый для `--workspace-dir`. */
@@ -243,53 +242,8 @@ export function resolveWorkflowOutputDirectory(
   return { relativePath, absolutePath, physicalPath, identity };
 }
 
-/**
- * Resolve the user-visible final-output directory independently from runtime
- * workspace state. A declaration is always project-relative; the one default
- * nesting exception is the exact `<workspace>/outputs` subtree.
- */
-export function resolveWorkflowFinalOutputDirectory(
-  projectRoot: string,
-  declaredOutputDir: string | undefined,
-  workspace: WorkflowOutputDirectory,
-): WorkflowFinalOutputDirectory {
-  const source: WorkflowOutputSource = declaredOutputDir === undefined ? "default" : "declared";
-  const relativePath =
-    declaredOutputDir === undefined
-      ? `${workspace.relativePath}/outputs`
-      : assertWorkflowDeclaredOutputDirPath(declaredOutputDir);
-  const output = resolveConfinedWorkflowDirectory(projectRoot, relativePath, "workflow outputDir");
-  if (source === "declared") {
-    const outputInsideWorkspace =
-      output.absolutePath === workspace.absolutePath ||
-      isWorkflowPathWithinRoot(workspace.absolutePath, output.absolutePath);
-    const workspaceInsideOutput = isWorkflowPathWithinRoot(output.absolutePath, workspace.absolutePath);
-    if (outputInsideWorkspace || workspaceInsideOutput) {
-      throw new Error("workflow meta.outputDir must be separate from the runtime workspace");
-    }
-  }
-  return { ...output, source };
-}
-
-/** Strict root-metadata path grammar; `.local/...` is intentionally supported. */
-export function assertWorkflowDeclaredOutputDirPath(value: unknown): string {
-  if (typeof value !== "string" || value.trim() === "" || value !== value.trim()) {
-    throw new Error("workflow meta.outputDir must be one non-empty trimmed project-relative path");
-  }
-  if (path.isAbsolute(value) || path.win32.isAbsolute(value) || value.includes("\\")) {
-    throw new Error("workflow meta.outputDir must be project-relative");
-  }
-  const parts = value.split("/");
-  if (parts.some((part) => part === "" || part === "." || part === ".." || !DECLARED_OUTPUT_COMPONENT.test(part))) {
-    throw new Error(`workflow meta.outputDir contains an unsafe path component: ${JSON.stringify(value)}`);
-  }
-  if (parts[0] === WORKFLOW_ROOT_DIRNAME || parts[0] === ".git") {
-    throw new Error(`workflow meta.outputDir uses a runtime-reserved root: ${JSON.stringify(parts[0])}`);
-  }
-  return value;
-}
-
-function resolveConfinedWorkflowDirectory(
+/** Resolve and create one confined project-relative directory, proving its physical identity. */
+export function resolveConfinedWorkflowDirectory(
   projectRoot: string,
   relativePath: string,
   label: string,

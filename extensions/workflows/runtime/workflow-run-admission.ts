@@ -39,13 +39,24 @@ import { assertWorkflowHandoffClaimEligibility, type WorkflowHandoffClaimLease }
 import { readInterruptedWorkflowResumeBinding, workflowRecoveryInputHash } from "./workflow-interrupted-recovery.js";
 import { readWorkflowRunResult } from "./workflow-journal.js";
 import {
+  createWorkflowLaunchBinding,
+  projectWorkflowLaunchBindingOntoResult,
   readWorkflowLaunchBinding,
+  readWorkflowRootLineageId,
   workflowLaunchBindingExists,
   workflowLaunchBindingMatchesResult,
   writeWorkflowLaunchBinding,
-  WORKFLOW_LAUNCH_BINDING_SCHEMA,
   type WorkflowLaunchBinding,
 } from "./workflow-launch-binding.js";
+import {
+  assertBoundWorkflowHandoffSource,
+  assertBoundWorkflowLaunchSelection,
+  assertBoundWorkflowResumeSource,
+  isBoundWorkflowDirectory,
+  resolveWorkflowBoundDirectory,
+  resolveWorkflowFinalOutputDirectory,
+  reuseInheritedBoundWorkflowDirectory,
+} from "./location-state/workflow-bound-directory.js";
 import {
   assertWorkflowRunName,
   assertFreshWorkflowOutputNamespace,
@@ -55,7 +66,6 @@ import {
   resolveWorkflowOutputDirectory,
   resolveWorkflowOutputDirectoryPath,
   resolveWorkflowOutputDirectoryForReuse,
-  resolveWorkflowFinalOutputDirectory,
   resolveNamedWorkflowWorkspacePath,
   type WorkflowFinalOutputDirectory,
   type WorkflowOutputDirectory,
@@ -159,6 +169,8 @@ export type WorkflowRunAdmissionOutcome =
       scriptIdentity: WorkflowScriptIdentity;
       stableWorkspace: WorkflowOutputDirectory;
       stableOutput: WorkflowFinalOutputDirectory;
+      /** The directory binding a root run hands its coordination; lineage scopes bound-root checkpoints. */
+      coordinationDirectory: Pick<WorkflowRunnerCoordination, "workspace" | "output" | "checkpointLineageId">;
     })
   | (WorkflowRunAdmissionState & {
       admitted: false;
@@ -277,7 +289,10 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
   }
 
   // --- 3. workspace identity + admission, then 4. launch binding -----------
+  // A root meta.outputDir is the single workflow directory of the run.
+  const boundDirectory = inheritedCoordination === undefined ? declaredOutputDir : undefined;
   try {
+    assertBoundWorkflowLaunchSelection(boundDirectory, opts);
     if (opts.recoverInterrupted !== undefined && typeof opts.recoverInterrupted !== "boolean")
       throw new Error("recoverInterrupted must be boolean");
     if (opts.recoverInterrupted === true && resumeFromRunId === undefined)
@@ -340,23 +355,7 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
               `(source=${sourceOwner}, current=${currentOwner}).`,
           );
         }
-        sourceResult = {
-          ...sourceResult,
-          target: sourceLaunchBinding.target,
-          scriptIdentity: sourceLaunchBinding.scriptIdentity,
-          workspaceDir: sourceLaunchBinding.workspace.absolutePath,
-          workspaceDirRelative: sourceLaunchBinding.workspace.relativePath,
-          workspacePhysicalIdentity: sourceLaunchBinding.workspace.physicalIdentity,
-          workspacePhysicalIdentitySchemaVersion: 1,
-          workspaceDirExplicit: sourceLaunchBinding.workspace.explicit,
-          outputDir: sourceLaunchBinding.output.absolutePath,
-          outputDirRelative: sourceLaunchBinding.output.relativePath,
-          outputPhysicalIdentity: sourceLaunchBinding.output.physicalIdentity,
-          outputPhysicalIdentitySchemaVersion: 1,
-          outputSource: sourceLaunchBinding.output.source,
-          semanticInputPresent: sourceLaunchBinding.semanticInput.present,
-          semanticInputSha256: sourceLaunchBinding.semanticInput.sha256,
-        };
+        sourceResult = projectWorkflowLaunchBindingOntoResult(sourceResult, sourceLaunchBinding);
       } else if (currentOwner) {
         if (sourceResult === null) {
           throw new Error(
@@ -447,7 +446,9 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
         };
       }
       resumeSourceWorkspace = resumeSourceBinding.workspace;
+      assertBoundWorkflowResumeSource(boundDirectory, resumeFromRunId, resumeSourceBinding);
     }
+    assertBoundWorkflowHandoffSource(boundDirectory, handoffReuseWorkspace);
     if (
       resumeSourceWorkspace?.explicit === true &&
       selectedWorkspaceDir === undefined &&
@@ -489,9 +490,14 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
     ) {
       selectedWorkspaceDir = resolveNamedWorkflowWorkspacePath(projectRoot, opts.runName);
     }
-    const candidateWorkspacePath =
+    // A bound directory (or a child inheriting one) is never re-derived through the launch grammar.
+    const reusedWorkspace =
       handoffReuseWorkspace ??
       resumeReuseWorkspace ??
+      reuseInheritedBoundWorkflowDirectory(projectRoot, inheritedCoordination) ??
+      (boundDirectory === undefined ? undefined : resolveWorkflowBoundDirectory(projectRoot, boundDirectory));
+    const candidateWorkspacePath =
+      reusedWorkspace ??
       resolveWorkflowOutputDirectoryPath(
         projectRoot,
         selectedWorkspaceDir,
@@ -519,8 +525,7 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
       assertFreshWorkflowOutputNamespacePath({ projectRoot, output: candidateWorkspacePath });
     }
     const resolvedWorkspace =
-      handoffReuseWorkspace ??
-      resumeReuseWorkspace ??
+      reusedWorkspace ??
       resolveWorkflowOutputDirectory(
         projectRoot,
         selectedWorkspaceDir,
@@ -595,10 +600,14 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
     // Persist the independent owner binding before acquiring the lease or
     // starting any child work. The result envelope written at terminal time is
     // only a projection and cannot be the source of resume/handoff authority.
+    let rootLineageId: string | undefined;
     if (inheritedCoordination === undefined) {
-      const launchBinding: WorkflowLaunchBinding = {
-        schema: WORKFLOW_LAUNCH_BINDING_SCHEMA,
+      const lineageRunId =
+        resumeFromRunId ?? (handoffReuseWorkspace && opts.operatorHandoffWorkspaceReuse?.sourceRunId);
+      rootLineageId = readWorkflowRootLineageId(projectRoot, runId, lineageRunId, resumeSourceBinding?.launchBinding);
+      const launchBinding = createWorkflowLaunchBinding({
         runId,
+        rootLineageId,
         recoveryInputSha256: workflowRecoveryInputHash({
           ...(opts.input === undefined ? {} : { input: opts.input }),
           items,
@@ -607,27 +616,14 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
         }),
         target: { kind: target.kind, ref: target.ref, source: target.source },
         scriptIdentity,
-        workspace: {
-          absolutePath: stableWorkspace.absolutePath,
-          relativePath: stableWorkspace.relativePath,
-          physicalPath: stableWorkspace.physicalPath,
-          physicalIdentity: stableWorkspace.identity,
-          physicalIdentitySchemaVersion: 1,
-          explicit:
-            handoffReuseWorkspace === undefined
-              ? opts.workspaceDir !== undefined
-              : opts.operatorHandoffWorkspaceReuse?.explicit === true,
-        },
-        output: {
-          absolutePath: stableOutput.absolutePath,
-          relativePath: stableOutput.relativePath,
-          physicalPath: stableOutput.physicalPath,
-          physicalIdentity: stableOutput.identity,
-          physicalIdentitySchemaVersion: 1,
-          source: stableOutput.source,
-        },
+        workspace: stableWorkspace,
+        workspaceExplicit:
+          handoffReuseWorkspace === undefined
+            ? opts.workspaceDir !== undefined
+            : opts.operatorHandoffWorkspaceReuse?.explicit === true,
+        output: stableOutput,
         semanticInput: requestedSemanticInput,
-      };
+      });
       try {
         writeWorkflowLaunchBinding(runDir, launchBinding);
       } catch (error) {
@@ -640,7 +636,9 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
         };
       }
     }
-    return { admitted: true, target, scriptIdentity, ...state(), stableWorkspace, stableOutput };
+    const checkpointLineageId = isBoundWorkflowDirectory(stableWorkspace, stableOutput) ? rootLineageId : undefined;
+    const coordinationDirectory = { workspace: stableWorkspace, output: stableOutput, checkpointLineageId };
+    return { admitted: true, target, scriptIdentity, ...state(), stableWorkspace, stableOutput, coordinationDirectory };
   } catch (err) {
     return {
       admitted: false,
