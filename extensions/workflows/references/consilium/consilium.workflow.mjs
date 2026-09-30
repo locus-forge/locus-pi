@@ -88,28 +88,14 @@ synthesizer will read it as evidence that the obvious answer is safe.`,
 // child had already produced it. That is a size policy over finished work, not a budget:
 // a brief that needs a paragraph more is not a failure, and discarding a completed
 // synthesis for its length loses the whole stage. The stages are shaped by their PROMPTS
-// (a brief is short because it is asked to be) and the verdict by its `schema`, which is a
-// real consumer contract this script branches on. Nothing below asks a model to "keep it
-// under N characters" either — that is the same policy moved into the prompt.
+// (a brief is short because it is asked to be), and the only machine value this script
+// branches on is one exact `choice`. Nothing below asks a model to "keep it under N
+// characters" either — that is the same policy moved into the prompt.
 
 // The question is not measured either. A curated reference workflow is where an author
 // first reads what "no size policy" means, so it models the principle end to end: the
 // only thing asked of the input is that there IS one. An operator who pastes a long brief
 // has given the consilium more to frame, not a malformed request.
-
-const VERIFICATION_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["verdict", "reason"],
-  properties: {
-    verdict: { type: "string", enum: ["accept", "reject"] },
-    // `verdict` is the branch: one declared member of a closed set, which is a real
-    // contract. `reason` is carried to the operator verbatim and has no consumer that
-    // could be broken by a longer sentence, so it declares only that it is present and
-    // non-blank. The prompt, not a `maxLength`, asks for one or two sentences.
-    reason: { type: "string", minLength: 1, nonBlank: true },
-  },
-};
 
 /**
  * IDE-only type link: no runtime import is executed.
@@ -240,17 +226,18 @@ ${advisorSections}`,
     `You are the VERIFIER of a consilium. You did not write the document below and you
 use the advisor texts as the primary evidence; inherited tools remain available for verification.
 
-Return \`reject\` if ANY of these is true:
+Your verdict is \`reject\` if ANY of these is true:
 - A claim in the document is attributed to an advisor who did not make it.
 - A claim appears in the document that no advisor made.
 - An advisor's dissent is missing from "Where they disagree", or is stated so weakly
   that a reader could not tell it was a disagreement.
 - The document reports agreement the advisor texts do not support.
 
-Otherwise return \`accept\`.
+Otherwise your verdict is \`accept\`.
 
-\`reason\` is one or two sentences. On \`reject\` it must name the exact claim or the
-exact dropped dissent — a reader has to be able to find it without re-reading
+Answer in plain text: a first line \`Verdict: accept\` or \`Verdict: reject\`, then
+one or two sentences of reason. On \`reject\` the reason must name the exact claim or
+the exact dropped dissent — a reader has to be able to find it without re-reading
 everything. On \`accept\` it names what you checked.
 
 Judge only faithfulness to the sources. Whether the answer is CORRECT is not your
@@ -263,20 +250,33 @@ ${synthesis}
 ${advisorSections}`,
     {
       label: "verify the synthesis",
-      artifact: "verification.json",
-      schema: VERIFICATION_SCHEMA,
+      artifact: "verification.md",
+    },
+  );
+  // The script branches on ONE runtime-validated exact choice. It never reads the
+  // verifier's prose to decide anything; the whole report is carried to the operator.
+  const verdict = await agent(
+    `Translate the verifier's report into its stated verdict without rejudging the document.
+Choose \`reject\` when the report states a reject verdict or names an unfaithful claim or a
+dropped dissent; choose \`accept\` only when it states an accept verdict.
+
+--- BEGIN VERIFIER REPORT ---
+${verification}
+--- END VERIFIER REPORT ---`,
+    {
+      label: "route the verification",
+      choice: ["accept", "reject"],
+      choiceFallback: "reject",
     },
   );
 
-  // The script branches on ONE runtime-validated declared value. It never reads the
-  // verifier's prose to decide anything; `reason` is carried to the operator verbatim.
-  if (verification.verdict === "reject") {
-    log(`Verifier rejected the synthesis: ${verification.reason}`);
+  if (verdict === "reject") {
+    log(`Verifier rejected the synthesis:\n${verification}`);
     return {
       ok: false,
       verdict: "reject",
-      reason: verification.reason,
-      summary: `consilium verifier rejected the synthesis: ${verification.reason}`,
+      reason: verification,
+      summary: `consilium verifier rejected the synthesis:\n${verification}`,
     };
   }
 
@@ -287,7 +287,7 @@ ${advisorSections}`,
   return {
     ok: true,
     verdict: "accept",
-    reason: verification.reason,
+    reason: verification,
     consiliumRef,
     summary: synthesis,
   };

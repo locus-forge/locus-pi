@@ -118,17 +118,26 @@ the source checker. `while` loops and loops without a literal bound break the
 `task/plan-light` editor contract and design review; the checker itself rejects only a
 carry outside a literal-bounded `for` and an opaque value in a loop condition.
 
-An owner re-cuts the remaining graph-node queue after each accepted slice. An independent
+An owner re-cuts the remaining graph-node queue after each accepted slice. It
+first copies an existing workspace `workflow-source-queue.md` whole to
+`workflow-source-queue-prior.md`, then writes the complete remaining queue in
+execution order to `workflow-source-queue.md`. Its answer is only a report
+naming that file, its item count and each identity. An independent
 queue assessment preserves unmet identities and fails with `queue_conflict` when
 the transition cannot be reconciled after one source-free queue pass and
 independent recheck. A clean proposal keeps its identities in that pass; a
-conflicting proposal is corrected once. The first pass has no prior identities. Queue
+conflicting proposal is corrected once by rewriting the queue file whole. The
+first pass has no prior queue file and no prior identities. Queue
 items describe missing or defective nodes and branches in `workflow.mjs`, not
 the product implementation slices that the generated workflow will later run.
-The returned list itself is authoritative. Each member must be a concrete
-source-free requirements brief. A workspace report describing a queue, or one
-narrative member summarizing several unseen items, cannot stand in for that
-list. Independent recheck examines the actual returned members before editing.
+The named workspace queue file is authoritative; the owner's report is not.
+Each numbered item in that file must be a concrete source-free requirements
+brief. A report describing a queue, or one narrative item summarizing several
+unseen items, cannot stand in for the numbered items. Independent assessment and
+recheck read that exact file and examine each numbered item before any slice
+edits `workflow.mjs`. The workflow script never reads the queue file: it routes
+on those checks' exact choices, and each slice implements the file's first
+item.
 One queue item is one bounded source edit. It may include adjacent graph nodes
 and their connecting branches when they form a coherent runnable route; the
 item names every covered identity. This lets a graph with more than six nodes

@@ -13,7 +13,7 @@ the create skill owns deliverable clarification and the Design → review → Bu
 
 Crash replay is a runtime capability, not another graph pattern. Generated source is a way to obtain a graph, not semantic continuation. Candidate search, councils and fixed fan-out are fixed-graph techniques unless the design explicitly adds refinement. No universal judge is injected.
 
-[Structured results](structured-results.md) covers a same-agent shaped answer — choice, closed string, handoffs or compatibility schema, all accepted in the child's own session. Read it before handing an arbiter decision to a router: it covers decision ownership and the evidence the next agent actually receives. It is an output contract inside a card's graph, not a fifth graph form.
+[Structured results](structured-results.md) covers the two result modes — exact text and one exact choice accepted in the child's own session — and named workspace files for anything richer. Read it before handing an arbiter decision to a router: it covers decision ownership and the evidence the next agent actually receives. It is an output contract inside a card's graph, not a fifth graph form.
 
 ## Start from the user's current problem
 

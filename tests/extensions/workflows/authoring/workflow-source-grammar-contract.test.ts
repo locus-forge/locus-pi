@@ -250,8 +250,8 @@ describe("standard workflow source grammar and policy", () => {
     ],
     [
       "runtime-owned list identity and unchanged map items",
-      standardSource(`export default async function run({ agent, parallel }) {
-  const units = await agent("Return work units.", { handoffs: { maxItems: 8 } });
+      standardSource(`export default async function run({ agent, parallel, items }) {
+  const units = items();
   if (units.length === 0) return [];
   return parallel(units.map((item) => () => agent(\`Handle this exact item: \${item}\`)));
 }`),

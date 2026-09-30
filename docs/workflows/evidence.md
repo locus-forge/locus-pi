@@ -252,10 +252,9 @@ selected project-local workflow workspace. Fresh workflows default to
 `.locus-pi/workspaces/<generated-run-name>/`.
 
 `agent_end` carries `usage` (token/cost), the child session's model and reasoning-effort
-readback when the host exposes them, and — for a shaped call —
-`schemaValidation` (with `source: "schema" | "script"` on a mismatch when the call declared
-`validate`; the `coercion` field appears only on journals written before the text transport
-was deleted), plus full answer/transcript/result artifact references when
+readback when the host exposes them, and — for a choice call —
+`schemaValidation` (`source: "script"` and the `coercion` field appear only on journals
+written before `validate` and the text transport were removed), plus full answer/transcript/result artifact references when
 those records exist. `/workflows status` shows `agents=…` and sums the run budget from those
 `usage` values. Journals written before 0.2.x may still contain `llm_start` / `llm_end` /
 `llm_delta` lines; they parse but are no longer counted or specially rendered.

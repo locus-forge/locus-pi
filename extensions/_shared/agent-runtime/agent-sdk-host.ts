@@ -494,14 +494,13 @@ async function runChildSession(
   if (model !== undefined && model !== null) sessionOptions.model = model;
   if (thinkingLevel !== undefined) sessionOptions.thinkingLevel = thinkingLevel;
   const appendSystemPrompt = appendDirectSpawnBoundary(capsule.agentSystemPrompt);
-  // The one tool a tool-free child may keep: the shaped-result receipt.
+  // The one tool a tool-free child may keep: the choice receipt.
   //
   // "Tool-free" means the child cannot ACT — no host tools, no extensions, no skills, no
   // discovered resources. The return tool does nothing outside the session: it records the
-  // value the caller declared a contract for. Clearing it too meant a tool-free Fusion with
-  // a shaped judge ran every member, then failed the judge for a transport the run could
-  // have known about before the first token, which is the outcome this refusal exists to
-  // prevent. Pi's registry is built from the allowlist, so the name has to be in `tools`
+  // value the caller declared a contract for. Clearing it too would fail a tool-free choice
+  // for a transport the run could have known about before the first token, which is the
+  // outcome this refusal exists to prevent. Pi's registry is built from the allowlist, so the name has to be in `tools`
   // as well as in `customTools`; the readback below still proves the child has nothing else.
   const toolFreeReturnToolNames =
     request.responseAcceptance === undefined ? [] : [...request.responseAcceptance.toolNames];
@@ -738,13 +737,13 @@ async function runChildSession(
         // CAPABILITY, refused before the child is prompted: the session exists but has not
         // been given a single token of work, so nothing is spent on an answer this
         // transport could not carry back. There is deliberately no fallback — the text
-        // transport that used to parse a shaped value out of a final message is gone, and
+        // transport that used to parse a structured value out of a final message is gone, and
         // quietly reverting to it is exactly the silent degradation this refusal prevents.
         const reason =
-          "Transport cannot carry a shaped result: same-session output acceptance requires the return tool to be " +
+          "Transport cannot carry a choice result: same-session output acceptance requires the return tool to be " +
           "registered on the child session plus host tool-set readback (getActiveToolNames) and restriction " +
           "(setActiveToolsByName). This host provides neither, and there is no text fallback. " +
-          "Use a plain text call on this transport, or run the shaped call on a host that supports it.";
+          "Use a plain text call on this transport, or run the choice call on a host that supports it.";
         patchTerminalRow({ status: "error", errors: [reason], finalAnswer: reason });
         await preserveChildTrace();
         return withChildTrace(

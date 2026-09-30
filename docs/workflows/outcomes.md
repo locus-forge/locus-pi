@@ -123,7 +123,7 @@ The root launch mode selects the shared defaults, and saved children inherit the
 
 See [replay identity](replay.md#what-is-compared) and the
 [release boundary](recovery-and-continuation.md#replay-across-this-release-boundary)
-for how per-call budgets and the shaped-return version affect recorded calls.
+for how per-call budgets and the return-contract version affect recorded calls.
 
 `attempts` does not follow `timeoutMs`: it never joins the canonical
 request, so a recording written before the option existed still replays, and a call
@@ -139,19 +139,18 @@ The runtime has exactly two retry loops, and they answer different questions. Ne
 re-asks a child because its prose was thin: when an answer needs judging, the answer is
 another agent whose job is that judgement.
 
-| Loop                             | Question it answers                                             | Declared by                                    | Bound                                                                                                                  | On exhaustion                                   |
-| -------------------------------- | --------------------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| **Value repair** (pre-existing)  | "The child answered — is the answer the declared choice/shape?" | `choice`, or advanced `schema` plus `validate` | one same-session clarification turn by package default; `repair.maxAttempts` sets more, with no package upper bound    | `SchemaValidationError`                         |
-| **Transport retry** (`attempts`) | "Did the child get to answer at all?"                           | `attempts`                                     | exactly what the author declared — explicit only, with no package upper bound; an undeclared `attempts` is one attempt | the call fails closed with the last cause named |
+| Loop                             | Question it answers                                     | Declared by | Bound                                                                                                                  | On exhaustion                                   |
+| -------------------------------- | ------------------------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| **Value repair** (pre-existing)  | "The child answered — is the answer a declared choice?" | `choice`    | one package-owned same-session clarification turn; not configurable                                                    | `SchemaValidationError`, or `choiceFallback`    |
+| **Transport retry** (`attempts`) | "Did the child get to answer at all?"                   | `attempts`  | exactly what the author declared — explicit only, with no package upper bound; an undeclared `attempts` is one attempt | the call fails closed with the last cause named |
 
 The value repair is described under [exact choice](agent-results.md#standard-exact-choice--agent-choice)
-and [advanced shaped answers](agent-results.md#advanced-compatibility-shaped-answers--agent-schema)
-in the result contract. It stays inside the same child session — the previous validator errors come back
+in the result contract. It stays inside the same child session — the previous mismatch comes back
 to the child as a clarification turn, so no fresh child is spawned to fix the shape of an
 answer that already exists. The transport retry re-sends the **identical** prompt in a new
 child, because there is nothing to repair: the child never answered.
 
-The two do not multiply children. A shaped call declaring `attempts: 2` can run at most
+The two do not multiply children. A choice call declaring `attempts: 2` can run at most
 two children, each charged to `totalAgents` with its own transcript and result envelope;
 clarification turns happen inside whichever child answered. A transport budget exhausted
 before an answer ends the run there rather than handing the acceptance path a rejected

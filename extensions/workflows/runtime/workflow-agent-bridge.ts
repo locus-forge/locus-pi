@@ -137,8 +137,8 @@ export const WORKFLOW_RUN_WORKSPACE_PROMPT_SEPARATOR = "\n\n---\n\n";
  * The child task as the model receives it: this run's working-directory note,
  * then the workflow's own prompt.
  *
- * The note goes FIRST so the schema contract and any retry-repair block a shaped
- * call appends stay the last thing the child reads. Without a configured
+ * The note goes FIRST so the choice contract a choice call appends stays the last
+ * thing the child reads. Without a configured
  * directory the author's prompt travels alone.
  *
  * Every workflow child receives the full tool surface. When a run workspace is
@@ -224,11 +224,6 @@ export function createWorkflowAgentPreflight(options: WorkflowAgentBridgeOptions
       };
       const tier = await resolveWorkflowTier({ req, agent, modelRoles, resolveModelFn });
       if (tier.kind === "refused") throw new Error(tier.message);
-      // Same capability check the runner makes, moved to the one place a composition
-      // can still refuse for free: before the first member spends anything.
-      if (request.expectsShapedResult === true && tier.kind === "resolved" && !transportHostsSessionTools(tier.model)) {
-        throw new Error(WORKFLOW_SHAPED_TRANSPORT_REFUSAL);
-      }
     }
   };
 }
@@ -349,7 +344,7 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
       };
     }
     // 3b. CAPABILITY, decided on the model this call just resolved and BEFORE any
-    //     child exists. A shaped result travels as a `workflow_return` receipt on the
+    //     child exists. A choice result travels as a `workflow_return` receipt on the
     //     child session; a transport that never hosts Pi tools cannot register it or
     //     read the tool set back, so the call would be paid for and then refused at
     //     the end for a reason that was knowable at the start. The refusal is the
@@ -512,10 +507,9 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
             },
           })
         : undefined;
+    // Injected ONLY for a choice call: a plain child never sees `workflow_return`.
     const returnController =
-      req.returnContract === undefined
-        ? undefined
-        : createWorkflowReturnController(req.returnContract, req.returnValidate);
+      req.returnContract === undefined ? undefined : createWorkflowReturnController(req.returnContract);
     const customTools = [
       ...(askTool === undefined ? [] : [askTool]),
       ...(returnController === undefined ? [] : [returnController.tool]),

@@ -88,8 +88,9 @@ export type WorkflowReplayEntry =
       kind: "agent";
       node?: string;
       key: string;
-      /** Return-contract version of a SHAPED call; absent for a plain-text call and for
-       *  every record written before contract v2 existed. See WORKFLOW_RETURN_CONTRACT_V1. */
+      /** Return-contract version of a choice (formerly any shaped) call; absent for a
+       *  plain-text call and for every record written before contract v2 existed. See
+       *  WORKFLOW_RETURN_CONTRACT_V1. */
       rcv?: number;
       ok: true;
       text: string;
@@ -106,13 +107,16 @@ export type WorkflowReplayEntry =
   | { v: typeof WORKFLOW_REPLAY_SCHEMA_VERSION; seq: number; kind: WorkflowReplayValueKind; value: number };
 
 /**
- * The shaped-return contract version a record written before this release used.
+ * The return-contract version a record written before `rcv` existed used.
  *
  * v1 stated a default answer ceiling, a derived canonical-JSON allowance and a bounded
- * clarification budget; v2 states none of them. That text is part of the prompt and
- * therefore of the request key, so EVERY recorded shaped call diverges under v2 — which is
- * correct and must stay correct: recomputing an old key would claim the old child answered
- * a contract it was never shown.
+ * clarification budget; v2 stated none of them; v3 carries only one exact declared choice.
+ * That text is part of the prompt and therefore of the request key, so EVERY recorded call
+ * under an older contract diverges under the current one — which is correct and must stay
+ * correct: recomputing an old key would claim the old child answered a contract it was
+ * never shown. A call whose source still declares a removed shaped option never reaches
+ * this lookup at all: declaration dispatch refuses it first, so an old shaped receipt is
+ * kept as evidence and never reinterpreted.
  *
  * What would NOT be correct is reporting it as `key-mismatch`, which everywhere else means
  * "your script changed" and would send an operator looking for an edit that does not exist.
@@ -330,8 +334,8 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
       if (entry.node !== call.node) return miss("node-mismatch");
     }
     if (entry.key !== hashCanonicalRequest(call.canonicalRequest)) {
-      // A shaped call whose record predates contract v2 (no `rcv`, or an older one) cannot
-      // match by construction. Name that boundary rather than blaming the author's script.
+      // A choice whose record predates the current contract (no `rcv`, or an older one)
+      // cannot match by construction. Name that boundary rather than blaming the script.
       const recorded = entry.rcv ?? WORKFLOW_RETURN_CONTRACT_V1;
       return call.returnContractVersion !== undefined && recorded < call.returnContractVersion
         ? miss("return-contract-changed")

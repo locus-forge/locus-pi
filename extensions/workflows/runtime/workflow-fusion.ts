@@ -18,13 +18,12 @@
  *
  * Direction: `workflow-runtime.ts` -> here -> `workflow-agent-output.ts` (the removed-option
  * refusals) / `workflow-agent-contract.ts` (the call vocabulary and the Fusion symbols) /
- * `workflow-execution-state.ts` (the invocation cap) / `workflow-schema.ts`. This module
+ * `workflow-execution-state.ts` (the invocation cap). This module
  * never imports the composition root, and never the host `fusion/runner.ts` that drives a
  * direct `/fusion`. Pure host-agnostic: no fs / process / network, so rule 7 of
  * `scripts/check-extension-layers.ts` holds it inside the DSL core's value closure.
  */
 
-import { assertSupportedAgentSchema, isRecord } from "./workflow-schema.js";
 import {
   FUSION_CAPABILITY_MODE,
   FUSION_INVOCATION_RESERVATION,
@@ -34,8 +33,6 @@ import {
   normalizeTimeoutMs,
   type WorkflowAgentOptions,
   type WorkflowAgentPreflight,
-  type WorkflowAgentSchemaOptions,
-  type WorkflowAgentValidate,
   type WorkflowInternalAgentOptions,
 } from "./workflow-agent-contract.js";
 import { assertNoRemovedAgentOptions } from "./workflow-agent-output.js";
@@ -104,16 +101,18 @@ export interface WorkflowFusionOptions {
   output?: string;
   memberLimits?: WorkflowFusionCallLimits;
   judgeLimits?: WorkflowFusionCallLimits;
-  schema?: never;
-  validate?: never;
 }
 
-export interface WorkflowFusionSchemaOptions extends Omit<WorkflowFusionOptions, "schema" | "validate"> {
-  schema: Record<string, unknown>;
-  validate?: WorkflowAgentValidate;
-}
-
-type WorkflowFusionAnyOptions = WorkflowFusionOptions | WorkflowFusionSchemaOptions;
+/** Panel options that shaped the judge's answer before agent results became text or
+ *  choice only. Refused by name — by key presence, even with an `undefined` value — so a
+ *  panel never silently returns text its author expected to be a parsed value. */
+const REMOVED_FUSION_OPTIONS: Readonly<Record<string, string>> = Object.freeze({
+  schema:
+    "fusion schema was removed: the judge returns exact text. State the required answer format in output, " +
+    "or have a later agent write a named workspace file from the judge's text",
+  validate:
+    "fusion validate was removed with schema: the judge returns exact text and there is no shaped value to validate",
+});
 
 interface NormalizedWorkflowFusionSelector {
   key: string;
@@ -144,8 +143,6 @@ interface NormalizedWorkflowFusion {
   output: string;
   memberLimits: NormalizedWorkflowFusionLimits;
   judgeLimits: NormalizedWorkflowFusionLimits;
-  schema?: Record<string, unknown>;
-  validate?: WorkflowAgentValidate;
   maximumPhysicalInvocations: number;
 }
 
@@ -178,7 +175,7 @@ function normalizeFusionLimits(value: unknown, field: string): NormalizedWorkflo
 
 function prepareWorkflowFusion(
   question: string,
-  rawOptions: WorkflowFusionAnyOptions,
+  rawOptions: WorkflowFusionOptions,
   preparation: WorkflowFusionPreparation,
 ): NormalizedWorkflowFusion {
   assertFusionText(question, "fusion question");
@@ -249,15 +246,8 @@ function prepareWorkflowFusion(
     "Answer the question directly in the format it requests. Return the answer, not a discussion of the panel.";
   assertFusionText(output, "fusion output instruction");
 
-  const schema = rawOptions.schema;
-  const validate = rawOptions.validate;
-  if (validate !== undefined && schema === undefined) throw new Error("fusion validate requires a schema");
-  if (validate !== undefined && typeof validate !== "function") throw new Error("fusion validate must be a function");
-  if (schema !== undefined && !isRecord(schema)) throw new Error("fusion schema must be a JSON-schema object");
-
   // One physical child per member and one for the judge, times the explicitly requested
-  // transport attempts. A shaped judge no longer multiplies this: it is accepted in its
-  // own session like every other shaped call instead of being re-run to fix its format.
+  // transport attempts.
   const maximumPhysicalInvocations =
     members.length * preparation.memberLimits.attempts + preparation.judgeLimits.attempts;
   const remainingAgentInvocations = preparation.remainingAgentInvocations;
@@ -281,8 +271,6 @@ function prepareWorkflowFusion(
     output,
     memberLimits: preparation.memberLimits,
     judgeLimits: preparation.judgeLimits,
-    ...(schema !== undefined ? { schema } : {}),
-    ...(validate !== undefined ? { validate } : {}),
     maximumPhysicalInvocations,
   };
   // No declaration-time judge-prompt ceiling: the former check multiplied a member
@@ -477,14 +465,10 @@ export type WorkflowFusionLegOptions = WorkflowAgentOptions &
 
 /**
  * ONE DSL agent call, exactly as a script makes it. Fusion drives no executor and knows
- * no transport: a member leg declares no shape and resolves to that member's own exact
- * text, and the judge leg is an ordinary shaped call. Only these two shapes are reachable
- * from a panel, so a leg cannot take a path an ordinary `agent()` could not.
+ * no transport: every leg — member and judge alike — is a plain call that resolves to its
+ * own exact text, so a leg cannot take a path an ordinary `agent()` could not.
  */
-export interface WorkflowFusionAgentPort {
-  (prompt: string, opts: WorkflowAgentSchemaOptions): Promise<unknown>;
-  (prompt: string, opts: WorkflowFusionLegOptions): Promise<string>;
-}
+export type WorkflowFusionAgentPort = (prompt: string, opts: WorkflowFusionLegOptions) => Promise<string>;
 
 export interface WorkflowFusionDeps {
   readonly runId: string;
@@ -493,9 +477,6 @@ export interface WorkflowFusionDeps {
   readonly emit: (line: WorkflowJournalLine) => void;
   /** Branch phase when a branch is running, the run phase otherwise. */
   readonly currentPhase: () => string | undefined;
-  /** Set while a script `validate` callback is running; a panel opened there would have
-   *  no defined position in either the journal or the replay sequence. */
-  readonly insideValidate: () => boolean;
   /** Runs one budget check and journals the operator-facing stop line before it throws. */
   readonly journalBudgetStop: <T>(check: () => T, phase: string | undefined) => T;
   /** The run's ONE execution budget. Fusion reserves the whole panel up front so two
@@ -519,10 +500,7 @@ export interface WorkflowFusionDeps {
 
 export interface WorkflowFusion {
   /** `dsl.fusion()` — the whole panel: declaration, preflight, members, judge. */
-  fusion: {
-    (question: string, opts: WorkflowFusionSchemaOptions): Promise<unknown>;
-    (question: string, opts: WorkflowFusionOptions): Promise<string>;
-  };
+  fusion: (question: string, opts: WorkflowFusionOptions) => Promise<string>;
 }
 
 export function createWorkflowFusion(deps: WorkflowFusionDeps): WorkflowFusion {
@@ -539,7 +517,7 @@ export function createWorkflowFusion(deps: WorkflowFusionDeps): WorkflowFusion {
     freshSuffix: boolean,
     /** Present only for a fresh panel: a replayed one starts no child and reserves none. */
     reservation: WorkflowInvocationReservation | undefined,
-  ): Promise<unknown> {
+  ): Promise<string> {
     const fusionId = `fusion-${String(++totalFusionCalls).padStart(4, "0")}`;
     emit({
       ts: nowFn(),
@@ -575,20 +553,18 @@ export function createWorkflowFusion(deps: WorkflowFusionDeps): WorkflowFusion {
         fusion,
         fusion.members.map(({ label }, index) => ({ label, answer: answers[index]! })),
       );
-      const judgeOptions: WorkflowInternalAgentOptions = {
+      const judgeOptions: WorkflowFusionLegOptions = {
         ...fusion.judge.agentOptions,
         attempts: fusion.judgeLimits.attempts,
         ...(fusion.judgeLimits.timeoutMs !== undefined ? { timeoutMs: fusion.judgeLimits.timeoutMs } : {}),
         ...(fusion.judgeLimits.maxTurns !== undefined ? { maxTurns: fusion.judgeLimits.maxTurns } : {}),
         label: `${fusionId} ${fusion.judge.label}`,
         artifact: `${fusionId}-result.md`,
-        ...(fusion.schema !== undefined ? { schema: fusion.schema } : {}),
-        ...(fusion.validate !== undefined ? { validate: fusion.validate } : {}),
         ...(reservation === undefined ? {} : { [FUSION_INVOCATION_RESERVATION]: reservation }),
         [FUSION_CAPABILITY_MODE]: fusion.mode,
         ...(deps.replaySourceRunId !== undefined && !freshSuffix ? { [FUSION_REPLAY_REQUIRED]: true as const } : {}),
       };
-      const result = await runAgentCall(judgePrompt, judgeOptions as WorkflowAgentSchemaOptions);
+      const result = await runAgentCall(judgePrompt, judgeOptions);
       emit({
         ts: nowFn(),
         runId,
@@ -611,19 +587,13 @@ export function createWorkflowFusion(deps: WorkflowFusionDeps): WorkflowFusion {
     }
   }
 
-  function fusionDsl(question: string, opts: WorkflowFusionSchemaOptions): Promise<unknown>;
-  function fusionDsl(question: string, opts: WorkflowFusionOptions): Promise<string>;
-  async function fusionDsl(question: string, opts: WorkflowFusionAnyOptions): Promise<unknown> {
-    if (deps.insideValidate()) throw new Error("fusion() must not be called from inside a validate callback");
+  async function fusionDsl(question: string, opts: WorkflowFusionOptions): Promise<string> {
     if (!isRecord(opts)) throw new Error("fusion options must be an object");
+    for (const [key, message] of Object.entries(REMOVED_FUSION_OPTIONS)) {
+      if (Object.hasOwn(opts, key)) throw new Error(message);
+    }
     const memberLimits = normalizeFusionLimits(opts.memberLimits, "fusion memberLimits");
     const judgeLimits = normalizeFusionLimits(opts.judgeLimits, "fusion judgeLimits");
-    const schema = opts.schema;
-    const validate = opts.validate;
-    if (schema !== undefined) {
-      if (!isRecord(schema)) throw new Error("fusion schema must be a JSON-schema object");
-      assertSupportedAgentSchema(schema);
-    }
     // A fusion that starts AFTER the replay boundary is an ordinary fresh panel.
     //
     // Replay is a strict prefix with a one-way latch, so once the run has diverged no
@@ -663,9 +633,7 @@ export function createWorkflowFusion(deps: WorkflowFusionDeps): WorkflowFusion {
       if (deps.replaySourceRunId === undefined || freshSuffix) {
         await deps.preflightAgentRequests?.([
           ...fusion.members.map((member) => ({ ...member.agentOptions })),
-          // Only the judge can be shaped: `schema`/`validate` are declared on the panel
-          // and applied to the judge leg alone (see `runPreparedFusion`).
-          { ...fusion.judge.agentOptions, ...(fusion.schema === undefined ? {} : { expectsShapedResult: true }) },
+          { ...fusion.judge.agentOptions },
         ]);
       }
       return await runPreparedFusion(fusion, freshSuffix, reservation);
@@ -675,4 +643,8 @@ export function createWorkflowFusion(deps: WorkflowFusionDeps): WorkflowFusion {
   }
 
   return { fusion: fusionDsl };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

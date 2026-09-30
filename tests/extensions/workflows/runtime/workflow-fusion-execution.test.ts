@@ -224,37 +224,35 @@ describe("dsl.fusion", () => {
     ]);
   });
 
-  it("applies the existing schema contract only to the judge", async () => {
+  it("refuses a removed judge schema or validate before any leg starts, and keeps every leg plain", async () => {
     const requests: WorkflowAgentRequest[] = [];
-    const { dsl } = createWorkflowRuntime({
-      runId: "fusion-schema",
+    const { dsl, getJournal } = createWorkflowRuntime({
+      runId: "fusion-removed-schema",
       agentRunner: async (request) => {
         requests.push(request);
-        return success(request, request.model === "test/judge" ? '{"answer":"safe"}' : "plain candidate");
+        return success(request, request.model === "test/judge" ? "judge text" : "plain candidate");
       },
     });
 
     await expect(
-      dsl.fusion("question", {
-        ...BASE,
-        schema: {
-          type: "object",
-          additionalProperties: false,
-          required: ["answer"],
-          properties: { answer: { type: "string", minLength: 1 } },
-        },
-      }),
-    ).resolves.toEqual({ answer: "safe" });
-    // Members answer in plain text; only the judge carries a shaped contract, and it
-    // uses the same same-session acceptance path as any other shaped call.
-    expect(requests.slice(0, 2).every(({ returnContract }) => returnContract === undefined)).toBe(true);
-    expect(requests[2]!.returnContract?.schema).toEqual({
-      type: "object",
-      additionalProperties: false,
-      required: ["answer"],
-      properties: { answer: { type: "string", minLength: 1 } },
-    });
-    expect(requests[2]!.prompt).toContain("workflow_return");
+      dsl.fusion("question", { ...BASE, schema: { type: "object" } } as unknown as typeof BASE),
+    ).rejects.toThrow(/fusion schema was removed: the judge returns exact text/u);
+    await expect(dsl.fusion("question", { ...BASE, validate: () => [] } as unknown as typeof BASE)).rejects.toThrow(
+      /fusion validate was removed with schema/u,
+    );
+    // The key is the declaration: a spread that leaves `schema: undefined` is still refused.
+    await expect(dsl.fusion("question", { ...BASE, schema: undefined } as unknown as typeof BASE)).rejects.toThrow(
+      /fusion schema was removed: the judge returns exact text/u,
+    );
+    await expect(dsl.fusion("question", { ...BASE, validate: undefined } as unknown as typeof BASE)).rejects.toThrow(
+      /fusion validate was removed with schema/u,
+    );
+    expect(requests).toHaveLength(0);
+    expect(getJournal().filter((line) => line.message?.startsWith("[fusion:"))).toHaveLength(0);
+
+    await expect(dsl.fusion("question", BASE)).resolves.toBe("judge text");
+    expect(requests.every(({ returnContract }) => returnContract === undefined)).toBe(true);
+    expect(requests.some(({ prompt }) => prompt.includes("workflow_return"))).toBe(false);
   });
 
   it("escapes candidate delimiters before the judge sees them", async () => {

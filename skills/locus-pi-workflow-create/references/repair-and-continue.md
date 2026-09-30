@@ -119,22 +119,21 @@ completed calls. Do not add an unbounded retry or turn incomplete work into succ
 ### Repeated output-contract failures
 
 Inspect the entire unfinished suffix, including reachable saved child workflows,
-for the same defect before continuing. A narrative review wrapped in singleton
-`handoffs` can fail again at the next review even after an explicit array example.
-For each occurrence, check the actual downstream consumer: ordinary reports stay
-plain text, and their next semantic reviewer receives the complete text. Keep
-existing checks for completeness, verdict and blockers before subsequent writes.
-Preserve genuine choices that route the graph and handoffs that schedule
-independent work. Do not replace content review with text-length checks.
+for the same defect before continuing. For each occurrence, check the actual
+downstream consumer: ordinary reports stay plain text, and their next semantic
+reviewer receives the complete text. Keep existing checks for completeness, verdict
+and blockers before subsequent writes. Preserve genuine choices that route the graph.
+A source that still declares a removed shaped-result option fails before any child
+with that option's name; migrate it to text, a choice, or a named workspace file. Do not replace content review with text-length checks.
 
 Keep completed calls' prompts and effective options unchanged, and verify their
 replay identity. Do not redesign the graph or sweep completed stages as part of
 this repair. A raw-value example is a correction aid, not proof that the next
-model will submit the right shape; strict validation remains required.
+model will submit a declared member; strict validation remains required.
 
 A large answer is never the cause. The runtime has no answer-size policy, so a
-stopped shaped call means one of three named things: the value still missed the
-contract after its clarification turns (`[workflow:return]` journals how many),
+stopped choice call means one of three named things: the value still missed the
+declared members after its clarification turn (`[workflow:return]` journals how many),
 the transport could not host `workflow_return` (`output-contract-unavailable`:
 run it on a host that can, or make the call plain text — not a script bug), or
 an explicit budget stopped the run. Do not shorten the answer, ask for a
@@ -157,11 +156,10 @@ would change their request keys and end reuse. Verify actual prefix reuse before
 resuming. The [runtime reference](../../../docs/workflows/index.md)
 owns the axis list and timer constraints.
 
-Ordinary narrative still uses plain text. A narrative report wrapped in a
-singleton `handoffs` is a separate authoring defect; there is no character limit
-to exceed, and increasing turns does not fix it. Use `choice` for a routing
-decision and `handoffs` only for discovered work units, including sequential
-slice queues.
+Ordinary narrative still uses plain text; there is no character limit to exceed,
+and increasing turns does not fix a wrong result mode. Use `choice` for a routing
+decision and a named workspace file for discovered work units, including
+sequential slice queues.
 
 ## Runtime handoff
 

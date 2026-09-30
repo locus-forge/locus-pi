@@ -17,7 +17,6 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import { isRecord } from "./workflow-schema.js";
 import { classifyWorkflowReturnedFailure, prepareWorkflowResult } from "./workflow-outcome.js";
 import { isRunLevelWorkflowFailure, type WorkflowSharedExecutionState } from "./workflow-execution-state.js";
 import type { WorkflowJournalLine } from "./workflow-journal-format.js";
@@ -542,4 +541,8 @@ export function createWorkflowGroupExecution(deps: WorkflowGroupExecutionDeps): 
     activeGroupFields,
     branchContext: () => groupContext.getStore(),
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

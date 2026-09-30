@@ -34,7 +34,6 @@ import {
   FUSION_CAPABILITY_MODE,
   FUSION_REPLAY_REQUIRED,
   WORKFLOW_RETURN_CONTRACT,
-  WORKFLOW_RETURN_VALIDATE,
   type AgentAttemptOutcome,
   type AgentSchemaCheck,
   type PhysicalAgentAttempt,
@@ -61,9 +60,6 @@ export interface WorkflowAgentCallDeps {
   readonly currentPhase: () => string | undefined;
   /** Read-only branch identity; a call reads it and never rewrites a sibling's. */
   readonly branchContext: () => WorkflowGroupBranchView | undefined;
-  /** True while a script `validate` callback is running: a nested call there has no
-   *  defined position in the journal or the replay sequence. */
-  readonly insideValidate: () => boolean;
   /** Whether the embedder configured a workspace manager at all. */
   readonly workspaceManagerConfigured: () => boolean;
   /** Run-declared per-call axes, already normalized by the composition root. */
@@ -179,9 +175,8 @@ function workflowNodeName(
  * "the same call", so the omission has to be a deliberate edit rather than an
  * accident of spreading the object. The invariant `tools: ["*"]` and
  * `permissionMode: "inherit-parent"` need no key fields because workflow source
- * cannot change them; legacy restriction inputs are ignored. A declared `schema`
- * needs no field of its own — it is already baked into `prompt` by
- * `withSchemaContract`.
+ * cannot change them; legacy restriction inputs are ignored. A `choice` contract is
+ * carried as `returnContract`, whose version marks the replay boundary.
  */
 function canonicalAgentRequest(req: WorkflowAgentRequest): string {
   // `workflowSlot` is live-row identity only. Including its generated group id here would
@@ -265,15 +260,14 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
    * mismatch, the one-way divergence latch, and the recorded suffix discarded and re-run
    * live. One script-level call, one ordinal, is the invariant the record already assumes.
    *
-   * `checkSchema` is supplied only by the shaped path; it runs on the final child text
-   * BEFORE agent_end is emitted so the journal records whether the answer was shape-checked.
+   * `checkSchema` is supplied only by the choice path; it runs on the final child text
+   * BEFORE agent_end is emitted so the journal records whether the choice was checked.
    */
   async function runAgentAttempt(
     prompt: string,
     opts: WorkflowInternalAgentOptions | undefined,
     checkSchema?: (text: string) => AgentSchemaCheck,
   ): Promise<AgentAttemptOutcome> {
-    if (deps.insideValidate()) throw new Error("agent() must not be called from inside a validate callback");
     if (prompt.trim() === "") throw new Error("agent prompt must be non-empty");
     if (opts?.workspaceHandle !== undefined && !deps.workspaceManagerConfigured()) {
       throw new Error("workflow workspace manager is not configured");
@@ -323,7 +317,6 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
       ...(opts?.title === undefined ? {} : { title: opts.title }),
       ...(itemPath === undefined ? {} : { itemPath }),
       ...(opts?.[WORKFLOW_RETURN_CONTRACT] === undefined ? {} : { returnContract: opts[WORKFLOW_RETURN_CONTRACT] }),
-      ...(opts?.[WORKFLOW_RETURN_VALIDATE] === undefined ? {} : { returnValidate: opts[WORKFLOW_RETURN_VALIDATE] }),
       executionMode: agentName === undefined ? "bare" : "named",
       ...(agentName === undefined ? {} : { agent: agentName }),
       tools: ["*"],
@@ -394,13 +387,13 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
       const replayCall = {
         ...(node === undefined ? {} : { node }),
         canonicalRequest,
-        // Carried so a miss against a record written under return-contract v1 is named as
-        // the contract boundary rather than reported as a changed script.
+        // Carried so a miss against a record written under an older return contract is named
+        // as the contract boundary rather than reported as a changed script.
         ...(req.returnContract === undefined ? {} : { returnContractVersion: req.returnContract.version }),
       };
       const lookup = replay?.beginAgentAttempt({ ...replayCall, replayable });
-      // The replay boundary an operator has to be told about by name. A shaped call
-      // recorded under return-contract v1 cannot match a v2 request key, and saying
+      // The replay boundary an operator has to be told about by name. A choice recorded
+      // under an older return contract cannot match the current request key, and saying
       // "key-mismatch" here would send them looking for a script edit that never happened.
       if (lookup?.replayed === false && lookup.reason === "return-contract-changed") {
         emit({
@@ -410,8 +403,8 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
           source: "runtime",
           ...(req.phase !== undefined ? { phase: req.phase } : {}),
           message:
-            `[workflow:replay] ${req.label ?? workflowAgentDisplayName(req)}: the shaped return contract changed in this ` +
-            "release (v1 -> v2: no default answer ceiling, no derived JSON allowance, no bounded clarification budget). " +
+            `[workflow:replay] ${req.label ?? workflowAgentDisplayName(req)}: the return contract changed in this ` +
+            `release (now v${String(req.returnContract!.version)}: workflow_return carries only one exact declared choice). ` +
             "The recorded answer stays readable, but it answered a different contract, so replay stops here and this call runs fresh.",
         });
       }

@@ -547,7 +547,6 @@ export function standardDslCallProvenance(method: StandardDslMethod, call: SgNod
       .map((pair) => staticObjectKey(pair.field("key"))) ?? [],
   );
   if (optionKeys.has("choice")) return { kind: "runtime-control", sourceMethod: method };
-  if (optionKeys.has("handoffs")) return { kind: "opaque-list", sourceMethod: method };
   return { kind: "opaque-value", sourceMethod: method };
 }
 

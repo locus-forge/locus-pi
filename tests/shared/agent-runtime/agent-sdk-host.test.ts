@@ -1175,17 +1175,15 @@ describe("agent SDK session executor (insurance, not proof)", () => {
     expect(kickoff).not.toContain("SKILL_SENTINEL");
   });
 
-  it("keeps exactly the return tool on a shaped tool-free child and accepts its receipt", async () => {
-    // A Fusion judge with a `schema` runs tool-free like the rest of its panel. Clearing
-    // `customTools` removed the ONE tool such a judge needs, so the panel paid for every
-    // member and then failed the judge on a transport question. The return tool performs
-    // no external effect — it records the declared value — so keeping it registered does
-    // not make the child able to act, and the readback below still proves it has nothing
-    // else.
+  it("keeps exactly the return tool on a tool-free choice child and accepts its receipt", async () => {
+    // A tool-free child that must return a choice still needs the ONE return tool. The
+    // return tool performs no external effect — it records the declared choice — so keeping
+    // it registered does not make the child able to act, and the readback below still
+    // proves it has nothing else.
     const { normalizeWorkflowReturnContract } =
       await import("../../../extensions/workflows/runtime/workflow-return.js");
     const { createWorkflowReturnController } = await import("../../../extensions/workflows/runtime/workflow-return.js");
-    const contract = normalizeWorkflowReturnContract({ output: { type: "string", singleLine: true } });
+    const contract = normalizeWorkflowReturnContract({ choices: ["the panel verdict", "no verdict"] });
     const { tool, acceptance } = createWorkflowReturnController(contract);
     let active: string[] = [tool.name];
     let prompts = 0;

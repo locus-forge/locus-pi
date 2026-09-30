@@ -98,54 +98,17 @@ function nodeName(label: string, occurrence = 0, phase: string | null = null): s
 }
 
 /**
- * The scripted child echoes its prompt, so the JSON it must return is fenced
- * inside the prompt — the runtime reads the first fence, ahead of the schema
- * block it appends.
+ * One labelled plain stage, and the same stage after an author re-added a removed shaped
+ * option to it. The two sources share the label, so a resume addresses the same record.
  */
-const SHAPED_WORKFLOW = `export const meta = { name: "shaped", description: "one shaped stage" };
-const FENCE = "\\u0060\\u0060\\u0060";
-const COUNT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["count"],
-  properties: { count: { type: "integer" } },
-};
+const COUNTED_WORKFLOW = `export const meta = { name: "counted", description: "one labelled plain stage" };
 export default async function runWorkflow(dsl) {
-  const prompt = ["answer with:", FENCE + "json", '{"count":3}', FENCE].join("\\n");
-  return await dsl.agent(prompt, { schema: COUNT_SCHEMA });
+  return await dsl.agent("count the open items", { label: "count" });
 }
 `;
-
-/**
- * The same shaped stage plus a script validator whose verdict comes from the run
- * INPUT, not from the script bytes. That is what makes a rejected replay reachable
- * at all: the entry file is byte-identical between the two runs, so the resume is
- * not refused, and the prompt is input-independent, so the recorded key still hits.
- */
-const VALIDATED_WORKFLOW = `export const meta = { name: "validated", description: "one shaped stage with a script validator" };
-const FENCE = "\\u0060\\u0060\\u0060";
-const COUNT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["count"],
-  properties: { count: { type: "integer" } },
-};
-export default async function runWorkflow(dsl, input) {
-  const prompt = ["answer with:", FENCE + "json", '{"count":3}', FENCE].join("\\n");
-  const expected = Number(input ?? "3");
-  let value = null;
-  let rejected = "";
-  try {
-    value = await dsl.agent(prompt, {
-      schema: COUNT_SCHEMA,
-      validate: (answer) =>
-        answer.count === expected ? [] : ["count: expected " + String(expected) + ", got " + String(answer.count)],
-    });
-  } catch (error) {
-    rejected = String(error.message);
-  }
-  const tail = await dsl.agent("tail");
-  return { value, rejected, tail };
+const REMOVED_HANDOFFS_WORKFLOW = `export const meta = { name: "counted", description: "one labelled plain stage" };
+export default async function runWorkflow(dsl) {
+  return await dsl.agent("count the open items", { label: "count", handoffs: {} });
 }
 `;
 
@@ -160,12 +123,6 @@ export default async function runWorkflow(dsl) {
   if (status === "blocked") throw new Error("step is blocked");
   const summary = await dsl.agent("summary");
   return { status, summary };
-}
-`;
-
-const UNSUPPORTED_SCHEMA_WORKFLOW = `export const meta = { name: "unsupported", description: "declares an ignored keyword" };
-export default async function runWorkflow(dsl) {
-  return await dsl.agent("shape me", { schema: { type: "number", minimum: 3 } });
 }
 `;
 
@@ -252,31 +209,28 @@ export default async function runWorkflow(dsl) {
     expect(resumed.replay).toMatchObject({ replayed: true, replayedCalls: 3, freshCalls: 0 });
   });
 
-  it("replays a schema-bearing call, and refuses an unsupported declaration before touching the record", async () => {
+  it("refuses a resumed source that declares a removed shaped option before the child and the record", async () => {
     const root = temporaryProject();
-    writeWorkflow(root, "shaped", SHAPED_WORKFLOW);
-
-    const first = await runWorkflow(root, "shaped");
+    writeWorkflow(root, "counted", COUNTED_WORKFLOW);
+    const first = await runWorkflow(root, "counted");
     expect(first.ok).toBe(true);
-    expect(first.result).toEqual({ count: 3 });
-    expect(first.executedPrompts).toHaveLength(1);
+    expect(first.executedPrompts).toEqual(["count the open items"]);
 
-    // The declaration precheck runs before the replay lookup and the canonical key
-    // is built from the resolved request, so widening the supported schema subset
-    // never invalidates a recording made under the narrower one.
-    const resumed = await runWorkflow(root, "shaped", { resumeFromRunId: first.runId });
+    // The same label now declares `handoffs`. Declaration dispatch runs before the replay
+    // lookup, so the resume fails with the removal message a fresh run gets, starts no
+    // child, and never serves the recorded answer as a list.
+    writeWorkflow(root, "counted", REMOVED_HANDOFFS_WORKFLOW);
+    const resumed = await runWorkflow(root, "counted", { resumeFromRunId: first.runId });
+    expect(resumed.ok).toBe(false);
+    expect(resumed.error).toMatch(/agent handoffs was removed: an agent no longer returns a runtime list/u);
     expect(resumed.executedPrompts).toEqual([]);
-    expect(resumed.result).toEqual({ count: 3 });
-    expect(resumed.replay).toMatchObject({ replayed: true, replayedCalls: 1, freshCalls: 0 });
+    expect(resumed.replay).toMatchObject({ replayedCalls: 0, freshCalls: 0 });
+    expect(readWorkflowReplayLog(root, resumed.runId).filter((entry) => entry.kind === "agent")).toHaveLength(0);
 
-    // An unsupported declaration fails ahead of both the child and the record:
-    // the resumed run consumes no entry and spends no attempt.
-    writeWorkflow(root, "unsupported", UNSUPPORTED_SCHEMA_WORKFLOW);
-    const rejected = await runWorkflow(root, "unsupported");
-    expect(rejected.ok).toBe(false);
-    expect(rejected.error).toMatch(/unsupported keyword "minimum"/u);
-    expect(rejected.executedPrompts).toEqual([]);
-    expect(readWorkflowReplayLog(root, rejected.runId).filter((entry) => entry.kind === "agent")).toHaveLength(0);
+    const fresh = await runWorkflow(root, "counted");
+    expect(fresh.ok).toBe(false);
+    expect(fresh.error).toBe(resumed.error);
+    expect(fresh.executedPrompts).toEqual([]);
   });
 
   it("resumes a run that failed after an exact-choice step, re-running only the rest", async () => {
@@ -324,52 +278,6 @@ export default async function runWorkflow(dsl) {
     );
     expect(replayedStep?.replayed).toBe(true);
     expect(replayedStep?.schemaValidation).toEqual({ status: "valid", attempts: 1, errors: [] });
-  });
-
-  it("re-applies the current script validator to a replayed answer", async () => {
-    const root = temporaryProject();
-    writeWorkflow(root, "validated", VALIDATED_WORKFLOW);
-
-    const first = await runWorkflow(root, "validated", { input: "3" });
-    expect(first.ok).toBe(true);
-    expect(first.result).toMatchObject({ value: { count: 3 }, rejected: "" });
-
-    const resumed = await runWorkflow(root, "validated", { input: "3", resumeFromRunId: first.runId });
-    expect(resumed.executedPrompts).toEqual([]);
-    expect(resumed.result).toEqual(first.result);
-    expect(resumed.replay).toMatchObject({ replayed: true, replayedCalls: 2, freshCalls: 0 });
-
-    // A replayed attempt occupies an ordinal and increments `attempts`, and it
-    // contributes no `usage` — a replayed call cost nothing and must not inflate
-    // the run budget.
-    const shapedEnd = resumed.journal.find((line) => line.kind === "agent_end" && line.schemaValidation !== undefined);
-    expect(shapedEnd?.replayed).toBe(true);
-    expect(shapedEnd?.schemaValidation).toEqual({ status: "valid", attempts: 1, errors: [] });
-    expect(shapedEnd?.usage).toBeUndefined();
-  });
-
-  it("fails the run closed when the current validator rejects a replayed answer, without diverging", async () => {
-    const root = temporaryProject();
-    writeWorkflow(root, "validated", VALIDATED_WORKFLOW);
-    const first = await runWorkflow(root, "validated", { input: "3" });
-
-    // Same script bytes, same prompt, different validator verdict. Re-asking here
-    // would form an attempt-2 prompt whose key misses at that ordinal, trip the
-    // one-way divergence latch and silently convert the operator's resume into a
-    // full live run. Failing closed keeps the loss local and loud.
-    const resumed = await runWorkflow(root, "validated", { input: "4", resumeFromRunId: first.runId });
-
-    expect(resumed.executedPrompts).toEqual([]);
-    expect(resumed.result).toMatchObject({
-      value: null,
-      rejected: "Replayed agent answer was rejected by the workflow script: count: expected 4, got 3",
-    });
-    const failed = resumed.journal.filter((line) => line.kind === "agent_end" && line.status === "failed");
-    expect(failed).toHaveLength(1);
-    expect(failed[0]?.schemaValidation).toMatchObject({ status: "mismatch", source: "script" });
-    // No divergence: the later call in the same run still replays.
-    expect(resumed.replay).toMatchObject({ replayed: true, replayedCalls: 2, freshCalls: 0 });
-    expect(resumed.replay.divergedAtCall).toBeUndefined();
   });
 
   it("invalidates an edited call AND every later call, even when the later prompts are unchanged", async () => {
@@ -1540,35 +1448,48 @@ describe("the default timeoutMs invalidates records written before it", () => {
  * The return-contract version boundary.
  *
  * Contract v1 stated a default answer ceiling, a derived canonical-JSON allowance and a
- * bounded clarification budget; v2 states none of them. That text is part of the prompt and
- * therefore part of the request key, so every recorded shaped call diverges — which is
- * correct and must stay correct: recomputing an old key would claim the old child answered a
- * contract it was never shown, and reusing its answer would be a silent lie.
+ * bounded clarification budget; v2 stated none of them; v3 carries only one exact declared
+ * choice. That text is part of the prompt and therefore part of the request key, so every
+ * recorded choice under an older contract diverges — which is correct and must stay
+ * correct: recomputing an old key would claim the old child answered a contract it was
+ * never shown, and reusing its answer would be a silent lie.
  *
  * What must NOT happen is reporting it as `key-mismatch`, which everywhere else means "your
- * script changed". The record stays fully readable and the boundary is named.
+ * script changed". The record stays fully readable and the boundary is named. A source that
+ * still declares a removed shaped option never reaches the record at all.
  */
-describe("the shaped return contract v1 -> v2 boundary", () => {
+describe("the return contract version boundary", () => {
   function replayRoot(prefix: string, runId: string): string {
     const root = mkdtempSync(path.join(tmpdir(), prefix));
     registerReplayProject(root);
     return ensureWorkflowRunDir(root, runId);
   }
 
-  /** The exact bytes a 0.7.x run wrote for one shaped call: no `rcv`, a v1-derived key. */
-  const V1_RECORD: WorkflowReplayEntry[] = [
+  /** The exact bytes a v2 run wrote for one choice call and one shaped `handoffs` call. */
+  const V2_RECORD: WorkflowReplayEntry[] = [
     {
       v: WORKFLOW_REPLAY_SCHEMA_VERSION,
       seq: 0,
       kind: "agent",
-      node: "|verify|0",
+      node: "|route|0",
       key: "a".repeat(64),
+      rcv: 2,
       ok: true,
-      text: '{"answer":"yes"}',
+      text: '"accept"',
+    },
+    {
+      v: WORKFLOW_REPLAY_SCHEMA_VERSION,
+      seq: 1,
+      kind: "agent",
+      node: "|discover|0",
+      key: "b".repeat(64),
+      rcv: 2,
+      ok: true,
+      text: '["unit one","unit two"]',
     },
   ];
 
-  function shapedRuntime(runId: string, replay: WorkflowReplayController) {
+  function choiceRuntime(runId: string, replay: WorkflowReplayController) {
     const prompts: string[] = [];
     const runtime = createWorkflowRuntime({
       runId,
@@ -1579,7 +1500,7 @@ describe("the shaped return contract v1 -> v2 boundary", () => {
           ok: true as const,
           status: "completed" as const,
           summary: "done",
-          text: '{"answer":"yes"}',
+          text: request.returnContract === undefined ? "plain answer" : '"revise"',
           diagnostics: [],
           agent: request.agent,
           ...(request.returnContract === undefined
@@ -1591,67 +1512,114 @@ describe("the shaped return contract v1 -> v2 boundary", () => {
     return { ...runtime, prompts };
   }
 
-  it("keeps a v1 record readable and names the contract boundary instead of blaming the script", async () => {
-    // Readable first: the record is not discarded, rewritten, or reported as corrupt.
-    const recordedV1 = V1_RECORD[0]!;
-    expect(recordedV1.kind === "agent" && recordedV1.ok === true ? recordedV1.text : undefined).toBe(
-      '{"answer":"yes"}',
-    );
-    expect(recordedV1.kind === "agent" ? recordedV1.rcv : "not-an-agent-entry").toBeUndefined();
+  it("keeps a v2 choice record readable and names the contract boundary instead of blaming the script", async () => {
+    const recordedV2 = V2_RECORD[0]!;
+    expect(recordedV2.kind === "agent" && recordedV2.ok === true ? recordedV2.text : undefined).toBe('"accept"');
 
     const controller = createWorkflowReplayController({
-      runDir: replayRoot("workflow-replay-contract-", "contract-v2-resume"),
-      recorded: V1_RECORD,
+      runDir: replayRoot("workflow-replay-contract-", "contract-v3-resume"),
+      recorded: V2_RECORD,
     });
-    const resumed = shapedRuntime("contract-v2-resume", controller);
+    const resumed = choiceRuntime("contract-v3-resume", controller);
 
-    await expect(
-      resumed.dsl.agent("Decide.", {
-        label: "verify",
-        schema: {
-          type: "object",
-          additionalProperties: false,
-          required: ["answer"],
-          properties: { answer: { type: "string" } },
-        },
-      }),
-    ).resolves.toEqual({ answer: "yes" });
+    await expect(resumed.dsl.agent("Decide.", { label: "route", choice: ["accept", "revise"] })).resolves.toBe(
+      "revise",
+    );
 
     // The call ran fresh — a recorded answer to a DIFFERENT contract is never reused.
     expect(resumed.prompts).toHaveLength(1);
     expect(controller.counts()).toMatchObject({ replayedCalls: 0, freshCalls: 1, divergedAtCall: 0 });
-    // And the operator is told WHY, by name, rather than being sent to look for a script edit.
     const boundary = resumed
       .getJournal()
-      .find((line) => line.message?.includes("[workflow:replay]") && line.message.includes("verify"));
-    expect(boundary?.message).toContain("shaped return contract changed in this release (v1 -> v2");
+      .find((line) => line.message?.includes("[workflow:replay]") && line.message.includes("route"));
+    expect(boundary?.message).toContain("return contract changed in this release (now v3");
     expect(boundary?.message).toContain("replay stops here");
     expect(boundary?.message).not.toContain("key-mismatch");
   });
 
-  it("stamps the contract version on records it writes, so the next boundary is provable", async () => {
-    const runDir = replayRoot("workflow-replay-contract-write-", "contract-v2-record");
-    const source = shapedRuntime("contract-v2-record", createWorkflowReplayController({ runDir }));
-    await source.dsl.agent("Decide.", {
-      label: "verify",
-      schema: {
-        type: "object",
-        additionalProperties: false,
-        required: ["answer"],
-        properties: { answer: { type: "string" } },
-      },
+  it("refuses a recorded shaped call before the child and never reinterprets its receipt", async () => {
+    // Fresh run and resume must fail with the same removal sentence; the resume must not
+    // read, consume or advance past the recorded shaped receipt.
+    const fresh = choiceRuntime(
+      "removed-fresh",
+      createWorkflowReplayController({ runDir: replayRoot("workflow-replay-removed-fresh-", "removed-fresh") }),
+    );
+    const freshError = await fresh.dsl
+      .agent("Discover units.", { label: "discover", handoffs: {} } as never)
+      .then(() => undefined)
+      .catch((error: unknown) => error);
+
+    const controller = createWorkflowReplayController({
+      runDir: replayRoot("workflow-replay-removed-", "removed-resume"),
+      recorded: [V2_RECORD[1]!],
     });
+    const resumed = choiceRuntime("removed-resume", controller);
+    const resumedError = await resumed.dsl
+      .agent("Discover units.", { label: "discover", handoffs: {} } as never)
+      .then(() => undefined)
+      .catch((error: unknown) => error);
+
+    expect(resumedError).toBeInstanceOf(Error);
+    expect((resumedError as Error).message).toMatch(
+      /^agent handoffs was removed: an agent no longer returns a runtime list/u,
+    );
+    expect((resumedError as Error).message).toBe((freshError as Error).message);
+    expect(resumed.prompts).toEqual([]);
+    expect(fresh.prompts).toEqual([]);
+    expect(controller.counts()).toMatchObject({ replayedCalls: 0, freshCalls: 0 });
+    expect(controller.counts().divergedAtCall).toBeUndefined();
+    expect(resumed.getJournal().filter((line) => line.kind === "agent_start")).toHaveLength(0);
+
+    // A schema declaration on a recorded ordinal is refused the same way.
+    await expect(
+      resumed.dsl.agent("Discover units.", { label: "discover", schema: { type: "array" } } as never),
+    ).rejects.toThrow(/^agent schema was removed/u);
+    expect(controller.counts()).toMatchObject({ replayedCalls: 0, freshCalls: 0 });
+  });
+
+  it("refuses a removed key declared with an undefined value before the child and the record", async () => {
+    // `{ ...legacy, handoffs: undefined }` still declares `handoffs`. It must not become a
+    // plain call that consumes the recorded shaped receipt as text, or opens a fresh child.
+    const controller = createWorkflowReplayController({
+      runDir: replayRoot("workflow-replay-removed-undefined-", "removed-undefined-resume"),
+      recorded: [V2_RECORD[1]!],
+    });
+    const resumed = choiceRuntime("removed-undefined-resume", controller);
+    for (const [key, message] of [
+      ["handoffs", /^agent handoffs was removed/u],
+      ["schema", /^agent schema was removed/u],
+      ["maxAnswerChars", /^agent maxAnswerChars was removed/u],
+    ] as const) {
+      await expect(
+        resumed.dsl.agent("Discover units.", { label: "discover", [key]: undefined } as never),
+      ).rejects.toThrow(message);
+    }
+    expect(resumed.prompts).toEqual([]);
+    expect(controller.counts()).toMatchObject({ replayedCalls: 0, freshCalls: 0 });
+    expect(controller.counts().divergedAtCall).toBeUndefined();
+    expect(resumed.getJournal().filter((line) => line.kind === "agent_start")).toHaveLength(0);
+
+    // The recorded ordinal is still unconsumed: the same label, declared plainly, is
+    // the first call the cursor sees and diverges from the shaped v2 record there.
+    await expect(resumed.dsl.agent("Discover units.", { label: "discover" })).resolves.toBe("plain answer");
+    expect(controller.counts()).toMatchObject({ replayedCalls: 0, freshCalls: 1, divergedAtCall: 0 });
+  });
+
+  it("stamps the contract version on records it writes, so the next boundary is provable", async () => {
+    const runDir = replayRoot("workflow-replay-contract-write-", "contract-v3-record");
+    const source = choiceRuntime("contract-v3-record", createWorkflowReplayController({ runDir }));
+    await source.dsl.agent("Decide.", { label: "route", choice: ["accept", "revise"] });
 
     const written = readFileSync(workflowReplayFile(runDir), "utf8")
       .split("\n")
       .filter((line) => line.trim() !== "")
       .map((line) => JSON.parse(line) as WorkflowReplayEntry & { rcv?: number });
-    expect(written[0]?.rcv).toBe(2);
+    expect(written[0]?.rcv).toBe(3);
   });
 
   it("leaves a plain-text call unversioned, so ordinary records keep replaying byte for byte", async () => {
     const runDir = replayRoot("workflow-replay-contract-plain-", "contract-plain-record");
-    const source = shapedRuntime("contract-plain-record", createWorkflowReplayController({ runDir }));
+    const source = choiceRuntime("contract-plain-record", createWorkflowReplayController({ runDir }));
     await source.dsl.agent("Summarize.", { label: "summary" });
 
     const written = readFileSync(workflowReplayFile(runDir), "utf8")
@@ -1806,13 +1774,6 @@ describe("replay across the removed budget defaults", () => {
   const PACKAGE_DEFAULTS: Budgets = { maxToolCalls: 1000, timeoutMs: 86_400_000, maxTurns: 1000 };
   const DECLARED_EXPLICITLY: Budgets = { maxToolCalls: null, timeoutMs: null, maxTurns: null };
 
-  const SHAPED_SCHEMA = {
-    type: "object",
-    additionalProperties: false,
-    required: ["answer"],
-    properties: { answer: { type: "string" } },
-  } as const;
-
   /** The recorded node name for an unphased labelled call. */
   function node(label: string): string {
     return `\u001f${label}\u001f0`;
@@ -1831,7 +1792,7 @@ describe("replay across the removed budget defaults", () => {
     return file;
   }
 
-  /** A serialized pre-change record: a plain prefix, an unversioned shaped call, a failure. */
+  /** A serialized pre-change record: a plain prefix, an unversioned choice call, a failure. */
   function historicalEntries(budgets: Budgets): WorkflowReplayEntry[] {
     return [
       {
@@ -1844,14 +1805,14 @@ describe("replay across the removed budget defaults", () => {
         text: "recorded summary",
       },
       {
-        // Shaped, and recorded before the return contract was versioned: no `rcv`.
+        // A choice recorded before the return contract was versioned: no `rcv`.
         v: WORKFLOW_REPLAY_SCHEMA_VERSION,
         seq: 1,
         kind: "agent",
         node: node("verify"),
         key: "b".repeat(64),
         ok: true,
-        text: '{"answer":"yes"}',
+        text: '"accept"',
       },
       {
         v: WORKFLOW_REPLAY_SCHEMA_VERSION,
@@ -1879,7 +1840,7 @@ describe("replay across the removed budget defaults", () => {
           ok: true as const,
           status: "completed" as const,
           summary: "done",
-          text: request.returnContract === undefined ? `fresh(${request.label ?? "?"})` : '{"answer":"fresh"}',
+          text: request.returnContract === undefined ? `fresh(${request.label ?? "?"})` : '"revise"',
           diagnostics: [],
           ...(request.returnContract === undefined
             ? {}
@@ -1908,9 +1869,9 @@ describe("replay across the removed budget defaults", () => {
 
     // Everything after it is fresh too, the recorded FAILURE included: it is re-run, never
     // served back as an answer.
-    await expect(resumed.dsl.agent("Decide.", { label: "verify", schema: SHAPED_SCHEMA })).resolves.toEqual({
-      answer: "fresh",
-    });
+    await expect(resumed.dsl.agent("Decide.", { label: "verify", choice: ["accept", "revise"] })).resolves.toBe(
+      "revise",
+    );
     await expect(resumed.dsl.agent("Check.", { label: "check" })).resolves.toBe("fresh(check)");
     expect(resumed.prompts).toHaveLength(3);
     expect(resumed.prompts[1]).toContain("Decide.");
@@ -1935,16 +1896,16 @@ describe("replay across the removed budget defaults", () => {
     expect(resumed.prompts).toEqual([]);
     expect(resumed.controller.counts()).toMatchObject({ replayedCalls: 1, freshCalls: 0 });
 
-    // Record 1 is the unversioned shaped call. It is refused as the release boundary it is,
+    // Record 1 is the unversioned choice call. It is refused as the release boundary it is,
     // by name, rather than as a script change the author never made.
-    await expect(resumed.dsl.agent("Decide.", { label: "verify", schema: SHAPED_SCHEMA })).resolves.toEqual({
-      answer: "fresh",
-    });
+    await expect(resumed.dsl.agent("Decide.", { label: "verify", choice: ["accept", "revise"] })).resolves.toBe(
+      "revise",
+    );
     expect(resumed.controller.counts()).toMatchObject({ replayedCalls: 1, freshCalls: 1, divergedAtCall: 1 });
     const boundary = resumed
       .getJournal()
       .find((line) => line.message?.includes("[workflow:replay]") && line.message.includes("verify"));
-    expect(boundary?.message).toContain("shaped return contract changed in this release");
+    expect(boundary?.message).toContain("return contract changed in this release");
     expect(boundary?.message).not.toContain("key-mismatch");
 
     expect(readFileSync(file, "utf8")).toBe(bytesBefore);

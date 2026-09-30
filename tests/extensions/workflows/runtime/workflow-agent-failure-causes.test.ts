@@ -273,7 +273,7 @@ const CAUSE_MATRIX: Record<AgentFailureCause, CauseCase> = {
   },
 
   "output-contract-exhausted": {
-    what: "the real return controller runs out of repair attempts",
+    what: "the real return controller runs out of its one package-owned correction",
     async produce() {
       const { result } = await runAcceptanceHost({ submissions: [["multi\nline"]] });
 
@@ -310,7 +310,7 @@ const CAUSE_MATRIX: Record<AgentFailureCause, CauseCase> = {
   "assistant-turn-budget": {
     what: "clarification stops at the cumulative assistant-turn cap instead of forever",
     async produce() {
-      const { result } = await runAcceptanceHost({ submissions: [], maxAttempts: 3, maxTurns: 1 });
+      const { result } = await runAcceptanceHost({ submissions: [], maxTurns: 1 });
 
       expect(result.status).toBe("failed");
       return result.failureCause;
@@ -425,36 +425,37 @@ const CAUSE_MATRIX: Record<AgentFailureCause, CauseCase> = {
   },
 
   "script-rejected": {
-    what: "the runtime refuses a replayed answer the CURRENT script validator rejects",
+    what: "HISTORICAL — a replayed answer refused by a removed script validator still reads back as itself",
     async produce() {
-      // A recorded answer that the CURRENT validator refuses: the runtime fails the run
-      // closed rather than re-asking, because a second prompt would miss at this ordinal.
-      const replay: WorkflowReplayController = {
-        beginAgentAttempt: () => ({ replayed: true, text: '{"count":1}' }),
-        recordAgentAttempt: () => {},
-        resolveValue: (_kind, produce) => produce(),
-        counts: () => ({ replayedCalls: 1, freshCalls: 0 }),
+      // Nothing produces this cause any more: agent validate callbacks were removed with
+      // shaped results. The list stays closed over it so a journal written while they
+      // existed still validates, obtained here through the strict line codec.
+      const root = mkdtempSync(path.join(tmpdir(), "locus-cause-historical-"));
+      const runId = "20260729-132100-abcd";
+      const legacy: WorkflowAgentResult = {
+        ok: false,
+        status: "failed",
+        failureCause: "script-rejected",
+        summary: "Replayed agent answer was rejected by the workflow script: count: expected 3",
+        diagnostics: [],
+        agent: "default",
       };
-      const { dsl, getJournal } = createWorkflowRuntime({
-        runId: "cause-script-rejected",
-        agentRunner: async () => {
-          throw new Error("a replayed call must not reach a child");
-        },
-        replay,
+      const { dsl } = createWorkflowRuntime({
+        runId,
+        projectRoot: root,
+        journal: createWorkflowJournalSink(root, runId),
+        agentRunner: async () => legacy,
       });
 
-      await expect(
-        dsl.agent("count", {
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            required: ["count"],
-            properties: { count: { type: "integer" } },
-          },
-          validate: (value) => ((value as { count: number }).count === 3 ? [] : ["count: expected 3"]),
-        }),
-      ).rejects.toThrow(/count: expected 3/u);
-      return getJournal().find((line) => line.kind === "agent_end")?.failureCause;
+      await expect(dsl.agent("work", {})).rejects.toThrow(/count: expected 3/u);
+
+      const read = readWorkflowRunJournalState(root, runId);
+      expect(read.diagnostics).toEqual([]);
+      const end = read.lines.find((line) => line.kind === "agent_end");
+      expect(end?.status).toBe("failed");
+      expect(await retriesOn(end?.failureCause)).toBe(false);
+      rmSync(root, { recursive: true, force: true });
+      return end?.failureCause;
     },
   },
 

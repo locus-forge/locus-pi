@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { orchestrationOnlyWorkflowSourceShapeDiagnostics } from "../../../../extensions/workflows/tool/workflow-source-shape.js";
+import { REMOVED_AGENT_OPTION_NAMES } from "../../../../extensions/workflows/runtime/workflow-agent-output.js";
+import {
+  orchestrationOnlyWorkflowSourceShapeDiagnostics,
+  standardWorkflowSourceShapeDiagnostics,
+} from "../../../../extensions/workflows/tool/workflow-source-shape.js";
 const errors = (source: string) =>
   orchestrationOnlyWorkflowSourceShapeDiagnostics(source).filter((item) => item.severity === "error");
 const wrap = (body: string, declarations = "") =>
@@ -21,10 +25,10 @@ describe("standard bounded carry and author-owned records; requires native ast-g
       expect(errors(source)).toEqual([]);
     },
   );
-  it("carries a complete discovered queue without making its items author-known", () => {
+  it("carries a complete caller-owned queue without making its items author-known", () => {
     const queueSource = (use: string) =>
       wrap(`let queue = []; for (let i = 0; i < 3; i++) {
-      const next = await dsl.agent(input, { label: "cut", handoffs: { maxItems: 100 } });
+      const next = dsl.items();
       queue = next; ${use}
     } return queue;`);
     expect(errors(queueSource('const item = queue[0]; await dsl.agent(item, { label: "work" });'))).toEqual([]);
@@ -44,7 +48,7 @@ describe("standard bounded carry and author-owned records; requires native ast-g
     expect(
       errors(
         wrap(
-          'for (let i = 0; i < 2; i++) { const queue = await dsl.agent(input, { label: "cut", handoffs: { maxItems: 3 } }); await dsl.agent(`Queue: ${queue.join("\\n---\\n")}`, { label: "work" }); }',
+          'for (let i = 0; i < 2; i++) { const queue = dsl.items(); await dsl.agent(`Queue: ${queue.join("\\n---\\n")}`, { label: "work" }); }',
         ),
       ),
     ).toEqual([]);
@@ -148,7 +152,7 @@ describe("standard bounded carry and author-owned records; requires native ast-g
   });
   it("treats one repeated bounded callsite as replay-safe and distinct duplicate callsites as unsafe", () => {
     const repeated = wrap(
-      'let queue = []; for (let slice = 0; slice <= 6; slice += 1) { queue = await dsl.agent(input, { label: "source-slice", handoffs: {} }); if (queue.length === 0) break; } return queue;',
+      'for (let slice = 0; slice <= 6; slice += 1) { const route = await dsl.agent(input, { label: "source-slice", choice: ["work", "complete"] }); if (route === "complete") break; } return "done";',
     );
     const duplicated = wrap(
       'const first = await dsl.agent(input, { label: "source-slice" }); const second = await dsl.agent(first, { label: "source-slice" }); return second;',
@@ -209,24 +213,42 @@ describe("standard bounded carry and author-owned records; requires native ast-g
       'dsl.parallel(records.map((record) => () => dsl.agent(record.value, { label: "write" })));';
     expect(errors(wrap(body)).length).toBeGreaterThan(0);
   });
-  it("admits handoffs through the return tool and still refuses raw schema regardless of transport", () => {
+  const REMOVED_OPTION_SOURCES: Record<string, string> = {
+    handoffs: "handoffs: { maxItems: 3 }",
+    schema: 'schema: { type: "array" }',
+    validate: "validate: []",
+    output: 'output: { type: "string" }',
+    repair: "repair: { maxAttempts: 2 }",
+    returnVia: 'returnVia: "tool"',
+    maxAnswerChars: "maxAnswerChars: 4000",
+    schemaMaxLength: "schemaMaxLength: 4000",
+  };
+  it("covers exactly the option set the runtime refuses", () => {
+    expect(Object.keys(REMOVED_OPTION_SOURCES).sort()).toEqual([...REMOVED_AGENT_OPTION_NAMES].sort());
+  });
+  it.each(
+    Object.entries(REMOVED_OPTION_SOURCES).flatMap(([key, option]) => [
+      ["standard", key, option, standardWorkflowSourceShapeDiagnostics] as const,
+      ["orchestration-only", key, option, orchestrationOnlyWorkflowSourceShapeDiagnostics] as const,
+    ]),
+  )("%s mode names the removed agent option %s instead of admitting it", (_mode, key, option, check) => {
+    const messages = check(wrap(`return dsl.agent(input, { label: "discover", ${option} });`))
+      .filter((item) => item.severity === "error")
+      .map((item) => item.message);
+    expect(messages).toContainEqual(expect.stringContaining(`agent ${key} was removed`));
+  });
+  it("still refuses raw schema outside an agent declaration", () => {
     expect(
       errors(
         wrap(
-          'const units = await dsl.agent(input, { label: "discover", handoffs: { minItems: 1, maxItems: 3 }, returnVia: "tool", ' +
-            'repair: { maxAttempts: 2 } }); return dsl.parallel(units.map((unit) => () => dsl.agent(unit, { label: "work" })));',
+          'return dsl.fusion(input, { mode: "agent", members: [{ label: "a" }, { label: "b" }], judge: { label: "j" }, schema: { type: "object" } });',
         ),
-      ),
-    ).toEqual([]);
-    expect(
-      errors(wrap('return dsl.agent(input, { label: "verify", schema: { type: "object" }, returnVia: "tool" });')).map(
-        (item) => item.message,
-      ),
+      ).map((item) => item.message),
     ).toContainEqual(expect.stringMatching(/owns no raw schema/u));
   });
-  it("keeps discovered handoffs opaque despite the new author-record syntax", () => {
+  it("keeps caller-owned items opaque despite the new author-record syntax", () => {
     const body =
-      'const values = await dsl.agent(input, { label: "discover", handoffs: { maxItems: 3 } }); return dsl.parallel(values.map(({ key }) => () => dsl.agent(key, { label: "work" })));';
+      'const values = dsl.items(); return dsl.parallel(values.map(({ key }) => () => dsl.agent(key, { label: "work" })));';
     expect(errors(wrap(body)).length).toBeGreaterThan(0);
   });
 });

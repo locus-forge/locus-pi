@@ -68,14 +68,14 @@ that Build must create; do not declare grandchildren or an implicit root.
 
 1. <numbered algorithm>
 
-| Node     | Responsibility         | Receives      | Returns                              | Next       |
-| -------- | ---------------------- | ------------- | ------------------------------------ | ---------- |
-| `<node>` | <one coherent subtask> | <exact input> | <complete text, choice, or handoffs> | <consumer> |
+| Node     | Responsibility         | Receives      | Returns                                | Next       |
+| -------- | ---------------------- | ------------- | -------------------------------------- | ---------- |
+| `<node>` | <one coherent subtask> | <exact input> | <complete text, choice, or named file> | <consumer> |
 
 Concurrency: <groups or none>
 Loop bounds: <bounds or none>
 Budgets: <axis=value with a one-line reason, or none — launch defaults apply; every other undeclared workflow budget axis is unbounded>
-Declared sizes: <each maxItems/minItems/maxLength/singleLine with its consumer, or none>
+Named files: <each workspace file, its writer and its readers, or none>
 File boundary: workflow source performs no file reads; name any child-owned source inspection
 Worst-case calls: <exact formula including saved children>
 Failure exits: <fail-closed exits>
@@ -93,14 +93,13 @@ For a review edge, let the reviewer inspect the full current diff with its own t
 Commit only within existing task authorization; require it to account for every
 in-scope path in that diff before a favorable verdict. Do not have the producer
 rebuild the change as an evidence bundle for the reviewer to read.
-For each shaped result or author-selected limit, identify the consuming edge
+For each choice, named file or author-selected limit, identify the consuming edge
 and why it needs that contract. Plain narrative is passed whole without an
-invented length cap; structured controls belong only at real routing or
-decomposition edges. Two review checks apply to every design:
+invented length cap; a choice belongs only at a real routing edge. Two review
+checks apply to every design:
 
-- **No invented size policy.** Every `maxItems`, `minItems`, `maxLength` and
-  `singleLine` names the consumer that cannot take more (or less); every budget
-  axis carries a one-line reason. A number with no owner is removed, not lowered.
+- **No invented size policy.** Every budget axis carries a one-line reason. A
+  number with no owner is removed, not lowered.
 - **No prompt-side size request.** No brief asks for a character, word, line or
   item count the consumer did not declare. "Keep it short" is the removed policy
   rewritten in English.
@@ -134,9 +133,10 @@ namespace has no root source and never receives a fake one. It then checks:
   same validator is `npm run check:workflow-source -- --mode orchestration-only <exact-path>`.
 - every built source uses only the orchestration-only DSL subset and contains no
   file, path, artifact-consumption, clock, or randomness primitive.
-- no source carries `maxItemChars`, `maxAnswerChars` or `schemaMaxLength` (the
-  runtime refuses them by name at load), no `returnVia` (`"tool"` is redundant,
-  `"text"` is refused), and no size or budget number the design did not justify.
+- no source carries `handoffs`, `schema`, `validate`, `output`, `repair`,
+  `returnVia`, `maxItemChars`, `maxAnswerChars` or `schemaMaxLength` (the runtime
+  refuses each by name before any child starts), and no size or budget number the
+  design did not justify.
 
 Read checker diagnostics as `path:line:column [CODE] message`. Any error fails
 Build. Warning-only output remains a successful check, but Build must report the

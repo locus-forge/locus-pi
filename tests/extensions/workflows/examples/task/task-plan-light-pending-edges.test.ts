@@ -14,12 +14,16 @@ function runWithPendingEdge(unresolvedAtFinal = false) {
     "workflow-source-seed": ["Seed report"],
     "workflow-source-seed-check": ["Seed passed"],
     "workflow-source-seed-route": ["passed"],
-    "workflow-source-cut": unresolvedAtFinal ? [[]] : [[pendingEdge, destination], [destination], []],
+    "workflow-source-cut": unresolvedAtFinal
+      ? ["no items"]
+      : [`1. ${pendingEdge}; 2. ${destination}`, `1. ${destination}`, "no items"],
     "workflow-source-queue-assessment": unresolvedAtFinal
       ? ["The queue is empty"]
       : ["Both edits remain", "Destination remains", "Whole graph complete"],
     "workflow-source-queue-route": unresolvedAtFinal ? ["complete"] : ["work", "work", "complete"],
-    "workflow-source-queue-repair": unresolvedAtFinal ? [[]] : [[pendingEdge, destination], [destination], []],
+    "workflow-source-queue-repair": unresolvedAtFinal
+      ? ["no items"]
+      : [`1. ${pendingEdge}; 2. ${destination}`, `1. ${destination}`, "no items"],
     "workflow-source-queue-recheck": unresolvedAtFinal
       ? ["The queue is empty"]
       : ["Pending target retained", "Target replacement retained", "Whole graph complete"],
@@ -76,13 +80,17 @@ describe("task/plan-light pending source edges", () => {
 
     const slices = fixture.calls.filter((call) => call.label === "workflow-source-slice");
     expect(slices).toHaveLength(2);
-    expect(slices[0]?.prompt).toContain(pendingEdge);
-    expect(slices[0]?.prompt).toContain(destination);
+    // Source never reads the queue file: the cut report reaches the independent assessment,
+    // and every slice stage is pointed at the file whose later members name pending targets.
+    const assessments = fixture.calls.filter((call) => call.label === "workflow-source-queue-assessment");
+    expect(assessments[0]?.prompt).toContain(pendingEdge);
+    expect(assessments[0]?.prompt).toContain(destination);
+    expect(assessments[1]?.prompt).toContain(destination);
+    expect(slices[0]?.prompt).toContain("its later members identify pending-edge targets");
     expect(slices[0]?.prompt).toContain("do not implement the later node in this slice");
-    expect(slices[1]?.prompt).toContain(destination);
     const firstReview = fixture.calls.find((call) => call.label === "workflow-source-review")?.prompt;
     expect(firstReview).toContain("Accept a named fail-closed placeholder");
-    expect(firstReview).toContain(destination);
+    expect(firstReview).toContain("workspace workflow-source-queue.md retains its final destination and replacement");
     expect(fixture.calls.find((call) => call.label === "workflow-source-final-review")?.prompt).toContain(
       "no pending fail-closed placeholders",
     );

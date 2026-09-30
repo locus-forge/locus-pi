@@ -257,7 +257,7 @@ export function createWorkflowAgentAttempt(
       }
     }
     // CAPABILITY, not content. A transport that cannot register `workflow_return` and read
-    // back the child's active tools cannot carry a shaped result at all — and since the text
+    // back the child's active tools cannot carry a choice result at all — and since the text
     // transport is deleted, there is nothing to quietly fall back to. Naming it here keeps
     // the refusal a capability statement instead of "the agent answered wrongly".
     if (
@@ -298,59 +298,15 @@ export function createWorkflowAgentAttempt(
       };
     }
     // NO answer-size gate. A complete answer the child already paid for is never refused
-    // for its length: the runtime owns no output budget, and the consumer's own contract
-    // (schema, output.maxLength, membership) is checked below where a violation is
-    // correctable in-session instead of fatal after the fact.
-    // Shape check runs before agent_end so the run journal carries the verdict for THIS attempt.
-    // A child that failed or returned no text has nothing to validate; that stays a run failure.
-    let schemaCheck: AgentSchemaCheck | undefined;
-    if (checkSchema !== undefined && finalResult.ok && finalResult.status === "completed") {
-      try {
-        schemaCheck = checkSchema(finalResult.text ?? "");
-      } catch (err) {
-        // A script validator that throws — or hands back something that is not an error
-        // list — ends the run unchanged and spends no retry. Without this terminal line
-        // the journal holds an agent_start with no record of why the run stopped. The
-        // explicit replay flag says whether its answer came from a child or a record;
-        // host readback is projected only when a fresh result actually carries it.
-        emit({
-          ts: nowFn(),
-          runId,
-          kind: "error",
-          source: "script",
-          ...workflowExecutionIdentity(req),
-          callId,
-          ...attemptFields,
-          replayed,
-          ...(req.label !== undefined ? { label: req.label } : {}),
-          ...(req.title !== undefined ? { title: req.title } : {}),
-          ...(req.itemPath !== undefined ? { itemPath: req.itemPath } : {}),
-          ...(req.phase !== undefined ? { phase: req.phase } : {}),
-          ...(req.capabilityMode !== undefined ? { capabilityMode: req.capabilityMode } : {}),
-          ...executedModelEvidence(finalResult),
-          message: err instanceof Error ? err.message : String(err),
-          ...(finalResult.usage !== undefined ? { usage: finalResult.usage } : {}),
-          durationMs: Date.now() - executionStartedAtMs,
-        });
-        throw err;
-      }
-    }
-    // A replayed answer the CURRENT validator rejects fails the run closed, exactly as an
-    // over-long replayed answer does above. Re-asking would form an attempt-2 prompt whose
-    // key misses at that ordinal, trip the one-way divergence latch and silently turn the
-    // operator's resume into a full live run. A SCHEMA mismatch on a replayed answer keeps
-    // re-asking as before — that path predates this rule and is unchanged.
-    if (replayed && schemaCheck?.validation.status === "mismatch" && schemaCheck.validation.source === "script") {
-      const message = `Replayed agent answer was rejected by the workflow script: ${schemaCheck.validation.errors.join("; ")}`;
-      finalResult = {
-        ...finalResult,
-        ok: false,
-        status: "failed",
-        failureCause: "script-rejected",
-        summary: message,
-        diagnostics: [...finalResult.diagnostics, message],
-      };
-    }
+    // for its length: the runtime owns no output budget. The only consumer contract left is
+    // a choice's membership, checked below from the accepted receipt.
+    // The choice check runs before agent_end so the run journal carries the verdict for THIS
+    // attempt. A child that failed or returned no text has nothing to check; that stays a
+    // run failure.
+    const schemaCheck: AgentSchemaCheck | undefined =
+      checkSchema !== undefined && finalResult.ok && finalResult.status === "completed"
+        ? checkSchema(finalResult.text ?? "")
+        : undefined;
     const durationMs = Date.now() - executionStartedAtMs;
     let artifactEvidence;
     try {
@@ -427,7 +383,7 @@ export function createWorkflowAgentAttempt(
       // Machine-readable cause on every non-completed call, so a reader never has to
       // match on `summary` prose to tell a timeout from a cancellation.
       ...(finalResult.status !== "completed" ? { failureCause: workflowAgentFailureCause(finalResult) } : {}),
-      // Shape verdict for THIS attempt; absent on every call that declared no schema.
+      // Choice verdict for THIS attempt; absent on every call that declared no choice.
       ...(schemaCheck !== undefined ? { schemaValidation: schemaCheck.validation } : {}),
       ...(finalResult.outputAcceptance === undefined ? {} : { outputAcceptance: finalResult.outputAcceptance }),
       permissionMode: finalResult.permissionMode ?? permissionMode,
