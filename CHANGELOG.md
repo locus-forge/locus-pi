@@ -4,6 +4,8 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-30
+
 ### Removed
 
 - Workflow agents no longer return JSON, objects or lists. `agent()` returns the
