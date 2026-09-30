@@ -10,7 +10,7 @@ import { createHarness } from "../../../../test-harness.js";
 
 interface AgentCall {
   prompt: string;
-  options: { label: string; choice?: string[]; handoffs?: object; result?: string; title?: string };
+  options: { label: string; choice?: string[]; result?: string; title?: string };
 }
 
 type AnswerQueues = Record<string, unknown[]>;
@@ -32,7 +32,7 @@ function completeRunAnswers(): AnswerQueues {
     "workflow-source-seed-fix": ["workflow-source-seed-fix.md"],
     "workflow-source-seed-fix-check": ["workflow-source-seed-fix-check.md: passed"],
     "workflow-source-seed-fix-route": ["passed"],
-    "workflow-source-cut": [["slice-a: add the review branch"], []],
+    "workflow-source-cut": ["1. slice-a: add the review branch", "no items"],
     "workflow-source-queue-assessment": ["queue transition is valid", "all requirements are implemented"],
     "workflow-source-queue-route": ["work", "complete"],
     "workflow-source-slice": ["workflow-source-slice.md"],
@@ -166,9 +166,16 @@ describe("Package workflow: task/plan-light", () => {
 
     const calls = fixtureRun.calls;
     expect(calls.filter((call) => call.options.label === "workflow-source-cut")).toHaveLength(2);
-    expect(calls.find((call) => call.options.label === "workflow-source-cut")?.options.handoffs).toEqual({});
+    // The cut owns the queue file and returns a report; no stage returns a runtime list.
+    expect(calls.find((call) => call.options.label === "workflow-source-cut")?.options).toMatchObject({
+      result: "report",
+    });
+    expect(calls.every((call) => !("handoffs" in call.options))).toBe(true);
+    expect(calls.find((call) => call.options.label === "workflow-source-queue-assessment")?.prompt).toContain(
+      "Queue report:\n1. slice-a: add the review branch",
+    );
     expect(calls.find((call) => call.options.label === "workflow-source-slice")?.prompt).toContain(
-      "slice-a: add the review branch",
+      "the first numbered item of workspace workflow-source-queue.md",
     );
     expect(calls.find((call) => call.options.label === "workflow-source-final-review")?.prompt).toContain(
       "Queue evidence:\nall requirements are implemented",
@@ -182,7 +189,7 @@ describe("Package workflow: task/plan-light", () => {
 
   it("accepts a correct intermediate slice while later design work remains queued", async () => {
     const fixtureRun = fixture({
-      "workflow-source-cut": [["select_slice: bounded selection"], ["recut_queue: remaining graph"], []],
+      "workflow-source-cut": ["1. select_slice: bounded selection", "1. recut_queue: remaining graph", "no items"],
       "workflow-source-queue-assessment": ["selection remains", "recut remains", "all requirements complete"],
       "workflow-source-queue-route": ["work", "work", "complete"],
       "workflow-source-slice": ["selection implemented", "recut implemented"],
@@ -211,7 +218,7 @@ describe("Package workflow: task/plan-light", () => {
       "workflow-source-seed": [seedReport],
       "workflow-source-seed-check": [seedCheck],
       "workflow-source-seed-route": ["failed"],
-      "workflow-source-cut": [["source branch: bounded review"], []],
+      "workflow-source-cut": ["1. source branch: bounded review", "no items"],
     });
 
     await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
@@ -235,13 +242,13 @@ describe("Package workflow: task/plan-light", () => {
 
   it("recuts a conflicting first source queue once before continuing", async () => {
     const fixtureRun = fixture({
-      "workflow-source-cut": [["review route: destinations missing", "single correction branch"], []],
+      "workflow-source-cut": ["1. review route: destinations missing; 2. single correction branch", "no items"],
       "workflow-source-queue-assessment": [
         "review choices omit accepted and correction-needed destinations",
         "complete",
       ],
       "workflow-source-queue-route": ["queue_conflict", "complete"],
-      "workflow-source-queue-repair": [["review+correction: accepted->final; correct->single fix"], []],
+      "workflow-source-queue-repair": ["1. review+correction: accepted->final; correct->single fix", "no items"],
       "workflow-source-queue-recheck": ["source branch covers both destinations", "whole source complete"],
       "workflow-source-queue-recheck-route": ["work", "complete"],
     });
@@ -256,17 +263,17 @@ describe("Package workflow: task/plan-light", () => {
       "review+correction: accepted->final; correct->single fix",
     );
     const slice = fixtureRun.calls.find((call) => call.options.label === "workflow-source-slice");
-    expect(slice?.prompt).toContain("review+correction: accepted->final; correct->single fix");
+    expect(slice?.prompt).toContain("the first numbered item of workspace workflow-source-queue.md");
     expect(slice?.prompt).toContain("Implement only the graph identities and connecting edges explicitly named");
     expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
   });
 
   it("fails closed when the repaired source queue still conflicts", async () => {
     const fixtureRun = fixture({
-      "workflow-source-cut": [["review route: choices lack destinations"]],
+      "workflow-source-cut": ["1. review route: choices lack destinations"],
       "workflow-source-queue-assessment": ["review choice destinations are missing"],
       "workflow-source-queue-route": ["queue_conflict"],
-      "workflow-source-queue-repair": [["review route still lacks destinations"]],
+      "workflow-source-queue-repair": ["1. review route still lacks destinations"],
       "workflow-source-queue-recheck": ["review choice destinations remain missing"],
       "workflow-source-queue-recheck-route": ["queue_conflict"],
     });
@@ -275,7 +282,7 @@ describe("Package workflow: task/plan-light", () => {
       ok: false,
       reason: "queue_conflict",
       diagnostics: "review choice destinations remain missing",
-      remaining: ["review route still lacks destinations"],
+      remaining: "workflow-source-queue.md",
     });
     expect(fixtureRun.calls.at(-1)?.options.label).toBe("workflow-source-queue-recheck-route");
     expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
@@ -430,7 +437,7 @@ describe("Package workflow: task/plan-light", () => {
       name: "queue conflict",
       overrides: {
         "workflow-source-queue-route": ["queue_conflict"],
-        "workflow-source-queue-repair": [["still conflicting"]],
+        "workflow-source-queue-repair": ["1. still conflicting"],
         "workflow-source-queue-recheck": ["still conflicting"],
         "workflow-source-queue-recheck-route": ["queue_conflict"],
       },
@@ -439,8 +446,8 @@ describe("Package workflow: task/plan-light", () => {
     {
       name: "empty work queue",
       overrides: {
-        "workflow-source-cut": [[]],
-        "workflow-source-queue-route": ["work"],
+        "workflow-source-cut": ["no items"],
+        "workflow-source-queue-route": ["empty_queue"],
       },
       reason: "empty_queue",
     },
@@ -472,7 +479,7 @@ describe("Package workflow: task/plan-light", () => {
   });
 
   it("returns the full remaining queue when the six-slice allowance is exhausted", async () => {
-    const slices = Array.from({ length: 7 }, (_, index) => [`slice-${index + 1}`]);
+    const slices = Array.from({ length: 7 }, (_, index) => `1. slice-${index + 1}`);
     const fixtureRun = fixture({
       "workflow-source-cut": slices,
       "workflow-source-queue-assessment": Array.from({ length: 7 }, (_, index) => `queue-${index + 1}`),
@@ -490,7 +497,7 @@ describe("Package workflow: task/plan-light", () => {
       reason: "slice_allowance",
       source: "workflow.mjs",
       diagnostics: "queue-7",
-      remaining: ["slice-7"],
+      remaining: "workflow-source-queue.md",
     });
     expect(fixtureRun.calls.filter((call) => call.options.label === "workflow-source-slice")).toHaveLength(6);
     expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();

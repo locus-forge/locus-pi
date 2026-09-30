@@ -1,6 +1,7 @@
 /**
- * The `workflow_return` contract inside ONE child session: repair, idempotence, conflict,
- * budget accumulation and the hosts that cannot carry it at all.
+ * The `workflow_return` choice contract inside ONE child session: correction, idempotence,
+ * conflict, refusal of every non-member value, budget accumulation and the hosts that
+ * cannot carry it at all.
  *
  * The controller (`workflow-return.ts`) and the SDK host that runs its tool
  * (`agent-sdk-host.ts`) are both production code here; only the injected Pi session is a
@@ -26,15 +27,11 @@ import {
 } from "../../../../extensions/_shared/agent-runtime/agent-sdk-host.js";
 import type { AgentRunRequest } from "../../../../extensions/_shared/agent-runtime/agent-runner.js";
 import { temporaryValue } from "../../../fixtures/scripted-agent-runtime.js";
-import {
-  SHAPED_RESULT_SCHEMA as RESULT,
-  SHAPED_RESULT_RECORD as RECORD,
-} from "../../../fixtures/workflow-return-acceptance.js";
 
 // SDK execution is real production code; only the injected Pi session is simulated.
 interface SessionScenario {
   submissions: Array<Array<unknown>>;
-  /** Defaults to the single-line string contract; a shaped case supplies its own. */
+  /** Defaults to the three-member choice contract below. */
   contract?: WorkflowReturnContract;
   rejectPrompt?: number;
   providerFailure?: boolean;
@@ -47,8 +44,7 @@ interface SessionScenario {
 async function runSession(scenario: SessionScenario) {
   return temporaryValue(async (root) => {
     const controller = createWorkflowReturnController(
-      scenario.contract ??
-        normalizeWorkflowReturnContract({ output: { type: "string", singleLine: true }, repair: { maxAttempts: 3 } }),
+      scenario.contract ?? normalizeWorkflowReturnContract({ choices: ["orders", "other", "complete"] }),
     );
     const abort = new AbortController();
     const prompts: string[] = [];
@@ -134,25 +130,42 @@ async function runSession(scenario: SessionScenario) {
     return { result, created, disposed, prompts, restrictions, ids, toolCalls };
   });
 }
-it("invalid output is corrected in the same session with only return tools, then disposed once", async () => {
-  const got = await runSession({ submissions: [["bad\nline"], ["orders"]] });
+it("the contract carries only declared choices and the package-owned correction budget", () => {
+  assert.equal(
+    JSON.stringify(normalizeWorkflowReturnContract({ choices: ["accept", "revise"] })),
+    '{"version":3,"choices":["accept","revise"],"maxAttempts":2}',
+  );
+  for (const removed of [
+    { choices: ["a", "b"], schema: { type: "array" } },
+    { choices: ["a", "b"], output: { type: "string" } },
+    { choices: ["a", "b"], repair: { maxAttempts: 3 } },
+  ])
+    assert.throws(
+      () => normalizeWorkflowReturnContract(removed as never),
+      /a workflow return contract carries only choices; unsupported field\(s\): (schema|output|repair)/u,
+    );
+  assert.throws(() => normalizeWorkflowReturnContract({} as never), /requires an array of non-empty choice strings/u);
+});
+it("a non-member choice is corrected in the same session with only return tools, then disposed once", async () => {
+  const got = await runSession({ submissions: [["bad"], ["orders"]] });
   assert.equal(got.result.status, "completed");
   assert.equal(got.result.text, '"orders"');
   assert.deepEqual(got.ids, ["same-child", "same-child"]);
   assert.equal(got.created, 1);
   assert.equal(got.disposed, 1);
   assert.equal(got.prompts.length, 2);
+  assert.match(got.prompts[1]!, /value must exactly match one of \["orders","other","complete"\]/u);
   assert.match(got.prompts[1]!, /Reuse your existing evidence/u);
   assert.ok(got.restrictions.length >= 2);
   assert.ok(got.restrictions.every((names) => JSON.stringify(names) === '["workflow_return"]'));
   assert.deepEqual(got.result.outputAcceptance, { source: "tool", attempts: 2, toolName: "workflow_return" });
 });
-it("missing return tool use receives bounded same-session clarification", async () => {
+it("missing return tool use receives one bounded same-session clarification", async () => {
   const recovered = await runSession({ submissions: [[], ["orders"]] });
   assert.equal(recovered.result.status, "completed");
   assert.equal(recovered.created, 1);
   const exhausted = await runSession({ submissions: [[], [], []] });
-  assert.equal(exhausted.prompts.length, 3);
+  assert.equal(exhausted.prompts.length, 2);
   assert.equal(exhausted.result.failureCause, "output-contract-exhausted");
   assert.equal(exhausted.result.outputAcceptance, undefined);
   assert.equal(exhausted.disposed, 1);
@@ -165,94 +178,22 @@ it("identical return proposal is idempotent; conflicting proposals never succeed
   assert.equal(conflict.result.failureCause, "output-contract-conflict");
   assert.equal(conflict.result.outputAcceptance, undefined);
 });
-// The regexes below quote validator wording owned by workflow-schema.ts; a reword updates both.
-it("an off-shape record is corrected in the same session and the accepted value is canonical JSON", async () => {
-  const got = await runSession({
-    contract: normalizeWorkflowReturnContract({ schema: RESULT, repair: { maxAttempts: 2 } }),
-    submissions: [[{ decision: "complete" }], [RECORD]],
-  });
-  assert.equal(got.result.status, "completed");
-  assert.equal(got.result.text, '{"decision":"complete","summary":"ok"}');
-  assert.equal(got.created, 1);
-  assert.equal(got.prompts.length, 2);
-  assert.match(got.prompts[1]!, /summary/u);
-  assert.match(got.prompts[1]!, /Reuse your existing evidence/u);
-  assert.equal(got.result.outputAcceptance?.attempts, 2);
-  assert.ok(got.restrictions.every((names) => JSON.stringify(names) === '["workflow_return"]'));
+it("an array or object proposal is never accepted, even when it wraps a declared member", async () => {
+  const exhausted = await runSession({ submissions: [[["orders"]], [{ value: "orders" }]] });
+  assert.equal(exhausted.result.status, "failed");
+  assert.equal(exhausted.result.failureCause, "output-contract-exhausted");
+  assert.equal(exhausted.result.outputAcceptance, undefined);
+  assert.match(exhausted.prompts[1]!, /value must be one exact declared string, not an array/u);
+  const corrected = await runSession({ submissions: [[{ choice: "orders", reason: "evidence" }], ["orders"]] });
+  assert.equal(corrected.result.status, "completed");
+  assert.equal(corrected.result.text, '"orders"');
+  assert.match(corrected.prompts[1]!, /not an object/u);
 });
-it("a string containing JSON is a shape mismatch that is repaired, not parsed", async () => {
-  const got = await runSession({
-    contract: normalizeWorkflowReturnContract({ schema: RESULT, repair: { maxAttempts: 2 } }),
-    submissions: [[JSON.stringify(RECORD)], [RECORD]],
-  });
+it("a string containing JSON is a non-member that is corrected, not parsed", async () => {
+  const got = await runSession({ submissions: [[JSON.stringify("orders")], ["orders"]] });
   assert.equal(got.result.status, "completed");
   assert.equal(got.result.outputAcceptance?.attempts, 2);
-  assert.match(got.prompts[1]!, /expected object, got string/u);
-});
-it("an AUTHOR-declared maxLength is corrected in the same session, not after the child ends", async () => {
-  // The bound under test is the author's own `maxLength` inside the schema, not a runtime
-  // default: there is none. A value past it is a correctable violation, not a dead child.
-  const got = await runSession({
-    contract: normalizeWorkflowReturnContract({
-      schema: { type: "string", minLength: 1, maxLength: 200_000 },
-      repair: { maxAttempts: 2 },
-    }),
-    submissions: [["x".repeat(200_001)], ["short"]],
-  });
-  assert.equal(got.result.status, "completed");
-  assert.equal(got.created, 1);
-  assert.match(got.prompts[1]!, /expected at most 200000 character/u);
-});
-it("a shaped value carries no runtime size policy of its own", async () => {
-  const huge = "x".repeat(400_000);
-  const got = await runSession({
-    contract: normalizeWorkflowReturnContract({ schema: { type: "string", minLength: 1 } }),
-    submissions: [[huge]],
-  });
-  assert.equal(got.result.status, "completed");
-  assert.equal(got.result.text, JSON.stringify(huge));
-});
-it("exhausted schema repair fails the call without an unvalidated value", async () => {
-  const got = await runSession({
-    contract: normalizeWorkflowReturnContract({ schema: RESULT, repair: { maxAttempts: 2 } }),
-    submissions: [[{}], [{}]],
-  });
-  assert.equal(got.result.status, "failed");
-  assert.equal(got.result.failureCause, "output-contract-exhausted");
-  assert.equal(got.result.outputAcceptance, undefined);
-});
-it("identical record proposals are idempotent; a different record conflicts", async () => {
-  const duplicate = await runSession({
-    contract: normalizeWorkflowReturnContract({ schema: RESULT, repair: { maxAttempts: 2 } }),
-    submissions: [[RECORD, { ...RECORD }]],
-  });
-  assert.equal(duplicate.result.status, "completed");
-  assert.equal(duplicate.result.outputAcceptance?.attempts, 1);
-  const conflict = await runSession({
-    contract: normalizeWorkflowReturnContract({ schema: RESULT, repair: { maxAttempts: 2 } }),
-    submissions: [[RECORD, { ...RECORD, summary: "other" }]],
-  });
-  assert.equal(conflict.result.failureCause, "output-contract-conflict");
-  assert.equal(conflict.result.outputAcceptance, undefined);
-});
-it("handoffs through the tool use the same bounded unique array contract", async () => {
-  const contract = () =>
-    normalizeWorkflowReturnContract({
-      schema: {
-        type: "array",
-        items: { type: "string", minLength: 1, maxLength: 2000, nonBlank: true },
-        minItems: 1,
-        maxItems: 2,
-        uniqueTrimmedItems: true,
-      },
-      repair: { maxAttempts: 2 },
-    });
-  const repaired = await runSession({ contract: contract(), submissions: [[["a", " a "]], [["a", "b"]]] });
-  assert.equal(repaired.result.status, "completed");
-  assert.equal(repaired.result.text, '["a","b"]');
-  assert.match(repaired.prompts[1]!, /duplicates item 0/u);
-  const overflowing = await runSession({ contract: contract(), submissions: [[["a", "b", "c"]], [["a", "b", "c"]]] });
-  assert.equal(overflowing.result.failureCause, "output-contract-exhausted");
+  assert.match(got.prompts[1]!, /value must exactly match one of/u);
 });
 it("a proposed value is not success after provider failure or cancellation", async () => {
   const failed = await runSession({ submissions: [["orders"]], providerFailure: true });
@@ -263,7 +204,7 @@ it("a proposed value is not success after provider failure or cancellation", asy
   assert.equal(cancelled.result.outputAcceptance, undefined);
 });
 it("tool and assistant-turn budgets accumulate across clarification rather than reset", async () => {
-  const tools = await runSession({ submissions: [["bad\nline"], ["orders"]], maxToolCalls: 1 });
+  const tools = await runSession({ submissions: [["bad"], ["orders"]], maxToolCalls: 1 });
   assert.equal(tools.result.failureCause, "tool-call-budget");
   const turns = await runSession({ submissions: [[], ["orders"]], maxTurns: 1 });
   assert.equal(turns.result.failureCause, "assistant-turn-budget");

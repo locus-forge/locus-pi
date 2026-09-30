@@ -2,10 +2,10 @@
  * session-tool-transport.ts — one answer to "can this model's transport host
  * session tools?", asked before anything is spent on a call that needs them.
  *
- * A shaped result (`agent({ schema })`, `fusion({ schema })`) is carried by
- * registering a return tool ON THE CHILD SESSION and reading the host's active
- * tool set back. A transport that never hosts Pi tools cannot do either, so a
- * shaped call on it is not a bad answer waiting to happen — it is a capability
+ * A choice result (`agent({ choice })`) is carried by registering a return tool
+ * ON THE CHILD SESSION and reading the host's active tool set back. A transport
+ * that never hosts Pi tools cannot do either, so a choice call on it is not a
+ * bad answer waiting to happen — it is a capability
  * the route does not have, and the honest moment to say so is before the child
  * starts, not after it has been paid for.
  *

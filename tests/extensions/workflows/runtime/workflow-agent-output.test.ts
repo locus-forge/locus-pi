@@ -8,18 +8,16 @@ import { createWorkflowRuntime } from "../../../../extensions/workflows/runtime/
 import { createWorkflowArtifactStore } from "../../../../extensions/workflows/runtime/workflow-artifacts.js";
 import { completed, tempRun, temporary } from "../../../fixtures/scripted-agent-runtime.js";
 import {
-  SHAPED_RESULT_SCHEMA as RESULT,
-  SHAPED_RESULT_RECORD as RECORD,
-} from "../../../fixtures/workflow-return-acceptance.js";
-import {
   SchemaValidationError,
+  WorkflowAgentExecutionError,
   type AgentAttemptOutcome,
   type WorkflowAgentAnyOptions,
+  type WorkflowAgentChoiceOptions,
 } from "../../../../extensions/workflows/runtime/workflow-agent-contract.js";
 import type { WorkflowJournalLine } from "../../../../extensions/workflows/runtime/workflow-journal-format.js";
 
 /**
- * The shaped-output owner on its own, without the DSL around it.
+ * The result-mode owner on its own, without the DSL around it.
  *
  * The suites beside this one drive the same behavior through `dsl.agent()`, which is the
  * right level for "what does an author get back". What they cannot show is that this
@@ -38,7 +36,6 @@ function outputOwner(runAgentAttempt: WorkflowAgentOutputDeps["runAgentAttempt"]
     currentPhase: () => undefined,
     branchContext: () => undefined,
     activeGroupFields: () => ({}),
-    runScriptValidate: (run) => run(),
     runAgentAttempt,
   });
   return { owner, journal };
@@ -59,6 +56,35 @@ function accepted(value: unknown, text = "ignored final text"): AgentAttemptOutc
   };
 }
 
+/** Every removed shaped-result option, with the start of its named refusal. */
+const REMOVED_DECLARATIONS: Array<[string, WorkflowAgentAnyOptions, RegExp]> = [
+  ["handoffs", { handoffs: {} } as WorkflowAgentAnyOptions, /agent handoffs was removed: .*items\(\).*choice/u],
+  [
+    "schema",
+    { schema: { type: "array" } } as WorkflowAgentAnyOptions,
+    /agent schema was removed: .*named workspace file/u,
+  ],
+  ["validate", { validate: () => [] } as WorkflowAgentAnyOptions, /agent validate was removed with schema/u],
+  ["output", { output: { type: "string" } } as WorkflowAgentAnyOptions, /agent output was removed/u],
+  [
+    "repair",
+    { choice: ["a", "b"], repair: { maxAttempts: 2 } } as WorkflowAgentAnyOptions,
+    /agent repair was removed: .*package-owned/u,
+  ],
+  ["returnVia", { returnVia: "tool" } as WorkflowAgentAnyOptions, /agent returnVia was removed/u],
+  ["maxAnswerChars", { maxAnswerChars: 400 } as WorkflowAgentAnyOptions, /agent maxAnswerChars was removed/u],
+  ["schemaMaxLength", { schemaMaxLength: 400 } as WorkflowAgentAnyOptions, /agent schemaMaxLength was removed/u],
+];
+
+/**
+ * The same removed keys, declared with an explicit `undefined` value — what a spread such as
+ * `{ ...legacy, schema: undefined }` produces. A declaration is the key, so each one is
+ * still refused by name rather than silently becoming a plain call.
+ */
+const REMOVED_KEYS_DECLARED_UNDEFINED: Array<[string, WorkflowAgentAnyOptions, RegExp]> = REMOVED_DECLARATIONS.map(
+  ([name, , message]) => [name, { label: "legacy", [name]: undefined } as WorkflowAgentAnyOptions, message],
+);
+
 describe("workflow agent output — declaration dispatch", () => {
   it.each<[string, WorkflowAgentAnyOptions | undefined]>([
     ["no options at all", undefined],
@@ -70,203 +96,197 @@ describe("workflow agent output — declaration dispatch", () => {
     expect(owner.dispatchWorkflowAgentShape(opts)).toBe("plain");
   });
 
-  it.each<[string, WorkflowAgentAnyOptions]>([
-    ["choice", { choice: ["accept", "revise"] }],
-    ["handoffs", { handoffs: { minItems: 1 } }],
-    ["schema", { schema: { type: "string" } }],
-    ["output", { output: { type: "string" as const } }],
-    // `repair` declares the clarification allowance of a contract, so it is a shaped
-    // declaration on its own: routing it to the plain path would apply it to nothing.
-    ["repair alone", { repair: { maxAttempts: 2 } } as WorkflowAgentAnyOptions],
-  ])("routes %s to the shaped path", (_name, opts) => {
+  it("routes a choice to the choice path", () => {
     const { owner } = outputOwner(neverRuns);
-    expect(owner.dispatchWorkflowAgentShape(opts)).toBe("shaped");
+    expect(owner.dispatchWorkflowAgentShape({ choice: ["accept", "revise"], choiceFallback: "revise" })).toBe("choice");
   });
 
-  it.each<[WorkflowAgentAnyOptions, string]>([
-    [{ maxAnswerChars: 400 } as WorkflowAgentAnyOptions, "agent maxAnswerChars was removed"],
-    [{ schemaMaxLength: 400 } as WorkflowAgentAnyOptions, "agent schemaMaxLength was removed"],
-    [{ result: "summary" } as WorkflowAgentAnyOptions, "agent result must be report when supplied"],
-    [
-      { result: "report", schema: { type: "string" } } as WorkflowAgentAnyOptions,
-      "agent result: report cannot be combined with schema",
-    ],
-    [{ choiceFallback: "accept" } as WorkflowAgentAnyOptions, "agent choiceFallback requires choice"],
-    [{ validate: () => [] } as WorkflowAgentAnyOptions, "agent validate requires a schema or handoffs"],
-    [
-      { returnVia: "text", schema: { type: "string" } } as WorkflowAgentAnyOptions,
-      'agent returnVia: "text" was removed',
-    ],
-  ])("refuses %o at dispatch", (opts, message) => {
+  it.each(REMOVED_DECLARATIONS)("refuses a removed %s declaration by name", (_name, opts, message) => {
     const { owner } = outputOwner(neverRuns);
     expect(() => owner.dispatchWorkflowAgentShape(opts)).toThrow(message);
   });
 
-  it('reports returnVia: "tool" as redundant rather than refusing it', () => {
-    const { owner, journal } = outputOwner(neverRuns);
-    expect(owner.dispatchWorkflowAgentShape({ returnVia: "tool", schema: { type: "string" } })).toBe("shaped");
-    expect(journal.map((line) => line.message)).toEqual([
-      expect.stringContaining('agent returnVia: "tool" is redundant and ignored') as string,
-    ]);
+  it.each(REMOVED_KEYS_DECLARED_UNDEFINED)(
+    "refuses a removed %s key declared with an undefined value",
+    (_name, opts, message) => {
+      const { owner } = outputOwner(neverRuns);
+      expect(() => owner.dispatchWorkflowAgentShape(opts)).toThrow(message);
+    },
+  );
+
+  it.each<[WorkflowAgentAnyOptions, string]>([
+    [{ result: "summary" } as WorkflowAgentAnyOptions, "agent result must be report when supplied"],
+    [
+      { result: "report", choice: ["a", "b"] } as WorkflowAgentAnyOptions,
+      "agent result: report cannot be combined with choice",
+    ],
+    [{ choiceFallback: "accept" } as WorkflowAgentAnyOptions, "agent choiceFallback requires choice"],
+  ])("refuses %o at dispatch", (opts, message) => {
+    const { owner } = outputOwner(neverRuns);
+    expect(() => owner.dispatchWorkflowAgentShape(opts)).toThrow(message);
   });
 });
 
-describe("workflow agent output — mutually exclusive shapes", () => {
-  it.each<[WorkflowAgentAnyOptions, string]>([
-    [
-      { handoffs: { minItems: 1 }, schema: { type: "array" } } as WorkflowAgentAnyOptions,
-      "agent handoffs cannot be combined with schema",
-    ],
-    [
-      { choice: ["a", "b"], handoffs: { minItems: 1 } } as WorkflowAgentAnyOptions,
-      "agent choice cannot be combined with handoffs",
-    ],
-    [
-      { choice: ["a", "b"], schema: { type: "string" } } as WorkflowAgentAnyOptions,
-      "agent choice cannot be combined with schema",
-    ],
-    [
-      { output: { type: "string" as const }, choice: ["a", "b"] } as WorkflowAgentAnyOptions,
-      "agent output is a string-only contract and cannot be combined with choice, schema or handoffs",
-    ],
-    [
-      { output: { type: "string" as const }, schema: { type: "string" } } as WorkflowAgentAnyOptions,
-      "agent output is a string-only contract and cannot be combined with choice, schema or handoffs",
-    ],
-    [
-      { output: { type: "string" as const }, handoffs: { minItems: 1 } } as WorkflowAgentAnyOptions,
-      "agent output is a string-only contract and cannot be combined with choice, schema or handoffs",
-    ],
-    [
-      { validate: () => [], output: { type: "string" as const } } as WorkflowAgentAnyOptions,
-      "agent validate requires a schema or handoffs",
-    ],
-    [{ validate: "not a function", schema: { type: "string" } } as unknown as WorkflowAgentAnyOptions, "agent validate must be a function"], // prettier-ignore
-  ])("refuses %o before the child starts", async (opts, message) => {
+describe("workflow agent output — choice declarations", () => {
+  it.each<[unknown, string]>([
+    ["accept", "agent choice must be an array of strings"],
+    [["only"], "agent choice must contain at least 2 values"],
+    [["a", " "], "agent choice value at index 1 must be a non-empty string"],
+    [["a", "a"], 'agent choice contains duplicate value "a"'],
+  ])("refuses choice %o before the child starts", async (choice, message) => {
     const { owner } = outputOwner(neverRuns);
-    await expect(owner.runShapedAgent("decide", opts)).rejects.toThrow(message);
+    await expect(owner.runChoiceAgent("decide", { choice } as unknown as WorkflowAgentChoiceOptions)).rejects.toThrow(
+      message,
+    );
+  });
+
+  it("refuses a fallback outside the declared choices", async () => {
+    const { owner } = outputOwner(neverRuns);
+    await expect(
+      owner.runChoiceAgent("decide", { choice: ["a", "b"], choiceFallback: "c" } as WorkflowAgentChoiceOptions),
+    ).rejects.toThrow("agent choiceFallback must be one of the declared choices");
   });
 });
 
 describe("workflow agent output — acceptance comes from the receipt", () => {
-  it("returns the value the confirmed receipt carried, not the child's final text", async () => {
-    const { owner } = outputOwner(async () => accepted({ verdict: "accept" }, '{"verdict":"revise"}'));
-    await expect(owner.runShapedAgent("decide", { schema: { type: "object" } })).resolves.toEqual({
-      verdict: "accept",
-    });
+  it("returns the choice the confirmed receipt carried, not the child's final text", async () => {
+    const { owner } = outputOwner(async () => accepted("accept", '"revise"'));
+    await expect(owner.runChoiceAgent("decide", { choice: ["accept", "revise"] })).resolves.toBe("accept");
   });
 
   it("fails closed when the call carries no verdict at all", async () => {
     // An answer that never reached `workflow_return` leaves `schemaCheck` unset. There is
     // nothing to parse it out of the text with, and nothing here tries.
-    const { owner } = outputOwner(async () => ({
-      text: '{"verdict":"accept"}',
-      callId: "call-0001",
-      replayed: false,
-    }));
-    await expect(owner.runShapedAgent("decide", { schema: { type: "object" } })).rejects.toThrow(
+    const { owner } = outputOwner(async () => ({ text: '"accept"', callId: "call-0001", replayed: false }));
+    await expect(owner.runChoiceAgent("decide", { choice: ["accept", "revise"] })).rejects.toThrow(
       new SchemaValidationError(["missing output validation"], 1),
     );
   });
 
-  it("refuses a string contract whose receipt carried a non-string value", async () => {
-    const { owner } = outputOwner(async () => accepted({ verdict: "accept" }));
-    await expect(owner.runShapedAgent("summarize", { output: { type: "string" as const } })).rejects.toBeInstanceOf(
+  it("refuses a receipt whose value is not a string", async () => {
+    const { owner } = outputOwner(async () => accepted(["accept"]));
+    await expect(owner.runChoiceAgent("decide", { choice: ["accept", "revise"] })).rejects.toBeInstanceOf(
       SchemaValidationError,
     );
   });
 
   it("journals the choice decision from the accepted value and the receipt's attempts", async () => {
     const { owner, journal } = outputOwner(async () => accepted("revise"));
-    await expect(owner.runShapedAgent("decide", { choice: ["accept", "revise"], label: "gate" })).resolves.toBe(
+    await expect(owner.runChoiceAgent("decide", { choice: ["accept", "revise"], label: "gate" })).resolves.toBe(
       "revise",
     );
     const decision = journal.find((line) => line.message === "[workflow:choice]");
     expect(decision?.choiceDecision).toEqual({ value: "revise", source: "validated", returnVia: "tool", attempts: 1 });
     expect(decision?.label).toBe("gate");
     expect(decision?.callId).toBe("call-0001");
+    expect(journal[0]?.message).toBe(
+      "[workflow:return] gate: contract v3, 1 same-session clarification turn(s) (package default 1)",
+    );
+  });
+
+  it("spends the declared fallback only when the package correction is exhausted", async () => {
+    const exhausted = new WorkflowAgentExecutionError({
+      ok: false,
+      status: "failed",
+      failureCause: "output-contract-exhausted",
+      summary: "Output contract exhausted after 2 attempts",
+      diagnostics: [],
+    });
+    const { owner, journal } = outputOwner(async () => {
+      throw exhausted;
+    });
+    await expect(
+      owner.runChoiceAgent("decide", { choice: ["accept", "revise"], choiceFallback: "revise", label: "gate" }),
+    ).resolves.toBe("revise");
+    expect(journal.find((line) => line.message === "[workflow:choice]")?.choiceDecision).toEqual({
+      value: "revise",
+      source: "fallback",
+      returnVia: "tool",
+      attempts: 2,
+      reason: "output-contract-exhausted",
+    });
   });
 });
 
 /**
- * The same owner reached through `dsl.agent()`, where an author actually meets it: the
- * declaration table that is refused before any child starts, the ones that are merely
- * redundant, and the accepted value travelling from the child's receipt to the author and
- * to the persisted canonical bytes. Fake child sessions, not live Pi/model proof.
+ * The same owner reached through `dsl.agent()`, where an author actually meets it: every
+ * removed declaration is refused before any child starts, and the accepted choice travels
+ * from the child's receipt to the author and to the persisted canonical bytes. Fake child
+ * sessions, not live Pi/model proof.
  */
 describe("workflow agent output — through the DSL", () => {
-  it("malformed output contracts fail before any child starts", async () => {
+  it("removed shaped-result declarations fail before the runner is invoked", async () => {
     let calls = 0;
     const runtime = createWorkflowRuntime({
-      runId: "bad-contracts",
+      runId: "removed-contracts",
       agentRunner: async (req) => {
         calls += 1;
         return completed(req, '"value"');
       },
     });
-    const invalid = [
-      { returnVia: "other" },
-      // The named removal: `text` promised a transport that no longer exists.
-      { returnVia: "text", output: { type: "string" } },
-      { choice: ["yes", "no"], output: { type: "string" } },
-      { output: { type: "string" }, repair: {} },
-      { output: { type: "string" }, repair: { maxAttempts: 0 } },
-      { output: { type: "string", extra: true } },
-      { output: { type: "string", maxLength: 0 } },
-      { schema: { type: "object" }, output: { type: "string" } },
-      { schema: { type: "object" }, handoffs: { maxItems: 2 } },
-      { schema: { type: "object", oneOf: [] } },
-      { handoffs: { maxItems: 0 } },
-      { handoffs: { maxItems: 4, maxItemChars: 100 } },
-      { schema: { type: "object" }, maxAnswerChars: 100 },
-    ];
-    for (const options of invalid) await assert.rejects(runtime.dsl.agent("work", options as never));
+    for (const [, options, message] of REMOVED_DECLARATIONS)
+      await assert.rejects(runtime.dsl.agent("work", options as never), message);
     assert.equal(calls, 0);
+    assert.equal(runtime.getJournal().filter((line) => line.kind === "agent_start").length, 0);
   });
-  it("options that are now redundant or newly supported start a child instead of failing", async () => {
+
+  it("removed keys declared with an undefined value fail before the runner is invoked", async () => {
     let calls = 0;
     const runtime = createWorkflowRuntime({
-      runId: "accepted-contracts",
-      agentRunner: async (req) => ({
-        ...completed(req, '"value"'),
-        outputAcceptance: { source: "tool" as const, attempts: 1, toolName: "workflow_return" as const },
-      }),
+      runId: "removed-undefined-contracts",
+      agentRunner: async (req) => {
+        calls += 1;
+        return completed(req, "plain text");
+      },
     });
-    // `returnVia: "tool"` is redundant and ignored with a notice for one release; a shaped
-    // call may now declare transport `attempts`, and `validate` beside a schema.
-    await runtime.dsl.agent("work", { output: { type: "string" } } as never);
-    await runtime.dsl.agent("work", { output: { type: "string" }, attempts: 2 } as never);
-    await runtime.dsl.agent("work", { schema: { type: "string" }, validate: () => [] } as never);
+    for (const [, options, message] of REMOVED_KEYS_DECLARED_UNDEFINED)
+      await assert.rejects(runtime.dsl.agent("work", options as never), message);
     assert.equal(calls, 0);
+    assert.equal(runtime.getJournal().filter((line) => line.kind === "agent_start").length, 0);
   });
-  it("runtime sends the output contract and accepts only a successful receipt, preserving exact value", async () =>
+
+  it("a plain call carries no return contract and returns the exact text", async () => {
+    const runtime = createWorkflowRuntime({
+      runId: "plain-text",
+      agentRunner: async (req) => {
+        assert.equal(req.returnContract, undefined);
+        assert.equal(req.prompt, "Write scope/scope.md, then summarize it.");
+        return completed(req, "Wrote scope/scope.md with 3 files.\n");
+      },
+    });
+    assert.equal(
+      await runtime.dsl.agent("Write scope/scope.md, then summarize it.", { label: "collect-scope" }),
+      "Wrote scope/scope.md with 3 files.\n",
+    );
+  });
+
+  it("runtime sends the choice-only contract and accepts only a successful receipt, preserving exact value", async () =>
     temporary(async (root) => {
-      const id = "accepted-output";
+      const id = "accepted-choice";
       const store = createWorkflowArtifactStore({ projectRoot: root, runId: id, runDir: tempRun(root, id) });
       const runtime = createWorkflowRuntime({
         runId: id,
         artifactPorts: store,
         agentRunner: async (req) => {
-          assert.equal(req.returnContract?.singleLine, true);
-          // These bytes are the replay key of every recorded string tool-return call.
-          // These bytes are the replay key of every recorded string tool-return call under
-          // contract v2: no default maxLength at all, and a stated clarification allowance.
-          assert.equal(JSON.stringify(req.returnContract), '{"version":2,"singleLine":true,"maxAttempts":2}');
+          // These bytes are the replay key of every recorded choice under contract v3.
+          assert.equal(
+            JSON.stringify(req.returnContract),
+            '{"version":3,"choices":["accept","revise"],"maxAttempts":2}',
+          );
+          assert.ok(req.prompt.startsWith("Choose the next action.\n\nReturn your choice using workflow_return"));
           assert.ok(req.prompt.endsWith("Finish the turn normally after acceptance."));
-          assert.ok(!req.prompt.includes("pass the JSON value itself"));
           return {
-            ...completed(req, '"orders"'),
+            ...completed(req, '"revise"'),
             outputAcceptance: { source: "tool", attempts: 2, toolName: "workflow_return" },
           };
         },
       });
-      const value = await runtime.dsl.agent("Extract ID", {
-        label: "id",
-        output: { type: "string", singleLine: true },
+      const value = await runtime.dsl.agent("Choose the next action.", {
+        label: "route",
+        choice: ["accept", "revise"],
       });
-      assert.equal(value, "orders");
+      assert.equal(value, "revise");
       assert.equal(runtime.getJournal().filter((line) => line.kind === "agent_start").length, 1);
-      const canonical = store.list().filter((record) => record.kind === "answer");
       assert.ok(
         store
           .list()
@@ -274,73 +294,36 @@ describe("workflow agent output — through the DSL", () => {
             (record) =>
               store
                 .read({ runId: record.runId, artifactId: record.artifactId, name: record.name, sha256: record.sha256 })
-                .toString() === '"orders"',
+                .toString() === '"revise"',
           ),
-        `accepted bytes missing: ${JSON.stringify(canonical)}`,
+        "accepted bytes missing",
       );
-      assert.equal(runtime.getJournal().find((line) => line.kind === "agent_end")?.outputAcceptance?.attempts, 2);
+      const end = runtime.getJournal().find((line) => line.kind === "agent_end");
+      assert.equal(end?.outputAcceptance?.attempts, 2);
+      assert.equal(end?.schemaValidation?.status, "valid");
       const incompatible = createWorkflowRuntime({
         runId: "bad-boundary",
-        agentRunner: async (req) => completed(req, '"orders"'),
+        agentRunner: async (req) => completed(req, '"accept"'),
       });
       await assert.rejects(
-        incompatible.dsl.agent("Extract", { output: { type: "string" } }),
-        /acceptance|receipt|output/iu,
+        incompatible.dsl.agent("Choose", { label: "route", choice: ["accept", "revise"] }),
+        /acceptance|receipt|choice result/iu,
       );
     }));
-  it("runtime returns the validated record and handoff list from a tool receipt and refuses off-shape canonical bytes", async () => {
-    const shaped = createWorkflowRuntime({
-      runId: "shaped-tool",
-      agentRunner: async (req) => {
-        assert.deepEqual(req.returnContract?.schema, RESULT);
-        assert.match(req.prompt, /pass the JSON value itself/u);
-        return {
-          ...completed(req, JSON.stringify(RECORD)),
-          outputAcceptance: { source: "tool", attempts: 1, toolName: "workflow_return" },
-        };
-      },
-    });
-    assert.deepEqual(await shaped.dsl.agent("Verify", { label: "verify", schema: RESULT }), RECORD);
-    const end = shaped.getJournal().find((line) => line.kind === "agent_end");
-    assert.equal(end?.outputAcceptance?.attempts, 1);
-    assert.equal(end?.schemaValidation?.status, "valid");
-    const listed = createWorkflowRuntime({
-      runId: "handoff-tool",
-      agentRunner: async (req) => {
-        assert.deepEqual(req.returnContract?.schema, {
-          type: "array",
-          items: { type: "string", minLength: 1, nonBlank: true },
-          minItems: 0,
-          maxItems: 3,
-        });
-        assert.match(req.prompt, /workflow_return/u);
-        return {
-          ...completed(req, '["a","b"]'),
-          outputAcceptance: { source: "tool", attempts: 1, toolName: "workflow_return" },
-        };
-      },
-    });
-    assert.deepEqual(await listed.dsl.agent("Discover", { label: "discover", handoffs: { maxItems: 3 } }), ["a", "b"]);
-    const offShape = createWorkflowRuntime({
-      runId: "off-shape-tool",
-      // Four items against a declared maxItems of three: the AUTHOR's contract, not a
-      // runtime policy. Two identical strings would now be accepted.
+
+  it("refuses an accepted receipt that is not one of the declared choices", async () => {
+    const runtime = createWorkflowRuntime({
+      runId: "off-contract-receipt",
       agentRunner: async (req) => ({
-        ...completed(req, '["a","b","c","d"]'),
+        ...completed(req, '["accept"]'),
         outputAcceptance: { source: "tool", attempts: 1, toolName: "workflow_return" },
       }),
     });
     await assert.rejects(
-      offShape.dsl.agent("Discover", { label: "discover", handoffs: { maxItems: 3 } }),
+      runtime.dsl.agent("Choose", { label: "route", choice: ["accept", "revise"] }),
       (error: unknown) => error instanceof Error && error.name === "SchemaValidationError",
     );
-    const unreceipted = createWorkflowRuntime({
-      runId: "no-receipt-tool",
-      agentRunner: async (req) => completed(req, JSON.stringify(RECORD)),
-    });
-    await assert.rejects(
-      unreceipted.dsl.agent("Verify", { label: "verify", schema: RESULT }),
-      /acceptance|receipt|output/iu,
-    );
+    const end = runtime.getJournal().find((line) => line.kind === "agent_end");
+    assert.equal(end?.schemaValidation?.status, "mismatch");
   });
 });

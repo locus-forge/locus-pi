@@ -746,8 +746,7 @@ function budgetSection(input: WorkflowRunReportInput): string[] {
       "unknown would report “under budget” forever.",
     "",
     "There is no answer-size axis. A completed child's answer is never refused for its length; a consumer that " +
-      "needs a bounded value declares it as a contract on the call (`output.maxLength`, or `maxLength`/`maxItems` " +
-      "inside a schema), where the child is told and can correct it before it finishes.",
+      "needs a bounded answer states that requirement in the stage prompt, where the child is told before it writes.",
     "",
     "A replayed call starts no child, so it is NOT charged against `totalAgents` and is excluded from the " +
       "longest-child duration and from the observed tokens. A resume of a finished run therefore cannot die on a " +

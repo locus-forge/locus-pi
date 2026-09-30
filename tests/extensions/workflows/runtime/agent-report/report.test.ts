@@ -155,13 +155,22 @@ describe("explicit plain-text execution reports", () => {
     await expect(dsl.agent("review", report)).rejects.toThrow("disk failed");
   });
 
-  it.each(["choice", "choiceFallback", "handoffs", "schema", "validate", "returnVia", "output", "repair"])(
-    "rejects a %s mixture before starting a child",
+  it.each(["choice", "choiceFallback"])("rejects a %s mixture before starting a child", async (key) => {
+    const runner = vi.fn(async () => success());
+    const { dsl } = createWorkflowRuntime({ runId: "invalid", agentRunner: runner });
+    await expect(dsl.agent("review", { ...report, [key]: "invalid" } as WorkflowAgentReportOptions)).rejects.toThrow(
+      `cannot be combined with ${key}`,
+    );
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it.each(["handoffs", "schema", "validate", "returnVia", "output", "repair"])(
+    "names removed option %s before starting a child",
     async (key) => {
       const runner = vi.fn(async () => success());
       const { dsl } = createWorkflowRuntime({ runId: "invalid", agentRunner: runner });
       await expect(dsl.agent("review", { ...report, [key]: "invalid" } as WorkflowAgentReportOptions)).rejects.toThrow(
-        `cannot be combined with ${key}`,
+        `agent ${key} was removed`,
       );
       expect(runner).not.toHaveBeenCalled();
     },
@@ -176,8 +185,6 @@ describe("explicit plain-text execution reports", () => {
     if (false) {
       // @ts-expect-error shaped contracts cannot opt into reports
       await dsl.agent("review", { result: "report", choice: ["yes", "no"] });
-      // @ts-expect-error tool output cannot opt into reports
-      await dsl.agent("review", { result: "report", returnVia: "tool" });
     }
   });
 

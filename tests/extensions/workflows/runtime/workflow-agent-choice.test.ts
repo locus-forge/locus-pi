@@ -10,8 +10,8 @@ import {
 } from "../../../../extensions/workflows/runtime/workflow-runtime.js";
 
 /**
- * A host that carries a shaped result. `choice` no longer travels as parsed final text, so
- * a scripted answer is the canonical JSON the `workflow_return` tool accepted in-session.
+ * A host that carries a choice result. `choice` never travels as parsed final text, so a
+ * scripted answer is the canonical JSON the `workflow_return` tool accepted in-session.
  */
 function scriptedRuntime(runId: string, answers: string[], attempts = 1) {
   const requests: WorkflowAgentRequest[] = [];
@@ -146,25 +146,14 @@ describe("agent({ choice }) exact routing output", () => {
     ).rejects.toThrow("transport unavailable");
   });
 
-  it("states membership as a contract, whether written as choice or as a string enum", async () => {
-    // These are no longer byte-identical: `choice` states its members in the contract's own
-    // `choices` field, a hand-written schema states them as an `enum`. Byte identity was a
-    // property of the deleted text transport, where `choice` was literally desugared into a
-    // schema before the prompt was built. What MUST stay identical is the decision: both
-    // forms accept exactly a declared member and refuse anything else.
-    const choice = scriptedRuntime("agent-choice-equivalence", ['"accept"']);
-    const schema = scriptedRuntime("agent-schema-equivalence", ['"accept"']);
-
+  it("states membership in the choice-only contract and refuses any other value", async () => {
+    const choice = scriptedRuntime("agent-choice-contract", ['"accept"']);
     await expect(choice.dsl.agent("Route.", { choice: ["accept", "revise"], label: "route" })).resolves.toBe("accept");
-    await expect(
-      schema.dsl.agent("Route.", { schema: { type: "string", enum: ["accept", "revise"] }, label: "route" }),
-    ).resolves.toBe("accept");
-    expect(choice.requests[0]?.returnContract?.choices).toEqual(["accept", "revise"]);
-    expect(schema.requests[0]?.returnContract?.schema).toEqual({ type: "string", enum: ["accept", "revise"] });
+    expect(choice.requests[0]?.returnContract).toEqual({ version: 3, choices: ["accept", "revise"], maxAttempts: 2 });
 
-    for (const runtime of [scriptedRuntime("choice-off", ['"maybe"']), scriptedRuntime("schema-off", ['"maybe"'])]) {
-      const off = await runtime.dsl
-        .agent("Route.", { choice: ["accept", "revise"] })
+    for (const answer of ['"maybe"', '["accept"]', '{"value":"accept"}']) {
+      const off = await scriptedRuntime("choice-off", [answer])
+        .dsl.agent("Route.", { choice: ["accept", "revise"] })
         .then(() => undefined)
         .catch((error: unknown) => error);
       expect(off).toBeInstanceOf(SchemaValidationError);
@@ -176,14 +165,15 @@ describe("agent({ choice }) exact routing output", () => {
     [{ choice: ["accept"] }, /agent choice must contain at least 2 values/u],
     [{ choice: ["accept", ""] }, /value at index 1 must be a non-empty string/u],
     [{ choice: ["accept", "accept"] }, /duplicate value "accept"/u],
-    [{ choice: ["accept", "revise"], schema: { type: "string" } }, /cannot be combined with schema/u],
+    [{ choice: ["accept", "revise"], schema: { type: "string" } }, /agent schema was removed/u],
+    [{ choice: ["accept", "revise"], repair: { maxAttempts: 2 } }, /agent repair was removed/u],
     [{ choiceFallback: "accept" }, /agent choiceFallback requires choice/u],
     [
       { choice: ["accept", "revise"], choiceFallback: "blocked" },
       /agent choiceFallback must be one of the declared choices/u,
     ],
     [{ choice: ["accept", "revise"], choiceFallback: 1 }, /agent choiceFallback must be a string/u],
-    [{ choice: ["accept", "revise"], returnVia: "text" }, /returnVia: "text" was removed/u],
+    [{ choice: ["accept", "revise"], returnVia: "tool" }, /agent returnVia was removed/u],
   ])("rejects malformed declaration %# before any child runs", async (opts, error) => {
     let calls = 0;
     const { dsl } = createWorkflowRuntime({
@@ -200,18 +190,7 @@ describe("agent({ choice }) exact routing output", () => {
     expect(calls).toBe(0);
   });
 
-  it('accepts returnVia: "tool" for one release and says it is redundant', async () => {
-    const { dsl, getJournal } = scriptedRuntime("agent-choice-returnvia-tool", ['"accept"']);
-    await expect(
-      (dsl.agent as (prompt: string, opts: unknown) => Promise<unknown>)("Route.", {
-        choice: ["accept", "revise"],
-        returnVia: "tool",
-      }),
-    ).resolves.toBe("accept");
-    expect(getJournal().some((line) => line.message?.includes("[workflow:deprecated] agent returnVia"))).toBe(true);
-  });
-
-  it("keeps choice out of exact-text and shaped option types", () => {
+  it("keeps choice out of exact-text option types", () => {
     const choiceOptions: WorkflowAgentChoiceOptions<["accept", "revise"]> = {
       choice: ["accept", "revise"],
       choiceFallback: "revise",

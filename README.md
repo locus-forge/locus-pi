@@ -143,8 +143,8 @@ These ship under `examples/workflows/task/` and appear in the Package tab of `/w
 ## Explore the DSL and examples
 
 A workflow connects calls such as `agent()`, `parallel()`, and `pipeline()`. Use
-`agent(..., { choice: [...] })` for a decision or `agent(..., { handoffs: {...} })`
-when an agent discovers the work units. A stage may request `modelRole: "smol"`;
+`agent(..., { choice: [...] })` for a decision; richer results go to named workspace
+files, and caller-owned work units come from `items()`. A stage may request `modelRole: "smol"`;
 assign the role through `/model-roles` independently of the source.
 
 For example, this workflow gathers two perspectives before combining them:

@@ -102,7 +102,7 @@ describe("per-call agent bounds", () => {
 
     await expect(
       (dsl.agent as (prompt: string, opts: unknown) => Promise<unknown>)("summarize", { maxAnswerChars: 4 }),
-    ).rejects.toThrow(/agent maxAnswerChars was removed.*output\.maxLength/su);
+    ).rejects.toThrow(/agent maxAnswerChars was removed.*length requirement in the prompt/su);
     // Refused at declaration time: an author who believed a bound applied must hear so
     // before a child is spent, never afterwards and never silently.
     expect(requests).toHaveLength(0);
@@ -117,10 +117,9 @@ describe("per-call agent bounds", () => {
 
     await expect(
       (dsl.agent as (prompt: string, opts: unknown) => Promise<unknown>)("summarize", {
-        output: { type: "string" },
         schemaMaxLength: 1,
       }),
-    ).rejects.toThrow(/agent schemaMaxLength was removed.*maxLength\/maxItems inside the schema/su);
+    ).rejects.toThrow(/agent schemaMaxLength was removed.*no longer accepts shaped answers/su);
     expect(requests).toHaveLength(0);
   });
 

@@ -4,6 +4,28 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-30
+
+### Removed
+
+- Workflow agents no longer return JSON, objects or lists. `agent()` returns the
+  exact text, or one exact declared string with `choice`. The `handoffs`,
+  `schema`, `validate`, `output`, `repair` and `returnVia` agent options, and
+  Fusion `schema`/`validate`, are refused by name before any child starts. Write
+  richer results to named workspace files, pass caller-owned work units through
+  `items()`, and branch with `choice`.
+
+### Changed
+
+- `workflow_return` is given only to `choice` calls and accepts one declared
+  string; arrays, objects and stringified JSON are corrected in the same session.
+  The return contract is now v3, so resuming a run whose choice call was recorded
+  under an earlier contract reruns that call. A resumed source that still declares
+  a removed option fails with the same error as a fresh run.
+- The packaged `task/plan-light` workflow and the adaptive-slices, decomposition
+  and consilium references keep their queues and verdicts in named workspace
+  files and route with exact choices.
+
 ## [0.11.1] - 2026-09-29
 
 ### Changed

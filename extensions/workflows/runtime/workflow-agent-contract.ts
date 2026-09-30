@@ -1,8 +1,8 @@
 /**
  * workflow-agent-contract.ts — the shared agent-call contract: what a workflow asks a
  * child for (`WorkflowAgentRequest`), what a child hands back (`WorkflowAgentResult`),
- * what an author may declare at a callsite (`WorkflowAgentOptions` and its shaped
- * variants), the closed failure-cause reading, the typed refusals, and the pure identity
+ * what an author may declare at a callsite (`WorkflowAgentOptions` and its report and
+ * choice variants), the closed failure-cause reading, the typed refusals, and the pure identity
  * projections both halves of a call derive from.
  *
  * The point of this module is that the two execution owners and the host bridge share ONE
@@ -38,12 +38,7 @@ import type {
 export type { WorkflowUsage, WorkspaceMode } from "./workflow-journal-format.js";
 import type { WorkflowAgentRowOccurrence } from "./workflow-groups.js";
 import type { WorkflowInvocationReservation } from "./workflow-execution-state.js";
-import type {
-  WorkflowOutputRepair,
-  WorkflowReturnContract,
-  WorkflowReturnValidate,
-  WorkflowStringOutput,
-} from "./workflow-return.js";
+import type { WorkflowReturnContract } from "./workflow-return.js";
 
 /** The single agent-execution callback the runtime depends on. The bridge supplies
  *  the real implementation; tests supply a fake. The runtime never imports the SDK. */
@@ -55,14 +50,6 @@ export interface WorkflowAgentPreflightRequest {
   agent?: string;
   model?: string;
   modelRole?: string;
-  /**
-   * This leg will ask for a shaped result, so its transport must be able to host
-   * session tools. Declared here because preflight runs before the legs exist: a
-   * Fusion judge with a `schema` is the case that matters, and discovering its
-   * transport cannot carry the shape only after every member has answered wastes
-   * the whole panel.
-   */
-  expectsShapedResult?: boolean;
 }
 
 export type WorkflowAgentPreflight = (requests: readonly WorkflowAgentPreflightRequest[]) => Promise<void>;
@@ -119,10 +106,8 @@ export function thrownAgentFailureCause(err: unknown): WorkflowAgentFailureCause
 }
 
 export interface WorkflowAgentRequest {
-  /** Host-owned immutable contract; only the bridge injects its return tool. */
+  /** Host-owned immutable choice contract; only the bridge injects its return tool. */
   returnContract?: WorkflowReturnContract;
-  /** Author cross-field rules the acceptance tool applies in-session. Never canonicalized. */
-  returnValidate?: WorkflowReturnValidate;
   prompt: string;
   executionMode?: "bare" | "named";
   agent?: string | undefined; // project/user catalog name; absent in bare mode
@@ -225,12 +210,6 @@ export interface WorkflowAgentResult {
 export interface WorkflowAgentOptions {
   /** Report mode has its own plain-text overload. */
   result?: never;
-  /** @deprecated Redundant and ignored. Every shaped call is carried by same-session
-   *  acceptance now, so `"tool"` says nothing; it is accepted for one release and journaled
-   *  as a deprecation. `"text"` names a transport that no longer exists and is refused. */
-  returnVia?: "tool";
-  output?: WorkflowStringOutput;
-  repair?: WorkflowOutputRepair;
   agent?: string; // project/user catalog name; omit for a clean child session
   /** @deprecated ignored; workflow children always receive all tools and can write. */
   readOnly?: true;
@@ -288,8 +267,8 @@ export interface WorkflowAgentOptions {
    * never got to answer, or lost the channel while answering. Default 1, no ceiling; refused,
    * never clamped, when it is not a positive integer.
    *
-   * It never re-asks because an answer was weak: that is a critic agent's job, and an answer
-   * whose SHAPE is wrong already has its own bounded repair (`schema` + `validate`). Refused
+   * It never re-asks because an answer was weak: that is a critic agent's job, and a choice
+   * whose FORM is wrong already has its own bounded same-session correction. Refused
    * at declaration time for ordinary project calls because every workflow child can write,
    * and a child that timed out mid-edit may already have changed the repository.
    */
@@ -312,117 +291,34 @@ export interface WorkflowAgentOptions {
   choice?: never;
   /** A choice fallback is valid only with WorkflowAgentChoiceOptions. */
   choiceFallback?: never;
-  /** Handoffs select WorkflowAgentHandoffOptions instead of the exact-text overload. */
-  handoffs?: never;
-  /** A schema selects WorkflowAgentSchemaOptions instead of the exact-text overload. */
-  schema?: never;
-  /** validate needs a parsed value, which only the shaped overload has. */
-  validate?: never;
 }
 
-/**
- * Script-supplied cross-field validation for one shaped answer.
- *
- * Receives the parsed, schema-valid value; returns the violations it found, empty
- * for a pass. It must be pure, synchronous and deterministic, must not throw to
- * signal a violation, must not transform the value, and must not call back into
- * the DSL. Its strings are spliced into the retry prompt and therefore enter the
- * canonical replay key, so an unstable message is a replay defect.
- */
-export type WorkflowAgentValidate = (value: unknown) => readonly string[];
-
-/** Options for the standard machine-routing form. The runtime desugars this to
- *  the existing string-enum schema path, including its repair, replay and journal
- *  semantics. Narrative output remains exact text. */
+/** The one machine-routing form: the child returns exactly one declared string through the
+ *  runtime-owned `workflow_return` contract, with one package-owned same-session
+ *  correction. Narrative output remains exact text. */
 export interface WorkflowAgentChoiceOptions<Choices extends readonly string[] = readonly string[]> extends Omit<
   WorkflowAgentOptions,
-  "choice" | "choiceFallback" | "handoffs" | "schema" | "validate"
+  "choice" | "choiceFallback"
 > {
   choice: Choices;
-  /** Exact declared route used only after the normal schema-repair budget is exhausted. */
+  /** Exact declared route used only after the package-owned correction is exhausted. */
   choiceFallback?: Choices[number];
-  handoffs?: never;
-  schema?: never;
-  validate?: never;
 }
 
-/**
- * What an author may still declare about a discovered work queue.
- *
- * Both fields are optional and both are the CONSUMER's contract, not a budget: `minItems`
- * says "this stage failed if it found nothing", `maxItems` says "this consumer genuinely
- * cannot take more than N". A discovery stage that knows neither declares `{}` and every
- * complete unit it finds is accepted, at any length and any count.
- */
-export interface WorkflowAgentHandoffBounds {
-  minItems?: number;
-  maxItems?: number;
-}
-
-/** Standard dynamic-decomposition form. Each returned string is one complete,
- * non-blank, unique downstream handoff. The runtime desugars this to the existing
- * array-of-strings schema path, including repair, replay and journal semantics. */
-export interface WorkflowAgentHandoffOptions extends Omit<
-  WorkflowAgentOptions,
-  "choice" | "choiceFallback" | "handoffs" | "output" | "schema" | "validate"
-> {
-  choice?: never;
-  choiceFallback?: never;
-  handoffs: WorkflowAgentHandoffBounds;
-  /** A string-only contract; a shaped tool return carries its shape in handoffs. */
-  output?: never;
-  schema?: never;
-  validate?: never;
-}
-
-/** Options for the shaped overload. The schema property cannot be smuggled through
- *  WorkflowAgentOptions, so a shaped call can never be typed as Promise<string>. */
-export interface WorkflowAgentSchemaOptions extends Omit<
-  WorkflowAgentOptions,
-  "choice" | "choiceFallback" | "handoffs" | "output" | "schema" | "validate"
-> {
-  choice?: never;
-  choiceFallback?: never;
-  handoffs?: never;
-  /** A string-only contract; a shaped tool return carries its shape in schema. */
-  output?: never;
-  schema: Record<string, unknown>;
-  /** Cross-field rules the schema subset cannot declare. Runs only after schema
-   *  validation succeeds; a non-empty return asks the SAME child to correct the value
-   *  in its own labelled block instead of ending the run. */
-  validate?: WorkflowAgentValidate;
-}
-
-/** Host observation, not review or task acceptance. Shaped outputs are deliberately excluded. */
-export interface WorkflowAgentReportOptions extends Omit<
-  WorkflowAgentOptions,
-  "result" | "returnVia" | "output" | "repair"
-> {
+/** Host observation, not review or task acceptance. A choice is deliberately excluded. */
+export interface WorkflowAgentReportOptions extends Omit<WorkflowAgentOptions, "result"> {
   result: "report";
-  returnVia?: never;
-  output?: never;
-  repair?: never;
 }
 
-export type WorkflowAgentAnyOptions =
-  | WorkflowAgentOptions
-  | WorkflowAgentReportOptions
-  | WorkflowAgentChoiceOptions
-  | WorkflowAgentHandoffOptions
-  | WorkflowAgentSchemaOptions;
+export type WorkflowAgentAnyOptions = WorkflowAgentOptions | WorkflowAgentReportOptions | WorkflowAgentChoiceOptions;
 
 export const FUSION_INVOCATION_RESERVATION = Symbol("fusion-invocation-reservation");
 export const FUSION_REPLAY_REQUIRED = Symbol("fusion-replay-required");
 export const FUSION_CAPABILITY_MODE = Symbol("fusion-capability-mode");
 export const WORKFLOW_RETURN_CONTRACT = Symbol("workflow-return-contract");
-/** Author cross-field rules for a shaped call. Deliberately NOT part of the canonical
- *  request: a function has no stable serialization, and the contract VERSION is what marks
- *  a replay boundary. */
-export const WORKFLOW_RETURN_VALIDATE = Symbol("workflow-return-validate");
 
 export type WorkflowInternalAgentOptions = WorkflowAgentAnyOptions & {
   [WORKFLOW_RETURN_CONTRACT]?: WorkflowReturnContract;
-  [WORKFLOW_RETURN_VALIDATE]?: WorkflowReturnValidate;
   [FUSION_INVOCATION_RESERVATION]?: WorkflowInvocationReservation;
   [FUSION_REPLAY_REQUIRED]?: true;
   [FUSION_CAPABILITY_MODE]?: WorkflowFusionMode;
@@ -506,7 +402,7 @@ export class WorkflowAgentSlotConflictError extends Error {
 }
 
 /**
- * The one sentence a shaped call gets when the TRANSPORT cannot carry a shaped result.
+ * The one sentence a choice call gets when the TRANSPORT cannot carry a choice result.
  *
  * The host refuses before it prompts the child (`agent-sdk-host.ts`: no
  * `setActiveToolsByName`, no tool readback, or the return tool was never registered), so
@@ -515,12 +411,12 @@ export class WorkflowAgentSlotConflictError extends Error {
  * and silently reverting to it would be the hidden degradation this refusal exists to stop.
  */
 export const WORKFLOW_SHAPED_TRANSPORT_REFUSAL =
-  "Transport cannot carry a shaped result: this host did not accept a workflow_return receipt for the call. " +
+  "Transport cannot carry a choice result: this host did not accept a workflow_return receipt for the call. " +
   "Same-session acceptance needs a registered return tool plus tool-set readback, and there is no text fallback. " +
-  "Use a plain agent(prompt) call on this transport, or run the shaped call on a host that supports it.";
+  "Use a plain agent(prompt) call on this transport, or run the choice call on a host that supports it.";
 
 /** Thrown instead of a generic execution failure when the refusal above is the cause, so a
- *  script or operator reads "this route cannot do shaped results", never "bad answer". */
+ *  script or operator reads "this route cannot do choice results", never "bad answer". */
 export class WorkflowOutputCapabilityError extends Error {
   readonly result: WorkflowAgentResult;
   constructor(result: WorkflowAgentResult) {
@@ -530,29 +426,30 @@ export class WorkflowOutputCapabilityError extends Error {
   }
 }
 
-/** The DSL's "declared shape not met" failure: the child completed and its ACCEPTED value
- *  still fails the contract when the boundary re-reads it. Carries the validator errors and
- *  the attempt count. A child RUN failure stays WorkflowAgentExecutionError; this error means
- *  the child ran and the value it submitted is not the value its consumer declared. */
+/** The DSL's "declared choice not met" failure: the child completed and its ACCEPTED value
+ *  still fails the choice contract when the boundary re-reads it (for example a replayed
+ *  receipt). Carries the contract errors and the attempt count. A child RUN failure stays
+ *  WorkflowAgentExecutionError; this error means the child ran and the value it submitted
+ *  is not one of the choices its consumer declared. */
 export class SchemaValidationError extends Error {
   readonly errors: string[];
   readonly attempts: number;
   constructor(errors: string[], attempts: number) {
-    super(`schema mismatch after ${attempts} attempt(s): ${errors.join("; ")}`);
+    super(`choice mismatch after ${attempts} attempt(s): ${errors.join("; ")}`);
     this.name = "SchemaValidationError";
     this.errors = errors;
     this.attempts = attempts;
   }
 }
 
-/** Shape verdict for ONE child attempt of agent({schema}). */
+/** Choice-contract verdict for ONE child attempt of agent({ choice }). */
 export interface AgentSchemaCheck {
   validation: WorkflowSchemaValidation;
   /** Present only when `validation.status === "valid"`. */
   value?: unknown;
 }
 
-/** Result of ONE child execution: the exact child text plus, for a shaped call, its verdict. */
+/** Result of ONE child execution: the exact child text plus, for a choice call, its verdict. */
 export interface AgentAttemptOutcome {
   text: string;
   callId: string;

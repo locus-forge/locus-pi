@@ -46,23 +46,14 @@ source receives the accepted value. The [agent result contract](agent-results.md
 owns same-session correction, optional `choiceFallback`, journal evidence and
 failure behavior. Workflow code neither parses an answer nor implements format repair.
 
-When discovery determines the work units at runtime, use text handoffs:
-
-```js
-const MAX_DAGS_IN_SCOPE = 12;
-const units = await agent("Return one complete handoff per discovered unit.", {
-  handoffs: { minItems: 1, maxItems: MAX_DAGS_IN_SCOPE },
-});
-```
-
-Runtime states `handoffs` as a non-blank string array in the return contract and
-owns the format instructions, same-session correction, replay, journal, budget, and
-fail-closed behavior. Workflow code passes each returned string unchanged into
-visible `parallel()` or `pipeline()` workers. `maxItems` is optional and belongs to
-the CONSUMER: declare it when the approved Design names a fixed number of downstream
-slots, and omit it when the work decides how many units there are. There is no
-per-item character bound. Runtime allows one same-session correction by default, then
-fails closed.
+An agent never returns a list or JSON for source to consume. When a stage discovers
+work at runtime, the agent writes the units to a named workspace file and returns
+readable text; a later agent reads that file. When the caller already knows the units,
+pass them through `items()` and hand each string unchanged to visible `parallel()` or
+`pipeline()` workers. A queue that changes as work lands stays in its file and is
+processed by a bounded `for` loop whose passes are routed by exact `choice`.
+`handoffs`, `schema`, `validate`, `output`, `repair` and `returnVia` were removed and
+are refused by name; see [removed shaped-result options](agent-results.md#removed-shaped-result-options).
 
 The remaining standard orchestration primitives are:
 
@@ -87,9 +78,8 @@ The remaining standard orchestration primitives are:
 project-local workflow workspace. The runtime does not create a run-local
 `workspace/` directory.
 
-Trusted raw `schema` and `validate` remain an advanced compatibility surface for
-existing workflows. Standard generated source uses only exact text, `choice`,
-and `handoffs` answers.
+Standard generated source uses only exact text and `choice` answers. Raw `schema`
+and `validate` are no longer a compatibility surface: the runtime refuses both by name.
 
 Standard generated source omits `maxToolCalls` and `timeoutMs` unless the operator
 requests a per-attempt control and the approved Design records why. The
@@ -200,7 +190,7 @@ These are all rules enforced for `meta.profile: "standard"`:
   | Classification     | DSL calls                                                                                                                      |
   | ------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
   | Runtime control    | `agent({ choice })` exact identity only                                                                                        |
-  | Opaque list        | `agent({ handoffs })`, `continuationArtifacts`, `items`, `parallel`, `pipeline`                                                |
+  | Opaque list        | `continuationArtifacts`, `items`, `parallel`, `pipeline`                                                                       |
   | Saved-child status | `invokeWorkflow`; only its exact `status` identity is control                                                                  |
   | Opaque value       | ordinary/model `agent`, `consumeTextArtifact`, `promptFile`, `workflow`, `workspace`                                           |
   | Runtime/host value | `now`, `random`, `workspaceDir`, `outputDir`, `projectRoot`, `publishArtifact`, `publishPrimaryArtifact`, `publishPrimaryFile` |
@@ -329,18 +319,15 @@ human-readable description and never replaces stable identity.
 
 ### Output acceptance is not semantic continuation
 
-Standard authoring uses `agent({ choice })`, the closed string `output` contract, or
-`agent({ handoffs })`, described in [output acceptance](agent-results.md). Every
-one of them is carried by the workflow-only `workflow_return` tool, which validates a
-proposed value within the same child session; `returnVia` is no longer a choice the
-author makes. The tool does not certify the truth of a decision, nor the facts inside
-a shaped record. An author-declared `minItems`/`maxItems` on `handoffs` bounds how MANY
-work units the stage returns, never how long one of them may be — the runtime adds no
-size policy of its own, and the reason is stated once in
+Standard authoring routes with `agent({ choice })`, described in
+[output acceptance](agent-results.md). It is carried by the workflow-only
+`workflow_return` tool, which checks one exact declared string within the same child
+session. The tool does not certify the truth of a decision. The runtime adds no size
+policy of its own; the reason is stated once in
 [the principle](agent-results.md#the-principle). Ordinary text and adaptive
-fresh-worker rounds retain separate contracts. The standard source grammar still does not parse model prose or permit raw
-`schema`/`validate`; `schema` is available to reviewed compatibility scripts only,
-because the strict checker refuses raw `schema`. Review the [pattern index](../../skills/locus-pi-workflow-create/references/INDEX.md)
+fresh-worker rounds retain separate contracts. The standard source grammar does not
+parse model prose, and it refuses raw `schema`/`validate` and the removed `handoffs`,
+`output`, `repair` and `returnVia` options by name. Review the [pattern index](../../skills/locus-pi-workflow-create/references/INDEX.md)
 before selecting adaptive slices, fixed, refinement, decomposition or human-gated execution.
 
 The owner contract separately forbids mandatory acknowledgement protocols whose
@@ -375,4 +362,4 @@ validation is not evidence that the workflow ran.
 
 ### Explicit execution observations
 
-Plain-text `agent(prompt, { result: "report", label: "review" })` produces opaque text for the next agent. Author the static literal `result: "report"`; it cannot combine with shaped outputs. The checker validates direct option pairs, not the contents of variable or spread option objects; runtime validation covers every call. Source must not branch on, parse or inspect report content. An arbiter interprets full reports; a separate `choice` call can translate its recommendation into an edge. Runtime eligibility and fatal boundaries are defined in [agent execution reports](agent-results.md#agent-execution-reports). No `try/catch` exception is added to the standard grammar.
+Plain-text `agent(prompt, { result: "report", label: "review" })` produces opaque text for the next agent. Author the static literal `result: "report"`; it cannot combine with `choice`. The checker validates direct option pairs, not the contents of variable or spread option objects; runtime validation covers every call. Source must not branch on, parse or inspect report content. An arbiter interprets full reports; a separate `choice` call can translate its recommendation into an edge. Runtime eligibility and fatal boundaries are defined in [agent execution reports](agent-results.md#agent-execution-reports). No `try/catch` exception is added to the standard grammar.

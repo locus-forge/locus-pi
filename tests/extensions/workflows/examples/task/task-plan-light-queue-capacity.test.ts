@@ -12,13 +12,13 @@ function capacityRun(repaired: boolean, narrative = false, wrongEdge = false) {
     "review",
     "choice",
   ];
-  const lateProposal = ["review route", "single correction", "recheck route"];
+  const lateProposal = "1. review route; 2. single correction; 3. recheck route";
   const lateRepair = wrongEdge
-    ? ["artifact gate: present -> failure, missing -> reviewer"]
+    ? "1. artifact gate: present -> failure, missing -> reviewer"
     : narrative
-      ? ["Reconciled five items in the workspace queue report"]
+      ? "Reconciled five items in the workspace queue report"
       : repaired
-        ? ["review route + single correction", "recheck route"]
+        ? "1. review route + single correction; 2. recheck route"
         : lateProposal;
   const queues: Record<string, unknown[]> = {
     "workflow-design": ["Design ledger"],
@@ -26,7 +26,11 @@ function capacityRun(repaired: boolean, narrative = false, wrongEdge = false) {
     "workflow-source-seed": ["Seed report"],
     "workflow-source-seed-check": ["Seed passed"],
     "workflow-source-seed-route": ["passed"],
-    "workflow-source-cut": [...early.map((name) => [name]), lateProposal, ...(repaired ? [["recheck route"], []] : [])],
+    "workflow-source-cut": [
+      ...early.map((name) => `1. ${name}`),
+      lateProposal,
+      ...(repaired ? ["1. recheck route", "no items"] : []),
+    ],
     "workflow-source-queue-assessment": [
       ...early.map(() => "Queue valid"),
       "Three identities exceed two remaining slots; group adjacent routes",
@@ -91,7 +95,7 @@ describe("task/plan-light late source-queue capacity", () => {
     }
     expect(fixture.calls.filter((call) => call.label === "workflow-source-queue-repair")).toHaveLength(1);
     const groupedSlice = fixture.calls.filter((call) => call.label === "workflow-source-slice")[4]?.prompt;
-    expect(fixture.calls.find((call) => call.label === "workflow-source-slice")?.prompt).toContain(
+    expect(fixture.calls.find((call) => call.label === "workflow-source-queue-assessment")?.prompt).toContain(
       "replace passed/failed with present/missing; present -> reviewer",
     );
     expect(fixture.calls.find((call) => call.label === "workflow-source-queue-assessment")?.prompt).toContain(
@@ -103,12 +107,14 @@ describe("task/plan-light late source-queue capacity", () => {
     expect(fixture.calls.find((call) => call.label === "workflow-source-queue-recheck")?.prompt).toContain(
       "older or wrong choices is unmet repair work",
     );
-    expect(groupedSlice).toContain("review route + single correction");
+    expect(fixture.calls.find((call) => call.label === "workflow-source-queue-recheck")?.prompt).toContain(
+      "Reconciliation report:\n1. review route + single correction; 2. recheck route",
+    );
+    expect(groupedSlice).toContain("the first numbered item of workspace workflow-source-queue.md");
     expect(groupedSlice).toContain("Implement only the graph identities and connecting edges explicitly named");
     expect(groupedSlice).toContain('choice: ["passed", "failed"]');
     expect(groupedSlice).toContain("dsl.publishArtifact");
     expect(groupedSlice).toContain("dsl.publishText is unsupported");
-    for (const identity of ["review route", "single correction"]) expect(groupedSlice).toContain(identity);
     expect(fixture.calls.filter((call) => call.label === "workflow-source-slice")).toHaveLength(6);
     expect(fixture.publishPrimaryFile).toHaveBeenCalledOnce();
   });
@@ -118,7 +124,7 @@ describe("task/plan-light late source-queue capacity", () => {
     await expect(fixture.run()).resolves.toMatchObject({
       ok: false,
       reason: "queue_conflict",
-      remaining: ["review route", "single correction", "recheck route"],
+      remaining: "workflow-source-queue.md",
     });
     expect(fixture.calls.filter((call) => call.label === "workflow-source-slice")).toHaveLength(4);
     expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();
@@ -129,11 +135,12 @@ describe("task/plan-light late source-queue capacity", () => {
     await expect(fixture.run()).resolves.toMatchObject({
       ok: false,
       reason: "queue_conflict",
-      remaining: ["Reconciled five items in the workspace queue report"],
+      remaining: "workflow-source-queue.md",
     });
     const recheck = fixture.calls.filter((call) => call.label === "workflow-source-queue-recheck")[0]?.prompt;
-    expect(recheck).toContain("Inspect each exact reconciled list member supplied below");
-    expect(recheck).toContain("Reject a report, path, or one narrative summary");
+    expect(recheck).toContain("Inspect each exact numbered member of workflow-source-queue.md");
+    expect(recheck).toContain("Reject one narrative summary of several unstated items as queue_conflict");
+    expect(recheck).toContain("Reconciled five items in the workspace queue report");
     expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();
   });
 
@@ -142,7 +149,7 @@ describe("task/plan-light late source-queue capacity", () => {
     await expect(fixture.run()).resolves.toMatchObject({
       ok: false,
       reason: "queue_conflict",
-      remaining: ["artifact gate: present -> failure, missing -> reviewer"],
+      remaining: "workflow-source-queue.md",
     });
     expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();
   });

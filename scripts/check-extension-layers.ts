@@ -242,18 +242,18 @@ const PURE_MODULE_FORBIDDEN_BUILTINS: ReadonlySet<string> = new Set([
  * refusals), `workflow-agent-call.ts` (the logical call — ordinal, slot claim, canonical
  * key, replay envelope, transport retry), `workflow-agent-attempt.ts` (ONE physical
  * child — invocation charge, `callId`, leaf permit, journal pair, evidence adoption) and
- * `workflow-agent-output.ts` (the shaped half — `choice`/`handoffs`/`schema`/`output`/
- * `validate` dispatch, acceptance from the confirmed `workflow_return` receipt, the choice
- * decision projection). The core value-imports the call, the attempt and the output owner;
- * all three value-import the contract, and the output owner reaches `workflow-return.ts`
- * and `workflow-schema.ts`, both of which are already fs-free. `workflow-agent-bridge.ts`
+ * `workflow-agent-output.ts` (the result-mode half — plain/report/`choice` dispatch, the
+ * named refusal of every removed shaped-result option, acceptance from the confirmed
+ * `workflow_return` receipt, the choice decision projection). The core value-imports the
+ * call, the attempt and the output owner; all three value-import the contract, and the
+ * output owner reaches `workflow-return.ts`, which is already fs-free. `workflow-agent-bridge.ts`
  * reads the contract directly rather than the core — so the host side of a call never
  * pulls the DSL composition root in behind it.
  *
  * `workflow-fusion.ts` is in that same closure and needs no entry of its own for the same
  * reason: the core value-imports it, and rule 7 walks the closure transitively. A Fusion
  * panel is a COMPOSITION of ordinary `agent()` calls — it value-imports the contract, the
- * shaped-output owner and `workflow-execution-state.ts`, all already proven fs-free here,
+ * result-mode owner and `workflow-execution-state.ts`, all already proven fs-free here,
  * and it reaches the artifact store, the replay controller and the group scheduler only as
  * types or as injected ports, so nothing durable enters behind it. The host `/fusion`
  * surface is the other direction: `fusion/config.ts` and `fusion/runner.ts` read the Fusion

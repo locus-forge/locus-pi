@@ -16,6 +16,7 @@
  * module under `source/` imports this one back.
  */
 import { Lang, parse, type SgNode } from "@ast-grep/napi";
+import { REMOVED_AGENT_OPTION_NAMES } from "../runtime/workflow-agent-output.js"; // never admit what dispatch refuses
 import {
   exportedMetaObject,
   staticObjectKey,
@@ -401,15 +402,13 @@ function validateStandardOwnedPolicy(
         ?.children()
         .filter((child) => child.kind() === "pair") ?? [];
     const report = pairs.find((pair) => staticObjectKey(pair.field("key")) === "result");
-    if (report === undefined) continue;
-    if (staticStringValue(unwrapStandardParentheses(report.field("value") ?? undefined)) !== "report")
-      errors.add('agent result must be the static literal "report"', report);
+    const reportValue = report && staticStringValue(unwrapStandardParentheses(report.field("value") ?? undefined));
+    if (report && reportValue !== "report") errors.add('agent result must be the static literal "report"', report);
     for (const pair of pairs) {
-      const key = staticObjectKey(pair.field("key"));
-      if (
-        key !== undefined &&
-        ["choice", "choiceFallback", "handoffs", "schema", "validate", "returnVia", "output", "repair"].includes(key)
-      )
+      const key = staticObjectKey(pair.field("key")) ?? "";
+      if (REMOVED_AGENT_OPTION_NAMES.includes(key))
+        errors.add(`agent ${key} was removed: return exact text or one choice; use named workspace files`, pair);
+      else if (report && (key === "choice" || key === "choiceFallback"))
         errors.add(`agent result: report cannot be combined with ${key}`, pair);
     }
   }

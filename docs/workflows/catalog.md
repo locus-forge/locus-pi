@@ -30,12 +30,11 @@ does not add it to the Package registry.
 
 The [current pattern index](../../skills/locus-pi-workflow-create/references/INDEX.md)
 selects the graph; the [agent result contract](agent-results.md)
-documents raw-schema and validator behavior for reviewed compatibility scripts.
+owns the two result modes and the removed shaped-result options.
 
 Standard scripts pass narrative results as exact text, use
-`agent({ choice: [...] })` when JavaScript must select a branch, and use
-`agent({ handoffs: {...} })` when discovery must produce bounded complete text
-units for visible downstream workers. A choice may explicitly name a
+`agent({ choice: [...] })` when JavaScript must select a branch, and write richer
+results to named workspace files that later agents read. A choice may explicitly name a
 `choiceFallback` from the same list for a design-approved degraded route after
 both invalid answers. Raw `schema`, `validate`, parsers, renderers, and custom
 recovery remain outside the standard profile. Only files in the curated

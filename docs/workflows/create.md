@@ -204,9 +204,10 @@ when planning execution. Two practical consequences for authoring:
   sentence naming the failing check". Do not write "keep this under 2000 characters"
   as a stand-in for a limit the runtime no longer has; it buys nothing and costs the
   part of the answer the stage was for.
-- Declare a bound only when a real consumer has one, and then declare it on the call
-  (`output.maxLength`, or `maxLength`/`maxItems` inside a `schema`) so the child is
-  told about it and can correct the value in the same session.
+- When a real consumer has a limit, state that requirement in the prompt; when it
+  must be checked, have the agent write a named workspace file and give a separate
+  verifier stage that file. No call option bounds an answer: the removed `output`,
+  `schema` and `maxAnswerChars` options are refused by name before a child starts.
 
 The full statement, including how budgets and unsupported capabilities behave, is in
 [output acceptance](agent-results.md#the-principle).

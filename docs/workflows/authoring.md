@@ -103,9 +103,10 @@ The diagram is an ownership map, not a decorative code trace:
   code makes and which a model makes without opening the source.
 - Every agent box says what it **receives** and what it **returns**. The handoffs
   between stages are the pipeline; a box that names only a role explains nothing.
-- Say what constrains each child: its prompt, declared answer shape, and answer
-  cap. Every child already receives all tools. A branch on a shaped answer is not the
-  same claim as a branch on prose, and the picture must not blur them.
+- Say what constrains each child: its prompt, its named workspace files, and whether
+  it returns text or one exact choice. Every child already receives all tools. A branch
+  on an exact choice is not the same claim as a branch on prose, and the picture must
+  not blur them.
 - Every branch and loop carries its real exit condition, including the ones that
   end the run: an operator pause with `disposition: awaiting_operator`, a
   fail-closed stop, and the terminal result a later run may consume.
@@ -179,9 +180,9 @@ Notes:
   display after 96 characters. Project and user workflows are never rewritten by
   the browser.
 - `agent()` returns the child's exact non-empty final text by default. It never
-  exposes child status fields as a model-controlled result, and it parses
-  JSON-looking text only when the call declared a `schema` — the opt-in shaped
-  path below. Technical metadata is written to the workflow journal.
+  exposes child status fields as a model-controlled result and never parses the
+  answer; `choice` is the only call form that returns something other than text.
+  Technical metadata is written to the workflow journal.
 - Write a stage's prompt inline in the script by default: a shared `COMMON`
   contract constant plus a per-stage template literal that interpolates the
   previous stage's exact text between `--- BEGIN <NAME> ---` / `--- END <NAME> ---`
@@ -288,15 +289,14 @@ and runtime validate the array/string shape, and `dsl.items()` returns a detache
 frozen snapshot. Order and bytes, including whitespace, empty strings, and
 duplicates, are unchanged; there is no Locus items count or character policy.
 Physical constraints still include caller/tool JSON, context, memory, total
-attempts, and time. A source array, caller items, or bounded model-discovered
-`agent({ handoffs })` result may feed the same visible `pipeline()` plus inline
-`dsl.workflow()` mini-flow. Recorded discovery can replay in an exactly matching
-prefix. Fresh rediscovery must not be attached to old positional saved-child keys.
+attempts, and time. A source array or caller items may feed the same visible `pipeline()` plus inline
+`dsl.workflow()` mini-flow. Model discovery writes a named workspace file instead of
+returning a list; the operator or a later invocation turns that file into items.
+Fresh rediscovery must not be attached to old positional saved-child keys.
 Durable execution instead begins in a separate invocation with a caller-frozen,
 approved list and stable caller-owned keys. Positional keys are safe only when
 that exact list and ordering are intentionally unchanged for the reused output
-namespace. Only model handoffs use corrective re-ask and blank/duplicate bounds.
-No file or discovery-document parser participates.
+namespace. No file or discovery-document parser participates.
 
 Cross-run state travels separately through the tool's closed `continuation`:
 

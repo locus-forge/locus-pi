@@ -204,8 +204,8 @@ failed. Absence is the honest answer there; the failure reason carries the
 details.
 
 **And nothing that did run is forgotten.** The same rule read the other way: a
-call that fails _after_ the child answered — a script `validate` that threw, an
-artifact writer that could not write — really did execute, so its `error` line
+call that fails _after_ the child answered — a `choice` value still outside its
+declared members, an artifact writer that could not write — really did execute, so its `error` line
 carries `executedModel` and the row keeps that label rather than being blanked as
 if no child existed. A **replayed** completion is the opposite case and is treated
 as such: a resumed run serves a recorded answer without creating a child, so its

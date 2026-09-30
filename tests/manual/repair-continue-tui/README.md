@@ -4,8 +4,8 @@
 other way round: a real Pi session, a real model, a real stopped run, and a real
 continuation whose recorded answer is served back instead of being asked again.
 
-It also exercises the shaped `workflow_return` path end to end, because the repaired
-source asks its middle agent for `handoffs` through `returnVia: "tool"`.
+It also exercises the `workflow_return` choice path end to end, because the repaired
+source asks its middle agent for one exact `choice`.
 
 ## What it does
 

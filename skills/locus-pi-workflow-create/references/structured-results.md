@@ -1,20 +1,18 @@
-# Structured results and same-session format repair
+# Results: exact text, one choice, named files
 
-Start with plain `agent()` text for a report, review or narrative handoff. Running
-commands or writing files does not by itself require structured output. Add a
-contract only when the next consumer needs one: `choice` for code branching,
-`handoffs` for discovered work units, sequential or independent, or `output` for an
-actual string-format requirement. Raw `schema` remains compatibility-only.
+An agent returns exactly one of two things: plain `agent()` text, or one exact
+`choice` member when source must branch. Running commands or writing files does not
+change that. Anything richer — a record, a list of units, a queue, per-field findings —
+goes into a **named workspace file** that the agent writes and a later agent reads.
+`handoffs`, `schema`, `validate`, `output`, `repair` and `returnVia` were removed and
+are refused by name; caller-owned work units come from `dsl.items()`.
 
-When a structured result follows commands or file writes, the correction happens in
-that same child session by construction: there is no other transport. A schema-only
-echo selects no value and must not become success. Do not parse Markdown fences or ask a fresh
-worker to rediscover facts solely because the first answer has the wrong shape.
+A choice is corrected in that same child session by construction: there is no other
+transport. A value that lists choices without selecting one must not become success.
+Do not parse Markdown fences or ask a fresh worker to rediscover facts solely because
+the first answer was not a declared member.
 
-For example, rejecting a complete 37,000-character review because a guessed
-`handoffs` item bound allowed less was an authoring defect — and the runtime no
-longer offers that bound to guess with. A review of that kind should return plain
-text anyway; a separate routing decision retains its real contract:
+A long review stays plain text; a separate routing decision carries the branch:
 
 ```js
 const review = await agent(`Review the proposed change against its acceptance criteria.\n${input}`, {
@@ -30,15 +28,14 @@ const decision = await agent(`Decide whether the acceptance criteria are met.\n$
 
 The load-bearing distinction is prose versus code-consumed control, not these
 labels or this number of agents. Add a separate decision only if the graph needs
-to branch. A real output limit names its consumer, unit and source; ordinary
-narrative needs no author-selected cap. `output.maxLength` and `singleLine` have
-no package default: declare them only for a named downstream limit. `maxItems`
-counts what the consumer can take; `minItems` is what it needs. Budgets stop
-spending, not answers, and never silently truncate complete work to pass validation.
+to branch. Ordinary narrative needs no author-selected cap; a real format requirement
+belongs in the prompt and, when it must be checked, in a separate verifier that
+writes its own record. Budgets stop spending, not answers, and never silently
+truncate complete work.
 
-Extend the existing workflow_return path, not a second return tool. Format clarification stays in the same child session and uses bounded attempts and cumulative resources. Semantic improvement is a fresh worker with the original goal and exact feedback. A successful proposal followed by cancellation/provider failure is not an accepted result.
+Use the existing workflow_return path, not a second return tool. Choice clarification stays in the same child session and uses one package-owned correction and cumulative resources. Semantic improvement is a fresh worker with the original goal and exact feedback. A successful proposal followed by cancellation/provider failure is not an accepted result.
 
-Shape validity does not prove factual correctness. A required verifier remains required. An unknown field is not a verified absence; a missing verifier is not a clean decision. Reused answers are marked as reused, not given invented new child receipts. See the canonical [output acceptance contract](../../../docs/workflows/agent-results.md) for the principle, the supported combinations and the visible clarification default.
+A declared member does not prove factual correctness. A required verifier remains required. An unknown field is not a verified absence; a missing verifier is not a clean decision. Reused answers are marked as reused, not given invented new child receipts. See the canonical [output acceptance contract](../../../docs/workflows/agent-results.md) for the principle, the removed options and the visible clarification default.
 
 When code branches on an arbiter's judgement, prefer that arbiter returning the
 `choice` directly. The call returns the branch, not
@@ -77,4 +74,4 @@ an explicit decision, do not make it repeat the underlying research. Attribute a
 terminal branch to its decision maker; a negative routing value alone does not
 prove that review failed or that the specification is incomplete.
 
-For a revisable slice queue use [adaptive slices](adaptive-slices.md): the structured result is an array of complete text briefs. The queue owner interprets each brief; source forwards items unchanged. A domain object schema is unnecessary when no source edge consumes its individual fields.
+For a revisable slice queue use [adaptive slices](adaptive-slices.md): the queue owner rewrites a named workspace queue file whole, and each stage reads its first item. Source never reads the file; every pass is routed by an exact choice.

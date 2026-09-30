@@ -1,13 +1,14 @@
 /**
- * workflow-agent-output.ts — the SHAPED-OUTPUT owner of one `agent()` call.
+ * workflow-agent-output.ts — the RESULT-MODE owner of one `agent()` call.
  *
- * Everything that turns a `choice` / `handoffs` / `schema` / `output` / `validate`
- * declaration into a request, and everything that decides whether a shaped answer was
- * ACCEPTED, lives here. That is one concern with one rule behind it: a shaped value is
- * accepted from the confirmed `workflow_return` receipt of the child's own session and
- * from nothing else. There is no text parsing here, no second acceptance dialect, and no
- * repair session — the same-session clarification loop is owned by `workflow-return.ts`,
- * which this module reaches only to build the contract the child is shown.
+ * A workflow agent has exactly two result modes: a plain call resolves to the child's
+ * exact final text, and a `choice` call resolves to one exact declared string. This module
+ * decides which mode a declaration takes, refuses every removed shaped-result option by
+ * name before a child starts, and accepts a choice from the confirmed `workflow_return`
+ * receipt of the child's own session and from nothing else. There is no text parsing
+ * here and no repair session — the same-session correction loop is owned by
+ * `workflow-return.ts`, which this module reaches only to build the contract the child
+ * is shown.
  *
  * The declaration side is pure and exported as plain functions; the acceptance side needs
  * the run's journal fan-out and the logical call, so it is a small factory over named
@@ -15,31 +16,26 @@
  * the injected `runAgentAttempt` and reads the outcome that comes back.
  *
  * Direction: `workflow-runtime.ts` -> here -> `workflow-agent-contract.ts` /
- * `workflow-return.ts` / `workflow-schema.ts`. This module never imports the composition
- * root. Pure host-agnostic: no fs / process / network, so rule 7 of
+ * `workflow-return.ts`. This module never imports the composition root. Pure
+ * host-agnostic: no fs / process / network, so rule 7 of
  * `scripts/check-extension-layers.ts` holds it inside the DSL core's value closure.
  */
 
 import {
   DEFAULT_WORKFLOW_RETURN_CLARIFICATIONS,
-  assertWorkflowReturnValidationErrors,
   normalizeWorkflowReturnContract,
   workflowReturnClarificationTurns,
   workflowReturnInstructions,
   workflowReturnValueError,
-  type WorkflowReturnValidate,
 } from "./workflow-return.js";
-import { isRecord } from "./workflow-schema.js";
 import {
   SchemaValidationError,
   WorkflowAgentExecutionError,
   WORKFLOW_RETURN_CONTRACT,
-  WORKFLOW_RETURN_VALIDATE,
   type AgentAttemptOutcome,
   type AgentSchemaCheck,
   type WorkflowAgentAnyOptions,
-  type WorkflowAgentHandoffBounds,
-  type WorkflowAgentSchemaOptions,
+  type WorkflowAgentChoiceOptions,
   type WorkflowInternalAgentOptions,
 } from "./workflow-agent-contract.js";
 import type { WorkflowGroupBranchView } from "./workflow-groups.js";
@@ -49,68 +45,56 @@ import type { WorkflowChoiceDecision, WorkflowJournalLine } from "./workflow-jou
 // Declaration checks (pure)
 // ---------------------------------------------------------------------------
 
+/** The file/text-first replacement every removed shaped-result option points to. */
+const FILE_TEXT_MIGRATION =
+  "have the agent write a named workspace file and return readable text, pass caller-owned work units through items(), " +
+  "or branch on choice: [...] when workflow source needs one exact token";
+
 /**
  * Options this runtime REMOVED, named at declaration time with their replacement.
  *
- * Ignoring one would leave an author believing a bound is applied; the whole point of
- * removing the runtime's size policy is that a size decision now has a visible owner.
- * A `maxAnswerChars` author wanted a CONSUMER contract — express it as `output.maxLength`
- * on a shaped call, or as `maxLength`/`maxItems` inside the schema, where the child is
- * told about the violation and can correct it.
+ * Refused before the replay lookup and before any child exists, so a fresh run and a
+ * resumed run whose source still declares one fail with the same sentence, and an old
+ * shaped receipt is never reinterpreted under the reduced contract. Ignoring an option
+ * would leave its author believing a model-produced value is still being checked.
+ *
+ * A declaration is the key, not its value: `{ ...legacy, schema: undefined }` still
+ * declares `schema`, so presence is tested with `Object.hasOwn` rather than `!== undefined`.
  */
 const REMOVED_AGENT_OPTIONS: Readonly<Record<string, string>> = Object.freeze({
+  handoffs: `agent handoffs was removed: an agent no longer returns a runtime list. Instead, ${FILE_TEXT_MIGRATION}`,
+  schema: `agent schema was removed: an agent no longer returns JSON or another shaped value. Instead, ${FILE_TEXT_MIGRATION}`,
+  validate:
+    "agent validate was removed with schema: there is no shaped value left to validate. Put the rule in the prompt, " +
+    "or have a separate verifier agent check the named workspace file and write its own record",
+  output:
+    "agent output was removed: a plain agent(prompt) call already returns the exact full text. " +
+    "Drop the option, or use choice: [...] when workflow source needs one exact token",
+  repair:
+    "agent repair was removed: a choice call uses the package-owned single same-session correction. Drop the option",
+  returnVia:
+    "agent returnVia was removed: a choice call always returns through workflow_return and a plain call returns exact text. " +
+    "Drop the option",
   maxAnswerChars:
     "agent maxAnswerChars was removed: the runtime no longer rejects an answer for its size. " +
-    "Declare a real consumer contract instead — output.maxLength for a string return, or maxLength/maxItems inside a schema",
-  // Silently dropped while assembling the return contract until this refusal existed, so
-  // an author who wrote it read a bound into a call that had none.
-  schemaMaxLength:
-    "agent schemaMaxLength was removed: the runtime no longer clamps a shaped answer to a package number. " +
-    "Declare the consumer contract instead — maxLength/maxItems inside the schema itself, or output.maxLength for a string return",
+    "State a length requirement in the prompt instead",
+  schemaMaxLength: "agent schemaMaxLength was removed: the runtime no longer accepts shaped answers. Drop the option",
 });
 
+/** The removed option names, for the static source checker to refuse the same complete set. */
+export const REMOVED_AGENT_OPTION_NAMES: readonly string[] = Object.freeze(Object.keys(REMOVED_AGENT_OPTIONS));
+
 export function assertNoRemovedAgentOptions(opts: unknown, scope = "agent"): void {
-  if (!isRecord(opts)) return;
+  if (typeof opts !== "object" || opts === null || Array.isArray(opts)) return;
   for (const [key, message] of Object.entries(REMOVED_AGENT_OPTIONS)) {
-    if (opts[key] !== undefined) throw new Error(scope === "agent" ? message : `${scope}: ${message}`);
+    if (Object.hasOwn(opts, key)) throw new Error(scope === "agent" ? message : `${scope}: ${message}`);
   }
 }
 
 /**
- * Declaration checks for a shaped call, now the only shaped path.
- *
- * `validate` is no longer refused: it runs inside the child's own session beside the
- * schema check, so a cross-field violation is a correctable clarification instead of a
- * fresh child that has forgotten everything. Transport `attempts` is no longer refused
- * either — a same-session clarification is not a physical retry, so the two no longer
- * multiply; the ordinary worktree refusal below still applies.
- */
-export function assertWorkflowToolReturnOptions(options: WorkflowAgentAnyOptions): void {
-  const { schema, validate, handoffs, choice, output } = options as {
-    schema?: unknown;
-    validate?: unknown;
-    handoffs?: unknown;
-    choice?: unknown;
-    output?: unknown;
-  };
-  if (validate !== undefined && typeof validate !== "function") throw new Error("agent validate must be a function");
-  if (validate !== undefined && schema === undefined && handoffs === undefined)
-    throw new Error("agent validate requires a schema or handoffs");
-  // Named pairwise, before the contract's generic "exactly one shape" message, so an author
-  // who combined two shapes reads WHICH two rather than a count.
-  if (schema !== undefined && handoffs !== undefined) throw new Error("agent handoffs cannot be combined with schema");
-  if (choice !== undefined && handoffs !== undefined) throw new Error("agent choice cannot be combined with handoffs");
-  if (choice !== undefined && schema !== undefined) throw new Error("agent choice cannot be combined with schema");
-  if (output !== undefined && (choice !== undefined || schema !== undefined || handoffs !== undefined))
-    throw new Error("agent output is a string-only contract and cannot be combined with choice, schema or handoffs");
-}
-
-/**
- * A routing contract needs at least two branches to be a decision. Everything else the
- * old bound said — at most 32 members, at most 200 characters each — was a size policy
- * over an `enum` the provider has no practical trouble carrying, so it is gone. What
- * stays is what the CONSUMER needs: a non-blank, unambiguous set whose membership can
- * be checked, because a choice must name a branch that exists.
+ * A routing contract needs at least two branches to be a decision. What stays is what the
+ * CONSUMER needs: a non-blank, unambiguous set whose membership can be checked, because a
+ * choice must name a branch that exists.
  */
 const MIN_AGENT_CHOICES = 2;
 
@@ -137,63 +121,11 @@ export function normalizeAgentChoiceFallback(value: unknown, choices: readonly s
   return value;
 }
 
-/**
- * Handoff bounds after the size policy was removed.
- *
- * `maxItems` is now OPTIONAL and has no ceiling: a discovery stage cannot know in
- * advance how many work units exist, and refusing the 101st one is a refusal to accept
- * work that was already done. `maxItemChars` is gone entirely — a complete brief is
- * exactly as long as it needs to be, and the 8 000-character default is what truncated
- * real queues. `minItems` stays, because "at least one unit or this stage failed" is a
- * statement about the WORK, not about its size.
- *
- * Uniqueness-after-trim is gone too: two items whose text happens to match after
- * trimming are not proof of duplicated work, and deduplicating author data silently
- * loses a unit. Blank items are still refused — an empty string is not a work unit.
- */
-export function normalizeAgentHandoffs(value: unknown): WorkflowAgentHandoffBounds {
-  if (!isRecord(value)) throw new Error("agent handoffs must be an object");
-  for (const key of Object.keys(value)) {
-    if (key === "maxItemChars")
-      throw new Error(
-        "agent handoffs maxItemChars was removed: a complete handoff is accepted at any length. " +
-          "Declare a real consumer bound with a schema if the next stage genuinely needs one",
-      );
-    if (!["minItems", "maxItems"].includes(key)) throw new Error(`agent handoffs has no option ${key}`);
-  }
-  const minItems = value.minItems ?? 0;
-  const maxItems = value.maxItems;
-  if (!Number.isSafeInteger(minItems) || (minItems as number) < 0) {
-    throw new Error("agent handoffs minItems must be a non-negative safe integer");
-  }
-  if (maxItems !== undefined && (!Number.isSafeInteger(maxItems) || (maxItems as number) < 1)) {
-    throw new Error("agent handoffs maxItems must be a positive safe integer when declared");
-  }
-  if (maxItems !== undefined && (minItems as number) > (maxItems as number)) {
-    throw new Error("agent handoffs minItems cannot exceed maxItems");
-  }
-  return {
-    minItems: minItems as number,
-    ...(maxItems === undefined ? {} : { maxItems: maxItems as number }),
-  };
-}
-
-/** The one array shape handoffs desugar to. It carries the author's declared bounds and
- *  nothing the runtime invented. */
-export function handoffsSchema(bounds: WorkflowAgentHandoffBounds): Record<string, unknown> {
-  return {
-    type: "array",
-    items: { type: "string", minLength: 1, nonBlank: true },
-    minItems: bounds.minItems ?? 0,
-    ...(bounds.maxItems === undefined ? {} : { maxItems: bounds.maxItems }),
-  };
-}
-
 // ---------------------------------------------------------------------------
 // The acceptance side
 // ---------------------------------------------------------------------------
 
-/** The narrow ports the shaped path needs. Each is a named capability the composition
+/** The narrow ports the choice path needs. Each is a named capability the composition
  *  root already owns; none of them is an SDK session. */
 export interface WorkflowAgentOutputDeps {
   readonly runId: string;
@@ -206,10 +138,7 @@ export interface WorkflowAgentOutputDeps {
   readonly branchContext: () => WorkflowGroupBranchView | undefined;
   /** Group correlation fields for any journal line emitted inside a group. */
   readonly activeGroupFields: () => Pick<WorkflowJournalLine, "groupId" | "groupKind" | "groupLabel">;
-  /** Runs a script-declared `validate` behind the runtime's re-entrancy latch: a validator
-   *  that called back into the DSL would open a second execution inside an acceptance. */
-  readonly runScriptValidate: <T>(run: () => T) => T;
-  /** ONE logical call. The shaped path drives it exactly once and reads its outcome. */
+  /** ONE logical call. The choice path drives it exactly once and reads its outcome. */
   readonly runAgentAttempt: (
     prompt: string,
     opts: WorkflowInternalAgentOptions | undefined,
@@ -218,10 +147,10 @@ export interface WorkflowAgentOutputDeps {
 }
 
 export interface WorkflowAgentOutput {
-  /** Which path one `agent()` declaration takes, and every refusal that fires first. */
-  dispatchWorkflowAgentShape(opts: WorkflowAgentAnyOptions | undefined): "plain" | "shaped";
-  /** THE structured path: one child session, one acceptance, no second dialect. */
-  runShapedAgent(prompt: string, opts: WorkflowAgentAnyOptions): Promise<unknown>;
+  /** Which result mode one `agent()` declaration takes, and every refusal that fires first. */
+  dispatchWorkflowAgentShape(opts: WorkflowAgentAnyOptions | undefined): "plain" | "choice";
+  /** THE choice path: one child session, one acceptance, one exact declared string. */
+  runChoiceAgent(prompt: string, opts: WorkflowAgentChoiceOptions): Promise<string>;
 }
 
 export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): WorkflowAgentOutput {
@@ -230,75 +159,26 @@ export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): Workfl
   const currentPhase = deps.currentPhase;
 
   /**
-   * The one place `returnVia` is still read.
-   *
-   * `"tool"` describes what every shaped call now does, so it is accepted and reported as
-   * redundant for one release rather than failing an existing source. `"text"` named the
-   * deleted transport: accepting it would silently give the author the tool path under a
-   * name that promises text parsing, so it is refused by name.
+   * Declaration dispatch for one `agent()` call: removed options first, then the
+   * `result: "report"` exclusivity, then the mode itself. Everything here runs before the
+   * logical call opens, so a refusal costs neither a replay ordinal nor an invocation.
    */
-  function assertWorkflowReturnVia(returnVia: unknown): void {
-    if (returnVia === undefined) return;
-    if (returnVia === "text")
-      throw new Error(
-        'agent returnVia: "text" was removed: structured results are accepted in the child\'s own session through workflow_return. ' +
-          "Drop the option; a plain agent(prompt) call still returns the exact full text",
-      );
-    if (returnVia !== "tool") throw new Error("agent returnVia must be tool when supplied");
-    emit({
-      ts: nowFn(),
-      runId,
-      kind: "log",
-      source: "runtime",
-      message:
-        '[workflow:deprecated] agent returnVia: "tool" is redundant and ignored: every shaped call uses same-session ' +
-        "workflow_return acceptance. Remove the option.",
-      ...(currentPhase() !== undefined ? { phase: currentPhase()! } : {}),
-    });
-  }
-
-  /**
-   * Declaration dispatch for one `agent()` call, in the order the refusals have always
-   * fired: removed options, then the `result: "report"` exclusivity, then `returnVia`,
-   * then the shape itself. A `plain` verdict means the call carries no output contract at
-   * all, which is exactly why `validate` is refused there — it would have nothing to check
-   * against and nowhere in the child's session to be checked.
-   */
-  function dispatchWorkflowAgentShape(opts: WorkflowAgentAnyOptions | undefined): "plain" | "shaped" {
+  function dispatchWorkflowAgentShape(opts: WorkflowAgentAnyOptions | undefined): "plain" | "choice" {
     assertNoRemovedAgentOptions(opts);
     if (opts?.result !== undefined) {
       if (opts.result !== "report") throw new Error("agent result must be report when supplied");
-      for (const key of [
-        "choice",
-        "choiceFallback",
-        "handoffs",
-        "schema",
-        "validate",
-        "returnVia",
-        "output",
-        "repair",
-      ] as const) {
+      for (const key of ["choice", "choiceFallback"] as const) {
         if (opts[key] !== undefined) throw new Error(`agent result: report cannot be combined with ${key}`);
       }
     }
-    assertWorkflowReturnVia(opts?.returnVia);
-    const shaped =
-      opts !== undefined &&
-      (opts.choice !== undefined ||
-        opts.handoffs !== undefined ||
-        opts.schema !== undefined ||
-        opts.output !== undefined ||
-        opts.repair !== undefined);
-    if (opts?.choice === undefined && opts?.choiceFallback !== undefined)
-      throw new Error("agent choiceFallback requires choice");
-    if (shaped) return "shaped";
-    if (opts?.validate !== undefined) throw new Error("agent validate requires a schema or handoffs");
+    if (opts?.choice !== undefined) return "choice";
+    if (opts?.choiceFallback !== undefined) throw new Error("agent choiceFallback requires choice");
     return "plain";
   }
 
   /** The choice DECISION projection, journalled on the canonical runtime log line. */
   function recordChoiceDecision(
-    opts: WorkflowAgentAnyOptions | undefined,
+    opts: WorkflowAgentChoiceOptions,
     decision: WorkflowChoiceDecision,
     callId?: string,
   ): void {
@@ -310,7 +190,7 @@ export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): Workfl
       source: "runtime",
       message: "[workflow:choice]",
       choiceDecision: decision,
-      ...(opts?.label === undefined ? {} : { label: opts.label }),
+      ...(opts.label === undefined ? {} : { label: opts.label }),
       ...(callId === undefined ? {} : { callId }),
       ...(currentPhase() === undefined ? {} : { phase: currentPhase()! }),
       ...deps.activeGroupFields(),
@@ -319,39 +199,20 @@ export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): Workfl
   }
 
   /**
-   * THE structured path: one child session, one acceptance, no second dialect.
+   * THE choice path: one child session, one acceptance, no second dialect.
    *
-   * Everything shaped desugars here. `choice` becomes a string enum, `handoffs` becomes an
-   * array-of-strings schema carrying only the author's declared bounds, `output` stays a
-   * string contract, `schema` passes through. The contract is stated in the prompt and
-   * enforced by the `workflow_return` tool INSIDE the child's session, so a rejected value
-   * comes back to the agent that produced it, with its evidence still in context.
-   *
-   * `validate` travels beside the request rather than inside the contract, because the
-   * contract is JSON — it is deliberately absent from `canonicalAgentRequest`, so an
-   * author editing a validator body does not silently rewrite every replay key; the
-   * VERSION of the contract is what marks the boundary.
+   * The declared members become a choice-only return contract. It is stated in the prompt
+   * and enforced by the `workflow_return` tool INSIDE the child's session, so a rejected
+   * proposal comes back to the agent that produced it, with its evidence still in context.
+   * `choiceFallback` is spent only when that bounded correction is exhausted — never on a
+   * cancellation, provider failure or budget stop.
    */
-  async function runShapedAgent(prompt: string, opts: WorkflowAgentAnyOptions): Promise<unknown> {
-    assertWorkflowToolReturnOptions(opts);
-    const choices = opts.choice === undefined ? undefined : normalizeAgentChoices(opts.choice);
-    const fallback = choices === undefined ? undefined : normalizeAgentChoiceFallback(opts.choiceFallback, choices);
-    const bounds = opts.handoffs === undefined ? undefined : normalizeAgentHandoffs(opts.handoffs);
-    const schema =
-      bounds !== undefined
-        ? handoffsSchema(bounds)
-        : choices !== undefined
-          ? undefined
-          : (opts as WorkflowAgentSchemaOptions).schema;
-    const contract = normalizeWorkflowReturnContract({
-      ...(choices === undefined ? {} : { choices }),
-      ...(opts.output === undefined ? {} : { output: opts.output }),
-      ...(schema === undefined ? {} : { schema }),
-      ...(opts.repair === undefined ? {} : { repair: opts.repair }),
-    });
-    // The clarification allowance is a real execution decision, so it is in the journal
-    // as well as in the contract the child is shown: a default nobody can see is a hidden
-    // policy, which is exactly what this change set exists to remove.
+  async function runChoiceAgent(prompt: string, opts: WorkflowAgentChoiceOptions): Promise<string> {
+    const choices = normalizeAgentChoices(opts.choice);
+    const fallback = normalizeAgentChoiceFallback(opts.choiceFallback, choices);
+    const contract = normalizeWorkflowReturnContract({ choices });
+    // The correction allowance is a real execution decision, so it is in the journal as
+    // well as in the contract the child is shown: a default nobody can see is a hidden policy.
     emit({
       ts: nowFn(),
       runId,
@@ -360,24 +221,13 @@ export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): Workfl
       message:
         `[workflow:return] ${opts.label ?? "agent"}: contract v${String(contract.version)}, ` +
         `${String(workflowReturnClarificationTurns(contract))} same-session clarification turn(s) ` +
-        `(${opts.repair === undefined ? `package default ${String(DEFAULT_WORKFLOW_RETURN_CLARIFICATIONS)}` : "declared"})`,
+        `(package default ${String(DEFAULT_WORKFLOW_RETURN_CLARIFICATIONS)})`,
       ...(currentPhase() !== undefined ? { phase: currentPhase()! } : {}),
     });
-    const declaredValidate = (opts as WorkflowAgentSchemaOptions).validate;
-    // Re-entrancy guard, same as the old text path: a validator that calls back into the
-    // DSL would open a second execution inside an acceptance decision.
-    const validate: WorkflowReturnValidate | undefined =
-      declaredValidate === undefined
-        ? undefined
-        : (value) => deps.runScriptValidate(() => assertWorkflowReturnValidationErrors(declaredValidate(value)));
     try {
       const outcome = await runAgentAttempt(
         `${prompt}\n\n${workflowReturnInstructions(contract)}`,
-        {
-          ...opts,
-          [WORKFLOW_RETURN_CONTRACT]: contract,
-          ...(validate === undefined ? {} : { [WORKFLOW_RETURN_VALIDATE]: validate }),
-        },
+        { ...opts, [WORKFLOW_RETURN_CONTRACT]: contract },
         (text) => {
           let value: unknown;
           try {
@@ -387,43 +237,27 @@ export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): Workfl
               validation: { status: "mismatch", attempts: 1, errors: ["accepted output is not canonical JSON"] },
             };
           }
-          // `source` names the rejecting authority, and is recorded only when two
-          // authorities could have rejected: a schema-only call has exactly one.
-          const authority = validate === undefined ? {} : { source: "schema" as const };
           const error = workflowReturnValueError(value, contract);
-          if (error !== undefined)
-            return { validation: { status: "mismatch", attempts: 1, errors: [error], ...authority } };
-          // Re-checked here so a REPLAYED answer is held to the current validator too; the
-          // `script` authority is what makes that a named `script-rejected` failure rather
-          // than a shape mismatch that would re-ask at an ordinal the record cannot serve.
-          if (validate !== undefined) {
-            const errors = validate(value);
-            if (errors.length > 0)
-              return { validation: { status: "mismatch", attempts: 1, errors: [...errors], source: "script" } };
-          }
+          if (error !== undefined) return { validation: { status: "mismatch", attempts: 1, errors: [error] } };
           return { value, validation: { status: "valid", attempts: 1, errors: [] } };
         },
       );
       // Accepted ONLY from the confirmed receipt the logical call carries back in
       // `schemaCheck`: an answer that never reached `workflow_return` has no verdict here
       // and fails closed. Nothing in this module reads the child's final text.
-      if (
-        outcome.schemaCheck?.validation.status !== "valid" ||
-        (contract.schema === undefined && typeof outcome.schemaCheck.value !== "string")
-      )
+      if (outcome.schemaCheck?.validation.status !== "valid" || typeof outcome.schemaCheck.value !== "string")
         throw new SchemaValidationError(outcome.schemaCheck?.validation.errors ?? ["missing output validation"], 1);
-      const value: unknown = outcome.schemaCheck.value;
-      if (choices !== undefined)
-        recordChoiceDecision(
-          opts,
-          {
-            value: value as string,
-            source: "validated",
-            returnVia: "tool",
-            ...(outcome.outputAcceptance === undefined ? {} : { attempts: outcome.outputAcceptance.attempts }),
-          },
-          outcome.callId,
-        );
+      const value = outcome.schemaCheck.value;
+      recordChoiceDecision(
+        opts,
+        {
+          value,
+          source: "validated",
+          returnVia: "tool",
+          ...(outcome.outputAcceptance === undefined ? {} : { attempts: outcome.outputAcceptance.attempts }),
+        },
+        outcome.callId,
+      );
       return value;
     } catch (error) {
       // Cancellation, provider/auth failures and budgets NEVER become a classifier decision.
@@ -444,5 +278,5 @@ export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): Workfl
     }
   }
 
-  return { dispatchWorkflowAgentShape, runShapedAgent };
+  return { dispatchWorkflowAgentShape, runChoiceAgent };
 }

@@ -17,10 +17,6 @@ import {
   readWorkflowReplayLog,
 } from "../../../../extensions/workflows/runtime/workflow-replay.js";
 import { completed, tempRun, temporary } from "../../../fixtures/scripted-agent-runtime.js";
-import {
-  SHAPED_RESULT_SCHEMA as RESULT,
-  SHAPED_RESULT_RECORD as RECORD,
-} from "../../../fixtures/workflow-return-acceptance.js";
 
 it("recorded adaptive prefix replays without repeating confirmed worker side effects", async () =>
   temporary(async (root) => {
@@ -72,7 +68,7 @@ it("recorded adaptive prefix replays without repeating confirmed worker side eff
     await assert.rejects(changed.dsl.agent("changed goal", { label: "worker" }), /prefix divergence/u);
     assert.equal(effects, 2);
   }));
-it("a changed schema contract does not reuse the recorded record, an identical one does", async () =>
+it("a changed choice contract does not reuse the recorded record, an identical one does", async () =>
   temporary(async (root) => {
     const source = tempRun(root, "shaped-source");
     let effects = 0;
@@ -82,13 +78,13 @@ it("a changed schema contract does not reuse the recorded record, an identical o
       agentRunner: async (req) => {
         effects += 1;
         return {
-          ...completed(req, JSON.stringify(RECORD)),
+          ...completed(req, '"accept"'),
           outputAcceptance: { source: "tool", attempts: 1, toolName: "workflow_return" },
         };
       },
     });
-    const shaped = { label: "verify", schema: RESULT } as const;
-    assert.deepEqual(await record.dsl.agent("Verify", shaped), RECORD);
+    const shaped = { label: "verify", choice: ["accept", "revise"] } as const;
+    assert.equal(await record.dsl.agent("Verify", shaped), "accept");
     const recorded = readWorkflowReplayLog(root, "shaped-source");
     const replay = createWorkflowReplayController({
       runDir: tempRun(root, "shaped-resume"),
@@ -100,10 +96,10 @@ it("a changed schema contract does not reuse the recorded record, an identical o
       replay,
       agentRunner: async (req) => {
         effects += 1;
-        return completed(req, '{"decision":"unknown","summary":"fresh"}');
+        return completed(req, '"revise"');
       },
     });
-    assert.deepEqual(await resumed.dsl.agent("Verify", shaped), RECORD);
+    assert.equal(await resumed.dsl.agent("Verify", shaped), "accept");
     assert.equal(effects, 1);
     assert.equal(replay.counts().replayedCalls, 1);
     const strict = createWorkflowReplayController({
@@ -116,18 +112,11 @@ it("a changed schema contract does not reuse the recorded record, an identical o
       replay: strict,
       agentRunner: async (req) => {
         effects += 1;
-        return completed(req, JSON.stringify(RECORD));
+        return completed(req, '"accept"');
       },
     });
     await assert.rejects(
-      changed.dsl.agent("Verify", {
-        ...shaped,
-        schema: {
-          ...RESULT,
-          required: ["decision", "summary", "evidence"],
-          properties: { ...RESULT.properties, evidence: { type: "string", minLength: 1 } },
-        },
-      }),
+      changed.dsl.agent("Verify", { ...shaped, choice: ["accept", "revise", "escalate"] }),
       /prefix divergence/u,
     );
     assert.equal(effects, 1);

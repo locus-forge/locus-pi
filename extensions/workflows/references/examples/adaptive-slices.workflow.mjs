@@ -6,6 +6,9 @@ export const meta = {
 
 // Teaching allowance: at most three implemented slices and two corrections per slice.
 // Derive these literals from the actual task when authoring; never truncate a queue to fit.
+// The remaining queue is the workspace file remaining-queue.md, owned whole by the cut
+// agent. Source never reads it: the current slice is its first item, and every branch is
+// an exact choice.
 export default async function runWorkflow(dsl, input) {
   const intake = await dsl.agent(
     `Establish implementation scope from the user's actual instruction. SOURCES: task directory ${input}; task.md, selected specification and its documentation directory, repository instructions and source. ` +
@@ -19,34 +22,25 @@ export default async function runWorkflow(dsl, input) {
       "Write baseline.md in the workflow workspace. Return its path and key constraints for the implementer and reviewer. Environment preparation is not implementation.",
     { label: "baseline", title: "Record the implementation baseline" },
   );
-  let previousQueue = [];
   let lastAccepted = "";
   // The fourth pass may prove completion or return the unconsumed queue, but cannot implement a fourth slice.
   for (let completed = 0; completed <= 3; completed += 1) {
     const queue = await dsl.agent(
       `You own the remaining plan. SOURCES: task directory ${input}; task.md, the selected design, current diff and slice evidence. ` +
-        `Intake:\n${intake}\nBaseline:\n${baseline}\nPrevious proposed queue:\n${previousQueue.join("\n---\n")}\nLast accepted slice:\n${lastAccepted}\n` +
-        `Already implemented: ${completed}; total allowance: 3. Return the complete remaining queue in execution order. ` +
+        `Intake:\n${intake}\nBaseline:\n${baseline}\nLast accepted slice:\n${lastAccepted}\n` +
+        `Already implemented: ${completed}; total allowance: 3. If workspace remaining-queue.md exists, it is the previous queue: read it first. ` +
+        "Then rewrite remaining-queue.md whole with the complete remaining queue in execution order, one numbered item per slice. " +
         "Use the initial slices and completion outcomes established when this workflow was authored against the actual design. Each remaining item is a complete brief: identity, goal, design/docs references, completion outcome, evidence and constraints. " +
         "Inspect what actually landed. Keep, reorder, merge, shrink or replace remaining slices within the selected design. " +
-        "Do not repeat completed work or drop unmet requirements to fit the allowance. Return no items only when no work remains. " +
-        "Return proposed scope changes as explicit unresolved work for the owner; do not authorize them.",
-      {
-        // `handoffs` declares the TYPE of this answer: an array of complete, non-blank
-        // work briefs the script indexes and passes on. It declares no count and no item
-        // length, because no consumer here has one: the loop takes `queue[0]` and carries
-        // the rest to the owner. A ceiling would ask this stage to drop unmet requirements
-        // to fit a number, which is exactly what its prompt forbids.
-        label: "cut",
-        title: `Re-cut remaining work after ${completed} slices`,
-        handoffs: {},
-      },
+        "Do not repeat completed work or drop unmet requirements to fit the allowance. Write no items only when no work remains. " +
+        "Record proposed scope changes as explicit unresolved work for the owner; do not authorize them. Return the file path, item count and each item identity.",
+      { label: "cut", title: `Re-cut remaining work after ${completed} slices` },
     );
     const scopeAssessment = await dsl.agent(
-      `Check the proposed queue against the owner's selected design and current repository. SOURCES: task directory ${input}. ` +
-        `Intake:\n${intake}\nBaseline:\n${baseline}\nProposed queue:\n${queue.join("\n---\n")}\nLast accepted slice:\n${lastAccepted}\n` +
-        "Choose work only for a complete, in-scope remaining queue. Choose complete only when every design requirement is met. " +
-        "Choose needs_owner only for an indispensable user decision. Ordinary missing evidence or technical specification defects are work. Choose blocked only for an unavailable prerequisite with a concrete continuation condition. " +
+      `Check the proposed queue in workspace remaining-queue.md against the owner's selected design and current repository. SOURCES: task directory ${input}. ` +
+        `Intake:\n${intake}\nBaseline:\n${baseline}\nQueue report:\n${queue}\nLast accepted slice:\n${lastAccepted}\n` +
+        "Choose work only for a complete, in-scope, non-empty remaining queue. Choose complete only when every design requirement is met and the queue lists no items. " +
+        "Choose needs_owner only for an indispensable user decision. Ordinary missing evidence or technical specification defects are work. Choose blocked for an unavailable prerequisite with a concrete continuation condition, or when the queue contradicts completion: items listed while every requirement is met, or no items while requirements remain. " +
         "An empty queue is not proof of completion. Return a substantive recommendation with evidence. For a real user question give options, consequences and recommendation; for an unavailable prerequisite name the condition for continuing. Do not implement or relax acceptance.",
       { label: "scope-assessment", title: "Assess remaining scope and prerequisites" },
     );
@@ -56,11 +50,9 @@ export default async function runWorkflow(dsl, input) {
       choice: ["work", "complete", "needs_owner", "blocked"],
     });
     if (scope === "needs_owner" || scope === "blocked") {
-      return { ok: false, status: scope, remaining: queue, lastAccepted, baseline, scopeAssessment };
+      return { ok: false, status: scope, remaining: "remaining-queue.md", lastAccepted, baseline, scopeAssessment };
     }
     if (scope === "complete") {
-      if (queue.length !== 0)
-        return { ok: false, status: "blocked", summary: "Completion conflicts with remaining work.", remaining: queue };
       const checks = await dsl.parallel([
         () =>
           dsl.agent(
@@ -102,18 +94,17 @@ export default async function runWorkflow(dsl, input) {
         lastAccepted,
       };
     }
-    if (queue.length === 0) return { ok: false, status: "blocked", summary: "Work selected without a slice." };
     if (completed === 3)
       return {
         ok: false,
         status: "incomplete",
         reason: "slice_allowance",
         summary: "Total slice allowance exhausted.",
-        remaining: queue,
+        remaining: "remaining-queue.md",
         lastAccepted,
         baseline,
       };
-    const slice = queue[0];
+    const slice = "the first numbered item of workspace remaining-queue.md";
     const work = await dsl.agent(
       `Implement this one accepted slice. SOURCES: task directory ${input}; task.md, selected design and repository instructions. ` +
         `Slice:\n${slice}\nAssigned note: slice-${completed + 1}-work.md. Baseline:\n${baseline}\n` +
@@ -149,7 +140,15 @@ export default async function runWorkflow(dsl, input) {
           choice: ["accept", "fix", "retry_review", "needs_owner", "stop"],
         });
         if (route === "needs_owner" || route === "stop")
-          return { ok: false, status: route, remaining: queue, currentWork, history, baseline, decision };
+          return {
+            ok: false,
+            status: route,
+            remaining: "remaining-queue.md",
+            currentWork,
+            history,
+            baseline,
+            decision,
+          };
         if (route === "fix" && round < 2) {
           const correction = await dsl.agent(
             `Correct the arbiter-assigned defects in this slice. SOURCES: task directory ${input}; selected design and actual diff. ` +
@@ -166,7 +165,7 @@ export default async function runWorkflow(dsl, input) {
         ok: false,
         status: "incomplete",
         reason: "review_allowance",
-        remaining: queue,
+        remaining: "remaining-queue.md",
         currentWork,
         history,
         baseline,
@@ -180,7 +179,6 @@ export default async function runWorkflow(dsl, input) {
       { label: "record", title: "Record accepted progress" },
     );
     dsl.publishArtifact(`slice-${completed + 1}.md`, accepted);
-    previousQueue = queue;
     lastAccepted = accepted;
   }
 }

@@ -316,14 +316,14 @@ describe("agent failure cause — bridge", () => {
 });
 
 describe("agent failure cause — runtime", () => {
-  it("names the transport as the reason a shaped call could not be carried", async () => {
+  it("names the transport as the reason a choice could not be carried", async () => {
     // No `answer-too-long` case exists any more: nothing produces that cause. This is the
     // capability refusal that replaced the text fallback — a host that completed the child
-    // without a workflow_return receipt cannot carry a shaped result at all.
-    const { dsl, getJournal } = runtimeOver("transport-no-receipt", [completed('{"count":3}')]);
+    // without a workflow_return receipt cannot carry a choice result at all.
+    const { dsl, getJournal } = runtimeOver("transport-no-receipt", [completed('"accept"')]);
 
-    await expect(dsl.agent("count", { schema: { type: "object", properties: {} } })).rejects.toThrow(
-      /Transport cannot carry a shaped result/u,
+    await expect(dsl.agent("route", { choice: ["accept", "revise"] })).rejects.toThrow(
+      /Transport cannot carry a choice result/u,
     );
     const end = getJournal().find((line) => line.kind === "agent_end");
     expect(end?.failureCause).toBe("output-contract-unavailable");
@@ -384,7 +384,6 @@ describe("same-session output acceptance — the cumulative turn ledger", () => 
       submissions: [[], ["complete review"]],
       maxTurns,
       workTurns: [20, 1],
-      maxAttempts: 3,
     });
     expect(result.status).toBe(maxTurns === 20 ? "failed" : "completed");
     expect(prompts()).toBe(maxTurns === 20 ? 1 : 2);
@@ -963,15 +962,8 @@ describe("agent attempts — replay", () => {
   });
 });
 
-describe("agent attempts — one shaped call is one physical child", () => {
-  const COUNT_SCHEMA = {
-    type: "object",
-    additionalProperties: false,
-    required: ["count"],
-    properties: { count: { type: "integer" } },
-  };
-
-  /** A host that carries a shaped result on every completed answer. */
+describe("agent attempts — one choice call is one physical child", () => {
+  /** A host that carries a choice result on every completed answer. */
   function shapedCompleted(text: string): WorkflowAgentResult {
     return {
       ...completed(text),
@@ -999,11 +991,11 @@ describe("agent attempts — one shaped call is one physical child", () => {
 
     const sequence: WorkflowAgentResult[] = [
       transportFailure(), // physical attempt 1 — the child never answered
-      shapedCompleted('{"count":3}'), // physical attempt 2 — accepted in its own session
+      shapedCompleted('"accept"'), // physical attempt 2 — accepted in its own session
     ];
     const { dsl, requests, getJournal } = scriptedRuntime("attempts-grid", sequence, { replay: controller });
 
-    await expect(dsl.agent("count them", { attempts: 2, schema: COUNT_SCHEMA })).resolves.toEqual({ count: 3 });
+    await expect(dsl.agent("route them", { attempts: 2, choice: ["accept", "revise"] })).resolves.toBe("accept");
 
     expect(requests).toHaveLength(2);
     expect(requests.map((request) => request.callId)).toEqual(["call-0001", "call-0002"]);
@@ -1018,11 +1010,11 @@ describe("agent attempts — one shaped call is one physical child", () => {
     const { dsl, requests } = scriptedRuntime("attempts-exhaustion-precedence", [
       transportFailure(),
       transportFailure(),
-      shapedCompleted('{"count":3}'),
+      shapedCompleted('"accept"'),
     ]);
 
     // The child never answered, so there is nothing to accept.
-    await expect(dsl.agent("count them", { attempts: 2, schema: COUNT_SCHEMA })).rejects.toThrow(
+    await expect(dsl.agent("route them", { attempts: 2, choice: ["accept", "revise"] })).rejects.toThrow(
       /budget and was aborted/u,
     );
     expect(requests).toHaveLength(2);
@@ -1061,6 +1053,11 @@ describe("agent attempts — one shaped call is one physical child", () => {
       "function withSchemaContract",
       "function parseJsonFromText",
       "function stripJsonFences",
+      // The general shaped-result surface is removed, not merely unused.
+      "function handoffsSchema",
+      "function normalizeAgentHandoffs",
+      "validateAgainstSchema",
+      "WORKFLOW_RETURN_VALIDATE",
       // `schemaMaxLength` is deliberately NOT in this list any more: the runtime names it
       // to refuse it, which is the opposite of implementing it. The behaviour is pinned
       // in `workflow-agent-bounds.test.ts` ("refuses schemaMaxLength by name at the DSL
