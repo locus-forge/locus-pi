@@ -46,7 +46,7 @@ describe("workflow errors through the supported Pi agent loop", () => {
       noThemes: true,
       extensionFactories: [
         (pi) => {
-          // The control removes only the hook, reproducing the old normal-return false green.
+          // Pi 1.0 preserves native isError results; the bridge also supports older peers.
           if (bridge) workflows(pi as unknown as ExtensionAPI);
           else
             registerWorkflowSourceCheckTool({
@@ -136,7 +136,7 @@ describe("workflow errors through the supported Pi agent loop", () => {
       expect(results[0]).toMatchObject({ toolCallId: "valid", isError: false, details: { errorCount: 0 } });
       expect(results[1]).toMatchObject({
         toolCallId: "invalid",
-        isError: bridge,
+        isError: true,
         details: { diagnostics: expect.arrayContaining([expect.objectContaining({ code: "WF_IMPORT" })]) },
       });
       if (bridge) {
@@ -152,9 +152,7 @@ describe("workflow errors through the supported Pi agent loop", () => {
         });
       }
       expect(observed[1]).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ role: "toolResult", toolCallId: "invalid", isError: bridge }),
-        ]),
+        expect.arrayContaining([expect.objectContaining({ role: "toolResult", toolCallId: "invalid", isError: true })]),
       );
     } finally {
       session.dispose();

@@ -4,6 +4,12 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+### Changed
+
+- Verify the development baseline against Pi 1.0.0. Declare TypeBox as a
+  host-provided peer so Pi's extension loader does not warn about a separate
+  runtime dependency; the minimum supported Pi version remains 0.84.3.
+
 ## [0.13.0] - 2026-09-30
 
 ### Changed

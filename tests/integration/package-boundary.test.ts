@@ -731,21 +731,23 @@ describe("npm public package boundary", () => {
       });
       checks.unshift({ name: "consumer", path: ".locus-pi/workflows/consumer.workflow.mjs", accepted: true });
 
-      const toolUrl = pathToFileURL(
-        path.join(
-          consumerRoot,
-          "node_modules",
-          ...pkg.name.split("/"),
-          "extensions",
-          "workflows",
-          "tool",
-          "workflow-source-check-tool.ts",
-        ),
-      ).href;
+      const sdkUrl = pathToFileURL(path.join(root, "node_modules/@earendil-works/pi-coding-agent/dist/index.js")).href;
       const probeScript = `
-        const { registerWorkflowSourceCheckTool } = await import(${JSON.stringify(toolUrl)});
-        let tool;
-        registerWorkflowSourceCheckTool({ registerTool(value) { tool = value; }, on() {} });
+        const { DefaultResourceLoader, SettingsManager } = await import(${JSON.stringify(sdkUrl)});
+        const loader = new DefaultResourceLoader({
+          cwd: ${JSON.stringify(consumerRoot)}, agentDir: ${JSON.stringify(path.join(temporaryRoot, "agent"))},
+          noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+          settingsManager: SettingsManager.inMemory({ packages: [{
+            source: ${JSON.stringify(path.join(consumerRoot, "node_modules", ...pkg.name.split("/")))},
+            extensions: ["extensions/workflows/index.ts"], skills: [],
+          }] }),
+        });
+        await loader.reload();
+        const loaded = loader.getExtensions();
+        if (loaded.errors.length || loaded.warnings?.length)
+          throw new Error(JSON.stringify({ errors: loaded.errors, warnings: loaded.warnings }));
+        const tool = loaded.extensions.flatMap(ext => [...ext.tools.values()])
+          .find(({ definition }) => definition.name === "workflow_check_source")?.definition;
         if (!tool) throw new Error("workflow_check_source was not registered");
         const ctx = {
           cwd: ${JSON.stringify(consumerRoot)},
