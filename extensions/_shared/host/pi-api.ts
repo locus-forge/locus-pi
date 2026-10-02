@@ -525,7 +525,7 @@ export interface ExtensionAPI {
 
 export type ExtensionFactory = (pi: ExtensionAPI) => void | Promise<void>;
 
-/** Pi ignores a returned isError; its tool_result hook is the lossless error boundary. */
+/** Preserve isError through tool_result on older Pi hosts that ignore returned error flags. */
 export function registerToolWithErrorResults(pi: ExtensionAPI, tool: ToolDefinition): void {
   const failedCalls = new Set<string>();
   pi.on("session_shutdown", () => failedCalls.clear());
