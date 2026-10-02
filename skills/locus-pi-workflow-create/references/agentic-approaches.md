@@ -1,9 +1,9 @@
 ---
-updated: "2026-10-02T17:32:37Z"
-source_commit: "8af5c47f379a"
-update_event: "created"
-context: "changes=L files=17"
-description: "Explain reusable feedback, reflection, replanning and composition approaches"
+updated: "2026-10-02T22:53:28Z"
+source_commit: "0d098c9e06d1"
+update_event: "user_request"
+context: "changes=L files=29"
+description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
 # From task need to an agentic approach
@@ -110,6 +110,18 @@ add evaluator feedback after revision when required evidence must gate delivery.
 Replan only if findings change remaining work. Each added node needs a distinct
 responsibility and a consumer; none of router, arbiter, reviewer or human approval
 is universal. A task's existing external-action authorization remains its boundary.
+
+## Quality patterns within the task
+
+For quality work, compose only evidence mechanisms that affect the task. Distinct
+source/search lenses can find different omissions; an adversarial verifier tries
+to refute a specific claim; a completeness critic identifies unread sources,
+unverified claims or missing coverage. Their findings feed correction or replanning,
+not a universal judge. When repeated discovery is needed, an agent keeps seen and
+rejected findings together in a named file so rejected claims do not reappear as
+new work. Source routes exact choices within task-derived finite bounds; the
+decision owner establishes “nothing new” from evidence. Disclose sampling,
+unperformed searches and exhausted coverage rather than claiming completeness.
 
 ## Child Tool Use and ReAct
 

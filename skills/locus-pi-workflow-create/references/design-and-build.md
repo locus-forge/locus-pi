@@ -1,9 +1,9 @@
 ---
-updated: "2026-10-02T17:36:25Z"
-source_commit: "8af5c47f379a"
+updated: "2026-10-02T22:53:29Z"
+source_commit: "0d098c9e06d1"
 update_event: "user_request"
-context: "changes=L files=13"
-description: "Record task-led approach selection and preserve attainable review criteria"
+context: "changes=L files=29"
+description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
 # Design, review, Build
@@ -55,6 +55,7 @@ The design is short Markdown a reader can approve without opening JavaScript:
 Purpose: <one sentence>
 Input: <semantic text or none>
 Primary deliverable: <requested artifact and location>; accompanying report: <if needed>
+Authoring route: <ordinary or explicitly selected detailed lesson; not a runtime field>
 Evidence boundary: <semantic input, caller items, author-known prompt material, or child inspection>
 Approach: <task need and semantic approach(s); omit any unnecessary roles>
 Graph: <fixed for known scope/stages; replan when observed results must change remaining work>

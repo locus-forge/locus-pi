@@ -2,11 +2,11 @@
 title: Workflow source contract
 type: guide
 status: active
-updated: "2026-10-02T17:32:37Z"
-source_commit: "8af5c47f379a"
-update_event: "sync"
-context: "changes=L files=17"
-description: "Correct removed schema and validate option support"
+updated: "2026-10-02T22:53:28Z"
+source_commit: "0d098c9e06d1"
+update_event: "user_request"
+context: "changes=L files=29"
+description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
 # Workflow source contract
@@ -21,7 +21,7 @@ The rules below own source restrictions and diagnostics. Passing them does not p
 
 ## Standard primitive profile
 
-The packaged `locus-pi-workflow-create` skill emits an orchestration-only subset
+Both packaged workflow-create lessons emit an orchestration-only subset
 of this profile. New generated source contains author-known prompts, direct
 `agent()` edges, visible DSL control flow, and in-memory text publication. It
 does not call `consumeTextArtifact`, `continuationArtifacts`, `workspaceDir`, `outputDir`,

@@ -8,11 +8,19 @@ import { createWorkflowArtifactStore } from "../../../../../extensions/workflows
 import {
   createWorkflowRuntime,
   type WorkflowAgentRequest,
+  type WorkflowAgentResult,
 } from "../../../../../extensions/workflows/runtime/workflow-runtime.js";
 import { orchestrationOnlyWorkflowSourceShapeDiagnostics } from "../../../../../extensions/workflows/tool/workflow-source-shape.js";
 
 const base = "extensions/workflows/references/examples/starters";
-const starters = ["evaluator-optimizer", "plan-replan", "reflection", "parallel-reflection"];
+const starters = [
+  "project-tour",
+  "caller-audit",
+  "evaluator-optimizer",
+  "plan-replan",
+  "reflection",
+  "parallel-reflection",
+];
 const input = "Deliver the requested outcome; retain required checks and uncertainty.\nSources: task.md";
 const originalWork = "First complete handoff\n  required evidence: missing\nartifact: changed-source.ts\n";
 const correctedWork = "Corrected complete handoff\n  verified: required check\nartifact: changed-source.ts\n";
@@ -32,7 +40,12 @@ beforeAll(() => {
 
 type ChildEffect = (request: WorkflowAgentRequest, occurrence: number, workspace: string) => void | Promise<void>;
 
-async function runStarter(name: string, answers: Record<string, string[]>, effect?: ChildEffect) {
+async function runStarter(
+  name: string,
+  answers: Record<string, Array<string | WorkflowAgentResult>>,
+  effect?: ChildEffect,
+  items: string[] = [],
+) {
   return temporaryValue(async (root) => {
     const workspace = path.join(root, "workspace");
     mkdirSync(workspace);
@@ -43,6 +56,7 @@ async function runStarter(name: string, answers: Record<string, string[]>, effec
       runId: name,
       projectRoot: root,
       workspaceDir: workspace,
+      items,
       artifactPorts: store,
       agentRunner: async (request) => {
         seen.push(request);
@@ -53,6 +67,7 @@ async function runStarter(name: string, answers: Record<string, string[]>, effec
         const script = answers[label];
         expect(script, `unscripted child: ${label}`).toBeDefined();
         const answer = script![occurrence] ?? script!.at(-1)!;
+        if (typeof answer !== "string") return answer;
         return {
           ...completed(request, request.returnContract ? JSON.stringify(answer) : answer),
           ...(request.returnContract
@@ -87,6 +102,9 @@ describe("small agentic starters with real runtime and scripted children", () =>
     const documents = [
       "docs/workflows/create.md",
       "docs/workflows/source-shape.md",
+      "skills/locus-pi-workflow-create/SKILL.md",
+      "skills/locus-pi-workflow-create-detailed/SKILL.md",
+      "skills/locus-pi-workflow-create-detailed/references/worked-decisions.md",
       ...readdirSync(references)
         .filter((file) => file.endsWith(".md"))
         .map((file) => `${references}/${file}`),
@@ -101,6 +119,146 @@ describe("small agentic starters with real runtime and scripted children", () =>
       }
     }
     expect(checked).toBeGreaterThan(0);
+  });
+
+  it("runs the identical early lesson module with whole reader handoffs and exact publication", async () => {
+    const purpose = "Complete purpose evidence\n";
+    const commands = "Complete commands evidence\n";
+    const guide = "Complete project guide\n";
+    const got = await runStarter("project-tour", { purpose: [purpose], commands: [commands], compose: [guide] });
+    expect(got.seen.map((request) => request.label)).toEqual(["purpose", "commands", "compose"]);
+    expect(got.seen[2]!.prompt).toContain(`${purpose}\n\n${commands}`);
+    expect(got.artifacts.find((artifact) => artifact.kind === "primary")!.text).toBe(guide);
+  });
+
+  it("advances one audit item before its sibling, then waits for both before synthesis", async () => {
+    const checked = ["Verified A with complete evidence\n", "Verified B with optional coverage disclosure\n"];
+    let releaseB!: () => void;
+    const bReleased = new Promise<void>((resolve) => {
+      releaseB = resolve;
+    });
+    let bFinished = false;
+    const got = await runStarter(
+      "caller-audit",
+      {
+        inspect: ["A whole findings\n", "B whole findings\n"],
+        verify: checked,
+        synthesize: ["Complete audit\n"],
+        review: ["accept"],
+      },
+      async (request, occurrence) => {
+        if (request.label === "inspect" && occurrence === 1) {
+          await bReleased;
+          bFinished = true;
+        }
+        if (request.label === "verify" && occurrence === 0) {
+          expect(bFinished).toBe(false);
+          expect(request.prompt).toContain("A whole findings\n");
+          releaseB();
+        }
+        if (request.label === "synthesize" || request.label === "review") {
+          expect(bFinished).toBe(true);
+          for (const report of checked) expect(request.prompt).toContain(report);
+          expect(request.prompt.indexOf(checked[0]!)).toBeLessThan(request.prompt.indexOf(checked[1]!));
+          expect(request.prompt).toContain("Execution: completed");
+        }
+      },
+      ["Source A", "Source B"],
+    );
+    expect(got.counts).toEqual({ inspect: 2, verify: 2, synthesize: 1, review: 1 });
+    expect(got.seen.filter((request) => request.label === "verify").map((request) => request.title)).toEqual([
+      "Verify findings at pipeline slot 1",
+      "Verify findings at pipeline slot 3",
+    ]);
+    expect(got.artifacts.find((artifact) => artifact.kind === "primary")!.text).toBe("Complete audit\n");
+  });
+
+  it("refuses empty required caller items without starting children", async () => {
+    const got = await runStarter("caller-audit", {});
+    expect(got.result).toEqual({ ok: false, status: "incomplete", reason: "missing_caller_items" });
+    expect(got.seen).toEqual([]);
+    expect(got.artifacts).toEqual([]);
+  });
+
+  it("retains the complete audit candidate when required evidence remains unmet", async () => {
+    const got = await runStarter(
+      "caller-audit",
+      {
+        inspect: ["source findings"],
+        verify: ["required evidence missing"],
+        synthesize: ["Complete account with required residuals"],
+        review: ["incomplete"],
+      },
+      (request, _, workspace) => {
+        if (request.label === "review")
+          writeFileSync(
+            path.join(workspace, "findings.md"),
+            "R1: required evidence unavailable; verify before acceptance.",
+          );
+      },
+      ["Source A"],
+    );
+    expect(got.result).toMatchObject({
+      ok: false,
+      status: "incomplete",
+      candidate: "Complete account with required residuals",
+      findings: "findings.md",
+    });
+    expect(got.artifacts.filter((artifact) => artifact.kind === "published").map((artifact) => artifact.text)).toEqual([
+      "Complete account with required residuals",
+    ]);
+    expect(got.artifacts.some((artifact) => artifact.kind === "primary")).toBe(false);
+  });
+
+  it("retains original caller units downstream when provider failures have no answer", async () => {
+    const units = [
+      "hidden-source-A.ts\n  Required: inspect this exact caller source.\n",
+      "hidden-source-B.ts\n  Required: verify the second independent source.\n",
+    ];
+    const failure: WorkflowAgentResult = {
+      ok: false,
+      status: "failed",
+      failureCause: "provider-error",
+      summary: "provider unavailable",
+      diagnostics: ["P2 provider probe"],
+    };
+    const got = await runStarter(
+      "caller-audit",
+      {
+        inspect: [failure, "Complete second inspection"],
+        verify: [failure, "Complete second verification"],
+        synthesize: ["Complete account preserving failed checks"],
+        review: ["incomplete"],
+      },
+      (request, occurrence) => {
+        if (request.label === "inspect") return;
+        expect(request.prompt).toContain(units.join("\n\n"));
+        if (request.label === "verify" && occurrence === 1) return;
+        expect(request.prompt).toContain("Cause: provider-error");
+        expect(request.prompt).toContain("No accepted agent answer");
+        expect(request.prompt).toContain("P2 provider probe");
+        expect(request.prompt).toContain(`Label: ${request.label === "verify" ? "inspect" : "verify"}`);
+      },
+      units,
+    );
+    expect(got.result).toMatchObject({ ok: false, candidate: "Complete account preserving failed checks" });
+    expect(got.artifacts.some((artifact) => artifact.kind === "primary")).toBe(false);
+  });
+
+  it("does not synthesize after an ordinary pipeline execution failure", async () => {
+    const seen: string[] = [];
+    await expect(
+      runStarter(
+        "caller-audit",
+        { inspect: ["findings"], verify: ["verified"] },
+        (request) => {
+          seen.push(request.label!);
+          if (request.label === "inspect") throw new Error("audit host failed");
+        },
+        ["Source A"],
+      ),
+    ).rejects.toThrow();
+    expect(seen).toEqual(["inspect"]);
   });
 
   it("accepts the exact first handoff with disclosed optional coverage and no extra router", async () => {

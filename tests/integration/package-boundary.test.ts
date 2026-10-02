@@ -362,7 +362,8 @@ describe("npm public package boundary", () => {
     // removing the shaped-result schema owner (workflow-schema.ts) took one file out;
     // the bound-directory and child-task-note owners under location-state/ add two.
     // Four agentic starters and their two guides add six teaching resources.
-    expect(dryRun.files).toHaveLength(261);
+    // Two authoring lessons share contracts; detailed has one conditional case reference and two new starters.
+    expect(dryRun.files).toHaveLength(265);
   });
 
   it("ships every prompt resource a curated workflow renders", () => {
@@ -442,7 +443,7 @@ describe("npm public package boundary", () => {
       .filter((entry) => entry.isDirectory())
       .map((entry) => `skills/${entry.name}/SKILL.md`)
       .sort();
-    expect(skillEntries).toHaveLength(3);
+    expect(skillEntries).toHaveLength(4);
 
     for (const skillPath of skillEntries) {
       expect(existsSync(path.join(root, skillPath)), `declared skill is missing: ${skillPath}`).toBe(true);

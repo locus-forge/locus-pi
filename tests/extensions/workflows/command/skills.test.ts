@@ -69,7 +69,7 @@ describe("workflow skill host command", () => {
       userHome: f.userHome,
     });
     expect(first.rows.filter((row) => !row.legacy).map((row) => row.changed)).toEqual(
-      Array.from({ length: 6 }, () => "created"),
+      Array.from({ length: 8 }, () => "created"),
     );
     for (const hostRoot of [path.join(f.userHome, ".agents", "skills"), path.join(f.userHome, ".claude", "skills")]) {
       for (const skill of WORKFLOW_SKILL_NAMES) {
@@ -141,11 +141,11 @@ describe("workflow skill host command", () => {
     expect(lstatSync(path.join(hostRoot, "locus-pi-workflows"), { throwIfNoEntry: false })).toBeUndefined();
   });
 
-  it("adds the external session skill to a two-skill installation without replacing existing links", () => {
+  it("adds detailed authoring to a three-skill installation without replacing existing links", () => {
     const f = fixture();
     const hostRoot = path.join(f.userHome, ".agents", "skills");
     mkdirSync(hostRoot, { recursive: true });
-    const previous = ["locus-pi-workflow-create", "locus-pi-workflow-run"];
+    const previous = ["locus-pi-workflow-create", "locus-pi-workflow-run", "external-locus-pi"];
     for (const name of previous)
       symlinkSync(path.join(f.packageRoot, "skills", name), path.join(hostRoot, name), "dir");
     mkdirSync(path.join(hostRoot, "user-owned-skill"));
@@ -163,7 +163,7 @@ describe("workflow skill host command", () => {
       userHome: f.userHome,
     });
     expect(result.rows.filter((row) => row.changed !== "none")).toEqual([
-      expect.objectContaining({ skill: "external-locus-pi", changed: "created" }),
+      expect.objectContaining({ skill: "locus-pi-workflow-create-detailed", changed: "created" }),
     ]);
     for (const name of previous)
       expect(readlinkSync(path.join(hostRoot, name))).toBe(path.join(f.packageRoot, "skills", name));
@@ -171,6 +171,7 @@ describe("workflow skill host command", () => {
     expect(JSON.parse(readFileSync(path.join(hostRoot, WORKFLOW_SKILL_STATE_FILE), "utf8")).links).toEqual([
       "external-locus-pi",
       "locus-pi-workflow-create",
+      "locus-pi-workflow-create-detailed",
       "locus-pi-workflow-run",
     ]);
   });

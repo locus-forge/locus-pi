@@ -1,9 +1,9 @@
 ---
-updated: "2026-10-02T17:36:25Z"
-source_commit: "8af5c47f379a"
+updated: "2026-10-02T22:53:28Z"
+source_commit: "0d098c9e06d1"
 update_event: "user_request"
-context: "changes=L files=13"
-description: "Link packaged teaching starters and semantic authoring guidance"
+context: "changes=L files=29"
+description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
 # Workflow examples
@@ -136,17 +136,20 @@ The [complete DSL reference](../../docs/workflows/dsl.md) describes the availabl
 
 ## Patterns to adapt
 
-The [authoring approach index](../../skills/locus-pi-workflow-create/references/INDEX.md)
+Start with an [ordinary or detailed authoring lesson](../../docs/workflows/create.md#choose-an-authoring-route),
+then use the [authoring approach index](../../skills/locus-pi-workflow-create/references/INDEX.md)
 starts from task needs; the [semantic guide](../../skills/locus-pi-workflow-create/references/agentic-approaches.md)
 explains feedback, planning and composition before graph selection. The
 [small starter guide](../../extensions/workflows/references/examples/starters/README.md)
-shows how to simplify and adapt four complete modules. The teaching modules under
+shows how to simplify and adapt six complete modules. The teaching modules under
 `extensions/workflows/references/examples/` ship with the package but are separate
 from the saved Package registry. Read and adapt them, or run a reviewed module by
 explicit path; their filenames do not register runnable Package names.
 
 | Teaching source                                                                                                                 | What it demonstrates                                                                                                                                       |
 | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Project tour](../../extensions/workflows/references/examples/starters/project-tour.workflow.mjs)                               | The complete first lesson: two known readers before one explanation.                                                                                       |
+| [Caller audit](../../extensions/workflows/references/examples/starters/caller-audit.workflow.mjs)                               | Independent per-source inspect/verify pipeline, then complete-account synthesis and coverage review.                                                       |
 | [Evaluator-Optimizer](../../extensions/workflows/references/examples/starters/evaluator-optimizer.workflow.mjs)                 | Known work with reviewer-owned findings and choice, bounded correction/recheck, and honest incomplete exits.                                               |
 | [Plan/replan](../../extensions/workflows/references/examples/starters/plan-replan.workflow.mjs)                                 | Revise a named sequential plan from observed results; preserve remaining work when the teaching allowance ends.                                            |
 | [Reflection](../../extensions/workflows/references/examples/starters/reflection.workflow.mjs)                                   | Draft, critique and revise a low-risk explanation; the revision has no independent acceptance claim.                                                       |

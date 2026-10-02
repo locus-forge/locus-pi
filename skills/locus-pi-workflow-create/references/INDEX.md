@@ -1,15 +1,18 @@
 ---
-updated: "2026-10-02T17:36:25Z"
-source_commit: "8af5c47f379a"
+updated: "2026-10-02T22:53:28Z"
+source_commit: "0d098c9e06d1"
 update_event: "user_request"
-context: "changes=L files=13"
-description: "Map task needs through semantic approaches to supported Pi graphs"
+context: "changes=L files=29"
+description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
 # Choose an approach for the task
 
-Start with what must improve or change, then choose the smallest supported graph.
-The create skill owns deliverable clarification and Design → review → Build.
+After the first module and dependency lesson in the [ordinary](../SKILL.md) or
+[detailed](../../locus-pi-workflow-create-detailed/SKILL.md) entry, choose what must
+improve or change and the smallest supported graph. Both entries share
+[Design → review → Build](design-and-build.md); the
+[public create guide](../../../docs/workflows/create.md#choose-an-authoring-route) owns route selection.
 For a failed or stopped graph needing a source fix, start with
 [Repair + Continue](repair-and-continue.md) and preserve its completed prefix.
 

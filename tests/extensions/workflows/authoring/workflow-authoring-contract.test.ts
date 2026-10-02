@@ -41,6 +41,7 @@ function declaredStandardDocSnippets(relativePath: string): string[] {
 describe("readable workflow authoring references", () => {
   const authoringSurfaces = [
     "skills/locus-pi-workflow-create/SKILL.md",
+    "skills/locus-pi-workflow-create-detailed/SKILL.md",
     "skills/locus-pi-workflow-create/references/design-and-build.md",
     "extensions/workflows/tool/workflow-tool.ts",
     "extensions/workflows/manifest.json",
@@ -80,6 +81,7 @@ describe("readable workflow authoring references", () => {
 
   it.each([
     "skills/locus-pi-workflow-create/SKILL.md",
+    "skills/locus-pi-workflow-create-detailed/SKILL.md",
     "docs/workflows/source-shape.md",
     "docs/workflows/authoring.md",
   ])("publishes the runnable standard source gate on %s", (relativePath) => {
@@ -106,6 +108,7 @@ describe("readable workflow authoring references", () => {
       "docs/workflows/source-shape.md",
       "skills/locus-pi-workflow-create/references/source-boundary.md",
       "skills/locus-pi-workflow-create/SKILL.md",
+      "skills/locus-pi-workflow-create-detailed/SKILL.md",
       ...readdirSync(path.join(root, "docs/workflows")).map((name) => `docs/workflows/${name}`),
       "examples/workflows/README.md",
       "README.md",
@@ -124,6 +127,7 @@ describe("readable workflow authoring references", () => {
       "docs/workflows/source-shape.md",
       "skills/locus-pi-workflow-create/references/source-boundary.md",
       "skills/locus-pi-workflow-create/SKILL.md",
+      "skills/locus-pi-workflow-create-detailed/SKILL.md",
       ...readdirSync(path.join(root, "docs/workflows")).map((name) => `docs/workflows/${name}`),
       "examples/workflows/README.md",
       "README.md",
@@ -175,11 +179,18 @@ describe("readable workflow authoring references", () => {
     }
   });
 
-  it("checks canonical AUTHORING fragments while keeping the installed router code-free", () => {
+  it("checks canonical AUTHORING fragments and both complete teaching modules", () => {
     const authoring = javascriptDocSnippets("docs/workflows/source-shape.md");
-    const skill = javascriptDocSnippets("skills/locus-pi-workflow-create/SKILL.md");
+    const lessons = ["locus-pi-workflow-create", "locus-pi-workflow-create-detailed"];
     expect(authoring).toHaveLength(2);
-    expect(skill).toHaveLength(0); // Entrypoint routes to tested complete examples; it duplicates no harness.
+    for (const lesson of lessons) {
+      const modules = javascriptDocSnippets(`skills/${lesson}/SKILL.md`);
+      expect(modules).toHaveLength(1);
+      expect(modules[0]!.trim()).toBe(
+        source("extensions/workflows/references/examples/starters/project-tour.workflow.mjs").trim(),
+      );
+      expect(standardWorkflowSourceShapeErrors(modules[0]!)).toEqual([]);
+    }
 
     const fragments = [
       {
@@ -207,31 +218,38 @@ ${authoring[0] ?? ""}
     expect(grammar).toMatch(/prompt[- ]English/iu);
   });
 
-  it("routes one continuous Design-review-Build process without copying the runtime manual", () => {
-    const router = source("skills/locus-pi-workflow-create/SKILL.md");
-    const design = source("skills/locus-pi-workflow-create/references/design-and-build.md");
-    expect(router).toContain("This skill owns authoring and the checked-source handoff.");
-    expect(router).toContain("references/design-and-build.md");
-    expect(router).toContain("source-shape.md#machine-enforced-standard-source-shape");
-    expect(router).toContain("docs/workflows/index.md");
-    expect(router).toContain("Create-only ends with checked source");
-    expect(router).toMatch(/Authorized create-and-run continues through\s+that skill without repeat approval/u);
-    expect(router).not.toContain("Never run the workflow");
-    expect(design).toContain("no unchecked module is imported");
-    expect(router).toContain("checked target, exact checks");
-    expect(router).toContain("/workflows run <name>");
-    expect(router.split("\n").length).toBeLessThanOrEqual(121);
-    expect([...router].length).toBeLessThanOrEqual(8_000);
-    expect(router).toContain("docs/workflows/dsl.md#dsl-surface-v0");
-    expect(router).toContain("examples/workflows/README.md");
-    expect(router).toContain("read its exact source");
-    expect(design).toContain("before any source");
-    expect(design).toContain("## Entries");
-    expect(design).toContain("group-only");
-    expect(design).toContain("<name>/<child>");
-    expect(design).toContain("workflow_check_source");
-    expect(design).toContain("material algorithm mismatch");
-  });
+  it.each(["locus-pi-workflow-create", "locus-pi-workflow-create-detailed"])(
+    "keeps %s within skill limits and shared contract ownership",
+    (lesson) => {
+      const text = source(`skills/${lesson}/SKILL.md`);
+      expect((text.match(/\n/gu) ?? []).length).toBeLessThanOrEqual(120);
+      expect([...text].length).toBeLessThanOrEqual(8_000);
+      const body = text.slice(text.indexOf("\n---\n", 4) + 5);
+      expect(body.split("\n").every((line) => [...line].length <= 200)).toBe(true);
+      for (const contract of [
+        "design-and-build.md",
+        "source-boundary.md",
+        "source-shape.md#machine-enforced-standard-source-shape",
+        "dsl.md#dsl-surface-v0",
+        "workflow_check_source",
+        'mode: "orchestration-only"',
+        "node --check <exact-path>",
+        "Never import unchecked source",
+        "without repeat approval",
+      ])
+        expect(text).toContain(contract);
+      const design = source("skills/locus-pi-workflow-create/references/design-and-build.md");
+      for (const contract of [
+        "before any source",
+        "## Entries",
+        "group-only",
+        "<name>/<child>",
+        "workflow_check_source",
+        "material algorithm mismatch",
+      ])
+        expect(design).toContain(contract);
+    },
+  );
 
   it("keeps source grammar, labels, output and failure authority in canonical references", () => {
     const authoring =
@@ -265,6 +283,7 @@ ${authoring[0] ?? ""}
   it("keeps workflow-create snippets free of file parsing and default fuse boilerplate", () => {
     const authoredDocs = [
       "skills/locus-pi-workflow-create/SKILL.md",
+      "skills/locus-pi-workflow-create-detailed/SKILL.md",
       ...readdirSync(path.join(root, "skills/locus-pi-workflow-create/references"))
         .filter((name) => name.endsWith(".md"))
         .map((name) => `skills/locus-pi-workflow-create/references/${name}`),

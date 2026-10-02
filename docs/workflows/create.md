@@ -4,29 +4,67 @@ type: guide
 status: active
 owner: locus-pi maintainers
 tags: [workflows, authoring]
-updated: "2026-10-02T17:32:37Z"
-source_commit: "8af5c47f379a"
+updated: "2026-10-02T22:53:27Z"
+source_commit: "0d098c9e06d1"
 update_event: "user_request"
-context: "changes=L files=17"
-description: "Teach task-led approach selection and reusable agentic workflow starters"
+context: "changes=L files=29"
+description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
 # Create a workflow with an agent
 
 [Documentation](../index.md) · [Workflow reference](index.md) · [DSL methods](dsl.md) · [Run and inspect](running.md)
 
-Use the [workflow-create skill](../../skills/locus-pi-workflow-create/SKILL.md)
-to turn a task description into a reusable `.workflow.mjs` file. The skill designs
+Use an authoring skill to turn a task description into a reusable `.workflow.mjs` file. It designs
 the agent graph, reviews it, writes the source, and checks it. You can inspect and
 edit that source before running it.
 
-## Ask Pi to create it
+## Choose an authoring route
 
-With the package skills enabled, enter this in Pi:
+The [ordinary lesson](../../skills/locus-pi-workflow-create/SKILL.md) is the default.
+The [detailed lesson](../../skills/locus-pi-workflow-create-detailed/SKILL.md)
+explains more decisions and worked handoffs for explicitly requested detailed
+authoring. Both produce checked source under the same graph, evidence, model
+routing and execution contracts. Detail is not a runtime mode, a provider choice,
+automatic procedural briefs, extra agents or permission to run.
+
+With package skills enabled, choose either explicit invocation for the same task.
+
+Ordinary:
 
 ```text
 /skill:locus-pi-workflow-create Create a project-tour workflow: two agents read README.md and package.json in parallel, then a third combines their notes into a getting-started guide. Do not modify project files during the run. Build and check the workflow, but do not run it yet.
 ```
+
+Detailed:
+
+```text
+/skill:locus-pi-workflow-create-detailed Create a project-tour workflow: two agents read README.md and package.json in parallel, then a third combines their notes into a getting-started guide. Do not modify project files during the run. Build and check the workflow, but do not run it yet.
+```
+
+**An explicit skill invocation selects its named entry and wins over route wording
+inside that invocation.** For example, `/skill:locus-pi-workflow-create Create a
+detailed workflow` keeps ordinary authoring; invoke the detailed sibling to select
+that lesson. An explicit detailed invocation stays detailed with generic task text.
+
+Without a selecting invocation, use these task-wording distinctions:
+
+| Request                                                                           | Entry and reason                                                                         |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| “Create a workflow”                                                               | Ordinary, the default authoring lesson                                                   |
+| “Create a detailed workflow” or “Use detailed workflow authoring”                 | Detailed, an explicit teaching-route request                                             |
+| “Create a workflow that produces a detailed report”                               | Ordinary; detail describes the artifact                                                  |
+| “Use adaptive slices”, “use procedural briefs”, a model name or task thoroughness | Ordinary unless detailed authoring is separately selected; these are independent choices |
+| “Run this existing workflow”                                                      | [Run skill](../../skills/locus-pi-workflow-run/SKILL.md); authoring is unnecessary       |
+| “Repair this stopped workflow and continue”                                       | Existing repair-first authoring/run path; preserve the confirmed prefix                  |
+
+A later, separate correction can change the teaching route while preserving
+accepted design decisions and completed evidence. Conflicting explicit natural
+route preferences without a selecting invocation need clarification; merely
+ambiguous wording uses a stated ordinary assumption. This is guidance for skill
+selection, not a deterministic language classifier or a model-quality guarantee.
+
+## Ask Pi to create it
 
 The resulting files belong under `.locus-pi/workflows/project-tour/`: a
 `project-tour.design.md` description and `project-tour.workflow.mjs` source.
@@ -58,32 +96,28 @@ Create `.locus-pi/workflows/project-tour/project-tour.workflow.mjs`:
 ```js
 export const meta = {
   name: "project-tour",
-  description: "Read a project from two angles and summarize where to start.",
+  description: "Read a project and explain where to start.",
   profile: "standard",
 };
 
-export default async function run({ agent, parallel, phase }) {
-  phase("explore");
+export default async function run({ agent, parallel, publishPrimaryArtifact }) {
   const notes = await parallel([
     () =>
-      agent("Read README.md and summarize what this project does. Do not modify files.", {
-        label: "project-purpose",
+      agent("Read README.md for the project purpose. Do not modify files.", {
+        label: "purpose",
         title: "Read project purpose",
       }),
     () =>
-      agent("Read package.json and summarize its development commands. Do not modify files.", {
-        label: "project-commands",
+      agent("Read package.json for development commands. Do not modify files.", {
+        label: "commands",
         title: "Read development commands",
       }),
   ]);
-  phase("summarize");
-  return await agent(
-    `Combine these notes into a short getting-started guide. Do not modify files.\n${notes.join("\n\n")}`,
-    {
-      label: "getting-started",
-      title: "Write getting-started guide",
-    },
+  const guide = await agent(
+    `Combine these complete notes into a getting-started guide. Preserve uncertainty; do not modify files.\n${notes.join("\n\n")}`,
+    { label: "compose", title: "Write getting-started guide" },
   );
+  return publishPrimaryArtifact("guide.md", guide);
 }
 ```
 
@@ -331,4 +365,7 @@ Both adaptive references allow new residuals to return to the author after the s
 
 ## Authoring references
 
-The installed [workflow-create skill](../../skills/locus-pi-workflow-create/SKILL.md) owns Design → review → Build. The [workflow-run skill](../../skills/locus-pi-workflow-run/SKILL.md) owns execution and recovery. Read the [source boundary](../../skills/locus-pi-workflow-create/references/source-boundary.md) before building and the [exact source contract](source-shape.md) when resolving checker diagnostics.
+The ordinary and detailed lessons share [Design → review → Build](../../skills/locus-pi-workflow-create/references/design-and-build.md).
+[Route selection](#choose-an-authoring-route) owns their invocation rules.
+The [workflow-run skill](../../skills/locus-pi-workflow-run/SKILL.md) owns execution and recovery.
+Read the [source boundary](../../skills/locus-pi-workflow-create/references/source-boundary.md) before building and the [exact source contract](source-shape.md) for diagnostics.
