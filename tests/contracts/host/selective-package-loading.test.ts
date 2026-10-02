@@ -105,6 +105,7 @@ async function loadProfile(selectedIds: string[], options: ProfileOptions = {}) 
   });
   const loadedSkills = loader.getSkills();
   expect(loaded.errors, `Pi ${VERSION} extension load errors`).toEqual([]);
+  expect(loaded.warnings ?? [], `Pi ${VERSION} extension package warnings`).toEqual([]);
 
   return {
     extensionIds: loaded.extensions.map((extension) => path.basename(path.dirname(extension.path))).sort(),

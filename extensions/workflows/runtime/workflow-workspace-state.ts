@@ -63,6 +63,11 @@ export interface WorkflowCheckpointIdentity {
   workspaceIdentity: string;
   outputIdentity: string;
   itemKey: string;
+  /**
+   * Launch lineage of a bound root (`meta.outputDir`). Unbound identities omit it,
+   * so their checkpoint file names and records are exactly the earlier v2 ones.
+   */
+  rootLineageId?: string;
 }
 
 export interface WorkflowCompletedCheckpoint extends WorkflowCheckpointIdentity {
@@ -208,6 +213,7 @@ export function commitWorkflowCompletedCheckpoint(
     workspaceIdentity: input.workspaceIdentity,
     outputIdentity: input.outputIdentity,
     itemKey: input.itemKey,
+    ...(input.rootLineageId === undefined ? {} : { rootLineageId: input.rootLineageId }),
     childRunId,
     completedAt: new Date().toISOString(),
     ...(input.primaryFile === undefined ? {} : { primaryFile: input.primaryFile }),
@@ -289,6 +295,7 @@ function checkpointFile(lease: WorkflowRootLease, identity: WorkflowCheckpointId
         identity.workspaceIdentity,
         identity.outputIdentity,
         identity.itemKey,
+        ...(identity.rootLineageId === undefined ? [] : [identity.rootLineageId]),
       ]),
     )
     .digest("hex");
@@ -344,6 +351,7 @@ function isCompletedCheckpoint(value: unknown): value is WorkflowCompletedCheckp
     typeof record.workspaceIdentity === "string" &&
     typeof record.outputIdentity === "string" &&
     typeof record.itemKey === "string" &&
+    (record.rootLineageId === undefined || typeof record.rootLineageId === "string") &&
     record.childRunId === childRunId &&
     typeof record.completedAt === "string" &&
     (record.primaryFile === undefined || isPrimaryFileReference(record.primaryFile))
@@ -372,6 +380,7 @@ function sameCheckpointIdentity(
     checkpoint.childScriptSha256 === identity.childScriptSha256 &&
     checkpoint.workspaceIdentity === identity.workspaceIdentity &&
     checkpoint.outputIdentity === identity.outputIdentity &&
-    checkpoint.itemKey === identity.itemKey
+    checkpoint.itemKey === identity.itemKey &&
+    checkpoint.rootLineageId === identity.rootLineageId
   );
 }

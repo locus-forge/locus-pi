@@ -114,7 +114,7 @@ emergency compatibility alias; every other operation uses `/workflows`.
 /workflows run plan --no-operator <input>   unattended launch: any operator-input request fails closed
 ```
 
-Every fresh workflow launch receives a unique
+Every fresh workflow launch without a root `meta.outputDir` receives a unique
 `.locus-pi/workspaces/<generated-run-name>` workspace. This includes
 `post-code-review`, so its normal start command needs no manual `workspaceDir`.
 Callers may still select another confined project-relative workspace with
@@ -127,8 +127,13 @@ before child execution.
 
 The launch selector never chooses final output. A root workflow may declare one
 literal project-relative `meta.outputDir`, for example `.local/airflow-dag-catalog`.
-Without it, final files go to `<workspaceDir>/outputs`. Saved children inherit
-both locations and cannot override either one.
+That directory is then the run's single workflow directory: agents write handoffs
+under its `artifacts/` subdirectory and final files in it, relative paths in agent
+prompts resolve against it, and `--workspace-dir` and `--run-name` are refused.
+Run evidence stays under `.locus-pi/runs/<run-id>`; the directory receives only a
+`.workflow-runs.md` backlink to it. Without a declaration, final files go to
+`<workspaceDir>/outputs`. Saved children inherit both locations and cannot
+override either one. See [bound workflow directory](dsl.md#bound-workflow-directory).
 
 Each accepted `post-code-review` workspace also owns one optional operator file,
 `style.md`. Before launch, the operator may place comment and project-style
@@ -164,7 +169,9 @@ invocation therefore blocks for the whole run and there is no concurrent
 
 ### Workspace and output ownership recovery
 
-Every root run owns two independent single-writer leases:
+Every root run without `meta.outputDir` owns two independent single-writer
+leases; a bound root owns only the workspace lease, which fences its one
+directory:
 
 - `.locus-pi/workflow-state/v1/<hash>/lease.json` protects the runtime
   workspace and the saved-child checkpoints stored beside it.

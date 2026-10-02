@@ -82,7 +82,13 @@ export interface WorkflowRunnerCoordination {
   parentItemKey?: string;
   sharedExecution: WorkflowSharedExecutionState;
   lease: WorkflowRootLease;
-  outputLease: WorkflowOutputLease;
+  /** Absent when a root meta.outputDir bound workspace and output to one directory. */
+  outputLease?: WorkflowOutputLease | undefined;
+  /**
+   * Launch lineage that scopes completed-item checkpoints of a bound root, so a
+   * fresh launch never reuses an earlier run's work in its stable directory.
+   */
+  checkpointLineageId?: string | undefined;
   workspace: WorkflowOutputDirectory;
   output: WorkflowFinalOutputDirectory;
   ancestry: readonly { sourcePath: string; scriptSha256: string }[];
@@ -277,6 +283,9 @@ export class SavedChildExecutionOwner {
       workspaceIdentity: this.options.coordination.workspace.identity,
       outputIdentity: this.options.coordination.output.identity,
       itemKey: validated.key,
+      ...(this.options.coordination.checkpointLineageId === undefined
+        ? {}
+        : { rootLineageId: this.options.coordination.checkpointLineageId }),
     };
     const lifecycle = createSavedChildLifecycleOwner({
       key: validated.key,
@@ -394,6 +403,7 @@ export class SavedChildExecutionOwner {
       sharedExecution: this.options.coordination.sharedExecution,
       lease: this.options.coordination.lease,
       outputLease: this.options.coordination.outputLease,
+      checkpointLineageId: this.options.coordination.checkpointLineageId,
       workspace: this.options.coordination.workspace,
       output: this.options.coordination.output,
       ancestry: [...this.options.coordination.ancestry, { sourcePath: source.path, scriptSha256: source.scriptSha256 }],

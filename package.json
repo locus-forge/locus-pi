@@ -1,6 +1,6 @@
 {
   "name": "@locus-forge/locus-pi",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "type": "module",
   "description": "Dynamic workflows for Pi: reusable multi-agent workflows with configurable model roles.",
   "license": "MIT",
@@ -66,21 +66,22 @@
   },
   "dependencies": {
     "@ast-grep/lang-python": "^0.0.6",
-    "@ast-grep/napi": "^0.43.0",
-    "@sinclair/typebox": "^0.34.41"
+    "@ast-grep/napi": "^0.43.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": ">=0.84.3",
     "@earendil-works/pi-ai": ">=0.84.3",
     "@earendil-works/pi-coding-agent": ">=0.84.3",
     "@earendil-works/pi-tui": ">=0.84.3",
+    "@sinclair/typebox": "*",
     "typebox": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-agent-core": "0.87.1",
-    "@earendil-works/pi-ai": "0.87.1",
-    "@earendil-works/pi-coding-agent": "0.87.1",
-    "@earendil-works/pi-tui": "0.87.1",
+    "@earendil-works/pi-agent-core": "1.0.0",
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-coding-agent": "1.0.0",
+    "@earendil-works/pi-tui": "1.0.0",
+    "@sinclair/typebox": "^0.34.41",
     "@types/node": "^24.0.0",
     "lint-staged": "^16.4.0",
     "prettier": "^3.9.5",

@@ -78,7 +78,7 @@ function workflowApprovalDetails(args: unknown, projectRoot: string): string[] {
       workspace = `selection blocked: ${error instanceof Error ? error.message : String(error)}`;
     }
   } else {
-    workspace = `${WORKFLOW_WORKSPACES_STORAGE_PREFIX}<generated-run-name>`;
+    workspace = `${WORKFLOW_WORKSPACES_STORAGE_PREFIX}<generated-run-name> unless meta.outputDir`;
   }
   const declaredBudget =
     record.budget !== null && typeof record.budget === "object"
