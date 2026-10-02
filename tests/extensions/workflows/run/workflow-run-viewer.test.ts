@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearViewerExternalRows,
@@ -93,7 +93,7 @@ describe("workflow persisted evidence viewer", () => {
     viewer.handleInput("escape");
     viewer.handleInput("down");
     viewer.handleInput("enter");
-    const transcript = viewer.render(100).join("\n");
+    const transcript = stripTerminalSequences(viewer.render(100).join("\n"));
     expect(transcript).toContain('"type": "session"');
     expect(transcript).toContain('"id": "child-call-0001"');
   });
@@ -163,8 +163,8 @@ describe("workflow persisted evidence viewer", () => {
     expect(viewer.render(100).join("\n")).toContain("operator-ask · call-0001 · operator-ask-0001.json");
     viewer.handleInput("enter");
     const rendered = viewer.render(100).join("\n");
-    expect(rendered).toContain('"question": "Which storage?"');
-    expect(rendered).toContain('"answer": "sqlite"');
+    expect(stripTerminalSequences(rendered)).toContain('"question": "Which storage?"');
+    expect(stripTerminalSequences(rendered)).toContain('"answer": "sqlite"');
   });
 
   it.each([

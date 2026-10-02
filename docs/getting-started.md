@@ -14,6 +14,8 @@ description: "Raise the supported Pi floor to the first release with the built-i
 # Getting started
 
 Requires Node.js `>=22.19.0`, Pi `>=0.84.3`, and a configured model provider.
+Development checks use Pi `1.0.0`. Pi supplies TypeBox to loaded extensions;
+the package declares it as a peer to avoid a separate runtime copy.
 Choose one installation source: a Git checkout or the published npm package.
 The npm release can lag this repository. Use the documentation bundled with your
 installed version when checking its available workflows and skills.
