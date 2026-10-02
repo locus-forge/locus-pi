@@ -71,15 +71,17 @@ into success. Read
 [structured results](references/structured-results.md) before any decision handoff; the arbiter owns
 the decision, and a translator copies it without adding criteria or owner approval.
 
-For substantive review, an arbiter judges findings and may accept or reject them with evidence,
-request correction, retry review or disclose a limitation. Preserve completed, failed, missing and
-skipped checks. Use `agent(prompt, { result: "report" })` when eligible reviewer failures must reach it;
+Judge review findings against the requested outcome and required evidence. Separate observed defects,
+unmet required checks and optional checks not performed. An unavailable optional check alone does not
+justify correction or refusal; disclose it without claiming it passed. Unmet required evidence stays
+non-successful. The existing decision owner may correct, retry, reject findings or disclose a limitation.
+Preserve completed, failed, missing and skipped checks.
+Use `agent(prompt, { result: "report" })` for eligible reviewer failures;
 read [report eligibility](../../docs/workflows/agent-results.md#agent-execution-reports).
-Forward the entire report; it is not acceptance and cannot combine with `choice`.
-Keep bounded correction and fresh review after changes. Exhaustion preserves the latest reviewed
-artifact, unmet criteria and next action; an incomplete required outcome stays non-successful.
-An agent returns the exact `choice` string; the workflow maps a refusal branch to `{ ok: false, status }`.
-Use `throw` for execution errors, not ordinary review decisions.
+Forward the full report; it is not acceptance and cannot combine with `choice`.
+Keep bounded correction and fresh review. On exhaustion preserve the artifact, unmet criteria and
+next action; an incomplete required outcome stays non-successful. Return the exact `choice`; map
+refusal to `{ ok: false, status }`. Use `throw` for execution errors, not ordinary review decisions.
 
 The runtime has no answer-size policy; never disguise a cap as a prompt instruction. Do not emit
 `handoffs`, `schema`, `validate`, `output`, `repair`, `returnVia`, `maxItemChars`, `maxAnswerChars` or

@@ -1,3 +1,10 @@
+---
+updated: "2026-10-02T13:53:07Z"
+source_commit: "8af5c47f379a"
+update_event: "user_request"
+description: "Clarify attainable review criteria and delivery of requested artifacts"
+---
+
 # Design, review, Build
 
 Audience: the author after a graph pattern has been selected. This file owns the authoring process and design record, not the DSL grammar or runtime defaults.
@@ -46,12 +53,13 @@ The design is short Markdown a reader can approve without opening JavaScript:
 
 Purpose: <one sentence>
 Input: <semantic text or none>
-Primary output: `<name>.md`
+Primary deliverable: <requested artifact and location>; accompanying report: <if needed>
 Evidence boundary: <semantic input, caller items, author-known prompt material, or child inspection>
 Pattern: <adaptive-slices by default for implementation, or reason for another pattern>
 Brief detail: <outcome-led by default, or procedural with reason>
 Context: <repository checkout, task directory, output location; agents discover files>
 Executors: <responsibility roles and verified model routes; no unverified engine names>
+Verification: <required evidence, available or discoverable child capabilities, optional checks and delivery effects>
 
 Namespace: `runnable root` (include the `<name>` entry below) or `group-only`
 (omit the root entry; children remain directly runnable)
@@ -106,6 +114,21 @@ checks apply to every design:
 
 Use the already selected pattern card as an algorithm, not a full workflow to copy blindly.
 
+For each acceptance edge, trace blocking criteria to the request or an authoritative
+contract and identify how a child can establish them. A product requirement does not
+by itself require one particular verification method. Do not assume the author's
+tools are available to children; assign any needed capability discovery to an existing
+worker or reviewer. Separate observed defects, unmet required evidence and optional
+checks not performed. Check that correction can address the finding: an unavailable
+optional verifier is a coverage limitation, not implementation work.
+
+Walk terminal paths for a produced artifact with an optional check unavailable, a
+confirmed defect and an explicitly required verifier unavailable. Delivery reports the
+artifact's location, actual checks, known issues and unverified behavior. Non-success
+preserves any produced artifact with the unmet requirement; it does not claim acceptance.
+The author owns this design review. Operator changes to a generated workflow are not
+evidence that the authoring skill produced a correct design.
+
 ## Build checks
 
 Build writes one canonical folder matching the reviewed design: an optional
@@ -142,13 +165,14 @@ Read checker diagnostics as `path:line:column [CODE] message`. Any error fails
 Build. Warning-only output remains a successful check, but Build must report the
 warning and repair declaration drift when it concerns generated source.
 
-An unavailable tool, failed checker result, syntax error, or design/source
-mismatch means Build failed. Preserve the failed source and diagnostics before
-correction. Choose and record a semantic correction bound in the design; an
-agent prompt alone is not a runtime-enforced retry count. In an authored graph,
-use explicit `choice` routing and a bounded correction/recheck edge. On exhaustion,
-return `{ ok: false, status: "failed" }` with the latest source and evidence; do
-not publish it as accepted or silently start a fresh run.
+An unavailable required source gate, failed checker result, syntax error, or
+design/source mismatch means Build failed. Preserve source and diagnostics before
+correction. Choose and record a semantic correction bound in the design; a prompt
+alone is not a runtime-enforced retry count. Use explicit `choice` routing when the
+authored graph needs correction. Exhausted correction with unresolved defects or
+unmet required evidence returns `{ ok: false, status: "failed" }` with the latest
+artifact and evidence; do not publish it as accepted or silently start a fresh run.
+An optional check not performed does not, by itself, make a completed implementation fail.
 
 The packaged `task/plan` writes the whole workspace `workflow.mjs` in one author
 call, then runs at most three independent reviews with at most two revisions.
