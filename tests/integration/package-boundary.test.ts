@@ -361,7 +361,8 @@ describe("npm public package boundary", () => {
     // Four location/tool owners were extracted without widening the directory-owned allowlist;
     // removing the shaped-result schema owner (workflow-schema.ts) took one file out;
     // the bound-directory and child-task-note owners under location-state/ add two.
-    expect(dryRun.files).toHaveLength(255);
+    // Four agentic starters and their two guides add six teaching resources.
+    expect(dryRun.files).toHaveLength(261);
   });
 
   it("ships every prompt resource a curated workflow renders", () => {

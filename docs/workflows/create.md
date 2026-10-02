@@ -4,11 +4,11 @@ type: guide
 status: active
 owner: locus-pi maintainers
 tags: [workflows, authoring]
-updated: "2026-09-22T17:02:16Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=46"
-description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
+updated: "2026-10-02T17:32:37Z"
+source_commit: "8af5c47f379a"
+update_event: "user_request"
+context: "changes=L files=17"
+description: "Teach task-led approach selection and reusable agentic workflow starters"
 ---
 
 # Create a workflow with an agent
@@ -128,6 +128,25 @@ ready for the owner, not that implementation is authorized.
 
 ### Choose a graph and prompt detail
 
+Start with the task need, then select a semantic approach and its smallest useful
+graph. The [approach guide](../../skills/locus-pi-workflow-create/references/agentic-approaches.md)
+explains role ownership, feedback, stopping and adaptation:
+
+| Task need                                                    | Approach and reusable starter                                                                                                                               |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Improve a low-risk explanation with critique                 | [Reflection](../../extensions/workflows/references/examples/starters/reflection.workflow.mjs): draft → critique → revision                                  |
+| Correct known work against required criteria/evidence        | [Evaluator-Optimizer](../../extensions/workflows/references/examples/starters/evaluator-optimizer.workflow.mjs): work → review → bounded correction/recheck |
+| Change remaining work from observed results                  | [Plan-and-Execute/Replan](../../extensions/workflows/references/examples/starters/plan-replan.workflow.mjs): named plan → execution → replanning            |
+| Combine independent investigation with editorial improvement | [Composition](../../extensions/workflows/references/examples/starters/parallel-reflection.workflow.mjs): parallel notes → synthesis → critique/revision     |
+
+These are adaptable starting points. Remove investigations when evidence is ready;
+omit a planner for known stages; let a reviewer own its choice directly when no
+separate arbiter is needed. Reflection's terminal revision is not independently
+accepted; add required verification after revision when the task needs it.
+The [starter guide](../../extensions/workflows/references/examples/starters/README.md)
+explains inputs, artifacts and source checks. Child tools enable inspection and
+action inside a task; their availability alone does not establish a ReAct algorithm.
+
 Use an adaptive slice queue when accepted output or findings must determine or
 re-cut the remaining work:
 
@@ -214,7 +233,9 @@ The full statement, including how budgets and unsupported capabilities behave, i
 
 ### Use the references
 
-The [adaptive pattern](../../skills/locus-pi-workflow-create/references/adaptive-slices.md)
+The [approach index](../../skills/locus-pi-workflow-create/references/INDEX.md)
+starts from task needs and maps them to supported graph forms. The
+[adaptive pattern](../../skills/locus-pi-workflow-create/references/adaptive-slices.md)
 links executable design and implementation examples. They are teaching sources,
 not names installed in the Package command catalog. Copy and adapt them into
 `.locus-pi/workflows/<name>/` through the authoring skill. Match filenames,

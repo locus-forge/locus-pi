@@ -342,6 +342,7 @@ ${authoring[0] ?? ""}
     expect(readdirSync(path.join(root, base)).sort()).toEqual([
       "INDEX.md",
       "adaptive-slices.md",
+      "agentic-approaches.md",
       "authoring-styles.md",
       "bounded-refinement.md",
       "decomposition.md",

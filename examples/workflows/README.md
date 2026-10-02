@@ -1,3 +1,11 @@
+---
+updated: "2026-10-02T17:36:25Z"
+source_commit: "8af5c47f379a"
+update_event: "user_request"
+context: "changes=L files=13"
+description: "Link packaged teaching starters and semantic authoring guidance"
+---
+
 # Workflow examples
 
 These workflows ship with locus-pi and are ready to run after
@@ -128,20 +136,27 @@ The [complete DSL reference](../../docs/workflows/dsl.md) describes the availabl
 
 ## Patterns to adapt
 
-The [authoring pattern index](../../skills/locus-pi-workflow-create/references/INDEX.md)
-helps choose a graph before writing source. The teaching modules under
+The [authoring approach index](../../skills/locus-pi-workflow-create/references/INDEX.md)
+starts from task needs; the [semantic guide](../../skills/locus-pi-workflow-create/references/agentic-approaches.md)
+explains feedback, planning and composition before graph selection. The
+[small starter guide](../../extensions/workflows/references/examples/starters/README.md)
+shows how to simplify and adapt four complete modules. The teaching modules under
 `extensions/workflows/references/examples/` ship with the package but are separate
 from the saved Package registry. Read and adapt them, or run a reviewed module by
 explicit path; their filenames do not register runnable Package names.
 
-| Teaching source                                                                                      | What it demonstrates                                                                                                                                       |
-| ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Fixed graph](../../extensions/workflows/references/examples/fixed.workflow.mjs)                     | One declared worker and one primary result.                                                                                                                |
-| [Refinement](../../extensions/workflows/references/examples/refinement.workflow.mjs)                 | Bounded work and independent review, with explicit completion, failure, and no-progress exits.                                                             |
-| [Decomposition](../../extensions/workflows/references/examples/decomposition.workflow.mjs)           | Run caller-supplied work units as bounded parallel workers and combine ordered results.                                                                    |
-| [Adaptive design](../../extensions/workflows/references/examples/adaptive-design.workflow.mjs)       | Refine a specification and preserve review decisions before a separate implementation request.                                                             |
-| [Adaptive slices](../../extensions/workflows/references/examples/adaptive-slices.workflow.mjs)       | Revise the remaining work after each accepted implementation slice, then verify the complete result.                                                       |
-| [Human continuation](../../extensions/workflows/references/examples/human-continuation.workflow.mjs) | Join two runs through an operator handoff and host-verified artifacts. This is a reviewed compatibility example, outside the standard opaque-text profile. |
+| Teaching source                                                                                                                 | What it demonstrates                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Evaluator-Optimizer](../../extensions/workflows/references/examples/starters/evaluator-optimizer.workflow.mjs)                 | Known work with reviewer-owned findings and choice, bounded correction/recheck, and honest incomplete exits.                                               |
+| [Plan/replan](../../extensions/workflows/references/examples/starters/plan-replan.workflow.mjs)                                 | Revise a named sequential plan from observed results; preserve remaining work when the teaching allowance ends.                                            |
+| [Reflection](../../extensions/workflows/references/examples/starters/reflection.workflow.mjs)                                   | Draft, critique and revise a low-risk explanation; the revision has no independent acceptance claim.                                                       |
+| [Parallel investigation + Reflection](../../extensions/workflows/references/examples/starters/parallel-reflection.workflow.mjs) | Combine independent investigation, synthesis and editorial feedback; omit nodes when their responsibility is unnecessary.                                  |
+| [Fixed graph](../../extensions/workflows/references/examples/fixed.workflow.mjs)                                                | One declared worker and one primary result.                                                                                                                |
+| [Refinement](../../extensions/workflows/references/examples/refinement.workflow.mjs)                                            | Bounded work and independent review, with explicit completion, failure, and no-progress exits.                                                             |
+| [Decomposition](../../extensions/workflows/references/examples/decomposition.workflow.mjs)                                      | Run caller-supplied work units as bounded parallel workers and combine ordered results.                                                                    |
+| [Adaptive design](../../extensions/workflows/references/examples/adaptive-design.workflow.mjs)                                  | Refine a specification and preserve review decisions before a separate implementation request.                                                             |
+| [Adaptive slices](../../extensions/workflows/references/examples/adaptive-slices.workflow.mjs)                                  | Revise the remaining work after each accepted implementation slice, then verify the complete result.                                                       |
+| [Human continuation](../../extensions/workflows/references/examples/human-continuation.workflow.mjs)                            | Join two runs through an operator handoff and host-verified artifacts. This is a reviewed compatibility example, outside the standard opaque-text profile. |
 
 ### Councils and judge panels
 
