@@ -4,6 +4,19 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-10-03
+
+### Changed
+
+- Teach workflow authoring through ordinary and detailed lessons that start
+  with a complete project-tour workflow, then explain handoffs, dependencies,
+  useful compositions, building, and repair. The detailed skill adds worked
+  decisions for callers that need more guidance; both preserve caller scope
+  and distinguish process completion from verified results.
+- Package four discoverable skills and synchronize the detailed authoring
+  skill with the existing managed workflow skill links. Public guides and
+  starter examples follow the same authoring lessons.
+
 ## [0.13.0] - 2026-10-02
 
 ### Changed
