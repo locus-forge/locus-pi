@@ -23,6 +23,8 @@ At normal interactive heights, `/workflows list` keeps the Project, User, Packag
 
 `/workflows skills` exposes the package's action-named workflow skills to
 external agents. Pi already loads the packaged skills. The command manages
+all four entries, including the ordinary and detailed authoring lessons; the
+[create guide](../../docs/workflows/create.md#choose-an-authoring-route) owns selection and explicit invocations. It manages
 fail-closed symlinks in Codex `.agents/skills` and Claude Code `.claude/skills`;
 the adjacent `.locus-pi-workflow-skills.v1.json` file records ownership, so it
 never infers ownership from a path or replaces a real directory or foreign

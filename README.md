@@ -114,7 +114,8 @@ what Pi loads. See [package filters](docs/getting-started.md#load-only-selected-
 
 ## Create a workflow with an agent
 
-Use the [workflow-create skill](skills/locus-pi-workflow-create/SKILL.md) in Pi.
+Use the [ordinary workflow-create lesson](skills/locus-pi-workflow-create/SKILL.md) in Pi.
+For an explicitly detailed walkthrough, [choose the authoring route](docs/workflows/create.md#choose-an-authoring-route).
 It designs the agent graph, reviews it, builds the source, and checks it:
 
 ```text

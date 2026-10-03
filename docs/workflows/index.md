@@ -2,11 +2,11 @@
 title: Workflow documentation
 type: index
 status: active
-updated: "2026-09-22T17:02:16Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=46"
-description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
+updated: "2026-10-02T22:53:27Z"
+source_commit: "0d098c9e06d1"
+update_event: "user_request"
+context: "changes=L files=29"
+description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
 # Workflow documentation
@@ -25,7 +25,7 @@ while it runs. The workflow-create skill can write the module for you.
 
 | Question                                           | Read                                                                                                                                    |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| How do I ask an agent to build a workflow?         | [Create a workflow](create.md) and the [create skill](../../skills/locus-pi-workflow-create/SKILL.md)                                   |
+| How do I ask an agent to build a workflow?         | [Create a workflow](create.md) and the [authoring routes](create.md#choose-an-authoring-route)                                          |
 | Which methods can I call, and what do they return? | [DSL reference](dsl.md)                                                                                                                 |
 | What belongs in the file?                          | [File format, metadata, and input](authoring.md)                                                                                        |
 | What may generated source do?                      | [Source rules](source-shape.md)                                                                                                         |

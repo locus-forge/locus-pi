@@ -25,7 +25,8 @@ Preserve the user's scoped authorization; create-and-run needs no repeat approva
    owns installation. Do not assume the npm package is already published.
 
 Require one exact saved name or project-relative `.workflow.mjs` path. Source creation or repair belongs
-to `locus-pi-workflow-create`. Accept its checked-source handoff under existing execution authorization.
+to the ordinary or detailed [authoring route](../../docs/workflows/create.md#choose-an-authoring-route).
+Accept either checked-source handoff under existing execution authorization.
 For `task/plan` or `task/plan-light`, use `primaryFile.absolutePath` from completed run evidence, with its validated path,
 byte count and digest. Launch that existing file; do not guess `outputs/workflow.mjs` or use verifier prose.
 Check an existing session/run before replacing it; silence or a lost tool handle does not prove it stopped.

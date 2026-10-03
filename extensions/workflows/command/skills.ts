@@ -25,7 +25,12 @@ import type { OperatorBlock } from "../../_shared/operator/operator-ui.js";
 import { setOperatorWidget } from "../../_shared/operator/widget-render.js";
 import { errorMessage, workflowWarningBlock } from "../operator/operator-ui.js";
 
-export const WORKFLOW_SKILL_NAMES = ["locus-pi-workflow-create", "locus-pi-workflow-run", "external-locus-pi"] as const;
+export const WORKFLOW_SKILL_NAMES = [
+  "locus-pi-workflow-create",
+  "locus-pi-workflow-create-detailed",
+  "locus-pi-workflow-run",
+  "external-locus-pi",
+] as const;
 
 const LEGACY_WORKFLOW_SKILL_NAMES = [
   "locus-pi-workflows",

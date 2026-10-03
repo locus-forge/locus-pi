@@ -2,11 +2,11 @@
 title: Workflow catalog and source resolution
 type: guide
 status: active
-updated: "2026-09-22T17:02:15Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=46"
-description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
+updated: "2026-10-02T22:53:27Z"
+source_commit: "0d098c9e06d1"
+update_event: "user_request"
+context: "changes=L files=29"
+description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
 # Workflow catalog and source resolution
@@ -22,9 +22,10 @@ runtime behavior or model choice; catalog rows omit the internal label.
 
 ## Authoring patterns
 
-New workflows use the progressive-disclosure cards under
-`skills/locus-pi-workflow-create/references/`. The index maps requirements and common
-names to small standard topologies; the author reads only the selected card.
+New workflows start with an [ordinary or detailed lesson](create.md#choose-an-authoring-route):
+a complete module and dependency reasoning precede task-fit patterns. Shared cards under
+`skills/locus-pi-workflow-create/references/` map requirements to supported forms;
+read only the selected card after those foundations.
 Cards are algorithms and snippets, not Package workflows. Saving a local workflow
 does not add it to the Package registry.
 

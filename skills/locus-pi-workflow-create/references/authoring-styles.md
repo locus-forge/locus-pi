@@ -1,13 +1,22 @@
+---
+updated: "2026-10-02T22:53:28Z"
+source_commit: "0d098c9e06d1"
+update_event: "user_request"
+context: "changes=L files=29"
+description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
+---
+
 # Choose style, detail, size and executors separately
 
 These are design-time choices written in the reviewed design. They are not new fields in `workflow`, `meta`, or `agent()`.
 
-| Choice                               | Default                       | Explicit alternative                                                               |
-| ------------------------------------ | ----------------------------- | ---------------------------------------------------------------------------------- |
-| Graph for substantive implementation | `adaptive-slices`             | `fixed` for predetermined work; refinement/decomposition where appropriate         |
-| Agent brief detail                   | `outcome-led`                 | `procedural` for a concrete tool constraint or observed failure                    |
-| Advisory graph size                  | Fit the requested outcome     | State an agent-count preference in the authoring request; preserve required checks |
-| Executor/model effort                | Existing session/user routing | Explicit verified `modelRole` or `model` under existing APIs                       |
+| Choice                | Default                        | Explicit alternative                                                                                                             |
+| --------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| Authoring lesson      | Ordinary                       | Explicitly selected detailed walkthrough; see the [selection owner](../../../docs/workflows/create.md#choose-an-authoring-route) |
+| Graph                 | `fixed` for known scope/stages | Replan when observed results must change remaining work; combine forms as needed                                                 |
+| Agent brief detail    | `outcome-led`                  | `procedural` for a concrete tool constraint or observed failure                                                                  |
+| Advisory graph size   | Fit the requested outcome      | State an agent-count preference in the authoring request; preserve required checks                                               |
+| Executor/model effort | Existing session/user routing  | Explicit verified `modelRole` or `model` under existing APIs                                                                     |
 
 Example authoring requests:
 

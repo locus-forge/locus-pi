@@ -2,11 +2,11 @@
 title: Workflow file format
 type: guide
 status: active
-updated: "2026-09-22T17:02:15Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=46"
-description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
+updated: "2026-10-02T22:53:27Z"
+source_commit: "0d098c9e06d1"
+update_event: "user_request"
+context: "changes=L files=29"
+description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
 # Workflow file format
@@ -16,8 +16,9 @@ description: "Consolidate workflow contracts at their owning pages and repair ou
 ## Authoring a new workflow
 
 Start with [Create a workflow](create.md) for the authoring request and first
-working example. The [create skill](../../skills/locus-pi-workflow-create/SKILL.md)
-owns Design → review → Build, including design-only and build-only requests.
+working example. Both [authoring lessons](create.md#choose-an-authoring-route)
+follow [Design → review → Build](../../skills/locus-pi-workflow-create/references/design-and-build.md),
+including design-only and build-only requests.
 A folder may contain a runnable same-named root or only directly addressable
 children; the [catalog contract](catalog.md) defines both namespace forms.
 
@@ -351,6 +352,6 @@ replay-only `resumeFromRunId`.
 
 ### Delegate authoring through the packaged skill
 
-Use the [create skill](../../skills/locus-pi-workflow-create/SKILL.md) directly or
+Use either [authoring lesson](create.md#choose-an-authoring-route) directly or
 ask a clean child to follow it. The [creation guide](create.md#ask-pi-to-create-it)
 shows the request and separates creating source from executing its agents.
