@@ -2,11 +2,11 @@
 title: Workflow source contract
 type: guide
 status: active
-updated: "2026-10-02T22:53:28Z"
-source_commit: "0d098c9e06d1"
+updated: "2026-10-03T01:37:59Z"
+source_commit: "c2a6547744e2"
 update_event: "user_request"
-context: "changes=L files=29"
-description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
+context: "changes=L files=14"
+description: "Align task workflow source with final-output publication"
 ---
 
 # Workflow source contract
@@ -69,7 +69,7 @@ The remaining standard orchestration primitives are:
 | `workspaceDir()`                     | Absolute workflow directory; equals `outputDir()` when declared by root.    |
 | `outputDir()`                        | Absolute final-output directory declared by root metadata or defaulted.     |
 | `invokeWorkflow(declaration)`        | One real saved or exact-Package child run with durable item checkpointing.  |
-| `publishPrimaryFile(path)`           | Validate/reference one non-empty workflow workspace file.                   |
+| `publishPrimaryFile(path)`           | Validate/reference one non-empty workflow output file.                      |
 | `promptFile(path, variables)`        | Long/shared role charter; never routing.                                    |
 | `workspace(label, ref)`              | Runtime-owned retained worktree for approved write flows.                   |
 

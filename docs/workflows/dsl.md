@@ -2,11 +2,11 @@
 title: Workflow DSL reference
 type: guide
 status: active
-updated: "2026-09-22T17:05:40Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=47"
-description: "Correct handoff contracts and keep operator and Fusion details with their owning guides."
+updated: "2026-10-03T01:37:59Z"
+source_commit: "c2a6547744e2"
+update_event: "user_request"
+context: "changes=L files=14"
+description: "Align task workflow source with final-output publication"
 ---
 
 # Workflow DSL reference
@@ -387,11 +387,11 @@ directory. Auto-captured readable material goes to `outputs/`; machine evidence
 and transcripts go to `runtime/artifacts/`. See [run evidence](evidence.md).
 
 `publishPrimaryFile(relativePath)` validates a regular, non-symlink, non-empty
-file beneath the workflow workspace and exposes absolute/relative path, byte count, and
+file beneath the workflow output directory and exposes absolute/output-relative path, byte count, and
 SHA-256 digest. It neither copies nor parses content. The reference is a
 point-in-time, non-atomic observation: portable Node cannot make ancestor
 replacement and path-based open/rename/unlink one indivisible operation against
-a hostile local process. Workspace files survive failed runs; run-local evidence
+a hostile local process. Workflow output files survive failed runs; run-local evidence
 remains immutable under the run id.
 
 The workflow workspace is the durable location for handoffs, review evidence,

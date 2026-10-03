@@ -4,6 +4,13 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+### Fixed
+
+- Align task/plan and task/plan-light source creation, checks, review and correction
+  with the workflow output directory used by primary-file publication. Keep queues
+  and review evidence in the workspace; missing or misplaced source still fails
+  without automatic relocation.
+
 ## [0.13.1] - 2026-10-03
 
 ### Changed

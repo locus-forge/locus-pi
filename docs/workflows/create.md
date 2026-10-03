@@ -4,11 +4,11 @@ type: guide
 status: active
 owner: locus-pi maintainers
 tags: [workflows, authoring]
-updated: "2026-10-02T22:53:27Z"
-source_commit: "0d098c9e06d1"
+updated: "2026-10-03T01:37:58Z"
+source_commit: "c2a6547744e2"
 update_event: "user_request"
-context: "changes=L files=29"
-description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
+context: "changes=L files=14"
+description: "Align task workflow source with final-output publication"
 ---
 
 # Create a workflow with an agent
@@ -205,11 +205,13 @@ result by dropping a report.
 
 ### Build generated source in complete slices
 
-The Package `task/plan` workflow writes one workspace `workflow.mjs` in a single
+The Package `task/plan` workflow writes `workflow.mjs` in the host-injected workflow output directory in a single
 author call, then reviews and revises it in a loop of at most three reviews.
 `task/plan-light` builds the same file in complete, checked graph-node slices for
 lighter author models: it re-cuts the remaining queue after each accepted slice
-and publishes the file only after final whole-file checks. The
+and publishes the file only after final whole-file checks. Named queues and review
+evidence stay in the workspace; source creation, checking, review and correction use
+the same output file that `publishPrimaryFile` references. The
 [task authoring manual](../../examples/workflows/task/README.md) owns both
 workflows' loops, gates, terminal reasons, and replay requirements. Use that
 manual when running or repairing either one.

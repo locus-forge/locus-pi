@@ -1,9 +1,9 @@
 ---
-updated: "2026-10-02T22:53:29Z"
-source_commit: "0d098c9e06d1"
+updated: "2026-10-03T01:37:59Z"
+source_commit: "c2a6547744e2"
 update_event: "user_request"
-context: "changes=L files=29"
-description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
+context: "changes=L files=14"
+description: "Align task workflow source with final-output publication"
 ---
 
 # Design, review, Build
@@ -177,20 +177,21 @@ unmet required evidence returns `{ ok: false, status: "failed" }` with the lates
 artifact and evidence; do not publish it as accepted or silently start a fresh run.
 An optional check not performed does not, by itself, make a completed implementation fail.
 
-The packaged `task/plan` writes the whole workspace `workflow.mjs` in one author
+The packaged `task/plan` writes the whole `workflow.mjs` in the host-injected workflow output directory in one author
 call, then runs at most three independent reviews with at most two revisions.
 The packaged `task/plan-light`, for lighter author models, creates a minimal
-runnable workspace `workflow.mjs`, then grows it through at most six complete
+runnable `workflow.mjs` in that same directory, then grows it through at most six complete
 graph-node slices. An owner re-cuts the source-free remaining queue after each
 accepted slice. Independent mechanical and design gates share one cumulative
 correction per slice; final whole-file gates run after the queue is empty. The exact routes and terminal reasons live in the
 [task authoring manual](../../../examples/workflows/task/README.md).
 
 `publishPrimaryFile("workflow.mjs")` returns `primaryFile` with the validated
-workspace-relative path, absolute path, byte count, and digest. It does not copy the
+output-relative path, absolute path, byte count, and digest. It does not copy the
 file into run `outputs/`. The validated `primaryFile.absolutePath` remains the
 read-and-launch handoff; verifier prose is not source. Host publication validation
-is not semantic review or live proof.
+is not syntax checking, semantic review or live proof. All editors and reviewers
+use that output file; queues, logs and review evidence remain in the workspace.
 
 A successful Build returns `/workflows run <name>` (or the qualified child ref).
 Create-only stops there. Create-and-run continues through

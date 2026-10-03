@@ -7,7 +7,7 @@ first, then one of the two plan workflows.
    workflow pattern, agents, handoffs, bounded reflection or review, concurrency,
    failure exits, and expected output. Copy and edit this text when needed.
 2. `task/plan` receives the complete accepted draft as semantic input. One
-   author call plans the graph and writes the complete workspace `workflow.mjs`;
+   author call plans the graph and writes the complete output `workflow.mjs`;
    a bounded loop then reviews it and revises it, and the accepted file is
    published as the final result. Use it with a strong author model.
 3. `task/plan-light` receives the same input and grows `workflow.mjs` through
@@ -16,6 +16,16 @@ first, then one of the two plan workflows.
 
 Missing, empty, or whitespace-only input to either plan workflow fails before
 the first child starts and publishes no `workflow.mjs`.
+
+## Source placement
+
+Both plan workflows keep `workflow.mjs` in the workflow output directory named
+by the host's filesystem note. Without root `meta.outputDir`, output is exactly
+`<workspaceDir>/outputs`; a declared root output binds workspace and output to
+the same directory. Every source producer, checker, reviewer and correction uses
+that exact output file. A failed result's `source: "workflow.mjs"` is output-relative.
+Decision logs, queues and named review/correction reports remain workspace evidence.
+See [outputDir](../../../docs/workflows/dsl.md#outputdir) for the location contract.
 
 ## task/plan
 
@@ -45,12 +55,12 @@ repeat a rejected approach; the log is history, not instruction.
 ## task/plan-light
 
 Design and design review use the accepted draft before any source file exists.
-The seed stage creates `workflow.mjs` directly in the workflow workspace. From
-that point onward, the workspace file is the source authority. A missing file at
+The seed stage creates `workflow.mjs` directly in workflow output. From
+that point onward, the output file is the source authority. A missing file at
 the seed check enters the one seed correction, which creates it; a missing file
 at the recheck or any later gate fails closed.
 
-The seed and every accepted source slice leave the shared workspace
+The seed and every accepted source slice leave the shared output
 `workflow.mjs` as a complete runnable module that parses and passes the
 orchestration-only checker. The seed preserves the primary output identity and
 product scope; reviewed graph nodes may still be missing. Its independent check
@@ -171,7 +181,7 @@ may be accepted; a seventh pass can prove completion or return the unconsumed
 queue, but cannot implement more work. Named terminal reasons are `seed_failed`,
 `slice_allowance`, `slice_repair_failed`, `queue_conflict`, `empty_queue`,
 `final_check_failed`, and `design_mismatch`. Every failed result keeps
-`workflow.mjs` plus diagnostic evidence in the workspace and publishes no primary
+`workflow.mjs` in workflow output plus diagnostic evidence in the workspace and publishes no primary
 file.
 
 Every stage except the route translators reads and appends to
@@ -190,12 +200,12 @@ checks complete conformance before publication.
 
 An empty queue is not completion. Final whole-file mechanical and design gates run
 before `publishPrimaryFile("workflow.mjs")`. The host validates the confined regular,
-non-empty file and returns `primaryFile` with its workspace-relative path, absolute
+non-empty file in workflow output and returns `primaryFile` with its output-relative path, absolute
 path, size, and digest. It does not copy the file into run `outputs/`. The package
 stage never executes generated source.
 
 Design and design review return complete prose without writing source. Seed, slice,
-fix, and check agents work against the one workspace file. Semantic review
+fix, and check agents work against the one output file. Semantic review
 checks explicit failure returns, actionable findings reaching the fix stage, and
 agreement between primary output names and content; static syntax/shape checks alone
 do not establish those properties. The workflow forwards opaque values whole and
@@ -206,16 +216,18 @@ implementation still needs its declared review and final QA.
 ## Handoff and replay
 
 Replay reuses model answers but does not repeat file edits. Repair + Continue is
-therefore valid only while the original named workspace and its `workflow.mjs`
-remain intact. Every fresh suffix gate re-reads the actual file; a cleaned or drifted
-workspace must fail its checks rather than be treated as preserved work. Digest-bound
+therefore valid only while the original workflow output source and supporting
+workspace records remain usable. Every fresh suffix gate re-reads the actual output
+file; cleaned or drifted source must fail its checks rather than be treated as
+preserved work. Changed placement prompts require fresh work at replay divergence;
+they do not relocate an old workspace-root file or repeat cached file edits. Digest-bound
 checkpoints are a possible later hardening, not part of this MVP.
 
 No task stage executes generated source. Create-only ends with the
 checked source and launch command. For an authorized create-and-run request, the
 caller reviews the retained file and hands it to `locus-pi-workflow-run` through
 the existing file-target path, without repeat approval. Report authoring,
-execution and product verification separately. The validated workspace file named by
+execution and product verification separately. The validated output file named by
 `primaryFile.absolutePath` is the handoff; verifier prose is not source.
 
 ```text
@@ -224,10 +236,12 @@ execution and product verification separately. The validated workspace file name
 /workflows run task/plan-light -- <complete accepted draft>
 ```
 
-All three task scripts are orchestration-only. Child agents may inspect the live
-project when their prompt requires it. The JavaScript does not read project or
-artifact files. The checked-source publication declaration delegates the file
-read and validation to the existing host publication boundary.
+`task/draft` is orchestration-only. Both packaged plan scripts use standard
+compatibility for `publishPrimaryFile`; their generated source must pass the
+orchestration-only gate. Child agents may inspect the live project when their
+prompt requires it. The JavaScript does not read project or artifact files.
+Primary-file publication validates the file reference without parsing source;
+the preceding edit/check/review stages own syntax, source shape and design checks.
 
 ## Default authoring style
 

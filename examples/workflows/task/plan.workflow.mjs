@@ -8,9 +8,9 @@ export const meta = {
   profile: "standard",
   description: "Turn an accepted workflow brief into a checked workflow.mjs: write once, review, revise.",
   phases: [
-    { title: "author", detail: "Plan the graph and write the complete workspace workflow.mjs." },
+    { title: "author", detail: "Plan the graph and write the complete workflow.mjs." },
     { title: "review", detail: "Review the source against the draft and revise it within a bounded loop." },
-    { title: "publish", detail: "Publish the accepted workspace workflow.mjs." },
+    { title: "publish", detail: "Publish the accepted workflow.mjs." },
   ],
 };
 
@@ -18,7 +18,12 @@ const SOURCE_RULES = `Source rules:
 - Follow the installed locus-pi-workflow-create skill for the DSL, the
   orchestration-only source shape and the graph patterns. Its file locations
   and design-review stages do not apply here: the only source file is
-  workspace workflow.mjs, and this workflow owns the review.
+  workflow.mjs in the workflow output directory named by the host filesystem
+  note, and this workflow owns the review. Create, edit, check and review that
+  exact file; source: "workflow.mjs" diagnostics are relative to workflow output.
+  Named logs and review/correction reports stay in the workflow workspace.
+  Use the host's project root to give workflow_check_source that file's
+  project-relative path; node --check checks the same exact file.
 - The graph plans stages, not product steps. Each agent prompt names its role,
   expected result, inputs and essential constraints; the agent decides how to
   do the work. Do not script the product solution inside prompts.
@@ -36,7 +41,7 @@ const SOURCE_RULES = `Source rules:
 - A failure exit returns { ok: false, status: "failed", reason: "<literal>" }
   after publishing or naming its diagnostic evidence.
 - Do not add model selectors unless the draft asks for them.
-- Whoever edits workspace workflow.mjs runs node --check and
+- Whoever edits workflow.mjs runs node --check and
   workflow_check_source with mode orchestration-only after every edit and
   fixes what they report.`;
 
@@ -60,7 +65,7 @@ export default async function runWorkflow(dsl, input = "") {
 
 Plan the graph first: stages, agents, handoffs, review or correction loops with
 their bounds, failure exits and the primary output. Then write the complete
-module to workspace workflow.mjs and make it pass both checks. If
+module to workflow.mjs and make it pass both checks. If
 workflow-decision-log.md already exists, first append the line
 "## New task/plan run"; entries above it belong to earlier runs.
 
@@ -81,7 +86,7 @@ ${draftText}`,
   let latestReview = "";
   for (let round = 1; round <= 3; round += 1) {
     const review = await dsl.agent(
-      `Independently review workspace workflow.mjs against the accepted draft.
+      `Independently review workflow.mjs against the accepted draft.
 
 Do not edit source. Judge whether the graph actually delivers the draft's
 primary output within its scope, whether stages, routes, handoffs, bounds and
@@ -126,7 +131,7 @@ ${review}`,
     latestReview = review;
     if (round === 3) break;
     latestRevision = await dsl.agent(
-      `Revise workspace workflow.mjs to resolve every finding in this review.
+      `Revise workflow.mjs to resolve every finding in this review.
 
 Change only what the findings require, re-plan a part of the graph when the
 review asks for it, and keep the draft's scope and primary output. Return a

@@ -62,7 +62,7 @@ describe("readable workflow authoring references", () => {
     expect(text).toContain("`task/draft` turns a raw request into `draft.md`");
     expect(text).toContain("Copy and edit this text when needed");
     expect(text).toContain("`task/plan` receives the complete accepted draft as semantic input");
-    expect(text).toContain("the complete workspace `workflow.mjs`");
+    expect(text).toContain("the complete output `workflow.mjs`");
     expect(text).toContain("`task/plan-light` receives the same input");
     expect(text).toContain("No task stage executes generated source.");
     expect(text).toContain("For an authorized create-and-run request");
