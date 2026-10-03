@@ -23,6 +23,28 @@ function standardSource(body = 'return agent("Review the change");'): string {
 }
 
 describe("workflow_check_source", () => {
+  it("rejects a literal fallback outside its declared choices with a policy diagnostic", async () => {
+    const root = temporaryRoot();
+    writeFileSync(
+      path.join(root, "invalid-choice.workflow.mjs"),
+      standardSource('return agent("Route", { label: "route", choice: ["accept", "fix"], choiceFallback: "stop" });'),
+    );
+    const harness = createHarness(root);
+    workflows(harness.pi);
+    const result = await runTool(harness, "workflow_check_source", {
+      path: "invalid-choice.workflow.mjs",
+      mode: "orchestration-only",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.details?.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "WF_POLICY",
+        severity: "error",
+        message: "agent choiceFallback must be one of the declared choices",
+      }),
+    );
+  });
+
   it("registers under the workflows owner and accepts a valid standard source", async () => {
     const root = temporaryRoot();
     writeFileSync(path.join(root, ".locus-pi", "workflows", "sample.workflow.mjs"), standardSource());

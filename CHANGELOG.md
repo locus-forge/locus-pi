@@ -13,6 +13,8 @@ User-visible changes to the public package.
 - Make task/plan review trace terminal acceptance, rejection and exhausted
   correction to their returned status, and check task-wide constraints in
   helper and routing prompts.
+- Reject a directly declared literal choice fallback outside its declared
+  choices during source checking, using the runtime's existing declaration rules.
 
 ## [0.13.1] - 2026-10-03
 

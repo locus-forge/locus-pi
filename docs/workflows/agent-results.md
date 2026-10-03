@@ -207,6 +207,11 @@ journal line with the validation errors, and never masks child execution or
 transport failures. Standard generated workflows use this form for machine routing
 and exact text for every narrative result.
 
+For directly declared literal `choice` and `choiceFallback` values, the source
+checker enforces the same membership rule before execution. A fallback outside
+that list is a `WF_POLICY` error. Values reached through variables, spreads or
+other unresolved source forms remain subject to runtime validation.
+
 Name each member after the action its branch takes, and never use a word that
 also reads as a verdict for a different branch. Rework is `fix` or `revise`,
 never `correct`, `ok`, `right` or `fine`. Observed failure: a reviewer asked for

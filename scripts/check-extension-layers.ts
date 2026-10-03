@@ -128,6 +128,12 @@ interface FeatureInternalEntry {
 
 const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
   {
+    module: "extensions/workflows/source/workflow-source-agent-options.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/tool/workflow-source-shape.ts",
+    reason: "static agent-option policy is internal; consumers use the diagnostic-producing source-check facade.",
+  },
+  {
     module: "extensions/workflows/runtime/workflow-workspace-state.ts",
     owner: "extensions/workflows",
     facade: WORKFLOW_LOCATION_FACADE,

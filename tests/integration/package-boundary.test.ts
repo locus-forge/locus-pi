@@ -363,7 +363,8 @@ describe("npm public package boundary", () => {
     // the bound-directory and child-task-note owners under location-state/ add two.
     // Four agentic starters and their two guides add six teaching resources.
     // Two authoring lessons share contracts; detailed has one conditional case reference and two new starters.
-    expect(dryRun.files).toHaveLength(265);
+    // Agent-option policy leaves the checker facade under the same packaged extensions owner.
+    expect(dryRun.files).toHaveLength(266);
   });
 
   it("ships every prompt resource a curated workflow renders", () => {
