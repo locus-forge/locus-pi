@@ -53,9 +53,9 @@ when adapting; do not inherit example effects, bounds or executor choices withou
 
 ## Calls and handoffs
 
-`agent()` starts a clean child and returns complete text; pass it whole. Use exact `choice` only at a branch.
-Findings/plans live in named workspace files that agents write/read using the host-provided workspace.
-Source exposes control edges; children inspect and act with tools. Never parse prose, JSON or those files in source.
+`agent()` starts a clean child and returns whole text. Pass it with the task context its consumer needs.
+Use exact `choice` only at a branch; agents write/read findings and plans in named host-workspace files.
+Source exposes control edges; children inspect with tools. Never parse prose, JSON or files in source.
 `phase()`/`log()` show progress; `publishArtifact()` retains evidence and `publishPrimaryArtifact()` final text.
 For decisions, reports or a translator, read [structured results](references/structured-results.md).
 

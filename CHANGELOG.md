@@ -6,6 +6,10 @@ User-visible changes to the public package.
 
 ### Fixed
 
+- Preserve the supplied task and all required deliverables through draft-only
+  authoring handoffs. Guide source review to reject conflicting restrictions and
+  trace checks of retained outputs after correction or cleanup to explicit
+  failure paths. Keep product verification in execution, with attainable checks.
 - Keep accepted-draft execution constraints available to every task/plan and
   task/plan-light child, including exact-choice routing helpers.
 - Align task/plan and task/plan-light source creation, checks, review and correction

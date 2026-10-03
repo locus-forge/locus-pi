@@ -5,7 +5,11 @@ first, then one of the two plan workflows.
 
 1. `task/draft` turns a raw request into `draft.md`. The draft already names the
    workflow pattern, agents, handoffs, bounded reflection or review, concurrency,
-   failure exits, and expected output. Copy and edit this text when needed.
+   failure exits, and expected output. It retains the supplied request under
+   Task and distinguishes the workflow's primary artifact from all required
+   product deliverables and their locations. The plan stage receives only this
+   draft, so keep required commands, data sources, constraints and acceptance
+   conditions in it. Copy and edit this text when needed.
 2. `task/plan` receives the complete accepted draft as semantic input. One
    author call plans the graph and writes the complete output `workflow.mjs`;
    a bounded loop then reviews it and revises it, and the accepted file is
@@ -45,7 +49,15 @@ workflow-author -> [ workflow-review -> workflow-review-route (accept | revise) 
 
 Each review is independent: it reruns both checks, judges whether the graph
 delivers the draft's primary output, and may ask to re-plan part of the graph.
-It reports only findings that require a change. `accept` publishes
+Source review traces required deliverables through future producers, checks
+and terminal routes without executing the generated workflow or creating
+product files. It rejects omitted requirements and added restrictions that
+prevent required outcomes, including in helpers and exact-choice routers.
+When delivery needs acceptance, the generated evaluator must inspect the actual
+required files after the last correction or cleanup; Git ignore rules do not
+remove delivery requirements. A failed required check reaches non-success,
+and a choice token alone does not prove acceptance. The review reports only
+findings that require a change. `accept` publishes
 `workflow.mjs` with `publishPrimaryFile`. The third `revise` returns
 `{ ok: false, status: "failed", reason: "review_exhausted" }` with the last
 review as diagnostics and publishes nothing. Every non-route call reads and
@@ -196,7 +208,9 @@ earlier log exists. The log stays in the workspace after a failed result.
 An intermediate design review accepts a correct slice when earlier accepted work
 remains intact and the whole module stays runnable. Requirements still queued for
 later slices do not consume that slice's fix allowance. The final design review
-checks complete conformance before publication.
+checks complete conformance before publication, including the source-review
+contract above for required deliverables, conflicting restrictions and future
+check failure routes.
 
 An empty queue is not completion. Final whole-file mechanical and design gates run
 before `publishPrimaryFile("workflow.mjs")`. The host validates the confined regular,

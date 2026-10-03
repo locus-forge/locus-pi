@@ -44,11 +44,23 @@ ${requestText}
   const draftText = await dsl.agent(
     `Write one standalone, editable workflow brief from the request and evidence.
 
+The next stage receives only this draft. It cannot recover the original
+request from your conversation or from an unspecified external document.
+
+Keep the supplied task under Task; put orchestration decisions in the
+remaining sections. Preserve required commands, data sources, outputs and
+execution restrictions. Do not replace the requested product with a report,
+a workflow brief or another authoring task.
+
+Before returning, compare the draft with the request: identify any omitted
+requirement or added restriction that would prevent a required outcome.
+
 Return the complete draft text. Do not write an implementation plan or
 JavaScript. Keep these English structural markers literal:
 
 Task:
-<the requested work>
+<reproduce the supplied request, including required behavior, deliverables,
+constraints and acceptance conditions>
 
 Draft goal:
 <the observable result>
@@ -58,7 +70,9 @@ Context:
 
 Workflow direction:
 - Input: <semantic input or none>
-- Primary output: <one concrete result file or exact text>
+- Primary output: <the workflow's primary artifact or exact text>
+- Required deliverables: <all task-required product files or retained data,
+  with their required locations>
 - Pattern: <adaptive slices | fixed graph | bounded refinement | decomposition | human continuation | justified combination>
 - Brief detail: <outcome-led by default; procedural only with a concrete reason>
 - Task context: <repository and task directory; agents discover relevant files>

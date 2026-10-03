@@ -53,9 +53,9 @@ When adapting, read [the exact source and guide](../../extensions/workflows/refe
 
 ## Read handoffs before adding control
 
-`agent()` returns whole text; only `choice` supplies a branch. The responsible reviewer/planner can own it directly.
-Name file writers/readers in the host-provided workspace. Children inspect with tools; source never parses
-files, JSON or prose.
+`agent()` returns whole text; a reviewer/planner can own a routing `choice` directly.
+Pass needed task context explicitly; children inherit no earlier conversation.
+Name workspace file writers/readers; children use tools. Source never parses files, JSON or prose.
 For decisions, reports or a translator, read [structured results](../locus-pi-workflow-create/references/structured-results.md).
 `phase()`/`log()` show progress; `publishArtifact()` retains evidence, `publishPrimaryArtifact()` final text.
 Read the [DSL table](../../docs/workflows/dsl.md#dsl-surface-v0) for selected methods before source:

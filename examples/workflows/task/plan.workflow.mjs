@@ -28,8 +28,10 @@ const SOURCE_RULES = `Source rules:
   expected result, inputs and essential constraints; the agent decides how to
   do the work. Do not script the product solution inside prompts.
   Task-wide execution constraints apply to helper and exact-choice agents too.
-- Keep the draft's scope, primary output and literal bounds. A different bound
-  or extra stage is a design decision: record it in the decision log.
+- Keep the draft's scope, required deliverables, primary output and literal
+  bounds. Preserve requirements without adding restrictions that prevent
+  required outcomes. A different bound or extra stage is a design decision:
+  record it in the decision log.
 - Branch only on exact choice calls; forward opaque reports whole into later
   prompts. Every loop has a numeric-literal bound.
 - Name each choice token after the action its branch takes, never with a word
@@ -89,8 +91,9 @@ ${draftText}`,
     const review = await dsl.agent(
       `Independently review workflow.mjs against the accepted draft.
 
-Do not edit source. Judge whether the graph actually delivers the draft's
-primary output within its scope, whether stages, routes, handoffs, bounds and
+This is source review. Do not run the generated workflow or create product
+files. Do not edit source. Judge whether the graph actually delivers the draft's
+primary output and required deliverables within its scope, whether stages, routes, handoffs, bounds and
 failure exits are sound, and whether agent prompts are goal-level briefs
 rather than scripted product steps. Rerun node --check and
 workflow_check_source with mode orchestration-only. If the draft's chosen
@@ -98,8 +101,18 @@ approach itself looks wrong, say what to re-plan.
 
 Trace each terminal acceptance, rejection and exhausted-correction path to its
 returned result. Publishing a rejection report must preserve its evidence and
-return explicit non-success. Check task-wide execution constraints in every
-agent prompt, including helpers and exact-choice routers.
+return explicit non-success.
+
+Trace required deliverables through their producers, acceptance checks and
+terminal routes. Confirm that the generated evaluator will inspect the
+actual required outputs after the last correction or cleanup.
+
+Compare the draft's requirements with the role prompts: check both omitted
+constraints and added restrictions that prevent required outcomes.
+Task-wide execution constraints apply to helpers and exact-choice routers.
+
+A failed required check must reach explicit non-success. A valid choice
+token is routing data, not a substantive report or proof of acceptance.
 
 Write workflow-review.md and return it: a verdict of accept or revise, then
 only the findings that require a change, each with its evidence and the
