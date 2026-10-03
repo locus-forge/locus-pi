@@ -10,6 +10,9 @@ User-visible changes to the public package.
   with the workflow output directory used by primary-file publication. Keep queues
   and review evidence in the workspace; missing or misplaced source still fails
   without automatic relocation.
+- Make task/plan review trace terminal acceptance, rejection and exhausted
+  correction to their returned status, and check task-wide constraints in
+  helper and routing prompts.
 
 ## [0.13.1] - 2026-10-03
 
