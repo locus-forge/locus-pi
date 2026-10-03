@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 
 const root = process.cwd();
 const runPath = "skills/locus-pi-workflow-run/SKILL.md";
-const createPath = "skills/locus-pi-workflow-create/SKILL.md";
+const createPaths = ["locus-pi-workflow-create", "locus-pi-workflow-create-detailed"].map(
+  (name) => `skills/${name}/SKILL.md`,
+);
 const read = (relativePath: string): string => readFileSync(path.join(root, relativePath), "utf8");
 
 /** Follow the actual entrypoint link, so an unlinked reference cannot satisfy a routing contract. */
@@ -130,13 +132,10 @@ describe("shipped workflow skill routes", () => {
     expect(run).not.toContain("gpt-5.6");
   });
 
-  it("routes authoring through method documentation, selected examples and the exact-source gate", () => {
+  it.each(createPaths)("routes %s through selected owners and the exact-source gate", (createPath) => {
     const create = read(createPath);
     containsAll(create, [
-      "Do not use merely to run an existing workflow",
-      "Before writing source, read the",
-      "only the sections for methods and agent options this graph uses",
-      "When adapting an example, read its exact source and adjacent guide",
+      "Existing runs use locus-pi-workflow-run",
       "unique literal `label`",
       "workflow_check_source",
       'mode: "orchestration-only"',
@@ -146,7 +145,8 @@ describe("shipped workflow skill routes", () => {
       "unavailable or failed gate means Build failed",
     ]);
     linkedText(createPath, "../../docs/workflows/dsl.md#dsl-surface-v0");
-    linkedText(createPath, "../../examples/workflows/README.md");
+    linkedText(createPath, "../../docs/workflows/create.md#choose-an-authoring-route");
+    linkedText(createPath, "../../extensions/workflows/references/examples/starters/README.md");
     linkedText(createPath, "../locus-pi-workflow-run/SKILL.md");
   });
 });

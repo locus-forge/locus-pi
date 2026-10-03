@@ -1,16 +1,20 @@
 # locus-pi workflow skills
 
-The npm package is the canonical source for three workflow skills.
+The npm package is the canonical source for four workflow skills.
 Pi loads them directly from `package.json#pi.skills`. External agents use managed
 symlinks; they do not receive copied skill text that can drift from the package.
 
-| Skill                      | Owns                                                           | Native Pi/API route                                                     | External agent route                                                 |
-| -------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `locus-pi-workflow-create` | Design, review, Build, source validation; never run            | Follow the packaged skill directly                                      | Follow the managed packaged skill directly                           |
-| `locus-pi-workflow-run`    | One existing reviewed workflow run, receipts, evidence, resume | Call the structured `workflow` tool; the skill is only routing guidance | Delegate session ownership to `external-locus-pi`                    |
-| `external-locus-pi`        | External interactive Pi session and manual attachment          | Not needed when already inside Pi                                       | Start Pi in a retained terminal; keep the UI available after the run |
+| Skill                               | Owns                                                                                  | Native Pi/API route                                                     | External agent route                                                 |
+| ----------------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `locus-pi-workflow-create`          | Ordinary authoring lesson; reviewed design, checked source and authorized run handoff | Follow the packaged skill directly                                      | Follow the managed packaged skill directly                           |
+| `locus-pi-workflow-create-detailed` | Explicitly selected detailed lesson under the same authoring contracts                | Invoke the detailed entry                                               | Follow the managed packaged skill directly                           |
+| `locus-pi-workflow-run`             | One existing reviewed workflow run, receipts, evidence, resume                        | Call the structured `workflow` tool; the skill is only routing guidance | Delegate session ownership to `external-locus-pi`                    |
+| `external-locus-pi`                 | External interactive Pi session and manual attachment                                 | Not needed when already inside Pi                                       | Start Pi in a retained terminal; keep the UI available after the run |
 
 ## Install for Codex and Claude Code
+
+Choose the ordinary or detailed lesson using the [public selection guide](../docs/workflows/create.md#choose-an-authoring-route).
+Both are actual packaged entries; the run and external-session skills keep their existing responsibilities.
 
 Run these commands inside Pi after installing the locus-pi package:
 

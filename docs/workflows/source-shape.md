@@ -2,11 +2,11 @@
 title: Workflow source contract
 type: guide
 status: active
-updated: "2026-09-22T17:02:17Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=46"
-description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
+updated: "2026-10-02T22:53:28Z"
+source_commit: "0d098c9e06d1"
+update_event: "user_request"
+context: "changes=L files=29"
+description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
 # Workflow source contract
@@ -15,16 +15,16 @@ description: "Consolidate workflow contracts at their owning pages and repair ou
 
 Read this contract before authoring workflow source. The [DSL reference](dsl.md#dsl-surface-v0) describes callable methods, signatures, and examples; this page defines which source forms `workflow_check_source` accepts. New workflows use the [create guide](create.md) and the packaged skill's [short author-facing rules](../../skills/locus-pi-workflow-create/references/source-boundary.md).
 
-Three boundaries apply: trusted runtime JavaScript, the `standard` compatibility grammar, and the stricter `mode: "orchestration-only"` grammar used by the create skill. A runtime method is not automatically permitted by either checker: `fusion()` is runtime-only, raw `schema`/`validate` are runtime compatibility options, and `runWorkspaceDir()` is removed. The [availability table](dsl.md#dsl-surface-v0) distinguishes every method. Omitting the tool's mode selects standard compatibility checking; it does not grant arbitrary runtime JavaScript access.
+Three boundaries apply: trusted runtime JavaScript, the `standard` compatibility grammar, and the stricter `mode: "orchestration-only"` grammar used by the create skill. A runtime method is not automatically permitted by either checker: `fusion()` is runtime-only and `runWorkspaceDir()` is removed. The result options `schema`/`validate` were removed and are refused by both checkers and the runtime. The [availability table](dsl.md#dsl-surface-v0) distinguishes every method. Omitting the tool's mode selects standard compatibility checking; it does not restore removed options or grant arbitrary runtime JavaScript access.
 
 The rules below own source restrictions and diagnostics. Passing them does not prove the workflow's prompts, decisions, side effects, or final result satisfy its goal; design review and execution evidence remain necessary.
 
 ## Standard primitive profile
 
-The packaged `locus-pi-workflow-create` skill emits an orchestration-only subset
+Both packaged workflow-create lessons emit an orchestration-only subset
 of this profile. New generated source contains author-known prompts, direct
 `agent()` edges, visible DSL control flow, and in-memory text publication. It
-does not call `consumeTextArtifact`, `continuationArtifacts`, `outputDir`,
+does not call `consumeTextArtifact`, `continuationArtifacts`, `workspaceDir`, `outputDir`,
 `projectRoot`, `promptFile`, `publishPrimaryFile`, `workspace`, `now`, or
 `random`. Those methods remain documented below only because the standard
 checker must validate existing reviewed workflows. The skill calls

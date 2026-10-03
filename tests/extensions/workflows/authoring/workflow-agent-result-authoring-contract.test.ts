@@ -17,6 +17,8 @@ function source(relativePath: string): string {
 /** Guidance a workflow author, or the agent building a workflow, copies from. */
 const activeAuthoringGuides = [
   "skills/locus-pi-workflow-create/SKILL.md",
+  "skills/locus-pi-workflow-create-detailed/SKILL.md",
+  "skills/locus-pi-workflow-create-detailed/references/worked-decisions.md",
   ...readdirSync(path.join(root, "skills/locus-pi-workflow-create/references"))
     .filter((name) => name.endsWith(".md"))
     .map((name) => `skills/locus-pi-workflow-create/references/${name}`),
@@ -327,6 +329,8 @@ describe("agent result authoring contract", () => {
     const guides = [
       "docs/workflows/create.md",
       "skills/locus-pi-workflow-create/SKILL.md",
+      "skills/locus-pi-workflow-create-detailed/SKILL.md",
+      "skills/locus-pi-workflow-create-detailed/references/worked-decisions.md",
       ...readdirSync(path.join(root, "skills/locus-pi-workflow-create/references"))
         .filter((name) => name.endsWith(".md"))
         .map((name) => `skills/locus-pi-workflow-create/references/${name}`),

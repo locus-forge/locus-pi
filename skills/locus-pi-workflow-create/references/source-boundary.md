@@ -1,3 +1,11 @@
+---
+updated: "2026-10-02T17:36:25Z"
+source_commit: "8af5c47f379a"
+update_event: "user_request"
+context: "changes=L files=13"
+description: "Use host-provided workspace and named relative agent handoffs"
+---
+
 # Author-facing source boundary
 
 Read before Build. For exact grammar diagnostics read the runtime-owned
@@ -29,14 +37,25 @@ const AGENTS = {
 export default async function run({ agent, parallel, phase, publishPrimaryArtifact }, input) {
   phase("review");
   const reviews = await parallel([
-    () => agent(`Review the contract:\n${input}`, { ...AGENTS.reviewer, label: "contract-review" }),
-    () => agent(`Review the evidence:\n${input}`, { ...AGENTS.reviewer, label: "evidence-review" }),
+    () =>
+      agent(`Review the contract:\n${input}`, {
+        ...AGENTS.reviewer,
+        label: "contract-review",
+        title: "Review contract",
+      }),
+    () =>
+      agent(`Review the evidence:\n${input}`, {
+        ...AGENTS.reviewer,
+        label: "evidence-review",
+        title: "Review evidence",
+      }),
   ]);
 
   phase("compose");
   const result = await agent(`Return the complete review:\n${reviews.join("\n\n")}`, {
     ...AGENTS.composer,
     label: "compose-review",
+    title: "Compose complete review",
   });
   return publishPrimaryArtifact("review.md", result);
 }
@@ -74,17 +93,19 @@ saved children and later manual stages share the selected named path. The host a
 another default writable root, a path parser, or an information-gathering script.
 
 When the root declares `meta.outputDir` (for example `.local/review`), that
-directory is the single workflow directory: `dsl.workspaceDir()` equals
-`dsl.outputDir()`. Interpolate it into every prompt, keep handoffs under its
-`artifacts/` subdirectory, and give each agent one instruction of the form
-"write a handoff for another agent: replace exactly `artifacts/<name>.md` with one
-complete write and write no other file". Relative paths in prompts resolve
-against that directory, never project root. The directory persists across runs,
-so a consumer that must not read an earlier run's handoff needs a freshness
-check the workflow owns, such as a commit id every handoff repeats.
+directory is both workflow workspace and final output directory. The host still
+prepends its absolute path to every child prompt. Name handoffs relative to that
+workspace, for example "replace `artifacts/findings.md` in the workflow workspace
+with the complete findings"; tell the consuming agent to read that exact file.
+The child's project working directory does not change: agents resolve the named
+file against the host-provided workspace. Generated orchestration-only source
+must not call `workspaceDir()` or `outputDir()` to interpolate paths.
+The directory persists across runs. Replace a handoff before its next consumer,
+or give that consumer an explicit freshness requirement when reusing prior evidence.
 
 The workflow workspace is the durable location for handoffs, review evidence,
-and explicit resume inputs. Final results and deliverables belong in `dsl.outputDir()`. Keep disposable environments,
+and explicit resume inputs. Final results and deliverables belong in the runtime's
+output directory; agents use the host-provided location and source publishes complete text. Keep disposable environments,
 dependency caches, test basetemp, transient renderer output, and staging in the
 ordinary OS or tool temporary and cache locations. When renderer output is the
 final deliverable, write or promote it into the output directory. Promote any
