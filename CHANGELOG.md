@@ -6,6 +6,8 @@ User-visible changes to the public package.
 
 ### Fixed
 
+- Keep accepted-draft execution constraints available to every task/plan and
+  task/plan-light child, including exact-choice routing helpers.
 - Align task/plan and task/plan-light source creation, checks, review and correction
   with the workflow output directory used by primary-file publication. Keep queues
   and review evidence in the workspace; missing or misplaced source still fails

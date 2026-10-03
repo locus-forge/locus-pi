@@ -127,6 +127,13 @@ ${latestRevision}`,
       `Translate this review without rejudging it. Choose accept only when both
 checks passed and the review requires no change; otherwise choose revise.
 
+The accepted draft's task-wide execution constraints govern this call. Keep
+the translation-only task above; do not implement the product.
+
+Accepted draft:
+${draftText}
+
+Review:
 ${review}`,
       { label: "workflow-review-route", title: "Route the review", choice: ["accept", "revise"] },
     );
