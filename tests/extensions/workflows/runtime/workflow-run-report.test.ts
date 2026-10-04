@@ -234,7 +234,7 @@ describe("workflow run report", () => {
     assert.match(readme, /- Status: completed/u);
     assert.match(readme, /- Task: \[task\.md\]\(task\.md\)/u);
     assert.match(readme, /- Result: \[workflow-result\.md\]\(workflow-result\.md\)/u);
-    assert.ok(readme.includes(`- Workflow workspace: \`${path.join(root, "tmp", "plan")}\``));
+    assert.ok(readme.includes(`- Native workspace: \`${path.join(root, "tmp", "plan")}\``));
     assert.match(readme, /- Machine records: `\.\.\/runtime\/`/u);
     assert.equal(reportDir, path.join(workflowRunDir(root, RUN_ID), "outputs"));
     // One Documents list ordered by first publication; the revised document

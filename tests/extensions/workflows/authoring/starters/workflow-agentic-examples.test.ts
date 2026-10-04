@@ -1,15 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { completed, tempRun, temporaryValue } from "../../../../fixtures/scripted-agent-runtime.js";
-import { createWorkflowArtifactStore } from "../../../../../extensions/workflows/runtime/workflow-artifacts.js";
-import {
-  createWorkflowRuntime,
-  type WorkflowAgentRequest,
-  type WorkflowAgentResult,
-} from "../../../../../extensions/workflows/runtime/workflow-runtime.js";
+import type { WorkflowAgentResult } from "../../../../../extensions/workflows/runtime/workflow-runtime.js";
+import { runStarter } from "./starter-fixture.js";
 import { orchestrationOnlyWorkflowSourceShapeDiagnostics } from "../../../../../extensions/workflows/tool/workflow-source-shape.js";
 
 const base = "extensions/workflows/references/examples/starters";
@@ -21,7 +15,6 @@ const starters = [
   "reflection",
   "parallel-reflection",
 ];
-const input = "Deliver the requested outcome; retain required checks and uncertainty.\nSources: task.md";
 const originalWork = "First complete handoff\n  required evidence: missing\nartifact: changed-source.ts\n";
 const correctedWork = "Corrected complete handoff\n  verified: required check\nartifact: changed-source.ts\n";
 
@@ -37,64 +30,6 @@ function checkSource(source: string, label: string): void {
 beforeAll(() => {
   for (const name of starters) checkSource(readFileSync(`${base}/${name}.workflow.mjs`, "utf8"), name);
 });
-
-type ChildEffect = (request: WorkflowAgentRequest, occurrence: number, workspace: string) => void | Promise<void>;
-
-async function runStarter(
-  name: string,
-  answers: Record<string, Array<string | WorkflowAgentResult>>,
-  effect?: ChildEffect,
-  items: string[] = [],
-) {
-  return temporaryValue(async (root) => {
-    const workspace = path.join(root, "workspace");
-    mkdirSync(workspace);
-    const seen: WorkflowAgentRequest[] = [];
-    const counts: Record<string, number> = {};
-    const store = createWorkflowArtifactStore({ projectRoot: root, runId: name, runDir: tempRun(root, name) });
-    const runtime = createWorkflowRuntime({
-      runId: name,
-      projectRoot: root,
-      workspaceDir: workspace,
-      items,
-      artifactPorts: store,
-      agentRunner: async (request) => {
-        seen.push(request);
-        const label = request.label!;
-        const occurrence = counts[label] ?? 0;
-        counts[label] = occurrence + 1;
-        await effect?.(request, occurrence, workspace);
-        const script = answers[label];
-        expect(script, `unscripted child: ${label}`).toBeDefined();
-        const answer = script![occurrence] ?? script!.at(-1)!;
-        if (typeof answer !== "string") return answer;
-        return {
-          ...completed(request, request.returnContract ? JSON.stringify(answer) : answer),
-          ...(request.returnContract
-            ? { outputAcceptance: { source: "tool" as const, attempts: 1, toolName: "workflow_return" as const } }
-            : {}),
-        };
-      },
-    });
-    const module = await import(pathToFileURL(path.resolve(`${base}/${name}.workflow.mjs`)).href);
-    const result = await module.default(runtime.dsl, input);
-    return {
-      result,
-      seen,
-      counts,
-      journal: runtime.getJournal(),
-      files: Object.fromEntries(
-        readdirSync(workspace).map((file) => [file, readFileSync(path.join(workspace, file), "utf8")]),
-      ),
-      artifacts: store.list().map((record) => ({
-        ...record,
-        text: store
-          .read({ runId: record.runId, artifactId: record.artifactId, name: record.name, sha256: record.sha256 })
-          .toString(),
-      })),
-    };
-  });
-}
 
 describe("small agentic starters with real runtime and scripted children", () => {
   it("checks complete current authoring snippets with Node and the actual orchestration-only checker", () => {
@@ -121,14 +56,16 @@ describe("small agentic starters with real runtime and scripted children", () =>
     expect(checked).toBeGreaterThan(0);
   });
 
-  it("runs the identical early lesson module with whole reader handoffs and exact publication", async () => {
+  it("runs the identical early lesson module with whole handoffs and ordinary exact-file writes", async () => {
     const purpose = "Complete purpose evidence\n";
     const commands = "Complete commands evidence\n";
     const guide = "Complete project guide\n";
     const got = await runStarter("project-tour", { purpose: [purpose], commands: [commands], compose: [guide] });
     expect(got.seen.map((request) => request.label)).toEqual(["purpose", "commands", "compose"]);
     expect(got.seen[2]!.prompt).toContain(`${purpose}\n\n${commands}`);
-    expect(got.artifacts.find((artifact) => artifact.kind === "primary")!.text).toBe(guide);
+    expect(got.result).toBe(guide);
+    expect(got.files["guide.md"]).toBe(guide);
+    expect(got.artifacts.every((artifact) => artifact.kind === "answer")).toBe(true);
   });
 
   it("advances one audit item before its sibling, then waits for both before synthesis", async () => {
@@ -204,9 +141,7 @@ describe("small agentic starters with real runtime and scripted children", () =>
       candidate: "Complete account with required residuals",
       findings: "findings.md",
     });
-    expect(got.artifacts.filter((artifact) => artifact.kind === "published").map((artifact) => artifact.text)).toEqual([
-      "Complete account with required residuals",
-    ]);
+    expect(got.published).toEqual(["Complete account with required residuals"]);
     expect(got.artifacts.some((artifact) => artifact.kind === "primary")).toBe(false);
   });
 
@@ -277,9 +212,7 @@ describe("small agentic starters with real runtime and scripted children", () =>
     expect(got.seen.map((request) => request.label)).toEqual(["implement", "review"]);
     expect(got.seen[1]!.prompt).toContain(work);
     expect(got.seen[1]!.returnContract).toBeDefined();
-    expect(got.artifacts.filter((artifact) => artifact.kind === "primary").map((artifact) => artifact.text)).toEqual([
-      work,
-    ]);
+    expect(got.primary).toEqual([work]);
     expect(got.files["findings.md"]).toContain("not performed");
     expect(got.journal.filter((line) => line.choiceDecision)).toHaveLength(1);
   });
@@ -303,13 +236,8 @@ describe("small agentic starters with real runtime and scripted children", () =>
       },
     );
     expect(got.seen.map((request) => request.label)).toEqual(["implement", "review", "implement", "review"]);
-    expect(got.artifacts.filter((artifact) => artifact.kind === "primary").map((artifact) => artifact.text)).toEqual([
-      correctedWork,
-    ]);
-    expect(got.artifacts.filter((artifact) => artifact.kind === "published").map((artifact) => artifact.text)).toEqual([
-      originalWork,
-      correctedWork,
-    ]);
+    expect(got.primary).toEqual([correctedWork]);
+    expect(got.published).toEqual([originalWork, correctedWork]);
     expect(got.journal.filter((line) => line.choiceDecision)).toHaveLength(2);
   });
 
@@ -405,10 +333,7 @@ describe("small agentic starters with real runtime and scripted children", () =>
       },
     );
     expect(got.seen.map((request) => request.label)).toEqual(["plan", "execute", "plan", "execute", "plan", "deliver"]);
-    expect(got.artifacts.filter((artifact) => artifact.kind === "published").map((artifact) => artifact.text)).toEqual([
-      first,
-      second,
-    ]);
+    expect(got.published).toEqual([first, second]);
     expect(got.artifacts.find((artifact) => artifact.kind === "primary")!.text).toBe("Complete delivery account\n");
   });
 
@@ -440,9 +365,7 @@ describe("small agentic starters with real runtime and scripted children", () =>
     const got = await runStarter("plan-replan", { plan: ["work", "blocked"], execute: [originalWork] });
     expect(got.result).toMatchObject({ ok: false, status: "blocked", lastResult: originalWork });
     expect(got.counts).toEqual({ plan: 2, execute: 1 });
-    expect(got.artifacts.filter((artifact) => artifact.kind === "published").map((artifact) => artifact.text)).toEqual([
-      originalWork,
-    ]);
+    expect(got.published).toEqual([originalWork]);
   });
 
   it("passes complete editorial values and publishes only the exact revision", async () => {
@@ -459,9 +382,7 @@ describe("small agentic starters with real runtime and scripted children", () =>
         .filter((artifact) => artifact.kind === "published" || artifact.kind === "primary")
         .map((artifact) => artifact.text),
     ).toEqual([draft, critique, revised]);
-    expect(got.artifacts.filter((artifact) => artifact.kind === "primary").map((artifact) => artifact.text)).toEqual([
-      revised,
-    ]);
+    expect(got.primary).toEqual([revised]);
   });
 
   it("waits for both investigations and preserves declared order through critique and revision", async () => {

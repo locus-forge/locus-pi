@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  resolveWorkflowOutputDirectory,
+  resolveWorkflowWorkspaceDirectory,
   WORKFLOW_WORKSPACE_LEASE_FILE,
-  workflowOutputStateDir,
+  workflowWorkspaceStateDir,
 } from "../../../../extensions/workflows/runtime/workflow-output.js";
 import { readWorkflowRunResult } from "../../../../extensions/workflows/runtime/workflow-journal.js";
 import { workflowResultFile } from "../../../../extensions/workflows/runtime/workflow-result.js";
@@ -14,7 +14,7 @@ import { resolveWorkflowTarget } from "../../../../extensions/workflows/runtime/
 import { createHarness } from "../../../test-harness.js";
 import { executor, project, writeWorkflow, writeWorkflowTree } from "../../../fixtures/workflow-durable-project.js";
 
-describe("stable workflow output paths", () => {
+describe("native workflow workspace paths", () => {
   it("does not fall back to a legacy source after a bound canonical source disappears", async () => {
     const root = project();
     const piWorkflow = path.join(root, ".locus-pi", "workflows", "switch.workflow.mjs");
@@ -202,10 +202,10 @@ describe("stable workflow output paths", () => {
     mkdirSync(path.join(root, legacyWorkspace), { recursive: true });
     writeFileSync(path.join(root, legacyWorkspace, "marker.txt"), "legacy\n", "utf8");
     writeWorkflow(root, "legacy-named", `export default (dsl) => dsl.workspaceDir();\n`);
-    const legacyIdentity = resolveWorkflowOutputDirectory(root, legacyWorkspace, "unused", root, {
+    const legacyIdentity = resolveWorkflowWorkspaceDirectory(root, legacyWorkspace, "unused", root, {
       create: false,
     }).identity;
-    const stateDirBefore = workflowOutputStateDir(root, legacyIdentity);
+    const stateDirBefore = workflowWorkspaceStateDir(root, legacyIdentity);
 
     const harness = createHarness(root);
     const result = await runWorkflowScript({
@@ -219,7 +219,7 @@ describe("stable workflow output paths", () => {
     expect(result.ok, result.error).toBe(true);
     expect(result.workspaceDirRelative).toBe(legacyWorkspace);
     expect(result.workspacePhysicalIdentity).toBe(legacyIdentity);
-    expect(workflowOutputStateDir(root, result.workspacePhysicalIdentity!)).toBe(stateDirBefore);
+    expect(workflowWorkspaceStateDir(root, result.workspacePhysicalIdentity!)).toBe(stateDirBefore);
     expect(readFileSync(path.join(result.workspaceDir!, "marker.txt"), "utf8")).toBe("legacy\n");
   });
 
@@ -346,7 +346,7 @@ describe("stable workflow output paths", () => {
     const root = project();
     const runName = "lease-finalization";
     const lockFile = path.join(
-      workflowOutputStateDir(root, `.locus-pi/workspaces/${runName}`),
+      workflowWorkspaceStateDir(root, `.locus-pi/workspaces/${runName}`),
       WORKFLOW_WORKSPACE_LEASE_FILE,
     );
     const outside = mkdtempSync(path.join(tmpdir(), "workflow-lease-finalization-"));
@@ -896,45 +896,33 @@ describe("stable workflow output paths", () => {
     expect(result.error).toContain("symlink");
   });
 
-  it("publishes primary files beneath the distinct final output directory", async () => {
+  it("allows an agent to write an exact destination independently of the native workspace", async () => {
     const root = project();
-    writeWorkflow(
-      root,
-      "writer",
-      `export default async function run(dsl) {
-  await dsl.agent("write result");
-  return dsl.publishPrimaryFile("result.md");
-}\n`,
-    );
+    const assignedFile = path.join(root, "reports", "review.md");
+    writeWorkflow(root, "writer", `export default (dsl, input) => dsl.agent(input);\n`);
     const harness = createHarness(root);
-    const stableFile = path.join(root, "outputs", "task", "outputs", "result.md");
-
     const result = await runWorkflowScript({
       pi: harness.pi,
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "writer",
-      workspaceDir: "outputs/task",
-      createExecutor: executor(() => {
-        writeFileSync(stableFile, "durable result\n", "utf8");
+      input: "Write " + assignedFile,
+      workspaceDir: "state/native",
+      createExecutor: executor((prompt, request) => {
+        expect(prompt).toBe("Write " + assignedFile);
+        expect(request.workingDirectory).toBe(root);
+        mkdirSync(path.dirname(assignedFile), { recursive: true });
+        writeFileSync(assignedFile, "direct result\n");
         return "written";
       }),
     });
-
     expect(result.ok, result.error).toBe(true);
-    expect(result.stableOutputDir).toBe(path.join(root, "outputs", "task"));
-    expect(result.stableOutputDirRelative).toBe("outputs/task");
-    expect(result.outputDir).toBe(path.join(root, "outputs", "task", "outputs"));
-    expect(result.outputDirRelative).toBe("outputs/task/outputs");
-    expect(result.primaryFile).toMatchObject({
-      relativePath: "result.md",
-      absolutePath: stableFile,
-      bytes: 15,
-      sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
-    });
-    expect(readFileSync(stableFile, "utf8")).toBe("durable result\n");
-    expect(path.join(result.runDir, "outputs")).not.toBe(result.stableOutputDir);
-    expect(result.primaryOutputPath).not.toBe(stableFile);
+    expect(readFileSync(assignedFile, "utf8")).toBe("direct result\n");
+    expect(result.workspaceDir).toBe(path.join(root, "state/native"));
+    expect(result).not.toHaveProperty("outputDir");
+    expect(result).not.toHaveProperty("primaryFile");
+    expect(existsSync(path.join(result.workspaceDir!, "outputs"))).toBe(false);
+    expect(existsSync(path.join(root, ".locus-pi", "workflow-output-state"))).toBe(false);
   });
 
   it("keeps stable files available when later workflow work fails", async () => {
@@ -967,32 +955,26 @@ describe("stable workflow output paths", () => {
     expect(readFileSync(stableFile, "utf8")).toBe("inspectable partial\n");
   });
 
-  it("rejects missing, empty, and symlinked primary files", async () => {
-    const root = project();
-    writeWorkflow(root, "primary", `export default (dsl) => dsl.publishPrimaryFile(dsl.items()[0]);\n`);
-    const output = path.join(root, "outputs", "primary-checks", "outputs");
-    mkdirSync(output, { recursive: true });
-    writeFileSync(path.join(output, "empty.md"), "", "utf8");
-    const outside = path.join(root, "outside.md");
-    writeFileSync(outside, "outside\n", "utf8");
-    symlinkSync(outside, path.join(output, "linked.md"));
-    const harness = createHarness(root);
-
-    for (const [file, error] of [
-      ["missing.md", "ENOENT"],
-      ["empty.md", "empty"],
-      ["linked.md", "symlink"],
-    ] as const) {
+  it.each(["outputDir", "publishPrimaryFile"])(
+    "rejects dynamically accessed removed %s with migration guidance",
+    async (method) => {
+      const root = project();
+      writeWorkflow(
+        root,
+        "removed",
+        `export const meta = { identityCoverage: "entry-only" };
+export default (dsl) => dsl[${JSON.stringify(method)}]("result.md");
+`,
+      );
+      const harness = createHarness(root);
       const result = await runWorkflowScript({
         pi: harness.pi,
         ctx: harness.ctx,
         signal: new AbortController().signal,
-        name: "primary",
-        items: [file],
-        workspaceDir: "outputs/primary-checks",
+        name: "removed",
       });
       expect(result.ok).toBe(false);
-      expect(result.error).toContain(error);
-    }
-  });
+      expect(result.error).toMatch(/removed.*exact (file destinations|prompt destination)/u);
+    },
+  );
 });

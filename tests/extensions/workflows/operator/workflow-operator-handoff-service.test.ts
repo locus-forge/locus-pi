@@ -1,18 +1,15 @@
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
-import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   bindWorkflowHandoffClaim,
   claimWorkflowOperatorHandoff,
-  createWorkflowOperatorHandoffEnvelope,
-  readCurrentWorkflowScriptIdentity,
   readWorkflowHandoffClaim,
+  readPersistedWorkflowOperatorHandoff,
   type WorkflowOperatorHandoffEnvelope,
 } from "../../../../extensions/workflows/runtime/workflow-handoff.js";
 import { runWorkflowScript } from "../../../../extensions/workflows/runtime/workflow-runner.js";
-import { resolveWorkflowTarget } from "../../../../extensions/workflows/runtime/workflow-discovery.js";
 import { ensureWorkflowRunDir } from "../../../../extensions/workflows/runtime/workflow-run-layout.js";
 import { workflowRunRuntimeDir } from "../../../../extensions/workflows/runtime/workflow-run-layout.js";
 import { workflowResultFile } from "../../../../extensions/workflows/runtime/workflow-result.js";
@@ -20,6 +17,7 @@ import { workflowLaunchBindingFile } from "../../../../extensions/workflows/runt
 import { WorkflowOperatorHandoffController } from "../../../../extensions/workflows/operator/operator-handoff-controller.js";
 import { createWorkflowOperatorHandoffService } from "../../../../extensions/workflows/operator/operator-handoff-service.js";
 import type { WorkflowCommandLaunchResult } from "../../../../extensions/workflows/launch/workflow-command-launcher.js";
+import { writeNativeHandoffRun } from "../../../fixtures/workflow-persisted-run.js";
 import { createHarness } from "../../../test-harness.js";
 
 const roots: string[] = [];
@@ -35,77 +33,7 @@ function projectWithHandoff(
 ): string {
   const root = realpathSync(existingRoot ?? mkdtempSync(path.join(tmpdir(), "workflow-handoff-service-")));
   if (existingRoot === undefined) roots.push(root);
-  const workflowsDir = path.join(root, ".locus-pi", "workflows");
-  mkdirSync(workflowsDir, { recursive: true });
-  const sourcePath = path.join(workflowsDir, "alpha.workflow.mjs");
-  writeFileSync(
-    sourcePath,
-    'export const meta={name:"alpha",description:"Alpha"}; export default async()=>({ok:true});\n',
-    "utf8",
-  );
-  if (options.targetKind === "scriptPath") {
-    writeFileSync(path.join(root, "entry.workflow.mjs"), readFileSync(sourcePath), "utf8");
-  }
-  const target =
-    options.targetKind === "scriptPath"
-      ? resolveWorkflowTarget({ scriptPath: "entry.workflow.mjs" }, root, root)
-      : resolveWorkflowTarget({ script: "alpha" }, root, root);
-  const currentIdentity = readCurrentWorkflowScriptIdentity(target.path);
-  const runDir = ensureWorkflowRunDir(root, runId);
-  const snapshotPath = path.join(workflowRunRuntimeDir(runDir), `script-${currentIdentity.scriptSha256}.workflow.mjs`);
-  writeFileSync(snapshotPath, readFileSync(target.path));
-  const scriptIdentity = {
-    ...currentIdentity,
-    sourcePath: target.path,
-    snapshotPath,
-    nodeVersion: process.version,
-    platform: process.platform,
-    arch: process.arch,
-    builtinImports: [],
-    unboundDependencies: [],
-  };
-  const artifactRef = { runId, artifactId: "intent", name: "intent.md", sha256: "0".repeat(64) };
-  const operatorHandoff = createWorkflowOperatorHandoffEnvelope({
-    declaration: {
-      title: "Review clarification",
-      questions: [
-        {
-          kind: "select",
-          id: "scope",
-          prompt: "Choose review scope",
-          options: [{ label: "Current changes" }, { label: "Last commit" }],
-          recommended: "Current changes",
-          allowCustom: true,
-        },
-      ],
-      continuationArtifactRefs: [artifactRef],
-    },
-    runId,
-    target,
-    scriptIdentity,
-    terminalArtifactRefs: [artifactRef],
-  });
-  const workspaceDir = path.join(root, "handoff-workspace");
-  mkdirSync(workspaceDir, { recursive: true });
-  writeFileSync(
-    workflowResultFile(runDir),
-    `${JSON.stringify({
-      runId,
-      ok: true,
-      result: { mode: "prepared" },
-      disposition: { status: "awaiting_operator", detail: "review clarification required" },
-      journal: [],
-      resultPersistence: { ok: true, path: workflowResultFile(runDir) },
-      workspaceDir,
-      workspaceDirRelative: "handoff-workspace",
-      workspaceDirExplicit: true,
-      target,
-      scriptIdentity,
-      artifactRefs: [artifactRef],
-      operatorHandoff,
-    })}\n`,
-    "utf8",
-  );
+  writeNativeHandoffRun(root, runId, options.targetKind);
   return root;
 }
 
@@ -123,41 +51,10 @@ function corruptPhysicalWorkspaceMetadata(
 ): void {
   const resultPath = workflowResultFile(path.join(root, ".locus-pi", "runs", runId));
   const result = JSON.parse(readFileSync(resultPath, "utf8")) as Record<string, unknown>;
+  delete result.workspacePhysicalIdentity;
+  delete result.workspacePhysicalIdentitySchemaVersion;
   Object.assign(result, metadata);
   writeFileSync(resultPath, `${JSON.stringify(result)}\n`, "utf8");
-}
-
-function persistLaunchBinding(root: string, runId: string): void {
-  const runDir = path.join(root, ".locus-pi", "runs", runId);
-  const result = JSON.parse(readFileSync(workflowResultFile(runDir), "utf8")) as Record<string, unknown>;
-  const target = result.target as {
-    kind: "name" | "scriptPath";
-    ref: string;
-    source: "project" | "personal" | "package";
-  };
-  const scriptIdentity = result.scriptIdentity as Record<string, unknown>;
-  const workspaceDir = result.workspaceDir as string;
-  const workspaceDirRelative = result.workspaceDirRelative as string;
-  const sha256 = createHash("sha256").update("").digest("hex");
-  writeFileSync(
-    workflowLaunchBindingFile(runDir),
-    `${JSON.stringify({
-      schema: "locus-pi.workflow-launch-binding.v1",
-      runId,
-      target: { kind: target.kind, ref: target.ref, source: target.source },
-      scriptIdentity,
-      workspace: {
-        absolutePath: workspaceDir,
-        relativePath: workspaceDirRelative,
-        physicalPath: realpathSync(workspaceDir),
-        physicalIdentity: workspaceDirRelative,
-        physicalIdentitySchemaVersion: 1,
-        explicit: result.workspaceDirExplicit === true,
-      },
-      semanticInput: { present: false, sha256 },
-    })}\n`,
-    "utf8",
-  );
 }
 
 describe("workflow operator handoff service", () => {
@@ -279,12 +176,13 @@ describe("workflow operator handoff service", () => {
   it("rejects a mutable result projection when a launch binding is present", () => {
     const runId = "20260725-140200-launch-binding-result-tamper";
     const root = projectWithHandoff(runId);
-    persistLaunchBinding(root, runId);
     const resultPath = workflowResultFile(path.join(root, ".locus-pi", "runs", runId));
     const result = JSON.parse(readFileSync(resultPath, "utf8")) as Record<string, unknown>;
     result.workspaceDirRelative = "other-workspace";
     result.workspaceDir = path.join(root, "other-workspace");
     result.workspaceDirExplicit = false;
+    result.workspacePhysicalIdentity = "other-workspace";
+    mkdirSync(path.join(root, "other-workspace"));
     writeFileSync(resultPath, `${JSON.stringify(result)}\n`, "utf8");
 
     const service = createWorkflowOperatorHandoffService({ launch: vi.fn() });
@@ -336,6 +234,47 @@ describe("workflow operator handoff service", () => {
     });
     expect(launch).not.toHaveBeenCalled();
   });
+
+  it.each(["missing", "legacy-v2"])(
+    "keeps %s launch authority nonactionable without erasing historical handoff evidence",
+    async (format) => {
+      const runId = "20260725-140300-" + format;
+      const root = projectWithHandoff(runId);
+      const launch = vi.fn();
+      const service = createWorkflowOperatorHandoffService({ launch });
+      const initial = service.scan(root).find((entry) => entry.status === "actionable");
+      if (initial?.status !== "actionable") throw new Error("Expected current-format actionable handoff");
+      const runDir = path.join(root, ".locus-pi", "runs", runId);
+      const bindingPath = workflowLaunchBindingFile(runDir);
+      const resultPath = workflowResultFile(runDir);
+      const resultBytes = readFileSync(resultPath);
+      let legacyBytes: string | undefined;
+      if (format === "missing") unlinkSync(bindingPath);
+      else {
+        const binding = JSON.parse(readFileSync(bindingPath, "utf8"));
+        const { explicit: _explicit, ...output } = binding.workspace;
+        legacyBytes = JSON.stringify({
+          ...binding,
+          schema: "locus-pi.workflow-launch-binding.v2",
+          output: { ...output, source: "declared" },
+        });
+        writeFileSync(bindingPath, legacyBytes);
+      }
+      expect(readPersistedWorkflowOperatorHandoff(root, runId).status).toBe("ready");
+      expect(service.scan(root)).toEqual([
+        { status: "invalid", runId, message: expect.stringContaining("output-free v3 required") },
+      ]);
+      expect(service.read(root, runId)).toMatchObject({ message: expect.stringContaining("output-free v3 required") });
+      await expect(service.launch(initial.handoff, "Current changes", createHarness(root).ctx)).resolves.toMatchObject({
+        status: "invalid",
+        message: expect.stringContaining("output-free v3 required"),
+      });
+      expect(launch).not.toHaveBeenCalled();
+      expect(readWorkflowHandoffClaim(root, initial.handoff.value)).toEqual({ status: "absent" });
+      expect(readFileSync(resultPath)).toEqual(resultBytes);
+      if (legacyBytes !== undefined) expect(readFileSync(bindingPath, "utf8")).toBe(legacyBytes);
+    },
+  );
 
   it("lets valid actionable evidence win over malformed history", async () => {
     const malformedRunId = "20260725-141000-malformed";

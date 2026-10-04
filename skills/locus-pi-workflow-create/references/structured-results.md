@@ -3,7 +3,7 @@
 An agent returns exactly one of two things: plain `agent()` text, or one exact
 `choice` member when source must branch. Running commands or writing files does not
 change that. Anything richer — a record, a list of units, a queue, per-field findings —
-goes into a **named workspace file** that the agent writes and a later agent reads.
+goes into a **exact caller-assigned file** that the agent writes and a later agent reads.
 `handoffs`, `schema`, `validate`, `output`, `repair` and `returnVia` were removed and
 are refused by name; caller-owned work units come from `dsl.items()`.
 
@@ -40,7 +40,7 @@ A declared member does not prove factual correctness. A required verifier remain
 When code branches on an arbiter's judgement, prefer that arbiter returning the
 `choice` directly. The call returns the branch, not
 its explanatory prose. If a later round needs that explanation, save it in a
-named workflow-workspace file before returning and tell the next consumer to
+exact caller-assigned file before returning and tell the next consumer to
 read it. This keeps the decision with its evidence; it does not let the producer
 approve its own work or remove required review.
 
@@ -74,4 +74,4 @@ an explicit decision, do not make it repeat the underlying research. Attribute a
 terminal branch to its decision maker; a negative routing value alone does not
 prove that review failed or that the specification is incomplete.
 
-For a revisable slice queue use [adaptive slices](adaptive-slices.md): the queue owner rewrites a named workspace queue file whole, and each stage reads its first item. Source never reads the file; every pass is routed by an exact choice.
+For a revisable slice queue use [adaptive slices](adaptive-slices.md): the queue owner rewrites an exact caller-assigned queue file whole, and each stage reads its first item. Source never reads the file; every pass is routed by an exact choice.

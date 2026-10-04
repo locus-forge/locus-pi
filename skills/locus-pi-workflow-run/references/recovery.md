@@ -26,9 +26,9 @@ are nested under a storage-root group. Once resolved, read only that execution's
 If no result exists, use the start receipt and launch binding to find evidence; a partial file is not
 completion. Process loss with an unconfirmed call requires the reconciliation route below.
 
-If launch is blocked by a workspace/output lease, follow the exact lease or reclaim-guard path printed by
+If launch is blocked by a native workspace lease, follow the exact lease or reclaim-guard path printed by
 the error. `Ctrl+Z` suspends Pi on POSIX; return to its original terminal, run `fg`, and exit Pi normally so
-session shutdown can drain work and release both leases. Inspect another PID and its start time before any
+session shutdown can drain work and release the native workspace lease. Inspect another PID and its start time before any
 manual removal. `force: true` (operator surface: `--force`) is valid only when the same run has a complete,
 parseable, internally consistent terminal envelope; it never kills a process or overrides unverifiable
 evidence. See [workspace and output ownership recovery](../../../docs/workflows/running.md#workspace-and-output-ownership-recovery).

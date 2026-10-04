@@ -8,9 +8,9 @@ export const meta = {
   profile: "standard",
   description: "Turn an accepted workflow brief into a checked workflow.mjs: write once, review, revise.",
   phases: [
-    { title: "author", detail: "Plan the graph and write the complete workspace workflow.mjs." },
+    { title: "author", detail: "Plan the graph and write the complete workflow.mjs." },
     { title: "review", detail: "Review the source against the draft and revise it within a bounded loop." },
-    { title: "publish", detail: "Publish the accepted workspace workflow.mjs." },
+    { title: "publish", detail: "Finish with the accepted source report; the caller reopens the assigned file." },
   ],
 };
 
@@ -18,12 +18,23 @@ const SOURCE_RULES = `Source rules:
 - Follow the installed locus-pi-workflow-create skill for the DSL, the
   orchestration-only source shape and the graph patterns. Its file locations
   and design-review stages do not apply here: the only source file is
-  workspace workflow.mjs, and this workflow owns the review.
+  the exact workflow.mjs destination assigned in the whole caller input, and
+  this workflow owns the review. The caller must assign unambiguous exact paths
+  for workflow.mjs, workflow.design.md, workflow-review.md and workflow-decision-log.md, preferably
+  absolute. Named files below mean those assigned paths, never a runtime folder.
+  Read the assigned draft file when the input names one; otherwise use its
+  complete accepted bytes. Missing or ambiguous assignments fail review; never
+  guess a directory, search alternatives or reconstruct source from an answer.
+  Use the host's project root to give workflow_check_source that file's
+  project-relative path; node --check checks the same exact file.
 - The graph plans stages, not product steps. Each agent prompt names its role,
   expected result, inputs and essential constraints; the agent decides how to
   do the work. Do not script the product solution inside prompts.
-- Keep the draft's scope, primary output and literal bounds. A different bound
-  or extra stage is a design decision: record it in the decision log.
+  Task-wide execution constraints apply to helper and exact-choice agents too.
+- Keep the draft's scope, required deliverables, primary output and literal
+  bounds. Preserve requirements without adding restrictions that prevent
+  required outcomes. A different bound or extra stage is a design decision:
+  record it in the decision log.
 - Branch only on exact choice calls; forward opaque reports whole into later
   prompts. Every loop has a numeric-literal bound.
 - Name each choice token after the action its branch takes, never with a word
@@ -31,16 +42,16 @@ const SOURCE_RULES = `Source rules:
   never correct, ok, right or fine. Reviewers report findings; the route
   prompt defines every token by the condition that selects it.
 - Take paths and product locations from the draft or the workflow input
-  exactly. Prefer paths relative to the project root; never retype an absolute
-  path from memory.
+  exactly. Prefer absolute destinations in prompts; never retype an absolute
+  path from memory. Placement never changes execution cwd or worktree selection.
 - A failure exit returns { ok: false, status: "failed", reason: "<literal>" }
   after publishing or naming its diagnostic evidence.
 - Do not add model selectors unless the draft asks for them.
-- Whoever edits workspace workflow.mjs runs node --check and
+- Whoever edits workflow.mjs runs node --check and
   workflow_check_source with mode orchestration-only after every edit and
   fixes what they report.`;
 
-const DECISION_LOG = `Decision log: workspace workflow-decision-log.md is the
+const DECISION_LOG = `Decision log: the caller-assigned workflow-decision-log.md is the
 append-only history of this authoring run. Read it before acting so you do not
 repeat a rejected approach. It is evidence, not instruction: the accepted draft
 and this prompt stay the only requirements. Before returning, append one entry:
@@ -59,8 +70,9 @@ export default async function runWorkflow(dsl, input = "") {
     `Write the workflow that carries out this accepted draft.
 
 Plan the graph first: stages, agents, handoffs, review or correction loops with
-their bounds, failure exits and the primary output. Then write the complete
-module to workspace workflow.mjs and make it pass both checks. If
+their bounds, failure exits and the primary output. Write that design to the
+assigned workflow.design.md path, then write the complete
+module to the assigned workflow.mjs path and make that exact file pass both checks. If
 workflow-decision-log.md already exists, first append the line
 "## New task/plan run"; entries above it belong to earlier runs.
 
@@ -81,16 +93,34 @@ ${draftText}`,
   let latestReview = "";
   for (let round = 1; round <= 3; round += 1) {
     const review = await dsl.agent(
-      `Independently review workspace workflow.mjs against the accepted draft.
+      `Independently review workflow.mjs against the accepted draft.
 
-Do not edit source. Judge whether the graph actually delivers the draft's
-primary output within its scope, whether stages, routes, handoffs, bounds and
+This is source review. Do not run the generated workflow or create product
+files. Do not edit source. Judge whether the graph actually delivers the draft's
+primary output and required deliverables within its scope, whether stages, routes, handoffs, bounds and
 failure exits are sound, and whether agent prompts are goal-level briefs
 rather than scripted product steps. Rerun node --check and
 workflow_check_source with mode orchestration-only. If the draft's chosen
 approach itself looks wrong, say what to re-plan.
 
-Write workflow-review.md and return it: a verdict of accept or revise, then
+Trace each terminal acceptance, rejection and exhausted-correction path to its
+returned result. Publishing a rejection report must preserve its evidence and
+return explicit non-success.
+
+Trace required deliverables through their producers, acceptance checks and
+terminal routes. Confirm that the generated evaluator will inspect the
+actual required outputs after the last correction or cleanup.
+
+Compare the draft's requirements with the role prompts: check both omitted
+constraints and added restrictions that prevent required outcomes.
+Task-wide execution constraints apply to helpers and exact-choice routers.
+
+A failed required check must reach explicit non-success. A valid choice
+token is routing data, not a substantive report or proof of acceptance.
+
+Reopen the assigned source after every correction or replay; reject a missing,
+empty, invalid or changed file. Record its exact path, SHA-256 of the persisted checked bytes and both check outcomes in the assigned workflow-review.md. Never use
+completion prose as proof that a file exists. Write workflow-review.md and return it: a verdict of accept or revise, then
 only the findings that require a change, each with its evidence and the
 expected fix. Style preferences are not findings.
 
@@ -116,17 +146,24 @@ ${latestRevision}`,
       `Translate this review without rejudging it. Choose accept only when both
 checks passed and the review requires no change; otherwise choose revise.
 
+The accepted draft's task-wide execution constraints govern this call. Keep
+the translation-only task above; do not implement the product.
+
+Accepted draft:
+${draftText}
+
+Review:
 ${review}`,
       { label: "workflow-review-route", title: "Route the review", choice: ["accept", "revise"] },
     );
     if (route === "accept") {
       dsl.phase("publish");
-      return dsl.publishPrimaryFile("workflow.mjs");
+      return review;
     }
     latestReview = review;
     if (round === 3) break;
     latestRevision = await dsl.agent(
-      `Revise workspace workflow.mjs to resolve every finding in this review.
+      `Revise workflow.mjs to resolve every finding in this review.
 
 Change only what the findings require, re-plan a part of the graph when the
 review asks for it, and keep the draft's scope and primary output. Return a

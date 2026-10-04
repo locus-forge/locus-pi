@@ -1,12 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AgentExecutor, AgentRunRequest } from "../../../../../extensions/_shared/agent-runtime/agent-runner.js";
+import { describe, expect, it, vi } from "vitest";
 import runPlanWorkflow from "../../../../../examples/workflows/task/plan-light.workflow.mjs";
-import { runWorkflowScript } from "../../../../../extensions/workflows/runtime/workflow-runner.js";
-import { createHarness } from "../../../../test-harness.js";
 
 interface AgentCall {
   prompt: string;
@@ -14,13 +7,8 @@ interface AgentCall {
 }
 
 type AnswerQueues = Record<string, unknown[]>;
-const roots: string[] = [];
 const generatedSource =
   'export const meta = { name: "generated", profile: "standard" };\nexport default async function run(dsl) { return await dsl.agent("work", { label: "work" }); }\n';
-
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-});
 
 function completeRunAnswers(): AnswerQueues {
   return {
@@ -78,90 +66,14 @@ function fixture(overrides: Partial<AnswerQueues> = {}) {
   };
 }
 
-function runnerFixture() {
-  const root = mkdtempSync(path.join(tmpdir(), "task-plan-workflow-runner-"));
-  roots.push(root);
-  const harness = createHarness(root, { sessionId: "task-plan-workflow" });
-  const answers = completeRunAnswers();
-  const tasks: string[] = [];
-  const labels: string[] = [];
-  const phases: string[] = [];
-  const createExecutor: NonNullable<Parameters<typeof runWorkflowScript>[0]["createExecutor"]> = (
-    options,
-  ): AgentExecutor => ({
-    async run(request: AgentRunRequest) {
-      const label = options.live?.label;
-      if (label === undefined) throw new Error("Expected every task/plan-light child call to have a label");
-      const queue = answers[label];
-      if (queue === undefined || queue.length === 0) throw new Error(`No scripted answer for ${label}`);
-      const value = queue.shift();
-      labels.push(label);
-      tasks.push(request.task);
-      if (label === "workflow-source-seed")
-        writeFileSync(path.join(root, "proof", "outputs", "workflow.mjs"), generatedSource);
-      return {
-        status: "completed",
-        agentName: request.agent?.name ?? "sub-agent",
-        text: request.responseAcceptance === undefined ? String(value) : JSON.stringify(value),
-        reason: "scripted task/plan-light answer",
-        diagnostics: [],
-        lifecycleEntryIds: [],
-        ...(request.responseAcceptance === undefined
-          ? {}
-          : { outputAcceptance: { source: "tool" as const, attempts: 1, toolName: "workflow_return" as const } }),
-      };
-    },
-  });
-  return {
-    root,
-    tasks,
-    labels,
-    phases,
-    run: () =>
-      runWorkflowScript({
-        pi: harness.pi,
-        ctx: harness.ctx,
-        signal: new AbortController().signal,
-        name: "task/plan-light",
-        input: "Accepted brief.",
-        workspaceDir: "proof",
-        createExecutor,
-        onEvent: (line) => {
-          if (line.kind === "phase" && line.phase !== undefined) phases.push(line.phase);
-        },
-      }),
-  };
-}
-
 describe("Package workflow: task/plan-light", () => {
-  it("returns the task/plan-light workspace file through the real runner primaryFile boundary", async () => {
-    const fixtureRun = runnerFixture();
-    const absolutePath = path.join(fixtureRun.root, "proof", "outputs", "workflow.mjs");
-    const result = await fixtureRun.run();
-    expect(result.ok, result.error).toBe(true);
-    expect(result.primaryFile).toEqual({
-      relativePath: "workflow.mjs",
-      absolutePath,
-      bytes: Buffer.byteLength(generatedSource),
-      sha256: createHash("sha256").update(generatedSource).digest("hex"),
-    });
-    expect(readFileSync(result.primaryFile!.absolutePath, "utf8")).toBe(generatedSource);
-    expect(fixtureRun.tasks.every((task) => !task.includes(generatedSource))).toBe(true);
-    expect(fixtureRun.tasks[0]).toContain("expected to be absent and is not a precondition");
-    expect(fixtureRun.tasks[1]).toContain("must not block this design review");
-    expect(fixtureRun.tasks[2]).toContain("Create workspace workflow.mjs directly as a file");
-    expect(fixtureRun.labels).not.toContain("workflow-source-seed-fix");
-    expect(fixtureRun.labels.filter((label) => label === "workflow-source-cut")).toHaveLength(2);
-    expect(fixtureRun.phases).toEqual(["design", "build", "verify", "build", "verify", "verify", "publish"]);
-  });
-
   it("routes bounded source-free slices to terminal publication", async () => {
     const fixtureRun = fixture();
 
-    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
+    await expect(fixtureRun.run()).resolves.toBe("workflow-source-final-review.md: complete");
     expect(fixtureRun.calls.every((call) => !call.prompt.includes(generatedSource))).toBe(true);
-    expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
-    expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledWith("workflow.mjs");
+    expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
+    expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
     expect(fixtureRun.phases).toEqual(["design", "build", "verify", "build", "verify", "verify", "publish"]);
 
     const calls = fixtureRun.calls;
@@ -175,7 +87,7 @@ describe("Package workflow: task/plan-light", () => {
       "Queue report:\n1. slice-a: add the review branch",
     );
     expect(calls.find((call) => call.options.label === "workflow-source-slice")?.prompt).toContain(
-      "the first numbered item of workspace workflow-source-queue.md",
+      "the first numbered item of the assigned workflow-source-queue.md",
     );
     expect(calls.find((call) => call.options.label === "workflow-source-final-review")?.prompt).toContain(
       "Queue evidence:\nall requirements are implemented",
@@ -202,7 +114,7 @@ describe("Package workflow: task/plan-light", () => {
       "workflow-source-review-route": ["accept", "accept"],
     });
 
-    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
+    await expect(fixtureRun.run()).resolves.toBe("workflow-source-final-review.md: complete");
     const firstRoute = fixtureRun.calls.find((call) => call.options.label === "workflow-source-review-route");
     expect(firstRoute?.prompt).toContain("recut_queue and final verification remain");
     expect(firstRoute?.prompt).toContain("even if later design requirements remain in the source queue");
@@ -221,7 +133,7 @@ describe("Package workflow: task/plan-light", () => {
       "workflow-source-cut": ["1. source branch: bounded review", "no items"],
     });
 
-    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
+    await expect(fixtureRun.run()).resolves.toBe("workflow-source-final-review.md: complete");
     const seedPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-seed")?.prompt;
     const checkPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-seed-check")?.prompt;
     const cutPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-cut")?.prompt;
@@ -237,7 +149,7 @@ describe("Package workflow: task/plan-light", () => {
     expect(cutPrompt).toContain("workflow-source-seed-fix-check.md exists");
     expect(cutPrompt).toContain("Re-evaluate either report against the current file on every pass");
     expect(fixtureRun.calls.some((call) => call.options.label === "workflow-source-final-review")).toBe(true);
-    expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
+    expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
   });
 
   it("recuts a conflicting first source queue once before continuing", async () => {
@@ -253,7 +165,7 @@ describe("Package workflow: task/plan-light", () => {
       "workflow-source-queue-recheck-route": ["work", "complete"],
     });
 
-    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
+    await expect(fixtureRun.run()).resolves.toBe("workflow-source-final-review.md: complete");
     const assessment = fixtureRun.calls.find((call) => call.options.label === "workflow-source-queue-assessment");
     expect(assessment?.prompt).toContain("Treat a branch item with any missing choice destination");
     const repair = fixtureRun.calls.find((call) => call.options.label === "workflow-source-queue-repair");
@@ -263,9 +175,9 @@ describe("Package workflow: task/plan-light", () => {
       "review+correction: accepted->final; correct->single fix",
     );
     const slice = fixtureRun.calls.find((call) => call.options.label === "workflow-source-slice");
-    expect(slice?.prompt).toContain("the first numbered item of workspace workflow-source-queue.md");
+    expect(slice?.prompt).toContain("the first numbered item of the assigned workflow-source-queue.md");
     expect(slice?.prompt).toContain("Implement only the graph identities and connecting edges explicitly named");
-    expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
+    expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
   });
 
   it("fails closed when the repaired source queue still conflicts", async () => {
@@ -297,7 +209,7 @@ describe("Package workflow: task/plan-light", () => {
       "workflow-source-fix-route": ["passed"],
     });
 
-    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
+    await expect(fixtureRun.run()).resolves.toBe("workflow-source-final-review.md: complete");
     expect(fixtureRun.calls.map((call) => call.options.label)).toEqual(
       expect.arrayContaining([
         "workflow-source-check",
@@ -310,7 +222,7 @@ describe("Package workflow: task/plan-light", () => {
     );
     const reviewPrompt = fixtureRun.calls.find((call) => call.options.label === "workflow-source-review")?.prompt;
     expect(reviewPrompt).toContain(
-      "Read the exact current mechanical evidence from workspace workflow-source-fix-check.md",
+      "Read the exact current mechanical evidence from the assigned workflow-source-fix-check.md",
     );
     expect(reviewPrompt).not.toContain("workflow-source-check.md: failed");
     expect(
@@ -332,10 +244,10 @@ describe("Package workflow: task/plan-light", () => {
       "workflow-source-design-recheck-route": ["accept"],
     });
 
-    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
+    await expect(fixtureRun.run()).resolves.toBe("workflow-source-final-review.md: complete");
     const labels = fixtureRun.calls.map((call) => call.options.label);
     expect(labels.indexOf("workflow-source-fix-route")).toBeLessThan(labels.indexOf("workflow-source-design-fix"));
-    expect(fixtureRun.publishPrimaryFile).toHaveBeenCalledOnce();
+    expect(fixtureRun.publishPrimaryFile).not.toHaveBeenCalled();
   });
 
   it("independently rechecks a semantic fix before accepting the slice", async () => {
@@ -348,7 +260,7 @@ describe("Package workflow: task/plan-light", () => {
       "workflow-source-design-recheck-route": ["accept"],
     });
 
-    await expect(fixtureRun.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
+    await expect(fixtureRun.run()).resolves.toBe("workflow-source-final-review.md: complete");
     expect(fixtureRun.calls.map((call) => call.options.label)).toEqual(
       expect.arrayContaining([
         "workflow-source-design-fix",

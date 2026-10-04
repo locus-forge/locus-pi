@@ -30,15 +30,11 @@ The graph must support the user-selected model, including arbitration of review 
 
 Pi's public `input` remains one semantic string; it does not accept an `args` object. Do not embed and parse a second JSON protocol.
 
-Start with the task directory as input. The first agent discovers `task.md`, design and referenced evidence there. Keep concrete filenames inside the relevant brief. A reusable workflow may accept ordinary text naming a task directory and extra context; agents interpret that text. The runnable references use a directory-only input for clarity.
+Start with the task directory as input. The first agent discovers `task.md`, design and referenced evidence there. Keep concrete filenames inside the relevant brief. A reusable workflow may accept ordinary text naming a task directory and extra context; agents interpret that text. Runnable references also require exact file assignments when their agents save reports.
 
-Run Pi in the target repository. A path mentioned in a prompt does not change the child working directory. `--workspace-dir` (tool `workspaceDir`) sets the confined runtime workspace. Root `meta.outputDir` makes one directory both workspace and final output, and then `--workspace-dir` is refused; without it, final output is `<workspaceDir>/outputs`. The host separately publishes run evidence under the run's `outputs/` and `runtime/`. For an installed project example:
+Run Pi in the target repository. A destination in a prompt does not change child cwd or selected worktree. `--workspace-dir` selects confined native runtime coordination only. The whole input names the task context and every exact agent-file destination, preferably absolute. Agents interpret it; source never parses paths or files. Run evidence remains under the run's `outputs/` and `runtime/`.
 
-```text
-/workflows run adaptive-slices --workspace-dir .tasks/example/artifacts/implementation -- .tasks/example
-```
-
-Choose a fresh output directory for an independent run. Agents create their working documents there; source does not read paths or files. See [runtime inputs](../../../docs/workflows/authoring.md#workflow-input-and-host-continuation).
+For example, pass a task plus exact `baseline.md`, `remaining-queue.md`, per-slice work/progress/review/decision/correction, final checks and `implementation-handoff.md` paths in the existing input to `adaptive-slices`. Assign different files to parallel writers; consumers reopen those same files after their barriers. Missing/ambiguous assignments fail without a default folder. See [runtime inputs](../../../docs/workflows/authoring.md#workflow-input-and-host-continuation).
 
 ## Executor selection
 

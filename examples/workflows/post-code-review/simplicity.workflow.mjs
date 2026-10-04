@@ -5,13 +5,15 @@ export const meta = {
 };
 
 export default async function runWorkflow(dsl, input) {
-  await dsl.agent(
+  const report = await dsl.agent(
     `Perform the simplicity lane of a post-code review.
 
 Semantic review target and intent:
 ${input}
 
-The runtime-injected absolute workflow workspace is authoritative. Read review-scope.md there first, and do not read sibling lane reports. Then read the live project source and the evidence named by review-scope.md.
+Every named report below means its unambiguous exact caller-assigned path, preferably absolute. Missing assignments or unreadable/missing/stale prerequisite reports are BLOCKED. Never guess a runtime folder, search alternatives or reconstruct a file from returned text. Writers complete each replacement before later readers reopen that same file.
+
+The caller-assigned exact report paths is authoritative. Read review-scope.md there first, and do not read sibling lane reports. Then read the live project source and the evidence named by review-scope.md.
 
 Audit only duplication, wrappers or helpers that add no value, redundant guards or fallbacks, dead or unreachable paths, unnecessary depth, fake configurability, unearned seams, misleading behavior names, and delete-first alternatives. Do not modify project/source files.
 
@@ -42,10 +44,10 @@ simplification gate fails.
 
 Perform this lane within this assigned Pi session. Do not invoke or delegate to another agent, saved workflow, Fusion, Claude, Codex, or any other outside model/session through a tool or shell command.
 
-Filesystem contract (apply to every tool action and command, including implicit writes): every filesystem write caused by you must stay under the runtime-injected workflow workspace. This includes tool-generated caches, bytecode, indexes, reports, fixtures, logs, build/state/evidence directories, and lock/dependency metadata. Do not run a command that writes elsewhere. If a useful check has implicit output, redirect all output and cache under the workflow workspace or use a no-cache/read-only mode; otherwise record that evidence limit in the report.
+Filesystem contract (apply to every tool action and command, including implicit writes): every filesystem write caused by you must stay within files/directories explicitly authorized in the caller input. This includes tool-generated caches, bytecode, indexes, reports, fixtures, logs, build/state/evidence directories, and lock/dependency metadata. Do not run a command that writes elsewhere. If a useful check has implicit output, redirect all output and cache under an exact caller-authorized scratch path or use a no-cache/read-only mode; otherwise record that evidence limit in the report.
 
-Replace only review-simplicity.md in the workflow workspace. Write a complete Markdown report with scope, evidence boundary, contraction metric, production/runtime usage evidence, aggressive deletion inventory, fallback/raise map, useful positive evidence, limits, and actionable findings. Each finding must include question id, severity, precise path:line evidence, concrete risk, required change, and one disposition: keep, delete, rewrite, inline, move-owner, refuted, or out-of-scope. If evidence is insufficient or live evidence drift prevents a trustworthy conclusion, write a truthful BLOCKED report instead of guessing. Write no other artifact. Finish only after review-simplicity.md is complete.`,
+Replace only review-simplicity.md at its caller-assigned exact path. Write a complete Markdown report with scope, evidence boundary, contraction metric, production/runtime usage evidence, aggressive deletion inventory, fallback/raise map, useful positive evidence, limits, and actionable findings. Each finding must include question id, severity, precise path:line evidence, concrete risk, required change, and one disposition: keep, delete, rewrite, inline, move-owner, refuted, or out-of-scope. If evidence is insufficient or live evidence drift prevents a trustworthy conclusion, write a truthful BLOCKED report instead of guessing. Write no other artifact. Finish only after review-simplicity.md is complete.`,
     { modelRole: "smol:high", requireModelRole: true, label: "simplicity audit" },
   );
-  return dsl.publishPrimaryFile("review-simplicity.md");
+  return report;
 }

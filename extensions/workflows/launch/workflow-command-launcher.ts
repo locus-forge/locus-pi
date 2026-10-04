@@ -32,7 +32,6 @@ export interface WorkflowCommandLaunchRequest {
   input?: string;
   workspaceDir?: string;
   /** @deprecated Rejected legacy launch field. */
-  outputDir?: string;
   runName?: string;
   budget?: RunWorkflowScriptOptions["budget"];
   resumeFromRunId?: string;
@@ -152,7 +151,6 @@ export function createWorkflowCommandLauncher(options: WorkflowCommandLauncherOp
           ...scriptInput,
           ...(request.input === undefined ? {} : { input: request.input }),
           ...(request.workspaceDir === undefined ? {} : { workspaceDir: request.workspaceDir }),
-          ...(request.outputDir === undefined ? {} : { outputDir: request.outputDir }),
           ...(request.runName === undefined ? {} : { runName: request.runName }),
           ...(request.budget === undefined ? {} : { budget: request.budget }),
           ...(request.resumeFromRunId === undefined ? {} : { resumeFromRunId: request.resumeFromRunId }),

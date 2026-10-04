@@ -35,7 +35,7 @@ owns the two result modes and the removed shaped-result options.
 
 Standard scripts pass narrative results as exact text, use
 `agent({ choice: [...] })` when JavaScript must select a branch, and write richer
-results to named workspace files that later agents read. A choice may explicitly name a
+results at exact caller-assigned destinations in prompts that later agents read. A choice may explicitly name a
 `choiceFallback` from the same list for a design-approved degraded route after
 both invalid answers. Raw `schema`, `validate`, parsers, renderers, and custom
 recovery remain outside the standard profile. Only files in the curated
@@ -92,7 +92,7 @@ physical proof.
 The owner-specific `post-code-review` launch policy follows the resolved project
 or curated Package target. Named and explicit-path launches under
 `.locus-pi/workflows/`, plus the installed Package parent, therefore require the
-same fresh `outputDir`; a personal workflow with the same saved name is not the
+same whole input with exact caller-assigned report paths; a personal workflow with the same saved name is not the
 owner.
 
 To run your own script, pass an explicit project-relative `scriptPath` ending in `.mjs`.

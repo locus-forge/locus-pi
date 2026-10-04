@@ -1,7 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { readWorkflowRunResult } from "../../../../extensions/workflows/runtime/workflow-journal.js";
 import { runWorkflowScript } from "../../../../extensions/workflows/runtime/workflow-runner.js";
 import { createHarness } from "../../../test-harness.js";
 import { executor, project, writeWorkflow } from "../../../fixtures/workflow-durable-project.js";
@@ -33,18 +32,10 @@ describe("workspace admission before execution", () => {
     expect(existsSync(path.join(root, result.workspaceDirRelative!))).toBe(true);
   });
 
-  it("creates an empty style.md before post-code-review executes", async () => {
+  it("does not seed criteria or create a final-output directory", async () => {
     const root = project();
-    const styleFile = path.join(root, "tmp", "post-code-review", "empty-style", "style.md");
-    writeWorkflow(
-      root,
-      "post-code-review",
-      `import { readFileSync } from "node:fs";
-export default () => readFileSync(${JSON.stringify(styleFile)}, "utf8");
-`,
-    );
+    writeWorkflow(root, "post-code-review", `export default () => "ok";\n`);
     const harness = createHarness(root);
-
     const result = await runWorkflowScript({
       pi: harness.pi,
       ctx: harness.ctx,
@@ -52,10 +43,12 @@ export default () => readFileSync(${JSON.stringify(styleFile)}, "utf8");
       name: "post-code-review",
       workspaceDir: "tmp/post-code-review/empty-style",
     });
-
     expect(result.ok, result.error).toBe(true);
-    expect(result.result).toBe("");
-    expect(readFileSync(styleFile, "utf8")).toBe("");
+    expect(existsSync(path.join(result.workspaceDir!, "style.md"))).toBe(false);
+    expect(existsSync(path.join(result.workspaceDir!, "outputs"))).toBe(false);
+    expect(existsSync(path.join(root, ".locus-pi", "workflow-output-state"))).toBe(false);
+    expect(result).not.toHaveProperty("outputDir");
+    expect(result).not.toHaveProperty("primaryFile");
   });
 
   it("preserves an existing post-code-review style.md", async () => {
@@ -86,7 +79,7 @@ export default () => readFileSync(${JSON.stringify(styleFile)}, "utf8");
     expect(readFileSync(styleFile, "utf8")).toBe("Prefer domain names over abbreviations.\n");
   });
 
-  it("rejects a symlinked post-code-review style.md without touching its target", async () => {
+  it("leaves a caller-owned symlinked criteria file untouched", async () => {
     const root = project();
     const workspaceDir = "tmp/post-code-review/symlinked-style";
     const workspace = path.join(root, workspaceDir);
@@ -105,8 +98,8 @@ export default () => readFileSync(${JSON.stringify(styleFile)}, "utf8");
       workspaceDir,
     });
 
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/style\.md|symbolic link|symlink|regular file/u);
+    expect(result.ok, result.error).toBe(true);
+    expect(result.result).toBe("must not run");
     expect(readFileSync(outside, "utf8")).toBe("outside\n");
   });
 
@@ -190,57 +183,22 @@ export default () => readFileSync(${JSON.stringify(styleFile)}, "utf8");
     expect(existsSync(path.join(root, "tmp", "post-code-review"))).toBe(false);
   });
 
-  it("binds a root-declared .local output as the single workflow directory", async () => {
-    const root = project();
-    writeWorkflow(
-      root,
-      "airflow-dag-catalog",
-      `import { writeFileSync } from "node:fs";
-import path from "node:path";
-export const meta = { name: "airflow-dag-catalog", profile: "standard", outputDir: ".local/airflow-dag-catalog" };
-export default function run(dsl) {
-  writeFileSync(path.join(dsl.workspaceDir(), "catalog.json"), "{}\\n", "utf8");
-  return { workspaceDir: dsl.workspaceDir(), outputDir: dsl.outputDir(), primary: dsl.publishPrimaryFile("catalog.json") };
-}
+  it.each([undefined, { workspaceDir: ".tasks/T-1/artifacts" }, { runName: "named" }])(
+    "refuses removed root output metadata before import or any agent (%j)",
+    async (selection) => {
+      const root = project();
+      const importMarker = path.join(root, "imported.txt");
+      writeWorkflow(
+        root,
+        "bound",
+        `import { writeFileSync } from "node:fs";
+export const meta = { name: "bound", outputDir: ".local/bound" };
+writeFileSync(${JSON.stringify(importMarker)}, "must not import");
+export default (dsl) => dsl.agent("must not run");
 `,
-    );
-    const harness = createHarness(root);
-    const result = await runWorkflowScript({
-      pi: harness.pi,
-      ctx: harness.ctx,
-      signal: new AbortController().signal,
-      name: "airflow-dag-catalog",
-    });
-
-    const directory = path.join(root, ".local/airflow-dag-catalog");
-    expect(result.ok, result.error).toBe(true);
-    expect(result.workspaceDirRelative).toBe(".local/airflow-dag-catalog");
-    expect(result.outputDirRelative).toBe(".local/airflow-dag-catalog");
-    expect(result.outputSource).toBe("declared");
-    expect(result.workspaceDirExplicit).toBe(false);
-    expect(result.result).toMatchObject({
-      workspaceDir: directory,
-      outputDir: directory,
-      primary: { relativePath: "catalog.json" },
-    });
-    expect(readFileSync(path.join(directory, "catalog.json"), "utf8")).toBe("{}\n");
-    expect(readFileSync(path.join(directory, ".workflow-runs.md"), "utf8")).toContain(result.runId);
-    expect(existsSync(path.join(directory, ".locus-pi-workflow.lock"))).toBe(false);
-    expect(existsSync(path.join(root, ".locus-pi", "workspaces"))).toBe(false);
-    expect(existsSync(path.join(root, ".locus-pi", "workflow-output-state"))).toBe(false);
-  });
-
-  it("refuses workspaceDir and runName on a bound root before any child starts", async () => {
-    const root = project();
-    writeWorkflow(
-      root,
-      "bound",
-      `export const meta = { name: "bound", outputDir: ".local/bound" };\n` +
-        `export default (dsl) => dsl.agent("must not run");\n`,
-    );
-    const harness = createHarness(root);
-    let calls = 0;
-    for (const selection of [{ workspaceDir: ".tasks/T-1/artifacts" }, { runName: "named" }]) {
+      );
+      const harness = createHarness(root);
+      let calls = 0;
       const result = await runWorkflowScript({
         pi: harness.pi,
         ctx: harness.ctx,
@@ -253,15 +211,14 @@ export default function run(dsl) {
         }),
       });
       expect(result.ok).toBe(false);
-      expect(result.error).toBe(
-        'workflow declares meta.outputDir ".local/bound", which is its workflow directory; ' +
-          "workspaceDir and runName are not accepted for this workflow",
-      );
-    }
-    expect(calls).toBe(0);
-    expect(existsSync(path.join(root, ".local"))).toBe(false);
-    expect(existsSync(path.join(root, ".tasks"))).toBe(false);
-  });
+      expect(result.error).toMatch(/meta\.outputDir was removed.*exact file destinations/u);
+      expect(calls).toBe(0);
+      expect(existsSync(importMarker)).toBe(false);
+      expect(existsSync(path.join(root, ".local"))).toBe(false);
+      expect(existsSync(path.join(root, ".tasks"))).toBe(false);
+      expect(existsSync(path.join(root, ".locus-pi", "workspaces"))).toBe(false);
+    },
+  );
 
   it("keeps the launch workspaceDir grammar closed to .local paths", async () => {
     const root = project();
@@ -277,75 +234,5 @@ export default function run(dsl) {
     expect(result.ok).toBe(false);
     expect(result.error).toContain("unsafe path component");
     expect(existsSync(path.join(root, ".local"))).toBe(false);
-  });
-
-  it("refuses resume when the root output declaration changes", async () => {
-    const root = project();
-    const source = (outputDir: string) =>
-      `export const meta = { name: "declared-output", outputDir: ${JSON.stringify(outputDir)} };\n` +
-      `export default (dsl) => dsl.outputDir();\n`;
-    writeWorkflow(root, "declared-output", source(".local/catalog-v1"));
-    const firstHarness = createHarness(root);
-    const first = await runWorkflowScript({
-      pi: firstHarness.pi,
-      ctx: firstHarness.ctx,
-      signal: new AbortController().signal,
-      name: "declared-output",
-    });
-    expect(first.ok, first.error).toBe(true);
-
-    writeWorkflow(root, "declared-output", source(".local/catalog-v2"));
-    const resumedHarness = createHarness(root);
-    const resumed = await runWorkflowScript({
-      pi: resumedHarness.pi,
-      ctx: resumedHarness.ctx,
-      signal: new AbortController().signal,
-      name: "declared-output",
-      resumeFromRunId: first.runId,
-    });
-    expect(resumed.ok).toBe(false);
-    expect(resumed.error).toContain('meta.outputDir ".local/catalog-v2" is now the single workflow directory');
-    expect(existsSync(path.join(root, ".local/catalog-v2"))).toBe(false);
-  });
-
-  it("refuses to resume a run recorded with a separate workspace and output", async () => {
-    const root = project();
-    writeWorkflow(root, "split", `export default (dsl) => dsl.workspaceDir();\n`);
-    const harness = createHarness(root);
-    const first = await runWorkflowScript({
-      pi: harness.pi,
-      ctx: harness.ctx,
-      signal: new AbortController().signal,
-      name: "split",
-    });
-    expect(first.ok, first.error).toBe(true);
-    const sourceWorkspace = first.workspaceDirRelative!;
-    const sourceFiles = readdirSync(path.join(root, sourceWorkspace)).sort();
-
-    writeWorkflow(
-      root,
-      "split",
-      `export const meta = { name: "split", outputDir: ".local/split" };\nexport default (dsl) => dsl.agent("must not run");\n`,
-    );
-    let calls = 0;
-    const resumed = await runWorkflowScript({
-      pi: harness.pi,
-      ctx: harness.ctx,
-      signal: new AbortController().signal,
-      name: "split",
-      resumeFromRunId: first.runId,
-      createExecutor: executor(() => {
-        calls += 1;
-        return "must not run";
-      }),
-    });
-    expect(resumed.ok).toBe(false);
-    expect(resumed.error).toBe(
-      `Cannot resume workflow: source run ${first.runId} used workspace ${JSON.stringify(sourceWorkspace)} ` +
-        `and output ${JSON.stringify(`${sourceWorkspace}/outputs`)}; meta.outputDir ".local/split" ` +
-        "is now the single workflow directory. Start a fresh run.",
-    );
-    expect(calls).toBe(0);
-    expect(readdirSync(path.join(root, sourceWorkspace)).sort()).toEqual(sourceFiles);
   });
 });

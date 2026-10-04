@@ -8,10 +8,7 @@ import { runWorkflowScript } from "../../../../extensions/workflows/runtime/work
 import { createHarness } from "../../../test-harness.js";
 import { chmodSync, mkdirSync } from "node:fs";
 import { vi } from "vitest";
-import {
-  WORKFLOW_OUTPUT_LOCK_FILE,
-  workflowOutputStateDir,
-} from "../../../../extensions/workflows/runtime/workflow-output.js";
+import { workflowWorkspaceStateDir } from "../../../../extensions/workflows/runtime/workflow-output.js";
 import * as workflowJournal from "../../../../extensions/workflows/runtime/workflow-journal.js";
 import * as workflowRunLayout from "../../../../extensions/workflows/runtime/workflow-run-layout.js";
 import {
@@ -243,7 +240,7 @@ export default async function runWorkflow(dsl) {
 
     expect(resumed.ok).toBe(false);
     expect(resumed.replay).toBeUndefined();
-    expect(resumed.error).toContain("has no persisted workspace identity");
+    expect(resumed.error).toContain("no valid host launch binding");
   });
 
   it("refuses with identity-coverage-unproven for an entry-only script, and records nothing", async () => {
@@ -294,7 +291,7 @@ export default async function runWorkflow(dsl, input) {
 });
 
 describe("resume binds a run to the workspace and input its source proved", () => {
-  it("resumes a qualified child in its persisted pre-upgrade default workspace", async () => {
+  it("refuses a forged default-workspace projection for a qualified child", async () => {
     const root = project();
     writeWorkflowTree(root, "composed", {
       worker: `export const meta = { name: "composed/worker", profile: "standard" };
@@ -327,8 +324,8 @@ export default (dsl) => dsl.workspaceDir();
       resumeFromRunId: first.runId,
     });
 
-    expect(resumed.ok, resumed.error).toBe(true);
-    expect(resumed.workspaceDirRelative).toBe(legacyWorkspace);
+    expect(resumed.ok).toBe(false);
+    expect(resumed.error).toContain("no valid host launch binding");
   });
 
   it("does not implicitly reuse a persisted workspace for a different workflow target", async () => {
@@ -379,6 +376,7 @@ export default (dsl) => dsl.workspaceDir();
     const createExecutor = executor((prompt) => {
       calls.push(prompt);
       const key = prompt.slice(prompt.lastIndexOf(":") + 1);
+      mkdirSync(path.dirname(path.join(root, workspaceDir, "outputs", `${key}.md`)), { recursive: true });
       writeFileSync(path.join(root, workspaceDir, "outputs", `${key}.md`), `${prompt}\n`, "utf8");
       return "written";
     });
@@ -518,6 +516,7 @@ export default (dsl) => dsl.workspaceDir();
     const createExecutor = executor((prompt) => {
       calls += 1;
       mkdirSync(path.join(root, workspaceDir), { recursive: true });
+      mkdirSync(path.dirname(path.join(root, workspaceDir, "outputs", "alpha.md")), { recursive: true });
       writeFileSync(path.join(root, workspaceDir, "outputs", "alpha.md"), `${prompt}\n`, "utf8");
       return `written:${prompt}`;
     });
@@ -553,10 +552,10 @@ export default (dsl) => dsl.workspaceDir();
     expect(changed.ok).toBe(false);
     expect(changed.error).toContain("semantic input differs");
     expect(changed.childRuns ?? []).toEqual([]);
-    expect(changed.primaryFile).toBeUndefined();
+    expect(changed).not.toHaveProperty("primaryFile");
     expect(changed.primaryOutputPath).toBeUndefined();
     expect(calls).toBe(firstCalls);
-    expect(existsSync(path.join(root, workspaceDir, "outputs", WORKFLOW_OUTPUT_LOCK_FILE))).toBe(false);
+    expect(existsSync(path.join(root, workspaceDir, "outputs", ".locus-pi-workflow.lock"))).toBe(false);
   });
 
   it("uses one persisted resume binding for workspace, owner, semantic, and replay checks", async () => {
@@ -649,7 +648,7 @@ export default (dsl) => dsl.workspaceDir();
     expect(resumed.error).toMatch(/no valid host launch binding|malformed persisted metadata/u);
     expect(resumed.childRuns ?? []).toEqual([]);
     expect(calls).toBe(0);
-    expect(existsSync(path.join(root, workspaceDir, "outputs", WORKFLOW_OUTPUT_LOCK_FILE))).toBe(false);
+    expect(existsSync(path.join(root, workspaceDir, "outputs", ".locus-pi-workflow.lock"))).toBe(false);
   });
 
   it("rejects a tampered host launch binding before owner resume work", async () => {
@@ -686,7 +685,7 @@ export default (dsl) => dsl.workspaceDir();
     expect(resumed.ok).toBe(false);
     expect(resumed.error).toContain("no valid host launch binding");
     expect(resumed.childRuns ?? []).toEqual([]);
-    expect(existsSync(path.join(root, workspaceDir, "outputs", WORKFLOW_OUTPUT_LOCK_FILE))).toBe(false);
+    expect(existsSync(path.join(root, workspaceDir, "outputs", ".locus-pi-workflow.lock"))).toBe(false);
   });
 
   it.each([
@@ -758,7 +757,7 @@ export default (dsl) => dsl.workspaceDir();
         (binding.semanticInput as Record<string, unknown>).extra = true;
       },
     },
-  ])("rejects launch binding with $label before handoff/resume use", async ({ mutate }) => {
+  ])("rejects launch binding with $label before handoff/resume use", async ({ label, mutate }) => {
     const root = project();
     writeWorkflow(root, "post-code-review", `export default (dsl) => dsl.workspaceDir();\n`);
     const workspaceDir = "outputs/launch-binding-validation";
@@ -787,7 +786,11 @@ export default (dsl) => dsl.workspaceDir();
       resumeFromRunId: first.runId,
     });
     expect(resumed.ok).toBe(false);
-    expect(resumed.error).toContain("no valid host launch binding");
+    if (label === "wrong snapshot bytes" || label === "external snapshot symlink") {
+      expect(resumed.error).toContain("unusable retained snapshot");
+    } else {
+      expect(resumed.error).toContain("no valid host launch binding");
+    }
     expect(resumed.childRuns ?? []).toEqual([]);
   });
 
@@ -801,6 +804,7 @@ export default (dsl) => dsl.workspaceDir();
       const harness = createHarness(root);
       const createExecutor = executor((prompt) => {
         const key = prompt.slice(prompt.lastIndexOf(":") + 1);
+        mkdirSync(path.join(root, sourceOutputDir, "outputs"), { recursive: true });
         writeFileSync(path.join(root, sourceOutputDir, "outputs", `${key}.md`), `${prompt}\n`, "utf8");
         return "written";
       });
@@ -842,7 +846,7 @@ export default (dsl) => dsl.workspaceDir();
       expect(calls).toBe(0);
       const candidateRelative = workspaceDir ?? "tmp/parent";
       expect(existsSync(path.join(root, candidateRelative))).toBe(false);
-      expect(existsSync(workflowOutputStateDir(root, candidateRelative))).toBe(false);
+      expect(existsSync(workflowWorkspaceStateDir(root, candidateRelative))).toBe(false);
       expect(readWorkflowRunResult(root, resumed.runId)).toMatchObject({
         ok: false,
         disposition: { status: "failed" },

@@ -34,7 +34,6 @@ const STANDARD_DSL_METHOD_NAMES = [
   "items",
   "log",
   "now",
-  "outputDir",
   "parallel",
   "phase",
   "pipeline",
@@ -42,7 +41,6 @@ const STANDARD_DSL_METHOD_NAMES = [
   "promptFile",
   "publishArtifact",
   "publishPrimaryArtifact",
-  "publishPrimaryFile",
   "random",
   "workflow",
   "workspace",
@@ -56,7 +54,6 @@ export const STANDARD_DSL_METHODS: ReadonlySet<string> = new Set(STANDARD_DSL_ME
 export const STANDARD_PUBLISHED_ARTIFACT_METHODS: ReadonlySet<StandardDslMethod> = new Set([
   "publishArtifact",
   "publishPrimaryArtifact",
-  "publishPrimaryFile",
 ]);
 
 const STANDARD_COLLECTION_DSL_METHODS = new Set(["agent", "continuationArtifacts", "items", "parallel", "pipeline"]);

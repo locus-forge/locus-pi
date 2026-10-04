@@ -60,19 +60,13 @@ describe("workflow persistent transcript", () => {
       result: "Plan ready",
       workspaceDir: "/repo/tmp/checkout-fix",
       workspaceDirRelative: "tmp/checkout-fix",
-      primaryFile: {
-        relativePath: "plan.md",
-        absolutePath: "/repo/tmp/checkout-fix/plan.md",
-        sha256: "abc123",
-        bytes: 42,
-      },
       journal: [],
       resultPersistence: { ok: true, path: "/repo/.pi/locus-pi/runs/20260806-020358-988a/runtime/result.json" },
     });
 
     expect(completion.digest).toContain("workspace: /repo/tmp/checkout-fix");
     expect(completion.digest).not.toContain("workspace reuse:");
-    expect(completion.digest).toContain("primary file: /repo/tmp/checkout-fix/plan.md");
+    expect(completion.digest).not.toContain("primary file:");
     expect(completion.digest).toContain("journal: /repo/.pi/locus-pi/runs/20260806-020358-988a/runtime/journal.ndjson");
   });
 

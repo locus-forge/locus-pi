@@ -9,11 +9,11 @@ import {
 } from "../../../../extensions/workflows/runtime/workflow-worktree.js";
 import { ensureWorkflowRunDir } from "../../../../extensions/workflows/runtime/workflow-run-layout.js";
 import {
-  assertWorkflowOutputDirPath,
+  assertWorkflowWorkspaceDirPath,
   assertWorkflowPhysicalWorkspaceIdentity,
-  referenceWorkflowPrimaryFile,
-  resolveWorkflowOutputDirectory,
-  WORKFLOW_OUTPUT_DIR_PATTERN,
+  resolveWorkflowWorkspaceDirectory,
+  resolveWorkflowWorkspaceDirectoryForReuse,
+  WORKFLOW_WORKSPACE_DIR_PATTERN,
 } from "../../../../extensions/workflows/runtime/workflow-workspace.js";
 import { project } from "../../../fixtures/workflow-durable-project.js";
 
@@ -180,30 +180,30 @@ describe("workflow runtime-owned workspace", () => {
   });
 });
 
-describe("workflow workspace identity and file proofs", () => {
-  it("keeps generated physical identity grammar separate from explicit outputDir grammar", () => {
-    expect(() => assertWorkflowOutputDirPath("packages/docs site/tmp/files")).toThrow();
-    expect(assertWorkflowOutputDirPath(".locus-pi/plans/20260819-120000-a1b2-task-draft")).toBe(
+describe("workflow workspace identity and confinement", () => {
+  it("keeps generated physical identity grammar separate from explicit workspaceDir grammar", () => {
+    expect(() => assertWorkflowWorkspaceDirPath("packages/docs site/tmp/files")).toThrow();
+    expect(assertWorkflowWorkspaceDirPath(".locus-pi/plans/20260819-120000-a1b2-task-draft")).toBe(
       ".locus-pi/plans/20260819-120000-a1b2-task-draft",
     );
-    expect(assertWorkflowOutputDirPath(".locus-pi/workspaces/20260819-120000-a1b2-task-draft")).toBe(
+    expect(assertWorkflowWorkspaceDirPath(".locus-pi/workspaces/20260819-120000-a1b2-task-draft")).toBe(
       ".locus-pi/workspaces/20260819-120000-a1b2-task-draft",
     );
-    expect(new RegExp(WORKFLOW_OUTPUT_DIR_PATTERN, "u").test(".locus-pi/plans/20260819-120000-a1b2-task-draft")).toBe(
-      true,
-    );
     expect(
-      new RegExp(WORKFLOW_OUTPUT_DIR_PATTERN, "u").test(".locus-pi/workspaces/20260819-120000-a1b2-task-draft"),
+      new RegExp(WORKFLOW_WORKSPACE_DIR_PATTERN, "u").test(".locus-pi/plans/20260819-120000-a1b2-task-draft"),
     ).toBe(true);
-    expect(() => assertWorkflowOutputDirPath(".locus-pi/plans/nested/task-draft")).toThrow();
-    expect(() => assertWorkflowOutputDirPath(".locus-pi/workspaces/nested/task-draft")).toThrow();
-    const grammar = new RegExp(WORKFLOW_OUTPUT_DIR_PATTERN, "u");
+    expect(
+      new RegExp(WORKFLOW_WORKSPACE_DIR_PATTERN, "u").test(".locus-pi/workspaces/20260819-120000-a1b2-task-draft"),
+    ).toBe(true);
+    expect(() => assertWorkflowWorkspaceDirPath(".locus-pi/plans/nested/task-draft")).toThrow();
+    expect(() => assertWorkflowWorkspaceDirPath(".locus-pi/workspaces/nested/task-draft")).toThrow();
+    const grammar = new RegExp(WORKFLOW_WORKSPACE_DIR_PATTERN, "u");
     for (const accepted of [".tasks/T-144-2026-09-08-workflow/artifacts", ".tasks/a/b/c", ".tasks/T-144"]) {
-      expect(assertWorkflowOutputDirPath(accepted)).toBe(accepted);
+      expect(assertWorkflowWorkspaceDirPath(accepted)).toBe(accepted);
       expect(grammar.test(accepted)).toBe(true);
     }
     for (const rejected of [".tasks", ".tasks/", ".tasks/../x", ".tasks/.hidden/x", ".tasks//x", ".tasks/x/../y"]) {
-      expect(() => assertWorkflowOutputDirPath(rejected)).toThrow();
+      expect(() => assertWorkflowWorkspaceDirPath(rejected)).toThrow();
       expect(grammar.test(rejected)).toBe(false);
     }
     expect(assertWorkflowPhysicalWorkspaceIdentity("packages/docs site/tmp/files")).toBe(
@@ -216,7 +216,7 @@ describe("workflow workspace identity and file proofs", () => {
   });
 
   it("opens only the .tasks root and keeps every other dot directory closed", () => {
-    const grammar = new RegExp(WORKFLOW_OUTPUT_DIR_PATTERN, "u");
+    const grammar = new RegExp(WORKFLOW_WORKSPACE_DIR_PATTERN, "u");
     for (const denied of [
       ".git/objects",
       ".ssh/x",
@@ -226,20 +226,26 @@ describe("workflow workspace identity and file proofs", () => {
       ".locus-pi",
       ".tasksextra/x",
     ]) {
-      expect(() => assertWorkflowOutputDirPath(denied)).toThrow();
+      expect(() => assertWorkflowWorkspaceDirPath(denied)).toThrow();
       expect(grammar.test(denied)).toBe(false);
     }
   });
 
-  it("rejects a workspace ancestor replaced by an external symlink before primary open", () => {
+  it("rejects a workspace ancestor replaced by an external symlink before native workspace reuse", () => {
     const root = project();
-    const output = resolveWorkflowOutputDirectory(root, "outputs/primary-ancestor", "primary-ancestor", root);
+    const output = resolveWorkflowWorkspaceDirectory(root, "outputs/primary-ancestor", "primary-ancestor", root);
     const outside = mkdtempSync(path.join(tmpdir(), "workflow-primary-outside-"));
     writeFileSync(path.join(outside, "plan.md"), "outside\n", "utf8");
     rmSync(output.absolutePath, { recursive: true, force: true });
     symlinkSync(outside, output.absolutePath, "dir");
 
-    expect(() => referenceWorkflowPrimaryFile(output, "plan.md")).toThrow(/physical outputDir|workspace changed/u);
+    expect(() =>
+      resolveWorkflowWorkspaceDirectoryForReuse(
+        root,
+        { ...output, physicalIdentity: output.identity, explicit: false },
+        { create: false },
+      ),
+    ).toThrow(/symlink/u);
 
     rmSync(outside, { recursive: true, force: true });
   });

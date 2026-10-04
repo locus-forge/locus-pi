@@ -178,8 +178,14 @@ the resolved model is what `createSession` receives.
 slash-free token is a role name looked up in the roles table. A trailing
 `:off|minimal|low|medium|high|xhigh` is stripped before the registry lookup,
 then passed to the child session as `thinkingLevel`. An explicit selector or role
-effort outranks inherited parent effort. A concrete model or effort the installed Pi host cannot honor fails the
-child creation boundary rather than silently changing either value.
+effort outranks inherited parent effort. A resolved concrete selector or assigned
+role without that suffix leaves thinking to the SDK's per-model/global fallback,
+even when the parent uses high effort. Inherited tiers forward known parent effort;
+unknown effort leaves the same SDK fallback. The SDK clamps effort to the selected
+model's capabilities. Unresolvable or malformed selectors refuse before a child
+starts. [Standalone agents](../../extensions/agents/README.md#surface) follow these
+thinking cases while bare calls retain parent-model inheritance without implicit
+`agent` role lookup; separate profile thinking metadata remains inert.
 
 **What executed, versus what was asked for.** `agent_start` is emitted before the
 bridge resolves anything, so it carries `requestedModel` / `modelRole` — intent,

@@ -86,7 +86,7 @@ that Build must create; do not declare grandchildren or an implicit root.
 Concurrency: <groups or none>
 Loop bounds: <bounds or none>
 Budgets: <axis=value with a one-line reason, or none — launch defaults apply; every other undeclared workflow budget axis is unbounded>
-Named files: <each workspace file, its writer and its readers, or none>
+Named files: <each exact caller-assigned destination in prompts, its writer and its readers, or none>
 File boundary: workflow source performs no file reads; name any child-owned source inspection
 Worst-case calls: <exact formula including saved children>
 Failure exits: <fail-closed exits>
@@ -100,6 +100,11 @@ really decomposes into more coherent subtasks.
 Review whether each brief gives the agent enough to complete its task. Remove
 mechanical headings, repeated completion criteria, tool choreography and
 general policy that add no task-specific information.
+Give each clean child the complete relevant Task, exact paths, evidence and
+constraints in its own brief; do not assume it inherits the parent conversation.
+When a role needs a write boundary, permit both its product work and assigned
+evidence: "Write product code only under the assigned product root. Also write
+the exact evidence files explicitly assigned to your role. No other writes are permitted."
 For a review edge, let the reviewer inspect the full current diff with its own tools.
 Commit only within existing task authorization; require it to account for every
 in-scope path in that diff before a favorable verdict. Do not have the producer
@@ -117,13 +122,35 @@ checks apply to every design:
 
 Use the already selected pattern card as an algorithm, not a full workflow to copy blindly.
 
-For each acceptance edge, trace blocking criteria to the request or an authoritative
-contract and identify how a child can establish them. A product requirement does not
-by itself require one particular verification method. Do not assume the author's
-tools are available to children; assign any needed capability discovery to an existing
-worker or reviewer. Separate observed defects, unmet required evidence and optional
-checks not performed. Check that correction can address the finding: an unavailable
-optional verifier is a coverage limitation, not implementation work.
+For each acceptance edge, trace blocking criteria to the request or an
+authoritative contract and identify evidence an available child can obtain.
+A product requirement does not by itself require one particular verification method.
+Do not assume the author's tools are available to children; assign any needed
+capability discovery to an existing worker or reviewer.
+
+Review both directions: preserve every required outcome, and reject any
+added restriction that would prevent one. Workflow design changes
+orchestration; it does not rewrite the task's requirements.
+
+Separate observed defects, unmet required evidence and optional checks not
+performed. An unavailable optional check is a coverage limitation, not
+implementation work or a new blocking criterion.
+
+When acceptance concerns file delivery, the evaluator inspects the actual
+required files at their exact caller-assigned paths after the last correction or
+cleanup. A report that files were created earlier is not evidence that they
+remain available.
+
+Repository ignore rules govern version control, not delivery. Cleanup may
+remove disposable files belonging to this task; required deliverables remain.
+
+Correction receives the complete actionable findings and is followed by
+fresh review. A later delivery writer reports the reviewed state. If that
+writer performs a new required check, its failure must reach an explicit
+non-success route before successful completion.
+Read a correction record only on a path where a correction produced it. An initial
+acceptance path does not require correction evidence. Determine current acceptance
+from the latest independent review; preserve earlier failures as history.
 
 Walk terminal paths for a produced artifact with an optional check unavailable, a
 confirmed defect and an explicitly required verifier unavailable. Delivery reports the
@@ -177,20 +204,16 @@ unmet required evidence returns `{ ok: false, status: "failed" }` with the lates
 artifact and evidence; do not publish it as accepted or silently start a fresh run.
 An optional check not performed does not, by itself, make a completed implementation fail.
 
-The packaged `task/plan` writes the whole workspace `workflow.mjs` in one author
+The packaged `task/plan` writes the whole caller-assigned `workflow.mjs` in one author
 call, then runs at most three independent reviews with at most two revisions.
 The packaged `task/plan-light`, for lighter author models, creates a minimal
-runnable workspace `workflow.mjs`, then grows it through at most six complete
+runnable caller-assigned `workflow.mjs`, then grows it through at most six complete
 graph-node slices. An owner re-cuts the source-free remaining queue after each
 accepted slice. Independent mechanical and design gates share one cumulative
 correction per slice; final whole-file gates run after the queue is empty. The exact routes and terminal reasons live in the
 [task authoring manual](../../../examples/workflows/task/README.md).
 
-`publishPrimaryFile("workflow.mjs")` returns `primaryFile` with the validated
-workspace-relative path, absolute path, byte count, and digest. It does not copy the
-file into run `outputs/`. The validated `primaryFile.absolutePath` remains the
-read-and-launch handoff; verifier prose is not source. Host publication validation
-is not semantic review or live proof.
+The caller assigns one exact workflow.mjs path and the design, review, log and source-slice record paths in the whole semantic input. Agents write those files directly. The same source is used by Node, the project-confined native checker, reviewer and launcher; source outside the checker's existing boundary fails explicitly. Checks retain the actual source path, checked-byte SHA-256 and tool outcomes. Before launch, reopen the assigned regular nonempty source, compare the persisted reviewed/check evidence and repeat current required checks after correction or replay. Failed/exhausted review, missing or drifted source forbids execution. Native completion and returned prose never attest file delivery, and there is no publication prerequisite.
 
 A successful Build returns `/workflows run <name>` (or the qualified child ref).
 Create-only stops there. Create-and-run continues through

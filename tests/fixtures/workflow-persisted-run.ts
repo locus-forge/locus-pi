@@ -1,19 +1,33 @@
 /**
  * Fixtures that write ONE persisted workflow run the way a finished run leaves
  * it on disk: `runtime/result.json` plus the hash-named source snapshot beside
- * it. Two suites read those same bytes back from different owners — the result
+ * it. Reader and operator suites consume those bytes from different owners — the result
  * envelope (`workflow-result.ts`) and the snapshot verifier
  * (`workflow-run-snapshot.ts`) — so the writer stays in one place rather than
- * drifting into two near-copies.
+ * drifting into independent copies. Current handoff fixtures additionally use
+ * production workspace, binding and text-artifact writers.
  */
 
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { workflowRunRuntimeDir } from "../../extensions/workflows/runtime/workflow-run-layout.js";
-import { workflowResultFile } from "../../extensions/workflows/runtime/workflow-result.js";
+import { ensureWorkflowRunDir, workflowRunRuntimeDir } from "../../extensions/workflows/runtime/workflow-run-layout.js";
+import { workflowResultFile, writeWorkflowResultJson } from "../../extensions/workflows/runtime/workflow-result.js";
+
+import { createWorkflowArtifactStore } from "../../extensions/workflows/runtime/workflow-artifacts.js";
+import { resolveWorkflowTarget } from "../../extensions/workflows/runtime/workflow-discovery.js";
+import { createWorkflowOperatorHandoffEnvelope } from "../../extensions/workflows/runtime/workflow-handoff.js";
+import { workflowRecoveryInputHash } from "../../extensions/workflows/runtime/workflow-interrupted-recovery.js";
+import {
+  createWorkflowLaunchBinding,
+  projectWorkflowLaunchBindingOntoResult,
+  writeWorkflowLaunchBinding,
+} from "../../extensions/workflows/runtime/workflow-launch-binding.js";
+import { resolveWorkflowWorkspaceDirectory } from "../../extensions/workflows/runtime/workflow-output.js";
+import { workflowSemanticInputIdentity } from "../../extensions/workflows/runtime/workflow-run-resume.js";
+import { createWorkflowScriptSnapshot } from "../../extensions/workflows/runtime/workflow-script-identity.js";
 
 export interface PersistedRunTarget {
   kind: "name" | "scriptPath";
@@ -130,4 +144,70 @@ export function createPersistedRunFixtures(prefix: string): PersistedRunFixtures
     writeSnapshotRun,
     writeResult,
   };
+}
+
+/** Current actionable handoff evidence; controllers can launch it without legacy authority shortcuts. */
+export function writeNativeHandoffRun(root: string, runId: string, targetKind: "name" | "scriptPath" = "name"): void {
+  const sourcePath = path.join(root, ".locus-pi", "workflows", "alpha.workflow.mjs");
+  mkdirSync(path.dirname(sourcePath), { recursive: true });
+  writeFileSync(
+    sourcePath,
+    'export const meta={name:"alpha",description:"Alpha"}; export default async()=>({ok:true});\n',
+  );
+  if (targetKind === "scriptPath") writeFileSync(path.join(root, "entry.workflow.mjs"), readFileSync(sourcePath));
+  const target = resolveWorkflowTarget(
+    targetKind === "scriptPath" ? { scriptPath: "entry.workflow.mjs" } : { name: "alpha" },
+    root,
+    root,
+  );
+  const runDir = ensureWorkflowRunDir(root, runId);
+  const scriptIdentity = createWorkflowScriptSnapshot(target.path, workflowRunRuntimeDir(runDir));
+  const artifactRef = createWorkflowArtifactStore({ projectRoot: root, runId, runDir }).publishText(
+    "intent.md",
+    "review current changes",
+    "prepare",
+  );
+  const operatorHandoff = createWorkflowOperatorHandoffEnvelope({
+    declaration: {
+      title: "Review clarification",
+      questions: [
+        {
+          kind: "select",
+          id: "scope",
+          prompt: "Choose review scope",
+          options: [{ label: "Current changes" }, { label: "Last commit" }],
+          recommended: "Current changes",
+          allowCustom: true,
+        },
+      ],
+      continuationArtifactRefs: [artifactRef],
+    },
+    runId,
+    target,
+    scriptIdentity,
+    terminalArtifactRefs: [artifactRef],
+  });
+  const binding = createWorkflowLaunchBinding({
+    runId,
+    rootLineageId: runId,
+    recoveryInputSha256: workflowRecoveryInputHash({ items: [], budget: { concurrency: 4 } }),
+    target: { kind: target.kind, ref: target.ref, source: target.source },
+    scriptIdentity,
+    workspace: resolveWorkflowWorkspaceDirectory(root, "handoff-workspace", "alpha", root),
+    workspaceExplicit: true,
+    semanticInput: workflowSemanticInputIdentity(undefined),
+  });
+  writeWorkflowLaunchBinding(runDir, binding);
+  const result = {
+    runId,
+    ok: true,
+    result: { mode: "prepared" },
+    disposition: { status: "awaiting_operator", detail: "review clarification required" },
+    journal: [],
+    resultPersistence: { ok: true as const, path: workflowResultFile(runDir) },
+    artifactRefs: [artifactRef],
+    operatorHandoff,
+  };
+  const persisted = writeWorkflowResultJson(runDir, projectWorkflowLaunchBindingOntoResult(result, binding));
+  if (!persisted.ok) throw new Error(persisted.message);
 }

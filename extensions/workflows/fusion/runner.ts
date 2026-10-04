@@ -16,7 +16,7 @@ import { claimNewWorkflowRun } from "../runtime/workflow-journal.js";
 import {
   acquireWorkflowRootLease,
   releaseWorkflowRootLease,
-  resolveWorkflowOutputDirectory,
+  resolveWorkflowWorkspaceDirectory,
 } from "../runtime/workflow-output.js";
 import { writeWorkflowRunReport } from "../runtime/workflow-run-report.js";
 import {
@@ -84,7 +84,7 @@ export async function runDirectFusion(options: DirectFusionRunOptions): Promise<
   }));
   options.onEvent?.(prelude);
 
-  const workspace = resolveWorkflowOutputDirectory(projectRoot, undefined, "fusion", workingDirectory, { runId });
+  const workspace = resolveWorkflowWorkspaceDirectory(projectRoot, undefined, "fusion", workingDirectory, { runId });
   const artifactStore = createWorkflowArtifactStore({ projectRoot, runId, runDir });
   const bridgeOptions: WorkflowAgentBridgeOptions = {
     pi: options.pi,
@@ -92,14 +92,12 @@ export async function runDirectFusion(options: DirectFusionRunOptions): Promise<
     signal: options.signal,
     workflowRunId: runId,
     workflowRunDir: runDir,
-    workflowWorkspaceDir: workspace.absolutePath,
     evidenceDestinations: (callId) => artifactStore.childEvidenceDestinations(callId),
     ...(options.createExecutor === undefined ? {} : { createExecutor: options.createExecutor }),
   };
   const runtime = createWorkflowRuntime({
     runId,
     projectRoot,
-    outputDir: workspace.relativePath,
     agentRunner: createWorkflowAgentRunner(bridgeOptions),
     preflightAgentRequests: createWorkflowAgentPreflight(bridgeOptions),
     artifactPorts: artifactStore,
@@ -108,7 +106,7 @@ export async function runDirectFusion(options: DirectFusionRunOptions): Promise<
     ...(budget.totalAgents === undefined ? {} : { maxTotalAgentInvocations: budget.totalAgents }),
     ...(options.onEvent === undefined ? {} : { onEvent: options.onEvent }),
   });
-  const workspaceLease = acquireWorkflowRootLease({ projectRoot, output: workspace, rootRunId: runId });
+  const workspaceLease = acquireWorkflowRootLease({ projectRoot, workspace, rootRunId: runId });
 
   let answer: string | undefined;
   let error: string | undefined;

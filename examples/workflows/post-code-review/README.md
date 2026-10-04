@@ -2,7 +2,7 @@
 
 `post-code-review` is one installable code-review workflow composed from seven
 saved child workflows. The parent makes no model call itself: it owns order,
-parallelism, the shared output directory, child identity, and final publication.
+parallelism, child identity and the complete whole-input file assignments. Agents own report writes.
 
 > **External entry point:**
 > [`post-code-review.workflow.mjs`](post-code-review.workflow.mjs). The other
@@ -20,7 +20,7 @@ style:
    `post-code-review/contracts`, and `post-code-review/style` run behind one
    parallel barrier. Each reopens `review-scope.md`, inspects live evidence
    independently, and writes only its own report. The style lane also reads the
-   request-local `style.md` criteria. The simplicity lane uses delete-first
+   optional caller-owned criteria file. The simplicity lane uses delete-first
    caller evidence and records a before/after contraction target.
 3. `post-code-review/necessity` runs sequentially after the barrier, reopens the
    scope and all four lane reports, and challenges every proposed fix for a
@@ -35,7 +35,7 @@ style:
    claims, assigns the final code-shape action levels, and writes
    `post-code-review.md`. A proven defect introduced or materially worsened by
    the reviewed change remains REQUIRED even when its impact is low.
-5. The parent publishes that final Markdown file as the run result.
+5. The parent returns synthesis completion. Consumers reopen the final report at its exact assigned path; native completion does not attest a file.
 
 The diagram below shows these workflow boundaries, exact source filenames,
 model roles, Markdown handoffs, and the failure boundary on one canvas.
@@ -55,10 +55,10 @@ entries:
 /workflows list post-code-review
 ```
 
-Run the external parent with a new explicit project-relative output namespace:
+Run the parent with the target and exact report destinations in one whole input:
 
 ```text
-/workflows run post-code-review review the current diff
+/workflows run post-code-review -- Review the current diff. Assign exact absolute paths for review-scope.md, review-boundaries.md, review-simplicity.md, review-contracts.md, review-style.md, review-necessity.md and post-code-review.md.
 ```
 
 Before launch, assign the portable `smol` role through `/model-roles`. Every
@@ -68,17 +68,11 @@ each fresh review child before it runs instead of silently inheriting the parent
 session model. A resumed call may reuse that original child's recorded answer;
 replay starts no child and remains marked as not-fresh evidence.
 
-The runtime creates a unique `.locus-pi/workspaces/<generated-run-name>` workspace.
-To provide additional comment and style criteria before launch, select an
-explicit fresh workspace with `--workspace-dir <path>` and create
-`<path>/style.md`. The runtime preserves an existing regular file byte-for-byte
-or creates it empty before the first agent runs. Empty means no extra criteria;
-the style lane still applies live project conventions. A symlink or non-regular
-`style.md` fails closed.
+Assign each report its own unambiguous exact path, preferably absolute, and pass those same instructions to all children. Parallel lanes write distinct reports and later stages reopen them after the barrier. Missing assignments or missing/unreadable/stale prerequisites are BLOCKED; no runtime folder discovery or reconstruction from returned text is permitted. Operators serialize roots sharing fixed paths because runtime leases protect only native state.
 
-The same entry is available through the programmatic `workflow` tool and the
-headless Pi command surface. A fresh review must use a new output directory;
-resume reuses the exact source run and workspace.
+Optionally name an exact read-only criteria-file path in that same input, separately from the scope and style report. Runtime never creates or discovers style.md. Omitted criteria or an empty regular file means no additional criteria; live project conventions still apply. Nonempty bytes stay unchanged and cannot expand scope. A named missing, unreadable, nonregular or leaf-symlink file produces explicit non-success naming that path, with no fallback, substitute or link-target write.
+
+The same entry is available through the programmatic `workflow` tool and headless command. Resume reuses eligible native calls/checkpoints but does not restore file writes; consumers must recheck their actual assigned files.
 
 ## Decision and remediation contract
 
@@ -131,7 +125,7 @@ handoff.
 
 ## Files in this directory
 
-- `post-code-review.workflow.mjs` — external parent and final publisher.
+- `post-code-review.workflow.mjs` — external parent and dependency coordinator.
 - `scope.workflow.mjs` — exact scope and Git-semantics mapper.
 - `boundaries.workflow.mjs` — ownership and architecture lane.
 - `simplicity.workflow.mjs` — delete-first complexity lane.

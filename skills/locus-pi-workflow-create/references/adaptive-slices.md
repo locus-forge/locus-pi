@@ -14,9 +14,9 @@ Use capable agents with outcome-led briefs under existing user routing. Leave in
 
 ## Queue and continuation
 
-The queue owner rewrites a named workspace queue file whole, one complete text brief per item; each stage reads its first item, and `choice` routes every graph edge. Source never reads the file and forwards opaque values; agents own meaning. The queue owner sees the previous whole queue file, verified progress and live source. It may reorder, merge, shrink or replace remaining work within scope. Never silently drop unmet requirements or repeat verified slices.
+The queue owner rewrites an exact caller-assigned queue file whole, one complete text brief per item; each stage reads its first item, and `choice` routes every graph edge. Source never reads the file and forwards opaque values; agents own meaning. The queue owner sees the previous whole queue file, verified progress and live source. It may reorder, merge, shrink or replace remaining work within scope. Never silently drop unmet requirements or repeat verified slices.
 
-The queue exists only as that workspace file; no JavaScript variable holds it. Source keeps a finite literal `for` loop and forwards whole agent text, such as the last accepted progress report, without parsing or truncating it. Carry narrative history through agent-owned reports/artifacts, preserving all execution outcomes and finding dispositions. No source-side semantic accumulator or parser is needed.
+The queue exists only as that assigned file; no JavaScript variable holds it. Source keeps a finite literal `for` loop and forwards whole agent text, such as the last accepted progress report, without parsing or truncating it. Carry narrative history through agent-owned reports/artifacts, preserving all execution outcomes and finding dispositions. No source-side semantic accumulator or parser is needed.
 
 ## Bounds and evidence
 

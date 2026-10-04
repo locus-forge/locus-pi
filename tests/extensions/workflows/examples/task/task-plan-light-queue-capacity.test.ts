@@ -83,7 +83,7 @@ function capacityRun(repaired: boolean, narrative = false, wrongEdge = false) {
 describe("task/plan-light late source-queue capacity", () => {
   it("carries exact remaining slots to each queue gate and groups adjacent identities", async () => {
     const fixture = capacityRun(true);
-    await expect(fixture.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
+    await expect(fixture.run()).resolves.toBe("Whole graph conforms");
     for (const [label, index] of [
       ["workflow-source-queue-assessment", 4],
       ["workflow-source-queue-repair", 0],
@@ -110,13 +110,13 @@ describe("task/plan-light late source-queue capacity", () => {
     expect(fixture.calls.find((call) => call.label === "workflow-source-queue-recheck")?.prompt).toContain(
       "Reconciliation report:\n1. review route + single correction; 2. recheck route",
     );
-    expect(groupedSlice).toContain("the first numbered item of workspace workflow-source-queue.md");
+    expect(groupedSlice).toContain("the first numbered item of the assigned workflow-source-queue.md");
     expect(groupedSlice).toContain("Implement only the graph identities and connecting edges explicitly named");
     expect(groupedSlice).toContain('choice: ["passed", "failed"]');
     expect(groupedSlice).toContain("dsl.publishArtifact");
     expect(groupedSlice).toContain("dsl.publishText is unsupported");
     expect(fixture.calls.filter((call) => call.label === "workflow-source-slice")).toHaveLength(6);
-    expect(fixture.publishPrimaryFile).toHaveBeenCalledOnce();
+    expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();
   });
 
   it("fails closed with all unmet identities when the capacity conflict survives recheck", async () => {

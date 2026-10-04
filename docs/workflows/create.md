@@ -162,6 +162,11 @@ ready for the owner, not that implementation is authorized.
 
 ### Choose a graph and prompt detail
 
+This choice shapes the generated product workflow, whether an installed authoring
+skill or a packaged authoring pipeline creates it. Running accepted source follows
+that graph; execution does not select a new graph. Choose from the Task's required
+outcomes and dependencies, independently of the author or executor model.
+
 Start with the task need, then select a semantic approach and its smallest useful
 graph. The [approach guide](../../skills/locus-pi-workflow-create/references/agentic-approaches.md)
 explains role ownership, feedback, stopping and adaptation:
@@ -205,11 +210,11 @@ result by dropping a report.
 
 ### Build generated source in complete slices
 
-The Package `task/plan` workflow writes one workspace `workflow.mjs` in a single
+The Package `task/plan` workflow writes one caller-assigned `workflow.mjs` in a single
 author call, then reviews and revises it in a loop of at most three reviews.
 `task/plan-light` builds the same file in complete, checked graph-node slices for
 lighter author models: it re-cuts the remaining queue after each accepted slice
-and publishes the file only after final whole-file checks. The
+and finishes its review only after final whole-file checks. The
 [task authoring manual](../../examples/workflows/task/README.md) owns both
 workflows' loops, gates, terminal reasons, and replay requirements. Use that
 manual when running or repairing either one.
@@ -258,7 +263,7 @@ when planning execution. Two practical consequences for authoring:
   as a stand-in for a limit the runtime no longer has; it buys nothing and costs the
   part of the answer the stage was for.
 - When a real consumer has a limit, state that requirement in the prompt; when it
-  must be checked, have the agent write a named workspace file and give a separate
+  must be checked, have the agent write a exact caller-assigned file and give a separate
   verifier stage that file. No call option bounds an answer: the removed `output`,
   `schema` and `maxAnswerChars` options are refused by name before a child starts.
 
@@ -279,12 +284,12 @@ After installing the example as `adaptive-slices`, run it from the target
 repository with a task directory and an explicit runtime workspace:
 
 ```text
-/workflows run adaptive-slices --workspace-dir .tasks/example/artifacts/implementation -- .tasks/example
+/workflows run adaptive-slices -- task .tasks/example; exact baseline, queue, slice and final handoff paths: <assign each>
 ```
 
 Pi's `input` is one semantic string, not an `args` object. The current repository
 establishes the execution context, the input identifies the task directory, and
-`--workspace-dir` selects the workflow workspace. Naming another repository in a
+`--workspace-dir` selects native coordination; explicit destinations in input place agent files. Naming another repository in a
 prompt does not switch the child working directory. Use a fresh workspace for
 an independent run.
 

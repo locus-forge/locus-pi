@@ -307,7 +307,7 @@ describe("agent result authoring contract", () => {
 
     const boundary = source("skills/locus-pi-workflow-create/references/source-boundary.md").replace(/\s+/gu, " ");
     expect(boundary).toContain("an extraction agent returns one complete textual finding as exact text");
-    expect(boundary).toContain("several findings belong in a named workspace file");
+    expect(boundary).toContain("several findings belong in an exact caller-assigned file");
     expect(boundary).toContain("source never consumes a list carried in a model answer");
 
     // The task guide names the queue files the checked-in workflow actually writes and reads.
@@ -317,7 +317,7 @@ describe("agent result authoring contract", () => {
       expect(task).toContain(`\`${file}\``);
       expect(planLight).toContain(file);
     }
-    expect(task).toContain("The named workspace queue file is authoritative; the owner's report is not.");
+    expect(task).toContain("The named caller-assigned queue file is authoritative; the owner's report is not.");
     expect(task).toContain("Independent assessment and recheck read that exact file and examine each numbered item");
     expect(task).toContain("The workflow script never reads the queue file");
   });
