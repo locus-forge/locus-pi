@@ -23,6 +23,72 @@ function standardSource(body = 'return agent("Review the change");'): string {
 }
 
 describe("workflow_check_source", () => {
+  it.each(["compatibility", "orchestration-only"] as const)(
+    "rejects retired placement and file publication in %s before execution",
+    async (mode) => {
+      for (const body of [
+        'export const meta = {name:"retired",profile:"standard",outputDir:"reports"}; export default dsl => dsl.agent("must not run", {label:"work"});',
+        'export const meta = {name:"retired",profile:"standard"}; export default function run(dsl) { return dsl.outputDir(); }',
+        'export const meta = {name:"retired",profile:"standard"}; export default function run({publishPrimaryFile}) { return publishPrimaryFile("answer.md"); }',
+        'export const meta = {name:"retired",profile:"standard"}; export default function run(dsl) { return dsl.publishPrimaryArtifact("workflow.mjs", {workflowSource:"workflow.mjs"}); }',
+      ]) {
+        const root = temporaryRoot();
+        writeFileSync(path.join(root, "retired.workflow.mjs"), body);
+        const harness = createHarness(root);
+        workflows(harness.pi);
+        const checked = await runTool(harness, "workflow_check_source", { path: "retired.workflow.mjs", mode });
+        expect(checked.isError, body).toBe(true);
+        expect(checked.details?.errorCount).toBeGreaterThan(0);
+        expect(harness.sentMessages).toEqual([]);
+      }
+    },
+  );
+
+  it("checks only the assigned source and exposes current byte identity without old-folder fallback", async () => {
+    const root = temporaryRoot();
+    mkdirSync(path.join(root, "old-workspace", "outputs"), { recursive: true });
+    writeFileSync(path.join(root, "old-workspace", "outputs", "workflow.mjs"), standardSource());
+    const harness = createHarness(root);
+    workflows(harness.pi);
+    const expected = "authoring/workflow.mjs";
+    const missing = await runTool(harness, "workflow_check_source", { path: expected, mode: "orchestration-only" });
+    expect(missing.isError).toBe(true);
+    expect(String((missing.content[0] as { text: string }).text)).toContain("authoring");
+    mkdirSync(path.join(root, "authoring"));
+    writeFileSync(path.join(root, expected), standardSource('return agent("First", {label:"work"});'));
+    const first = await runTool(harness, "workflow_check_source", { path: expected, mode: "orchestration-only" });
+    expect(first.isError).not.toBe(true);
+    const reviewedDigest = first.details?.sha256;
+    writeFileSync(path.join(root, expected), standardSource('return agent("Changed", {label:"work"});'));
+    const changed = await runTool(harness, "workflow_check_source", { path: expected, mode: "orchestration-only" });
+    expect(changed.details?.sha256).not.toEqual(reviewedDigest);
+    rmSync(path.join(root, expected));
+    const removed = await runTool(harness, "workflow_check_source", { path: expected, mode: "orchestration-only" });
+    expect(removed.isError).toBe(true);
+  });
+
+  it("rejects a literal fallback outside its declared choices with a policy diagnostic", async () => {
+    const root = temporaryRoot();
+    writeFileSync(
+      path.join(root, "invalid-choice.workflow.mjs"),
+      standardSource('return agent("Route", { label: "route", choice: ["accept", "fix"], choiceFallback: "stop" });'),
+    );
+    const harness = createHarness(root);
+    workflows(harness.pi);
+    const result = await runTool(harness, "workflow_check_source", {
+      path: "invalid-choice.workflow.mjs",
+      mode: "orchestration-only",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.details?.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "WF_POLICY",
+        severity: "error",
+        message: "agent choiceFallback must be one of the declared choices",
+      }),
+    );
+  });
+
   it("registers under the workflows owner and accepts a valid standard source", async () => {
     const root = temporaryRoot();
     writeFileSync(path.join(root, ".locus-pi", "workflows", "sample.workflow.mjs"), standardSource());

@@ -3,7 +3,7 @@
 import { findWorkflowRunDir } from "../workflow-run-layout.js";
 import { projectWorkflowDisposition } from "../workflow-outcome.js";
 import { readWorkflowRunResult, workflowPersistedResultInvalidity, workflowResultFile } from "../workflow-result.js";
-import type { WorkflowOutputDirectory } from "../workflow-workspace.js";
+import type { WorkflowWorkspaceDirectory } from "../workflow-workspace.js";
 import type { WorkflowLeaseRecord } from "./workflow-location-lease.js";
 import { projectRelativeStatePath, stateFileRemovalCommand } from "./workflow-state-files.js";
 
@@ -81,8 +81,8 @@ function inspectCompleteTerminalResult(projectRoot: string, rootRunId: string): 
 export function workflowLeaseOwnershipError(
   input: {
     projectRoot: string;
-    kind: "workspace" | "output";
-    location: WorkflowOutputDirectory;
+    kind: "workspace";
+    location: WorkflowWorkspaceDirectory;
     force: boolean;
   },
   lockFile: string,
@@ -90,11 +90,10 @@ export function workflowLeaseOwnershipError(
   owner: WorkflowLeaseOwnerInspection,
 ): Error {
   const leasePath = projectRelativeStatePath(input.projectRoot, lockFile);
-  const target = input.kind === "workspace" ? "workspaceDir" : "outputDir";
   const heading =
     owner.liveness === "alive"
-      ? `workflow ${input.kind} ${JSON.stringify(input.location.relativePath)} is owned by live run ${current.rootRunId} (pid ${current.pid}, acquired ${current.acquiredAt})`
-      : `workflow ${input.kind} ${JSON.stringify(input.location.relativePath)} has an unverifiable owner pid ${current.pid} (run ${current.rootRunId}, acquired ${current.acquiredAt})`;
+      ? `workflow workspace ${JSON.stringify(input.location.relativePath)} is owned by live run ${current.rootRunId} (pid ${current.pid}, acquired ${current.acquiredAt})`
+      : `workflow workspace ${JSON.stringify(input.location.relativePath)} has an unverifiable owner pid ${current.pid} (run ${current.rootRunId}, acquired ${current.acquiredAt})`;
   let recovery: string;
   if (owner.terminalResult.complete && !input.force) {
     recovery = "Retry the same launch with --force to reclaim this completed run's leaked lease.";
@@ -116,7 +115,7 @@ export function workflowLeaseOwnershipError(
   const forceRefusal =
     input.force && !owner.terminalResult.complete ? `\n--force refused: ${owner.terminalResult.reason}.` : "";
   return new Error(
-    `${heading}.${forceRefusal}\nLease: ${leasePath}\nRecovery: ${recovery}\nOr choose another ${target}.`,
+    `${heading}.${forceRefusal}\nLease: ${leasePath}\nRecovery: ${recovery}\nOr choose another workspaceDir.`,
   );
 }
 

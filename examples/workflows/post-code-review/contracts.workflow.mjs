@@ -5,13 +5,15 @@ export const meta = {
 };
 
 export default async function run(dsl, input) {
-  await dsl.agent(
+  const report = await dsl.agent(
     `Perform only the contracts lane of a post-code review.
 
 Semantic review input:
 ${input}
 
-First use a real read tool to reopen the complete review-scope.md from the runtime-injected absolute workflow output directory. Do not read review-boundaries.md, review-simplicity.md, or any other sibling lane report. Then independently inspect live project source and the contract evidence named by review-scope.md.
+Every named report below means its unambiguous exact caller-assigned path, preferably absolute. Missing assignments or unreadable/missing/stale prerequisite reports are BLOCKED. Never guess a runtime folder, search alternatives or reconstruct a file from returned text. Writers complete each replacement before later readers reopen that same file.
+
+First use a real read tool to reopen the complete review-scope.md from the caller-assigned exact path. Do not read review-boundaries.md, review-simplicity.md, or any other sibling lane report. Then independently inspect live project source and the contract evidence named by review-scope.md.
 
 For a commit, range, diff, or PR target, verify every claimed contract, config key,
 composition exception, owner, and consumer against the exact reviewed target tree and diff.
@@ -24,9 +26,9 @@ Perform this lane within this assigned Pi session. Do not invoke or delegate to 
 
 Apply this general contract checklist to every parsed or migrated contract: first identify which component owns each guarantee and whether the project explicitly trusts an external provider for field types or values. Do not require duplicate local leaf validation merely because data is external. When the project accepts the provider's guarantee and no supported consumer failure or breached local integrity boundary is proven, record that as an accepted responsibility boundary rather than a defect. Require local validation only when the reviewed component owns or claims the guarantee, translates or canonicalizes the value into a stricter local contract, or a concrete supported-consumer failure or integrity breach proves the check necessary. For locally owned validation, enumerate every declared field and trace the actually invoked owner-compatible type/value validator, including language coercion traps such as bool-as-number. Also verify every referenced path is inventoried and contained before reading it; verify every canonicalized identity value is the same projection consumed downstream rather than a raw divergent value; and preserve the closed old-speaker inventory across unchanged/allowlisted consumers and operator commands. Whenever parser or validator ownership moved or was reimplemented, build a base-owner-to-head-consumer parity matrix covering every locally owned declared field, referenced path, validation call, canonical projection, and downstream use. Exact key presence or content hash is insufficient only for guarantees the local component actually owns. Classify every relaxed locally owned guarantee with introducedness. Include the reviewed scope and intent, positive evidence, actionable findings, accepted trust boundaries, and limits. If evidence is insufficient or live source is materially unavailable, write a truthful semantic BLOCKED result rather than guessing.
 
-Write or replace exactly one complete Markdown file named review-contracts.md in the runtime-injected absolute workflow output directory. Every filesystem write caused by you or by a tool you run—including caches, bytecode, indexes, reports, fixtures, logs, build/state/evidence directories, and lock/dependency metadata—must stay under that workflow directory; do not run a command that writes elsewhere. The workflow directory is not scratch space: do not materialize diffs, excerpts, context bundles, command output, temporary files, or intermediate notes there. Read evidence directly and keep transient reasoning in the session. If a useful check has implicit output, use a genuinely no-write mode; otherwise record it as an evidence limit. Do not modify project source or Git state, read sibling reports, or write outside the workflow output directory. Write no other artifact. Finish only after the complete replacement file is written.`,
+Write or replace exactly one complete Markdown file named review-contracts.md in the caller-assigned exact path. Every filesystem write caused by you or by a tool you run—including caches, bytecode, indexes, reports, fixtures, logs, build/state/evidence directories, and lock/dependency metadata—must stay within files/directories explicitly authorized in the caller input; do not run a command that writes elsewhere. The assigned report file is not scratch space: do not materialize diffs, excerpts, context bundles, command output, temporary files, or intermediate notes there. Read evidence directly and keep transient reasoning in the session. If a useful check has implicit output, use a genuinely no-write mode; otherwise record it as an evidence limit. Do not modify project source or Git state, read sibling reports, or write outside the caller-assigned report path. Write no other artifact. Finish only after the complete replacement file is written.`,
     { modelRole: "smol:xhigh", requireModelRole: true, label: "audit post-code review contracts" },
   );
 
-  return dsl.publishPrimaryFile("review-contracts.md");
+  return report;
 }

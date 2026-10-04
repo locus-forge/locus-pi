@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import path from "node:path";
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import type {
   RunWorkflowScriptOptions,
   RunWorkflowScriptResult,
@@ -23,7 +23,7 @@ function completedResult(runId: string): RunWorkflowScriptResult {
 }
 
 describe("workflow command launcher", () => {
-  it("shutdown waits for the real runner to persist cancellation and release both leases", async () => {
+  it("shutdown waits for the real runner to persist cancellation and release its native workspace lease", async () => {
     const root = project();
     writeWorkflow(
       root,
@@ -69,17 +69,19 @@ describe("workflow command launcher", () => {
       expect(launcher.launch({ ctx: harness.ctx, scriptRef: "shutdown-real" })).toEqual({ status: "started" });
       await running;
       const workspaceLeases = stateLeaseFiles(root, "workflow-state");
-      const outputLeases = stateLeaseFiles(root, "workflow-output-state");
       expect(workspaceLeases).toHaveLength(1);
-      expect(outputLeases).toHaveLength(1);
       expect(workspaceLeases.every(existsSync)).toBe(true);
-      expect(outputLeases.every(existsSync)).toBe(true);
+      expect(existsSync(path.join(root, ".locus-pi", "workflow-output-state"))).toBe(false);
 
       await launcher.shutdown();
 
       expect(workspaceLeases.some(existsSync)).toBe(false);
-      expect(outputLeases.some(existsSync)).toBe(false);
       expect(terminalResult?.disposition).toEqual({ status: "cancelled", reason: "session_shutdown" });
+      expect(terminalResult?.resultPersistence.ok).toBe(true);
+      expect(JSON.parse(readFileSync(terminalResult!.resultPersistence.path, "utf8"))).toMatchObject({
+        ok: false,
+        disposition: { status: "cancelled", reason: "session_shutdown" },
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -302,7 +304,7 @@ describe("workflow command launcher", () => {
   });
 });
 
-function stateLeaseFiles(root: string, namespace: "workflow-state" | "workflow-output-state"): string[] {
+function stateLeaseFiles(root: string, namespace: "workflow-state"): string[] {
   const versionRoot = path.join(root, ".locus-pi", namespace, "v1");
   if (!existsSync(versionRoot)) return [];
   return readdirSync(versionRoot).map((identity) => path.join(versionRoot, identity, "lease.json"));

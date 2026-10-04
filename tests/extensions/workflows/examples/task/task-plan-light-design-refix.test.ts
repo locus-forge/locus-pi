@@ -54,7 +54,7 @@ function runWithResidual(mechanical: "passed" | "failed", design: "accept" | "fa
 describe("task/plan-light bounded design recheck repair", () => {
   it("accepts one targeted residual fix only after independent mechanical and design checks", async () => {
     const fixture = runWithResidual("passed", "accept");
-    await expect(fixture.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
+    await expect(fixture.run()).resolves.toBe("Whole graph conforms");
     expect(fixture.calls.filter((call) => call.label === "workflow-source-design-refix")).toHaveLength(1);
     const refix = fixture.calls.find((call) => call.label === "workflow-source-design-refix")?.prompt;
     expect(refix).toContain("Correctable residual: correction still uses initial, not current state");
@@ -68,7 +68,7 @@ describe("task/plan-light bounded design recheck repair", () => {
       expect(prompt).toContain("A choice returns only its exact route token");
       expect(prompt).toContain("Carry the latest whole state and queue");
     }
-    expect(fixture.publishPrimaryFile).toHaveBeenCalledOnce();
+    expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();
   });
 
   it("stops without publication when the second mechanical check fails", async () => {
@@ -307,11 +307,11 @@ describe("task/plan-light decision log", () => {
 
     const design = prompts.get("workflow-design");
     expect(design).toContain('append the line "## New task/plan-light run"');
-    expect(design).toContain("Do not edit files except appending to workflow-decision-log.md");
+    expect(design).toContain("Write the complete design to the assigned workflow.design.md");
     expect(design).not.toContain("Do not edit files. Return");
     const review = prompts.get("workflow-design-review");
     expect(review).toContain("Record each change you made to the proposed design and why");
-    expect(review).toContain("Do not edit files except appending to workflow-decision-log.md");
+    expect(review).toContain("Replace the assigned workflow.design.md with the complete reviewed design");
   });
 });
 

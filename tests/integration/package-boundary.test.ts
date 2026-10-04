@@ -20,6 +20,7 @@ import {
 } from "../../extensions/workflows/runtime/workflow-discovery.js";
 import { verifyInstalledWorkflowDocs } from "../docs/helpers/installed-workflow-docs.js";
 import { deadMarkdownLinks } from "../../scripts/markdown-links.js";
+import { installedStandardSource, RETIRED_DSL_PROBES } from "./fixtures/package-source-probes.js";
 
 interface PackageJson {
   name: string;
@@ -88,16 +89,6 @@ const PACKAGE_WORKFLOW_PATHS = {
   "post-code-review/synthesis": "examples/workflows/post-code-review/synthesis.workflow.mjs",
   "stage-loop": "examples/workflows/stage-loop/stage-loop.workflow.mjs",
 } as const;
-
-function installedStandardSource(run: string, declarations = ""): string {
-  return [
-    'export const meta = { name: "installed-probe", profile: "standard", description: "Installed probe." };',
-    declarations,
-    run,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
 
 const CLOSED_GRAMMAR_PROBES = [
   {
@@ -205,7 +196,6 @@ const STANDARD_DSL_RETURN_CASES = [
   { method: "items", call: "dsl.items()", category: "list" },
   { method: "log", call: 'dsl.log("x")', category: "void" },
   { method: "now", call: "dsl.now()", category: "runtime" },
-  { method: "outputDir", call: "dsl.outputDir()", category: "runtime" },
   { method: "parallel", call: 'dsl.parallel([() => dsl.agent("x")])', category: "list" },
   { method: "phase", call: 'dsl.phase("x")', category: "void" },
   { method: "pipeline", call: 'dsl.pipeline(["x"], (item) => dsl.agent(item))', category: "list" },
@@ -217,7 +207,6 @@ const STANDARD_DSL_RETURN_CASES = [
     call: 'dsl.publishPrimaryArtifact("x.md", "x")',
     category: "runtime",
   },
-  { method: "publishPrimaryFile", call: 'dsl.publishPrimaryFile("x.md")', category: "runtime" },
   { method: "random", call: "dsl.random()", category: "runtime" },
   { method: "workflow", call: 'dsl.workflow(() => dsl.agent("x"))', category: "opaque" },
   { method: "workspace", call: 'dsl.workspace("work", "HEAD")', category: "opaque" },
@@ -360,10 +349,14 @@ describe("npm public package boundary", () => {
     // `skills/.ignore` rides along under `skills/` and is counted here.
     // Four location/tool owners were extracted without widening the directory-owned allowlist;
     // removing the shaped-result schema owner (workflow-schema.ts) took one file out;
-    // the bound-directory and child-task-note owners under location-state/ add two.
+    // the child-task-note owner remains under location-state/; the removed bound-directory owner does not ship.
     // Four agentic starters and their two guides add six teaching resources.
     // Two authoring lessons share contracts; detailed has one conditional case reference and two new starters.
+    // Agent-option policy leaves the checker facade under the same packaged extensions owner.
     expect(dryRun.files).toHaveLength(265);
+    expect(dryRun.files.map((file) => file.path)).not.toContain(
+      "extensions/workflows/runtime/location-state/workflow-bound-directory.ts",
+    );
   });
 
   it("ships every prompt resource a curated workflow renders", () => {
@@ -483,7 +476,8 @@ describe("npm public package boundary", () => {
     expect(draft).toContain("Workflow direction:");
     expect(draft).toContain("Reflection/review:");
     for (const source of [plan, lightPlan]) {
-      expect(source).toContain('publishPrimaryFile("workflow.mjs")');
+      expect(source).not.toContain("publishPrimaryFile(");
+      expect(source).toContain("exact");
       expect(source).not.toContain('publishPrimaryArtifact("workflow.mjs"');
     }
     expect(plan).toContain('reason: "review_exhausted"');
@@ -725,6 +719,7 @@ describe("npm public package boundary", () => {
         },
         ...CLOSED_GRAMMAR_PROBES.map((probe) => ({ ...probe, accepted: false as const })),
         ...DSL_RETURN_PROVENANCE_PROBES,
+        ...RETIRED_DSL_PROBES,
       ] as const;
       const checks = installedMatrix.map((probe) => {
         const probePath = path.join(workflowDirectory, `${probe.name}.workflow.mjs`);

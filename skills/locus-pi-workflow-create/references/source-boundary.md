@@ -3,7 +3,7 @@ updated: "2026-10-02T17:36:25Z"
 source_commit: "8af5c47f379a"
 update_event: "user_request"
 context: "changes=L files=13"
-description: "Use host-provided workspace and named relative agent handoffs"
+description: "Give file writers and readers identical exact caller-assigned destinations"
 ---
 
 # Author-facing source boundary
@@ -18,7 +18,7 @@ branches, and handoffs visible at their execution edges. Stage prompts own their
 roles; package agent names are never required.
 
 Use the create skill's consumer rule: narrative stays whole; only a real branch needs a
-`choice`, and a work queue lives in a named workspace file. The [structured-results guide](structured-results.md) explains the distinction.
+`choice`, and a work queue lives in an exact caller-assigned file. The [structured-results guide](structured-results.md) explains the distinction.
 Keep chosen bounds with their consuming edge and their reason in the design; the
 [budget policy](../../../docs/workflows/budgets.md#run-budget) owns launch defaults.
 
@@ -64,7 +64,7 @@ export default async function run({ agent, parallel, phase, publishPrimaryArtifa
 The workflow orchestrates but does not interpret or format agent results:
 
 - an extraction agent returns one complete textual finding as exact text;
-  several findings belong in a named workspace file that later agents read,
+  several findings belong in an exact caller-assigned file that later agents read,
   and source never consumes a list carried in a model answer;
 - a composer returns the complete Markdown document;
 - a reviewer returns the complete corrected replacement;
@@ -84,44 +84,11 @@ external-action authorization still apply. If repository evidence is needed, the
 its prompt asks for that work. Workflow JavaScript does not obtain paths or load
 file contents on the child's behalf.
 
-The runtime still prepends one exact absolute workflow workspace to every child
-prompt. Fresh runs default to a unique
-`.locus-pi/workspaces/<generated-run-name>/` workspace under the project root. A
-qualified child keeps both name components in its generated leaf. Authors name the assigned relative file and the idempotent replacement rule;
-the host supplies the actual workspace. Package task drafting and planning use the same workspace contract;
-saved children and later manual stages share the selected named path. The host also supplies source context. Do not add permission/tool fields,
-another default writable root, a path parser, or an information-gathering script.
+The host labels actual execution cwd and project source context. It does not prepend an agent-file placement base. The caller names every handoff and result with an exact path in the whole semantic input, preferably absolute; writers and readers receive that same input. Agents use ordinary tools to save intermediate and final files. Generated source does not parse paths, call workspace helpers for placement or load file contents.
 
-When the root declares `meta.outputDir` (for example `.local/review`), that
-directory is both workflow workspace and final output directory. The host still
-prepends its absolute path to every child prompt. Name handoffs relative to that
-workspace, for example "replace `artifacts/findings.md` in the workflow workspace
-with the complete findings"; tell the consuming agent to read that exact file.
-The child's project working directory does not change: agents resolve the named
-file against the host-provided workspace. Generated orchestration-only source
-must not call `workspaceDir()` or `outputDir()` to interpolate paths.
-The directory persists across runs. Replace a handoff before its next consumer,
-or give that consumer an explicit freshness requirement when reusing prior evidence.
+For example, a prompt can assign `/project/.tasks/example/artifacts/review.md` while the agent executes in `/project` or a selected worktree. The writer replaces that complete file; after the barrier, the reviewer opens the identical path. A missing or ambiguous destination causes explicit non-success, not a default folder, fallback search or reconstruction from returned text. Assign distinct files to parallel writers. Operators serialize roots sharing fixed domain files; native runtime leases do not lock arbitrary prompt destinations.
 
-The workflow workspace is the durable location for handoffs, review evidence,
-and explicit resume inputs. Final results and deliverables belong in the runtime's
-output directory; agents use the host-provided location and source publishes complete text. Keep disposable environments,
-dependency caches, test basetemp, transient renderer output, and staging in the
-ordinary OS or tool temporary and cache locations. When renderer output is the
-final deliverable, write or promote it into the output directory. Promote any
-scratch output needed for review or resume before its temporary or cache location
-expires. This guidance reduces accidental mixing; an authored prompt that
-explicitly requests another placement remains authoritative.
-
-When a workflow carries one task, the task's own artifact folder is a legitimate
-and usually preferable durable root: `.tasks/<task>/artifacts/<stage>/` keeps
-stage reports beside the task text a human already reads, and later stages read
-earlier ones from there instead of receiving them again as prompt text.
-`--workspace-dir .tasks/<task>/artifacts` is accepted by the operator surface (see
-[workflow manual](../../../docs/workflows/index.md)); runtime leases and checkpoints stay beneath `.locus-pi`,
-outside user-declared final output. Nothing changes for disposable output: environments,
-dependency caches, test basetemp and staging stay in ordinary OS or tool
-temporary and cache locations, never beside evidence.
+The caller also owns durability. Write a file needed after temporary-worktree release to its assigned durable path before release. Keep authorized scratch/caches in normal temporary locations. Native text snapshots remain optional evidence and verified-continuation inputs; they are never substitutes for requested files. A native completed result does not attest a filesystem write: the consuming stage reopens the exact assigned file and checks current required evidence. Replay restores answers, not file effects; missing or drifted prerequisites fail the consumer.
 
 ## Standard-profile bad smells
 

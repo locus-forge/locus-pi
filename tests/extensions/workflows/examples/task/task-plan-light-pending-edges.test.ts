@@ -76,7 +76,7 @@ const boundedSource = [
 describe("task/plan-light pending source edges", () => {
   it("accepts a named future edge as intermediate work and carries it into the next slice", async () => {
     const fixture = runWithPendingEdge();
-    await expect(fixture.run()).resolves.toMatchObject({ relativePath: "workflow.mjs" });
+    await expect(fixture.run()).resolves.toBe("No pending placeholders remain");
 
     const slices = fixture.calls.filter((call) => call.label === "workflow-source-slice");
     expect(slices).toHaveLength(2);
@@ -90,11 +90,13 @@ describe("task/plan-light pending source edges", () => {
     expect(slices[0]?.prompt).toContain("do not implement the later node in this slice");
     const firstReview = fixture.calls.find((call) => call.label === "workflow-source-review")?.prompt;
     expect(firstReview).toContain("Accept a named fail-closed placeholder");
-    expect(firstReview).toContain("workspace workflow-source-queue.md retains its final destination and replacement");
+    expect(firstReview).toContain(
+      "the assigned workflow-source-queue.md retains its final destination and replacement",
+    );
     expect(fixture.calls.find((call) => call.label === "workflow-source-final-review")?.prompt).toContain(
       "no pending fail-closed placeholders",
     );
-    expect(fixture.publishPrimaryFile).toHaveBeenCalledOnce();
+    expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();
   });
 
   it("rejects an unresolved placeholder at the final whole-file gate", async () => {

@@ -78,7 +78,7 @@ function workflowApprovalDetails(args: unknown, projectRoot: string): string[] {
       workspace = `selection blocked: ${error instanceof Error ? error.message : String(error)}`;
     }
   } else {
-    workspace = `${WORKFLOW_WORKSPACES_STORAGE_PREFIX}<generated-run-name> unless meta.outputDir`;
+    workspace = `${WORKFLOW_WORKSPACES_STORAGE_PREFIX}<generated-run-name>`;
   }
   const declaredBudget =
     record.budget !== null && typeof record.budget === "object"
@@ -137,6 +137,7 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
     label: "workflow",
     description:
       `Run a reviewed trusted-file workflow script by saved name or project-relative path with an optional explicit shared budget, optional semantic text, ` +
+      `Agents write user files at exact destinations in their prompts without changing cwd; native completion does not attest those files. ` +
       `optional exact text work units exposed through dsl.items(), an optional confined workflow workspace, and optional host-verified continuation artifacts. ` +
       `An optional force flag reclaims only a leaked lease whose matching run has complete terminal evidence; it never overwrites an active or unverifiable owner. ` +
       `Fresh workflows default to unique .locus-pi/workspaces/<generated-run-name> workspaces; runName selects .locus-pi/workspaces/<runName> for new names and ` +
@@ -171,7 +172,7 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
       }
       if (typeof params === "object" && params !== null && Object.prototype.hasOwnProperty.call(params, "outputDir")) {
         return errorResult(
-          "workflow: launch outputDir was removed; use workspaceDir for runtime state and declare meta.outputDir in the root workflow for final files",
+          "workflow: outputDir was removed; assign exact file destinations in agent prompts; workspaceDir selects native runtime state only",
           { owner: "workflows" },
         );
       }
@@ -334,10 +335,6 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
         ...(res.workspacePhysicalIdentitySchemaVersion !== undefined
           ? { workspacePhysicalIdentitySchemaVersion: res.workspacePhysicalIdentitySchemaVersion }
           : {}),
-        outputDir: workflowRunOutputsDir(res.runDir),
-        ...(res.stableOutputDir !== undefined ? { stableOutputDir: res.stableOutputDir } : {}),
-        ...(res.stableOutputDirRelative !== undefined ? { stableOutputDirRelative: res.stableOutputDirRelative } : {}),
-        ...(res.primaryFile !== undefined ? { primaryFile: res.primaryFile } : {}),
         ...(res.lineage !== undefined ? { lineage: res.lineage } : {}),
         ...(res.childRuns !== undefined ? { childRuns: res.childRuns } : {}),
         ...(res.resultTextPath !== undefined ? { resultTextPath: res.resultTextPath } : {}),
@@ -390,9 +387,7 @@ function renderWorkflowToolResult(res: RunWorkflowScriptResult, digest: string):
   const lines = [firstLine, `runDir: ${res.runDir}`];
   if (res.workspaceDir !== undefined) lines.push(`workspaceDir: ${res.workspaceDir}`);
   lines.push(`outputsDir: ${workflowRunOutputsDir(res.runDir)}`);
-  if (res.primaryFile !== undefined) {
-    lines.push(`primary file: ${res.primaryFile.absolutePath} (sha256 ${res.primaryFile.sha256})`);
-  }
+
   if (res.resultTextPath !== undefined) lines.push(`result: ${res.resultTextPath}`);
   if (res.primaryOutputPath !== undefined) lines.push(`primary output: ${res.primaryOutputPath}`);
   if (res.scriptIdentity !== undefined) lines.push(formatOperatorScriptIdentity(res.scriptIdentity, res.target?.ref));
@@ -426,7 +421,7 @@ function renderWorkflowToolResultCard(
   const technicalLines: string[] = [];
   if (options.expanded) {
     if (typeof details.runId === "string") technicalLines.push(`run: ${details.runId}`);
-    if (typeof details.outputDir === "string") technicalLines.push(`outputs: ${details.outputDir}`);
+    if (typeof details.outputDir === "string") technicalLines.push(`legacy native outputs: ${details.outputDir}`);
     if (typeof details.primaryOutputPath === "string")
       technicalLines.push(`primary output: ${details.primaryOutputPath}`);
     if (typeof details.resultTextPath === "string") technicalLines.push(`workflow result: ${details.resultTextPath}`);
@@ -464,15 +459,13 @@ function renderWorkflowToolResultCard(
 function readPersistedWorkflowResult(
   details: Record<string, unknown>,
 ): { kind: "model" | "technical"; text: string } | undefined {
-  if (
-    typeof details.runDir !== "string" ||
-    typeof details.outputDir !== "string" ||
-    typeof details.resultTextPath !== "string"
-  )
-    return undefined;
+  if (typeof details.runDir !== "string" || typeof details.resultTextPath !== "string") return undefined;
   const runDir = path.resolve(details.runDir);
   const outputDir = workflowRunOutputsDir(runDir);
-  if (path.resolve(details.outputDir) !== outputDir) {
+  if (
+    details.outputDir !== undefined &&
+    (typeof details.outputDir !== "string" || path.resolve(details.outputDir) !== outputDir)
+  ) {
     return { kind: "technical", text: "full workflow result unavailable: invalid output path" };
   }
   const resultPath = path.resolve(details.resultTextPath);

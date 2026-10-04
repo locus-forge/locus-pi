@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import runLightPlan from "../../../../../examples/workflows/task/plan-light.workflow.mjs";
 import runPlanWorkflow from "../../../../../examples/workflows/task/plan.workflow.mjs";
 import { runWorkflowScript } from "../../../../../extensions/workflows/runtime/workflow-runner.js";
 import { createHarness } from "../../../../test-harness.js";
@@ -41,10 +42,10 @@ describe("Package workflow: task/plan", () => {
   it("publishes after one author call and an accepted first review", async () => {
     const fixture = planRun(["accept"]);
 
-    await expect(fixture.run()).resolves.toEqual({ relativePath: "workflow.mjs" });
+    await expect(fixture.run()).resolves.toBe("review 1: revise, missing failure exit");
     expect(fixture.labels()).toEqual(["workflow-author", "workflow-review", "workflow-review-route"]);
     expect(fixture.phases).toEqual(["author", "review", "publish"]);
-    expect(fixture.publishPrimaryFile).toHaveBeenCalledWith("workflow.mjs");
+    expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();
 
     const [author, review, route] = fixture.calls;
     expect(author?.prompt).toContain("Accepted draft text");
@@ -79,7 +80,7 @@ describe("Package workflow: task/plan", () => {
   it("revises with the whole review and re-reviews the revision", async () => {
     const fixture = planRun(["revise", "accept"]);
 
-    await expect(fixture.run()).resolves.toEqual({ relativePath: "workflow.mjs" });
+    await expect(fixture.run()).resolves.toBe("review 2: revise, stale path");
     expect(fixture.labels()).toEqual([
       "workflow-author",
       "workflow-review",
@@ -132,12 +133,68 @@ describe("Package workflow: task/plan-light admission", () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe(
-        "task/plan-light requires the complete accepted draft as non-empty semantic input; no agent was started and no workflow.mjs was published.",
+        "task/plan-light requires the complete accepted draft as non-empty semantic input; no agent was started and no workflow source was written.",
       );
       expect(run).not.toHaveBeenCalled();
-      expect(result.primaryFile).toBeUndefined();
+      expect(result).not.toHaveProperty("primaryFile");
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+const executionConstraintDraft =
+  "Accepted product scope.\nUniversal execution constraint: SENTINEL_NO_EXTERNAL_LOOKUPS.\n";
+type ExecutionConstraintCall = { prompt: string; label: string; choice?: string[] };
+
+describe("packaged task authoring execution constraints", () => {
+  it.each(["plan", "plan-light"] as const)("keeps the full draft in every task/%s child", async (variant) => {
+    const calls: ExecutionConstraintCall[] = [];
+    const routes: Record<string, string[]> =
+      variant === "plan"
+        ? { "workflow-review-route": ["revise", "accept"] }
+        : {
+            "workflow-source-seed-route": ["failed"],
+            "workflow-source-seed-fix-route": ["passed"],
+            "workflow-source-queue-route": ["queue_conflict", "complete"],
+            "workflow-source-queue-recheck-route": ["work"],
+            "workflow-source-check-route": ["fix"],
+            "workflow-source-fix-route": ["passed"],
+            "workflow-source-review-route": ["fix"],
+            "workflow-source-design-fix-route": ["passed"],
+            "workflow-source-design-recheck-route": ["fix"],
+            "workflow-source-design-refix-check-route": ["passed"],
+            "workflow-source-design-rerecheck-route": ["accept"],
+            "workflow-source-final-check-route": ["passed"],
+            "workflow-source-final-route": ["publish"],
+          };
+    const dsl = {
+      phase: () => undefined,
+      publishPrimaryFile: (relativePath: string) => ({ relativePath }),
+      agent: async (prompt: string, options: { label: string; choice?: string[] }) => {
+        calls.push({ prompt, ...options });
+        if (!options.choice) return "Opaque stage report; no execution constraints are restated.";
+        const answer = routes[options.label]?.shift();
+        if (!answer) throw new Error(`Missing scripted route for ${options.label}`);
+        expect(options.choice).toContain(answer);
+        return answer;
+      },
+    };
+    const workflow = variant === "plan" ? runPlanWorkflow : runLightPlan;
+    await expect(workflow(dsl as unknown as Parameters<typeof workflow>[0], executionConstraintDraft)).resolves.toBe(
+      "Opaque stage report; no execution constraints are restated.",
+    );
+    // This single path covers seed, queue, mechanical and both semantic repairs.
+    expect(new Set(calls.map((call) => call.label)).size).toBe(variant === "plan" ? 4 : 36);
+    expect(new Set(calls.filter((call) => call.choice).map((call) => call.label)).size).toBe(
+      variant === "plan" ? 1 : 13,
+    );
+    for (const call of calls) {
+      expect(call.prompt, call.label).toContain(executionConstraintDraft);
+      if (call.choice) {
+        expect(call.prompt, call.label).toContain("task-wide execution constraints govern this call");
+        expect(call.prompt, call.label).toContain("without rejudging it");
+      }
     }
   });
 });

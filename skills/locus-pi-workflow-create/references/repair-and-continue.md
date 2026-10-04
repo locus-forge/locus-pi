@@ -124,7 +124,7 @@ downstream consumer: ordinary reports stay plain text, and their next semantic
 reviewer receives the complete text. Keep existing checks for completeness, verdict
 and blockers before subsequent writes. Preserve genuine choices that route the graph.
 A source that still declares a removed shaped-result option fails before any child
-with that option's name; migrate it to text, a choice, or a named workspace file. Do not replace content review with text-length checks.
+with that option's name; migrate it to text, a choice, or an exact caller-assigned file. Do not replace content review with text-length checks.
 
 Keep completed calls' prompts and effective options unchanged, and verify their
 replay identity. Do not redesign the graph or sweep completed stages as part of
@@ -158,7 +158,7 @@ owns the axis list and timer constraints.
 
 Ordinary narrative still uses plain text; there is no character limit to exceed,
 and increasing turns does not fix a wrong result mode. Use `choice` for a routing
-decision and a named workspace file for discovered work units, including
+decision and an exact caller-assigned file for discovered work units, including
 sequential slice queues.
 
 ## Runtime handoff

@@ -16,12 +16,18 @@ description: "Consolidate workflow contracts at their owning pages and repair ou
 ## Resume and replay
 
 `/workflows run <name> --resume <runId>` reruns the workflow against a recorded
-run. The source result must persist distinct workspace and output identities;
-resume rejects missing or unsafe identities and requires both current locations
-to match their recorded paths, canonical physical targets, and output provenance. When
-the source run used an explicit workspace, repeat its exact `--workspace-dir <path>`;
-omitting it or naming another workspace fails before child execution. A fresh
-semantic target must use a different path. Every
+run. Resume validates the persisted version-3 target, source identity coverage,
+exact semantic input and caller items, and the native workspace's recorded path
+and canonical physical identity. It preserves the recorded root lineage. Repeat
+an explicit workspace selector exactly; a missing or changed selector fails before
+child execution. Old output-format runs remain readable but require a fresh
+migrated run before replay or recovery.
+
+Ordinary repaired-source replay may use changed self-contained source at the
+original target while reusing its unchanged labelled request prefix. The first
+changed call makes the suffix fresh. Interrupted recovery instead requires its
+original source and complete confirmed prefix; it refuses a mismatch rather than
+re-executing that prefix. Neither route restores agent-written files. Every
 `agent()` call whose **position** and **exact request** match the
 record returns the recorded child text without spawning a child, so iterating on
 the last stage of a long pipeline no longer pays for the earlier stages.

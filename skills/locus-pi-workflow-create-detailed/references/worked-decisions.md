@@ -28,7 +28,7 @@ Trace its edges before adapting the design:
    the existing state, changes only assigned scope, and reports actual evidence
    and artifact locations. It does not commit merely because it implemented work.
 2. The reviewer reads the full actual diff, including uncommitted work. It owns
-   acceptance and replaces workspace `findings.md`, preserving prior check
+   acceptance and replaces the assigned `findings.md`, preserving prior check
    outcomes/dispositions. Its same call returns `accept`, `revise` or `blocked`.
 3. On `revise`, the fresh worker reads that file and receives the previous handoff
    whole. The next reviewer checks the new state. No translator is necessary
@@ -75,7 +75,7 @@ The graph has two different dependency kinds:
 reach later interpretation as complete observations. It is not acceptance.
 The synthesis/reviewer retain failed, missing and skipped checks and every
 finding's disposition. Required residuals return incomplete with the candidate
-artifact and workspace `findings.md`; optional coverage alone is disclosed.
+artifact and the assigned `findings.md`; optional coverage alone is disclosed.
 Fatal execution errors still propagate. No null filtering hides failed units.
 
 Variant: all findings must be deduplicated **before** verification. A barrier is
@@ -90,7 +90,7 @@ generated source cannot parse the findings file into a worker list.
 
 Request: migrate an accepted scope whose next steps may change after inspection
 or execution. Read the complete [plan/replan module](../../../extensions/workflows/references/examples/starters/plan-replan.workflow.mjs).
-The planner owns `plan.md` and `next-step.md` in the workflow workspace. Source
+The planner owns `plan.md` and `next-step.md` in the caller-assigned file locations. Source
 routes only its `work` / `complete` / `blocked` choice; it never reads those files.
 
 The executor reads the next brief, completes only its authorized scope, and

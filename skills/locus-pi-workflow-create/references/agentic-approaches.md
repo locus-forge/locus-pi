@@ -46,7 +46,7 @@ Criteria stay fixed; only the candidate and feedback change.
 
 The [feedback starter](../../../extensions/workflows/references/examples/starters/evaluator-optimizer.workflow.mjs)
 uses known stages and a bounded loop: work → review → correction → recheck.
-The reviewer writes complete explanations in workspace `findings.md` and returns
+The reviewer writes complete explanations in the assigned `findings.md` and returns
 an exact `choice` at the same call. The correction agent reads that file; source
 does not parse it. A separate router is unnecessary because this reviewer owns
 the decision. Success publishes the exact reviewed worker handoff and names the
@@ -72,7 +72,7 @@ unnecessary steps while preserving unmet requirements and authorized scope.
 A large task with known stages can stay fixed.
 
 The [plan/replan starter](../../../extensions/workflows/references/examples/starters/plan-replan.workflow.mjs)
-has the planner replace workspace `plan.md` and `next-step.md`; an executor reads
+has the planner replace the assigned `plan.md` and `next-step.md`; an executor reads
 the next brief and returns a complete handoff. Source routes only the planner's
 exact `choice`, never the plan's contents. The planner assesses completion after
 each step, including the last allowed step. Completion requires actual evidence

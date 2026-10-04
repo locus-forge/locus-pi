@@ -5,8 +5,8 @@
  *
  * Everything here is deliberate: the workflow publishes supporting documents
  * and at most one primary document, while the mandatory result owner persists
- * exact terminal prose. Automatic child answers remain runtime evidence. Files
- * an agent writes itself stay in the separate project-local workflow workspace.
+ * exact terminal prose. Automatic child answers remain runtime evidence; agent files
+ * use exact caller-assigned prompt destinations, apart from native coordination/navigation.
  *
  * Documents are projected as an update cycle, not an accumulation: an artifact
  * NAME is one document, and a name that was written several times (a plan
@@ -69,7 +69,7 @@ export function writeWorkflowRunGroupReport(
     `Workflow: ${JSON.stringify(input.workflow)}`,
     `Group: ${input.storageRootRunId}`,
     "",
-    `- [Workspace working files](${workspaceHref}/).`,
+    `- [Native runtime coordination and navigation](${workspaceHref}/).`,
     "- [First run journal](runtime/journal.ndjson).",
     "",
     "The terminal runtime/result.json and optional outputs/, children/, and attempts/ directories appear only when the runtime writes that evidence.",
@@ -109,7 +109,7 @@ export interface WorkflowRunReportInput {
   runId: string;
   /** Execution directory claimed before this projection writer is constructed. */
   runDir: string;
-  /** Project-local directory where agents write workflow-owned files. */
+  /** Native runtime coordination/navigation directory, not an agent-file destination. */
   workspaceDir?: string;
   /** Terminal disposition status: completed / awaiting_operator / cancelled / failed. */
   status: string;
@@ -454,7 +454,7 @@ function reportReadme(options: {
   lines.push(
     ...(input.workspaceDir === undefined
       ? []
-      : [`- Workflow workspace: \`${input.workspaceDir}\` — agent-owned files under their exact names`]),
+      : [`- Native workspace: \`${input.workspaceDir}\` — runtime coordination and navigation only`]),
     "- Machine records: `../runtime/` — journal.ndjson, replay record, result envelope, script snapshot, " +
       "transcripts and call envelopes",
   );

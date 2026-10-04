@@ -102,9 +102,11 @@ describe("curated workflow diagrams", () => {
       expect(svg, `post-code-review diagram omits child ${child}`).toContain(child);
       const childSource = readFileSync(packagedWorkflowPath(`post-code-review/${child}`), "utf8");
       expect(childSource, `post-code-review/${child} permits model-role fallback`).toContain("requireModelRole: true");
-      for (const artifact of declaredNames(childSource, /\bpublishPrimaryFile\("([^"]+)"\)/gu)) {
-        expect(svg, `post-code-review diagram omits artifact ${artifact}`).toContain(artifact);
-      }
+      const artifact = child === "synthesis" ? "post-code-review.md" : `review-${child}.md`;
+      expect(childSource, `post-code-review/${child} has no exact named report assignment`).toContain(artifact);
+      expect(childSource).toContain("caller-assigned");
+      expect(childSource).not.toContain("publishPrimaryFile(");
+      expect(svg, `post-code-review diagram omits artifact ${artifact}`).toContain(artifact);
     }
     expect(svg).toContain('modelRole "smol:high"');
     expect(svg).toContain('modelRole "smol:xhigh"');
@@ -149,8 +151,11 @@ describe("curated workflow diagrams", () => {
     expect(contracts).toContain("stale derived documentation changed by the PR");
     expect(contracts).toContain("exact reviewed target tree");
 
-    expect(style).toContain("Read review-scope.md there first, then read style.md");
-    expect(style).toContain("an empty file means that the operator supplied no additional style criteria");
+    expect(style).toContain("Read the assigned review-scope.md first.");
+    expect(style).toContain("optional exact criteria-file path supplied in the whole caller input");
+    expect(style).toContain("Omitted criteria or an empty regular file means no additional style criteria");
+    expect(style).toContain("missing/unreadable/nonregular/leaf-symlink file is BLOCKED");
+    expect(style).toContain("preserve its bytes");
     expect(style).toContain("misleading, stale, redundant, or missing comments");
     expect(style).toContain("turn personal taste into a defect");
     expect(style).toContain("classify it as NO_ACTION polish rather than a finding");
