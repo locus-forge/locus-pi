@@ -6,7 +6,7 @@ Graph: caller `dsl.items()` → visible parallel/pipeline workers → aggregator
 
 Cost: K×W + 1 calls for K items and W stages per unit; logical depth W + 1. Local group width and the shared physical-agent budget both apply.
 
-Handoff: exact items go to workers; complete worker text goes to aggregation. `dsl.items()` is an exact-list contract with no Locus items count or character policy. An agent never returns the list: when discovery is needed, run it first as its own stage or run that writes a named workspace file, and let the operator or a later invocation turn that file into items. A queue that changes as work lands is an [adaptive slice](adaptive-slices.md) loop over a workspace file, not a returned list.
+Handoff: exact items go to workers; complete worker text goes to aggregation. `dsl.items()` is an exact-list contract with no Locus items count or character policy. An agent never returns the list: when discovery is needed, run it first as its own stage or run that writes an exact caller-assigned file, and let the operator or a later invocation turn that file into items. A queue that changes as work lands is an [adaptive slice](adaptive-slices.md) loop over an assigned file, not a returned list.
 
 Failure: an empty item list is a named blocked exit, never success. Worker failure rejects its barrier. Do not silently filter failures out of the final catalog.
 

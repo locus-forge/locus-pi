@@ -55,15 +55,7 @@ import {
   type WorkflowFinalizationError,
   type WorkflowResultDiagnosticSentinel,
 } from "./workflow-outcome.js";
-import {
-  assertWorkflowOutputLease,
-  assertWorkflowRootLease,
-  releaseWorkflowOutputLease,
-  releaseWorkflowRootLease,
-  type WorkflowOutputLease,
-  type WorkflowPrimaryFileReference,
-  type WorkflowRootLease,
-} from "./workflow-output.js";
+import { assertWorkflowRootLease, releaseWorkflowRootLease, type WorkflowRootLease } from "./workflow-output.js";
 import type { WorkflowReplayEnvelope } from "./workflow-replay.js";
 import type { WorkflowResourceEvidence } from "./workflow-resources.js";
 import {
@@ -116,20 +108,9 @@ export interface RunWorkflowScriptResult {
   workspacePhysicalIdentitySchemaVersion?: 1;
   /** Whether the caller supplied workspaceDir instead of accepting the default. */
   workspaceDirExplicit?: boolean;
-  /** User-visible final-output directory, separate from runtime workspace state. */
-  outputDir?: string;
-  outputDirRelative?: string;
-  outputPhysicalIdentity?: string;
-  outputPhysicalIdentitySchemaVersion?: 1;
-  outputSource?: "declared" | "default";
   /** Exact semantic input identity, persisted for the owner-specific resume contract. */
   semanticInputPresent?: boolean;
   semanticInputSha256?: string;
-  /** @deprecated Use workspaceDir. */
-  stableOutputDir?: string;
-  /** @deprecated Use workspaceDirRelative. */
-  stableOutputDirRelative?: string;
-  primaryFile?: WorkflowPrimaryFileReference;
   lineage?: WorkflowRunLineage;
   childRuns?: WorkflowChildRunEvidence[];
   journal: WorkflowJournalLine[];
@@ -193,7 +174,6 @@ export interface WorkflowRunFinalizationPorts {
    */
   readonly ownedRootLease: () => WorkflowRootLease | undefined;
   /** Final-output lease owned only by the root; released before the workspace lease. */
-  readonly ownedOutputLease: () => WorkflowOutputLease | undefined;
   /** The source-handoff claim this launch consumed, when it consumed one. */
   readonly operatorHandoffClaim?: WorkflowHandoffClaimLease;
   /** Whether the run got far enough to bind that claim to itself. */
@@ -228,7 +208,6 @@ export function createWorkflowRunFinalizer(
   const { projectRoot, runId, runDir, budget, journal } = ports;
   const outputDir = workflowReportDir(projectRoot, runId);
   let workspaceLeaseReleased = false;
-  let outputLeaseReleased = false;
 
   /** Attach the actionable diagnostic to a failed envelope; other outcomes pass through. */
   function withFailureDiagnostic(
@@ -312,7 +291,6 @@ export function createWorkflowRunFinalizer(
     const artifactStore = ports.artifacts();
     const awaitOperatorDeclaration = ports.awaitOperator();
     const ownedRootLease = ports.ownedRootLease();
-    const ownedOutputLease = ports.ownedOutputLease();
     const resourceEvidence = ports.resourceEvidence();
     const replay = ports.replay();
     // Complete published/primary identity set for this run; the operator handoff is
@@ -328,18 +306,6 @@ export function createWorkflowRunFinalizer(
         assertWorkflowRootLease(ownedRootLease);
       } catch (error) {
         workspaceLeaseReleased = true;
-        enrichedFields = {
-          ...enrichedFields,
-          ok: false,
-          error: enrichedFields.error ?? (error instanceof Error ? error.message : String(error)),
-        };
-      }
-    }
-    if (ownedOutputLease !== undefined) {
-      try {
-        assertWorkflowOutputLease(ownedOutputLease);
-      } catch (error) {
-        outputLeaseReleased = true;
         enrichedFields = {
           ...enrichedFields,
           ok: false,
@@ -488,34 +454,6 @@ export function createWorkflowRunFinalizer(
     // No workflow-workspace mutation follows this point. Release before writing the
     // run report/result envelope so a release failure becomes terminal evidence
     // instead of escaping after a persisted success.
-    if (ownedOutputLease !== undefined && !outputLeaseReleased) {
-      try {
-        releaseWorkflowOutputLease(ownedOutputLease);
-        outputLeaseReleased = true;
-      } catch (error) {
-        const message = `Workflow output lease release failed: ${error instanceof Error ? error.message : String(error)}`;
-        const leaseFailure: WorkflowJournalLine = {
-          ts: new Date().toISOString(),
-          runId,
-          kind: "error",
-          source: "runtime",
-          message,
-        };
-        journal.write(leaseFailure);
-        finalizationErrors.push(workflowFinalizationError("lease-release", message));
-        outputLeaseReleased = true;
-        enrichedFields = withFailureDiagnostic(
-          {
-            ...enrichedFields,
-            ok: false,
-            disposition: { status: "failed" },
-            error: enrichedFields.error ?? message,
-            journal: [...enrichedFields.journal, leaseFailure],
-          },
-          artifactStore,
-        );
-      }
-    }
     if (ownedRootLease !== undefined && !workspaceLeaseReleased) {
       try {
         releaseWorkflowRootLease(ownedRootLease);
@@ -548,7 +486,7 @@ export function createWorkflowRunFinalizer(
     // result, budget-versus-spend, and workflow-published documents under their
     // semantic names. Agent call answers remain evidence under runtime/ unless
     // the workflow explicitly publishes one. Files agents wrote themselves stay
-    // under their own names in the separate project-local workflow workspace.
+    // at the exact destinations assigned by their callers.
     // The envelope below stays the durable truth, and a report failure never fails
     // the run. It runs BEFORE result.json so a failed write can still enter the
     // bounded finalizationErrors projection even if its journal append also fails.

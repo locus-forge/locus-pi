@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1500" viewBox="0 0 1600 1500" role="img" aria-labelledby="title desc">
   <title id="title">post-code-review: one parent, seven child workflows, one published report</title>
-  <desc id="desc">The runtime preserves or creates style.md in the request workspace. Scope runs first. Boundaries, delete-first simplicity, contracts, and style run in parallel. Every fresh child requires an assigned model role. Necessity challenges stable question ids before synthesis makes current-change code-shape defects required and publishes post-code-review.md. Final QA remains separate.</desc>
+  <desc id="desc">The caller assigns exact report paths and an optional read-only criteria-file path. Scope runs first. Boundaries, delete-first simplicity, contracts, and style run in parallel. Every fresh child requires an assigned model role. Necessity challenges stable question ids before synthesis makes current-change code-shape defects required and writes the assigned post-code-review.md. Final QA remains separate.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
       <path d="M0 0 L10 5 L0 10 Z" fill="#334155"/>
@@ -18,7 +18,7 @@
 
   <rect x="60" y="105" width="1480" height="92" rx="16" fill="#fef3c7" stroke="#b45309" stroke-width="2"/>
   <text x="86" y="132" class="sans tag">OPERATOR: REQUEST WORKSPACE</text>
-  <text x="86" y="158" class="mono title">.locus-pi/workspaces/&lt;run-name&gt;/style.md</text>
+  <text x="86" y="158" class="mono title">Caller input: exact optional criteria-file path</text>
   <text x="86" y="181" class="sans body">Workflow: runtime preserves a regular file or creates it empty before any Agent starts.</text>
 
   <path d="M800 197 V230" class="edge"/>
@@ -64,7 +64,7 @@
   <rect x="1155" y="630" width="370" height="220" rx="15" fill="#fff" stroke="#94a3b8" stroke-width="2"/>
   <text x="1178" y="659" class="sans tag">WORKFLOW</text>
   <text x="1178" y="686" class="mono title">style.workflow.mjs</text>
-  <text x="1178" y="718" class="sans body">Comments · project style · style.md</text>
+  <text x="1178" y="718" class="sans body">Comments · project style · supplied criteria</text>
   <text x="1178" y="752" class="mono small">modelRole "smol:high" · required</text>
   <text x="1178" y="810" class="mono body">Artifact: review-style.md</text>
 
@@ -85,10 +85,10 @@
   <path d="M800 1214 V1254" class="edge"/>
   <rect x="180" y="1254" width="1240" height="76" rx="16" fill="#dcfce7" stroke="#15803d" stroke-width="2"/>
   <text x="206" y="1283" class="sans tag">WORKFLOW: publish</text>
-  <text x="206" y="1312" class="mono title">dsl.publishPrimaryFile("post-code-review.md")</text>
+  <text x="206" y="1312" class="mono title">agent writes assigned post-code-review.md</text>
 
   <rect x="60" y="1362" width="1480" height="58" rx="14" fill="#fef2f2" stroke="#b91c1c" stroke-width="2"/>
-  <text x="86" y="1397" class="sans body">Fail closed: unassigned required modelRole for fresh child · unsafe style.md · missing child · failed Agent/report · no publication</text>
+  <text x="86" y="1397" class="sans body">Fail closed: unassigned required modelRole for fresh child · invalid supplied criteria · missing child · failed Agent/report · no accepted result</text>
 
   <rect x="60" y="1440" width="1480" height="36" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
   <text x="86" y="1464" class="sans body"><tspan font-weight="700">Operator:</tspan> request input · <tspan font-weight="700">Workflow:</tspan> deterministic graph · <tspan font-weight="700">Agent:</tspan> Pi child · <tspan font-weight="700">Artifact:</tspan> Markdown handoff</text>

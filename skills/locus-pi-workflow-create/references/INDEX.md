@@ -50,7 +50,7 @@ is a way to obtain a graph, not semantic continuation. Candidate search, council
 and fixed fan-out can use known stages; no universal judge is injected.
 
 [Structured results](structured-results.md) explains whole text, reviewer-owned
-choices and named workspace files. Read it before introducing a separate arbiter
+choices and exact caller-assigned files. Read it before introducing a separate arbiter
 or decision translator. It refines a graph's handoffs rather than adding a form.
 [Authoring styles](authoring-styles.md) separates graph choice, brief detail,
 advisory size and executor routing. Large fan-out monitoring belongs to

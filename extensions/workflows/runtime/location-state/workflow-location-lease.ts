@@ -1,16 +1,10 @@
-/** Exclusive workspace/output leases and serialized same-host reclaim. */
+/** Exclusive native workspace leases and serialized same-host reclaim. */
 
 import { createHash, randomUUID } from "node:crypto";
 import { renameSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { workflowRootDir } from "../workflow-run-layout.js";
-import {
-  ensureDirectoryWithoutSymlinks,
-  isNodeError,
-  type WorkflowFinalOutputDirectory,
-  type WorkflowOutputDirectory,
-} from "../workflow-workspace.js";
-import { isBoundWorkflowDirectory } from "./workflow-bound-directory.js";
+import { ensureDirectoryWithoutSymlinks, isNodeError, type WorkflowWorkspaceDirectory } from "../workflow-workspace.js";
 import { inspectLeaseOwner, leaseMayBeReclaimed, workflowLeaseOwnershipError } from "./workflow-lease-evidence.js";
 import {
   assertWorkflowStatePath,
@@ -23,7 +17,6 @@ import {
 
 const LEASE_SCHEMA = "locus-pi.workflow-location-lease.v2" as const;
 export const WORKFLOW_WORKSPACE_LEASE_FILE = "lease.json";
-export const WORKFLOW_OUTPUT_LEASE_FILE = "lease.json";
 export const WORKFLOW_LEASE_RECLAIM_GUARD_FILE = "reclaim.json";
 const LEASE_OWNER_READ_ATTEMPTS = 20;
 const LEASE_OWNER_READ_RETRY_MS = 5;
@@ -35,7 +28,7 @@ const LEASE_OWNER_READ_WAIT = new Int32Array(new SharedArrayBuffer(Int32Array.BY
 
 export interface WorkflowLeaseRecord {
   schema: typeof LEASE_SCHEMA;
-  kind: "workspace" | "output";
+  kind: "workspace";
   rootRunId: string;
   relativePath: string;
   identity: string;
@@ -53,83 +46,30 @@ export interface WorkflowRootLease {
   readonly record: WorkflowLeaseRecord;
 }
 
-/** Independent final-output writer fence. It never stores state below outputDir. */
-export interface WorkflowOutputLease {
-  readonly projectRoot: string;
-  readonly stateDir: string;
-  readonly outputDir: string;
-  readonly lockFile: string;
-  readonly record: WorkflowLeaseRecord;
-}
-
 /** Atomically acquire exclusive ownership of one workflow workspace. */
 export function acquireWorkflowRootLease(input: {
   projectRoot: string;
-  output: WorkflowOutputDirectory;
+  workspace: WorkflowWorkspaceDirectory;
   rootRunId: string;
   force?: boolean;
 }): WorkflowRootLease {
   const acquired = acquireWorkflowLocationLease({
     projectRoot: input.projectRoot,
-    location: input.output,
+    location: input.workspace,
     rootRunId: input.rootRunId,
     kind: "workspace",
     force: input.force === true,
   });
-  return { ...acquired, workspaceDir: input.output.absolutePath };
-}
-
-/** Atomically acquire exclusive ownership of one final output directory. */
-export function acquireWorkflowOutputLease(input: {
-  projectRoot: string;
-  output: WorkflowFinalOutputDirectory;
-  rootRunId: string;
-  force?: boolean;
-}): WorkflowOutputLease {
-  const acquired = acquireWorkflowLocationLease({
-    projectRoot: input.projectRoot,
-    location: input.output,
-    rootRunId: input.rootRunId,
-    kind: "output",
-    force: input.force === true,
-  });
-  return { ...acquired, outputDir: input.output.absolutePath };
-}
-
-/** Acquire both root fences or roll the first one back before reporting failure. */
-export function acquireWorkflowLocationLeases(
-  projectRoot: string,
-  workspace: WorkflowOutputDirectory,
-  output: WorkflowFinalOutputDirectory,
-  rootRunId: string,
-  force: boolean,
-): [WorkflowRootLease, WorkflowOutputLease | undefined] {
-  const rootLease = acquireWorkflowRootLease({ projectRoot, output: workspace, rootRunId, force });
-  // A root meta.outputDir binds workspace and output to one directory: its one
-  // workspace lease fences every writer of that directory.
-  if (isBoundWorkflowDirectory(workspace, output)) return [rootLease, undefined];
-  try {
-    return [rootLease, acquireWorkflowOutputLease({ projectRoot, output, rootRunId, force })];
-  } catch (error) {
-    try {
-      releaseWorkflowRootLease(rootLease);
-    } catch (rollbackError) {
-      throw new AggregateError(
-        [error, rollbackError],
-        "workflow output lease acquisition and root lease rollback failed",
-      );
-    }
-    throw error;
-  }
+  return { ...acquired, workspaceDir: input.workspace.absolutePath };
 }
 
 interface WorkflowLocationLeaseInput {
   projectRoot: string;
   stateDir: string;
   lockFile: string;
-  location: WorkflowOutputDirectory;
+  location: WorkflowWorkspaceDirectory;
   rootRunId: string;
-  kind: "workspace" | "output";
+  kind: "workspace";
   force: boolean;
   record: WorkflowLeaseRecord;
 }
@@ -138,22 +78,16 @@ type WorkflowLocationLease = Omit<WorkflowRootLease, "workspaceDir">;
 
 function acquireWorkflowLocationLease(input: {
   projectRoot: string;
-  location: WorkflowOutputDirectory;
+  location: WorkflowWorkspaceDirectory;
   rootRunId: string;
-  kind: "workspace" | "output";
+  kind: "workspace";
   force: boolean;
 }): WorkflowLocationLease {
   const projectRoot = path.resolve(input.projectRoot);
-  const stateDir =
-    input.kind === "workspace"
-      ? workflowOutputStateDir(projectRoot, input.location.identity)
-      : workflowFinalOutputStateDir(projectRoot, input.location.identity);
+  const stateDir = workflowWorkspaceStateDir(projectRoot, input.location.identity);
   ensureDirectoryWithoutSymlinks(projectRoot, stateDir);
   assertWorkflowStatePath(projectRoot, stateDir, stateDir, "directory", true);
-  const lockFile = path.join(
-    stateDir,
-    input.kind === "workspace" ? WORKFLOW_WORKSPACE_LEASE_FILE : WORKFLOW_OUTPUT_LEASE_FILE,
-  );
+  const lockFile = path.join(stateDir, WORKFLOW_WORKSPACE_LEASE_FILE);
   const guardFile = path.join(stateDir, WORKFLOW_LEASE_RECLAIM_GUARD_FILE);
   const record: WorkflowLeaseRecord = {
     schema: LEASE_SCHEMA,
@@ -363,10 +297,6 @@ export function assertWorkflowRootLease(lease: WorkflowRootLease): void {
   assertWorkflowLocationLease(lease);
 }
 
-export function assertWorkflowOutputLease(lease: WorkflowOutputLease): void {
-  assertWorkflowLocationLease(lease);
-}
-
 function assertWorkflowLocationLease(
   lease: Pick<WorkflowRootLease, "projectRoot" | "stateDir" | "lockFile" | "record">,
 ): void {
@@ -386,18 +316,9 @@ export function releaseWorkflowRootLease(lease: WorkflowRootLease): void {
   removeOwnedStateFile(lease.projectRoot, lease.stateDir, lease.lockFile, lease.record, "lease", true);
 }
 
-export function releaseWorkflowOutputLease(lease: WorkflowOutputLease): void {
-  removeOwnedStateFile(lease.projectRoot, lease.stateDir, lease.lockFile, lease.record, "lease", true);
-}
-
-export function workflowOutputStateDir(projectRoot: string, canonicalOutputIdentity: string): string {
-  const namespace = createHash("sha256").update(canonicalOutputIdentity).digest("hex");
+export function workflowWorkspaceStateDir(projectRoot: string, canonicalWorkspaceIdentity: string): string {
+  const namespace = createHash("sha256").update(canonicalWorkspaceIdentity).digest("hex");
   return path.join(workflowRootDir(path.resolve(projectRoot)), "workflow-state", "v1", namespace);
-}
-
-export function workflowFinalOutputStateDir(projectRoot: string, canonicalOutputIdentity: string): string {
-  const namespace = createHash("sha256").update(canonicalOutputIdentity).digest("hex");
-  return path.join(workflowRootDir(path.resolve(projectRoot)), "workflow-output-state", "v1", namespace);
 }
 
 function readLeaseRecord(
@@ -482,7 +403,7 @@ function isLeaseRecord(value: unknown): value is WorkflowLeaseRecord {
   const record = value as Partial<WorkflowLeaseRecord>;
   return (
     record.schema === LEASE_SCHEMA &&
-    (record.kind === "workspace" || record.kind === "output") &&
+    record.kind === "workspace" &&
     typeof record.rootRunId === "string" &&
     typeof record.relativePath === "string" &&
     typeof record.identity === "string" &&

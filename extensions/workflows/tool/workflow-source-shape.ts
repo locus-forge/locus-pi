@@ -16,7 +16,7 @@
  * module under `source/` imports this one back.
  */
 import { Lang, parse, type SgNode } from "@ast-grep/napi";
-import { REMOVED_AGENT_OPTION_NAMES } from "../runtime/workflow-agent-output.js"; // never admit what dispatch refuses
+import { validateStandardAgentOptions } from "../source/workflow-source-agent-options.js";
 import {
   exportedMetaObject,
   staticObjectKey,
@@ -393,25 +393,8 @@ function validateStandardOwnedPolicy(
   runEntry: SgNode | undefined,
   errors: WorkflowSourceDiagnosticSink,
 ): void {
+  validateStandardAgentOptions(root, runEntry, errors);
   const dslBindings = standardDslBindings(runEntry);
-  for (const call of root.findAll({ rule: { kind: "call_expression" } })) {
-    const callee = unwrapStandardParentheses(callCallee(call));
-    if (callee === undefined || directStandardDslCall(callee, dslBindings) !== "agent") continue;
-    const pairs =
-      standardCallArguments(call)[1]
-        ?.children()
-        .filter((child) => child.kind() === "pair") ?? [];
-    const report = pairs.find((pair) => staticObjectKey(pair.field("key")) === "result");
-    const reportValue = report && staticStringValue(unwrapStandardParentheses(report.field("value") ?? undefined));
-    if (report && reportValue !== "report") errors.add('agent result must be the static literal "report"', report);
-    for (const pair of pairs) {
-      const key = staticObjectKey(pair.field("key")) ?? "";
-      if (REMOVED_AGENT_OPTION_NAMES.includes(key))
-        errors.add(`agent ${key} was removed: return exact text or one choice; use named workspace files`, pair);
-      else if (report && (key === "choice" || key === "choiceFallback"))
-        errors.add(`agent result: report cannot be combined with ${key}`, pair);
-    }
-  }
   for (const statement of root.findAll({ rule: { kind: "try_statement" } })) {
     errors.add("standard profile owns no try/catch recovery", statement);
   }
@@ -421,6 +404,19 @@ function validateStandardOwnedPolicy(
   for (const pair of root.findAll({ rule: { kind: "pair" } })) {
     const key = staticObjectKey(pair.field("key"));
     if (key === "schema" || key === "validate") errors.add(`standard profile owns no raw ${key}`, pair);
+    if (key === "outputDir") {
+      errors.add("outputDir was removed: assign exact file destinations in agent prompts", pair);
+    }
+    if (key === "workflowSource") {
+      const call = pair.ancestors().find((ancestor) => ancestor.kind() === "call_expression");
+      const callee = call === undefined ? undefined : unwrapStandardParentheses(callCallee(call));
+      if (callee !== undefined && directStandardDslCall(callee, dslBindings) === "publishPrimaryArtifact") {
+        errors.add(
+          "publishPrimaryArtifact's workflowSource overload was removed; agents write and consumers check the same explicit file",
+          pair,
+        );
+      }
+    }
     if (key === "workspaceDir" || key === "outputDir") {
       const call = pair.ancestors().find((ancestor) => ancestor.kind() === "call_expression");
       const callee = call === undefined ? undefined : unwrapStandardParentheses(callCallee(call));

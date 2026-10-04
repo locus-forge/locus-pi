@@ -26,7 +26,7 @@ export async function handleWorkflowRunCommand(
 
   if (parsed.obsoleteOutputDir === true) {
     const message =
-      "--output-dir was removed; use --workspace-dir for runtime state and declare meta.outputDir in the root workflow for final files.";
+      "--output-dir was removed; assign exact file destinations in agent prompts. --workspace-dir selects native runtime state only.";
     setOperatorWidget(ctx, "workflows", workflowWarningBlock(message, workflowRunUsage(parsed.scriptRef)));
     return reject("launch_policy_refused", `Workflow not started: ${message}`);
   }

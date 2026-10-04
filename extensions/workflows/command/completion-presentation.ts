@@ -16,15 +16,11 @@ export function workflowCompletionPresentation(
 ): WorkflowCompletionPresentation {
   const ref = packageTaskRef(res, safeTarget);
   if (ref === undefined || res.workspaceDir === undefined || res.workspaceDir === "") return {};
-  const primaryFile = res.primaryFile?.absolutePath;
-  if (primaryFile === undefined || primaryFile === "") return {};
-  if (ref === "task/draft") {
-    return {
-      nextAction: `Review ${primaryFile}. Copy and edit the complete draft when needed, then pass that accepted text directly: /workflows run task/plan -- <complete accepted draft>.`,
-    };
-  }
   return {
-    nextAction: `Review ${primaryFile}. Copy it to the target project's ${WORKFLOW_SAVED_SOURCE_RELATIVE_ROOT}/<name>/<name>.workflow.mjs path, verify its meta.name, then run the saved name through the normal reviewed-workflow path.`,
+    nextAction:
+      ref === "task/draft"
+        ? "Open the exact assigned draft file and check its complete requirements, then pass its accepted bytes and explicit destination instructions to /workflows run task/plan. Native completion alone does not attest the file."
+        : `Open the exact assigned source file, verify its current bytes and source checks, then copy it to ${WORKFLOW_SAVED_SOURCE_RELATIVE_ROOT}/<name>/<name>.workflow.mjs and run the saved name. Do not infer a path from returned prose.`,
   };
 }
 

@@ -27,7 +27,7 @@ Audience: operators recovering a run and authors selecting a handoff. Ordinary R
 
 `workflow({ ..., resumeFromRunId, recoverInterrupted: true })` is an opt-in admission path for a missing terminal `result.json`. It is not a general retry switch, not the default Repair + Continue route, and not a promise to resume arbitrary in-flight effects. It requires the structured tool; no new slash-command flag is introduced.
 
-New root runs persist a host-owned launch binding before child work, with target/source snapshot, physical workspace identity and an exact fingerprint of input, caller items, resolved budgets and no-operator mode. Old diagnostic/runtime runs without that fingerprint remain readable but do not gain hard-crash recovery authority.
+New root runs persist an output-free version-3 host-owned launch binding before child work, with target/source snapshot, physical workspace identity and an exact fingerprint of input, caller items, resolved budgets and no-operator mode. Old output-format bindings and diagnostic/runtime runs without that fingerprint remain readable but require a fresh migrated run; they do not gain hard-crash recovery authority.
 
 Admission requires the identical target, source and caller inputs; a healthy self-contained orchestration-only source with no imports; no saved children or grouped execution; a complete labelled serial journal/replay prefix; and no started-but-unconfirmed call, error, damaged/truncated record or clock/random recording. A present-but-corrupt result is not treated as a missing result. The existing workspace lease must be acquired; the evidence is checked again under that lease. Live or unverifiable lease owners are not silently taken over.
 

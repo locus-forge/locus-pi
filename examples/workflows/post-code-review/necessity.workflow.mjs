@@ -5,13 +5,15 @@ export const meta = {
 };
 
 export default async function runWorkflow(dsl, input) {
-  await dsl.agent(
+  const report = await dsl.agent(
     `Challenge the proposed findings and fixes from a post-code review.
 
 Semantic review target and intent:
 ${input}
 
-Read review-scope.md, review-boundaries.md, review-simplicity.md, review-contracts.md, and review-style.md from the runtime-injected shared workflow output directory. Then inspect the live source, supported consumers, project contracts, specifications, decisions, tests, style conventions, and dependency documentation needed to evaluate the recommendations. Audit the proposed findings and required changes, not the codebase in general. Do not invent an additional review lane or reward agreement among lane reports as evidence.
+Every named report below means its unambiguous exact caller-assigned path, preferably absolute. Missing assignments or unreadable/missing/stale prerequisite reports are BLOCKED. Never guess a runtime folder, search alternatives or reconstruct a file from returned text. Writers complete each replacement before later readers reopen that same file.
+
+Read review-scope.md, review-boundaries.md, review-simplicity.md, review-contracts.md, and review-style.md from the caller-assigned exact paths in the whole input. Then inspect the live source, supported consumers, project contracts, specifications, decisions, tests, style conventions, and dependency documentation needed to evaluate the recommendations. Audit the proposed findings and required changes, not the codebase in general. Do not invent an additional review lane or reward agreement among lane reports as evidence.
 
 For a commit, range, diff, or PR target, verify each proposal's failure,
 introducedness, owner, and accepted boundary against the exact reviewed target tree and
@@ -42,10 +44,10 @@ Assign exactly one disposition to each proposal: RETAIN when all four answers su
 
 A real violated contract includes a proven ownership or dependency-direction boundary that forces a supported narrower-layer consumer to depend on an unrelated broader runtime, even when no runtime crash has occurred yet. Current documentation and tests prove that a dependency exists and is exercised; they do not by themselves prove that the dependency belongs to that component. Resolve conflicts among a component's stated narrow responsibility, its imports, its supported consumers, and broader integration behavior instead of treating the broadest current implementation as automatically authoritative. Moving an existing check out of the wrong narrow-layer owner into the existing integration owner is not duplicate validation when the old check is removed; adding a second check while retaining the first is duplication. Judge the smallest ownership-correct move, including renaming a surface when its current broad responsibility is intentional.
 
-Perform this challenge within this assigned Pi session. Do not invoke or delegate to another agent, saved workflow, Fusion, Claude, Codex, or any other outside model/session through a tool or shell command. Do not modify project source. Every agent-caused filesystem write, including tool-generated caches, bytecode, indexes, reports, fixtures, logs, build/state/evidence directories, and lock/dependency metadata, must stay under the runtime-injected workflow workspace; do not run a command that writes elsewhere. If a useful check has implicit output, redirect all output and cache under the workspace or use a no-cache/read-only mode; otherwise record it as an evidence limit.
+Perform this challenge within this assigned Pi session. Do not invoke or delegate to another agent, saved workflow, Fusion, Claude, Codex, or any other outside model/session through a tool or shell command. Do not modify project source. Every agent-caused filesystem write, including tool-generated caches, bytecode, indexes, reports, fixtures, logs, build/state/evidence directories, and lock/dependency metadata, must stay within files/directories explicitly authorized in the caller input; do not run a command that writes elsewhere. If a useful check has implicit output, redirect all output and cache under an exact caller-authorized scratch path or use a no-cache/read-only mode; otherwise record it as an evidence limit.
 
-Write or replace exactly one complete Markdown file named review-necessity.md in the workflow workspace. Include the semantic scope, one four-question decision record per preserved lane question id, its disposition, the simplest justified action for retained or reframed findings, rejected complexity, evidence gaps, and limits. Every material lane question id must appear exactly once; missing or duplicate ids make the challenge BLOCKED. Write no other artifact. Finish only after review-necessity.md is complete.`,
+Write or replace exactly one complete Markdown file named review-necessity.md at its caller-assigned exact path. Include the semantic scope, one four-question decision record per preserved lane question id, its disposition, the simplest justified action for retained or reframed findings, rejected complexity, evidence gaps, and limits. Every material lane question id must appear exactly once; missing or duplicate ids make the challenge BLOCKED. Write no other artifact. Finish only after review-necessity.md is complete.`,
     { modelRole: "smol:xhigh", requireModelRole: true, label: "challenge review fix necessity" },
   );
-  return dsl.publishPrimaryFile("review-necessity.md");
+  return report;
 }

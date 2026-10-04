@@ -81,7 +81,7 @@ describe("/workflows run launch gate", () => {
     }
   });
 
-  it("runs a fresh post-code-review tool call in a generated planning workspace", async () => {
+  it("runs a fresh post-code-review tool call in a generated native workspace", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "workflow-post-review-tool-"));
     mkdirSync(path.join(root, ".locus-pi", "workflows"), { recursive: true });
     writeFileSync(
@@ -113,18 +113,18 @@ describe("/workflows run launch gate", () => {
     expect(tool.formatApprovalDetails?.({ name: "reviewed-workflow", items: ["alpha", "beta"] })).toEqual([
       "Workflow: reviewed-workflow",
       "Items: 2",
-      "Workflow workspace: .locus-pi/workspaces/<generated-run-name> unless meta.outputDir",
+      "Workflow workspace: .locus-pi/workspaces/<generated-run-name>",
       "Surface: trusted-file workflow runner",
       "Trust: reviewed JavaScript with full Node.js/module access in the Pi host process",
       "Isolation: none — exec approval is consent, not a sandbox",
     ]);
   });
 
-  it("shows the generated planning workspace for a bare name", () => {
+  it("shows the generated native workspace for a bare name", () => {
     const h = registerHarness();
     const details = h.tools.get("workflow")!.formatApprovalDetails?.({ name: "post-code-review" }) ?? [];
 
-    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name> unless meta.outputDir");
+    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
   });
 
   it.each(["current", "legacy"] as const)(
@@ -148,26 +148,20 @@ describe("/workflows run launch gate", () => {
     },
   );
 
-  it("shows the recorded legacy workspace for resume even when both named roots exist", async () => {
+  it("shows the v3-bound legacy workspace for resume even when both named roots exist", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "workflow-approval-resume-"));
     const runName = "legacy-resume-approval";
-    const runId = "20260901-legacy-resume";
     const legacyRelative = `.locus-pi/plans/${runName}`;
     const legacyAbsolute = path.join(root, legacyRelative);
     mkdirSync(legacyAbsolute, { recursive: true });
-    mkdirSync(path.join(root, ".locus-pi", "workspaces", runName), { recursive: true });
-    const runDir = ensureWorkflowRunDir(root, runId);
-    writeFileSync(
-      workflowResultFile(runDir),
-      JSON.stringify({
-        runId,
-        ok: true,
-        workspaceDir: legacyAbsolute,
-        workspaceDirRelative: legacyRelative,
-      }),
-      "utf8",
-    );
+    mkdirSync(path.join(root, ".locus-pi", "workflows"), { recursive: true });
+    writeFileSync(path.join(root, ".locus-pi", "workflows", "live-smoke.workflow.mjs"), 'export default () => "ok";');
     const h = registerCommandHarness(root);
+    const signal = new AbortController().signal;
+    const source = await runner.runWorkflowScript({ pi: h.pi, ctx: h.ctx, signal, name: "live-smoke", runName });
+    expect(source.ok).toBe(true);
+    mkdirSync(path.join(root, ".locus-pi", "workspaces", runName), { recursive: true });
+    const runId = source.runId;
     try {
       await emit(h, "session_start", {});
       const details =
@@ -197,13 +191,13 @@ describe("/workflows run launch gate", () => {
       expect(details[2]).toContain(
         "Workflow workspace: recorded source workspace unavailable for run 20260901-missing-resume:",
       );
-      expect(details[2]).toContain("source run 20260901-missing-resume has no persisted workspace identity");
+      expect(details[2]).toContain("has no valid host launch binding (output-free v3 required)");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it("does not claim a post-code-review workspace when the required launch binding is missing", async () => {
+  it("refuses old result-only workspace authority without rewriting historical evidence", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "workflow-approval-missing-binding-"));
     const runId = "20260901-missing-binding";
     const workspaceRelative = ".locus-pi/workspaces/post-review-source";
@@ -223,6 +217,7 @@ describe("/workflows run launch gate", () => {
     );
     const h = registerCommandHarness(root);
     try {
+      const original = readFileSync(workflowResultFile(runDir), "utf8");
       await emit(h, "session_start", {});
       const details =
         h.tools.get("workflow")!.formatApprovalDetails?.({
@@ -232,12 +227,14 @@ describe("/workflows run launch gate", () => {
       expect(details[2]).toContain(`recorded source workspace unavailable for run ${runId}`);
       expect(details[2]).toContain("has no valid host launch binding");
       expect(details[2]).not.toContain(workspaceRelative);
+      expect(details[2]).toContain("Retained evidence remains readable.");
+      expect(readFileSync(workflowResultFile(runDir), "utf8")).toBe(original);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it("preserves an explicit outputDir in resume approval details", async () => {
+  it("shows an explicit native workspace in resume approval details", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "workflow-approval-output-resume-"));
     const h = registerCommandHarness(root);
     try {
@@ -254,24 +251,24 @@ describe("/workflows run launch gate", () => {
     }
   });
 
-  it("shows the generated planning workspace for an absolute owner-looking path", () => {
+  it("shows the generated native workspace for an absolute owner-looking path", () => {
     const h = registerHarness();
     const details =
       h.tools.get("workflow")!.formatApprovalDetails?.({
         scriptPath: path.join(process.cwd(), ".agents", "workflows", "post-code-review.workflow.mjs"),
       }) ?? [];
 
-    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name> unless meta.outputDir");
+    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
   });
 
   it.each([
     "/outside/.locus-pi/workflows/post-code-review.workflow.mjs",
     path.join(process.cwd(), ".locus-pi", "workflows", "post-code-review.workflow.mjs"),
-  ])("shows the generated planning workspace for an absolute legacy script: %s", (script) => {
+  ])("shows the generated native workspace for an absolute legacy script: %s", (script) => {
     const h = registerHarness();
     const details = h.tools.get("workflow")!.formatApprovalDetails?.({ script }) ?? [];
 
-    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name> unless meta.outputDir");
+    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
   });
 
   it.each([
@@ -279,11 +276,11 @@ describe("/workflows run launch gate", () => {
     { scriptPath: "./.locus-pi/workflows/post-code-review.workflow.mjs" },
     { scriptPath: "nested/../.locus-pi/workflows/post-code-review.workflow.mjs" },
     { script: ".locus-pi/workflows/post-code-review.workflow.mjs" },
-  ])("shows the generated planning workspace for resolved owner path %j", (args) => {
+  ])("shows the generated native workspace for resolved owner path %j", (args) => {
     const h = registerHarness();
     const details = h.tools.get("workflow")!.formatApprovalDetails?.(args) ?? [];
 
-    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name> unless meta.outputDir");
+    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
   });
 
   it("does not classify escaping owner-looking paths in approval details", () => {
@@ -293,7 +290,7 @@ describe("/workflows run launch gate", () => {
         scriptPath: "../.locus-pi/workflows/post-code-review.workflow.mjs",
       }) ?? [];
 
-    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name> unless meta.outputDir");
+    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
   });
 
   it("does not overmatch a nested non-owner suffix in approval details", () => {
@@ -303,7 +300,7 @@ describe("/workflows run launch gate", () => {
         scriptPath: "nested/post-code-review.workflow.mjs",
       }) ?? [];
 
-    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name> unless meta.outputDir");
+    expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
   });
 
   it("runs an explicit operator command without a second approval prompt", async () => {
@@ -743,7 +740,10 @@ describe("/workflows run launch gate", () => {
       })
         .render(80)
         .join("\n");
-      expect(operatorText).toContain("outputs:");
+      expect(result.details).not.toHaveProperty("outputDir");
+      expect(result.details).not.toHaveProperty("stableOutputDir");
+      expect(result.details).not.toHaveProperty("primaryFile");
+      expect(operatorText).not.toContain("legacy native outputs:");
       expect(operatorText).toContain("primary output:");
       expect(operatorText).toContain("workflow-result.md");
       expect(operatorText).toContain("UNTRUNCATED_TERMINAL_SENTINEL");

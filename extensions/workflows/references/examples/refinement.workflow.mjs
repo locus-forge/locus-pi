@@ -11,7 +11,7 @@ export default async function runWorkflow(dsl, input) {
     const work = await dsl.agent(
       `Original goal, constraints and acceptance criteria (do not weaken):\n${input}\nPrevious result/evidence:\n${previousWork}\nExact reviewer feedback:\n${previousReview}\n` +
         "Complete only the remaining scope. Inspect the actual current state. Return a compact complete handoff: work done, exact evidence, result " +
-        "locations and remaining scope. Do not repeat external effects.",
+        "locations and remaining scope. Write the assigned result.md through ordinary tools at its exact destination in the whole input; missing or ambiguous paths are non-success without fallback. Do not repeat external effects.",
       { label: "worker", title: "Work on the remaining scope" },
     );
     const review = await dsl.agent(

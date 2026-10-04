@@ -7,8 +7,8 @@ export const meta = {
 // Teaching allowance: three reviews, allowing two corrections. Derive limits from the actual task.
 export default async function runWorkflow(dsl, input) {
   const initial = await dsl.agent(
-    `Develop the task specification. SOURCES: task directory ${input}; task.md, referenced documentation, repository instructions and actual source. ` +
-      "Write artifacts/design.md under the task directory. Define intended behavior, owners of state/classes, constraints, evidence needed and open product decisions. " +
+    `Develop the task specification. SOURCES: whole caller task, exact file assignments and restrictions ${input}; task.md, referenced documentation, repository instructions and actual source. ` +
+      "Write the specification to its exact caller-assigned design.md path, preferably absolute; all readers and corrections use that same file. Missing or ambiguous assignments are non-success without fallback. Define intended behavior, owners of state/classes, constraints, evidence needed and open product decisions. " +
       "Return the complete candidate or its exact path with a useful summary. Mark unsupported facts as unverified. Do not implement.",
     { label: "design", title: "Develop the specification" },
   );
@@ -18,14 +18,14 @@ export default async function runWorkflow(dsl, input) {
   for (let round = 0; round < 3; round += 1) {
     if (round === 0) candidate = initial;
     const review = await dsl.agent(
-      `Independently review the complete current specification. SOURCES: task directory ${input}. Candidate:\n${candidate}\nHistory:\n${history}\n` +
+      `Independently review the complete current specification. SOURCES: whole caller task, exact file assignments and restrictions ${input}. Candidate:\n${candidate}\nHistory:\n${history}\n` +
         "Check the original task, real source, references, state ownership and factual claims. Assess prior dispositions and new residuals. " +
         "Return evidence-backed findings and coverage, including anything not checked. Do not edit the specification or implement.",
       { result: "report", label: "design-review", title: `Review specification round ${round + 1}` },
     );
     const arbitration = await dsl.agent(
-      `Arbitrate the specification against the original task. SOURCES: task directory ${input}. Current candidate:\n${candidate}\nPrior inventory:\n${history}\nCurrent review:\n${review}\n` +
-        "Preserve every prior and current review execution outcome and disposition in a round-specific artifact; return its exact path and the full decision. Read the actual documents. Accept or reject findings with evidence; do not rubber-stamp the reviewer. A failed review is an observed failed check, not a completed review. " +
+      `Arbitrate the specification against the original task. SOURCES: whole caller task, exact file assignments and restrictions ${input}. Current candidate:\n${candidate}\nPrior inventory:\n${history}\nCurrent review:\n${review}\n` +
+        "Write the complete design-handoff.md and the assigned round decision record at their exact caller-assigned paths. Preserve every prior and current review execution outcome and disposition in that record; return its exact path and the full decision. Read the actual documents. Accept or reject findings with evidence; do not rubber-stamp the reviewer. A failed review is an observed failed check, not a completed review. " +
         "Recommend ready, revise, retry_review, needs_owner or stop with reasons. Ready means the requested specification is delivered; disclose any missing independent review and limitations. " +
         "Revise ordinary defects; retry eligible failed review when useful. Do not call new residuals stagnation merely because an earlier review already ran. " +
         "Stop for evidenced lack of progress or an unavailable prerequisite: name unresolved criteria, next actor/action and continuation condition. " +
@@ -35,7 +35,7 @@ export default async function runWorkflow(dsl, input) {
     decision = arbitration;
     history = arbitration;
     const route = await dsl.agent(
-      `Translate this arbiter's recommendation into the next edge. Do not rejudge the specification.\n${decision}`,
+      `Translate this arbiter's recommendation into the next edge. Do not rejudge the specification. Whole task and restrictions:\n${input}\n${decision}`,
       {
         label: "design-route",
         title: "Route the arbiter decision",
@@ -66,8 +66,8 @@ export default async function runWorkflow(dsl, input) {
     }
     if (round < 2 && route === "revise") {
       const corrected = await dsl.agent(
-        `Revise the current specification within the task. SOURCES: task directory ${input}. Candidate:\n${candidate}\nFull findings and dispositions:\n${history}\n` +
-          "Repair accepted defects and substantiate disputed findings. Keep original criteria and verified work. Update artifacts/design.md and return the complete candidate or exact path, changed criteria and remaining questions. " +
+        `Revise the current specification within the task. SOURCES: whole caller task, exact file assignments and restrictions ${input}. Candidate:\n${candidate}\nFull findings and dispositions:\n${history}\n` +
+          "Repair accepted defects and substantiate disputed findings. Keep original criteria and verified work. Update that exact caller-assigned design.md and return the complete candidate or exact path, changed criteria and remaining questions. " +
           "Correct references and ownership gaps; qualify unsupported claims with the check needed. Do not invent facts or implement.",
         { label: "design-correct", title: `Correct specification round ${round + 1}` },
       );

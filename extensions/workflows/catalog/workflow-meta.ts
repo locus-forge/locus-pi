@@ -65,38 +65,25 @@ export function readWorkflowMetaDescription(file: string): string {
   return readWorkflowMeta(file).description;
 }
 
-/**
- * Read the root workflow's optional final-output declaration without importing
- * or evaluating trusted workflow code. Unlike the tolerant catalog projection,
- * this is an admission contract: malformed or duplicate declarations fail.
- */
-export function readWorkflowDeclaredOutputDir(file: string): string | undefined {
-  const source = readBoundedSource(file);
-  let root: SgNode;
-  try {
-    root = parse(Lang.JavaScript, source).root();
-  } catch (error) {
-    throw new Error(
-      `Workflow meta.outputDir could not be parsed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  const values: Array<SgNode | null> = [];
+/** Admission-only removal guard. Kept for actionable errors in legacy sources, never path resolution. */
+export function assertWorkflowOutputDirRemoved(file: string): void {
+  const root = parse(Lang.JavaScript, readBoundedSource(file)).root();
   for (const statement of root.findAll("export const meta = $META")) {
     const meta = exportedMetaObject(statement);
-    if (meta === undefined) continue;
-    for (const pair of meta.children()) {
-      if (pair.kind() === "pair" && staticObjectKey(pair.field("key")) === "outputDir") {
-        values.push(pair.field("value"));
-      }
+    if (
+      meta
+        ?.children()
+        .some(
+          (pair) =>
+            (pair.kind() === "pair" && staticObjectKey(pair.field("key")) === "outputDir") ||
+            (pair.kind() === "shorthand_property_identifier" && pair.text() === "outputDir"),
+        )
+    ) {
+      throw new Error(
+        "Workflow meta.outputDir was removed: assign exact file destinations in agent prompts; execution cwd and native workspace remain separate",
+      );
     }
   }
-  if (values.length === 0) return undefined;
-  if (values.length !== 1) throw new Error("Workflow meta.outputDir must be declared exactly once");
-  const value = staticStringValue(values[0]);
-  if (value === undefined || value.trim() === "" || value !== value.trim()) {
-    throw new Error("Workflow meta.outputDir must be one non-empty trimmed string literal");
-  }
-  return value;
 }
 
 /**

@@ -114,7 +114,7 @@ emergency compatibility alias; every other operation uses `/workflows`.
 /workflows run plan --no-operator <input>   unattended launch: any operator-input request fails closed
 ```
 
-Every fresh workflow launch without a root `meta.outputDir` receives a unique
+Every fresh workflow launch receives a unique
 `.locus-pi/workspaces/<generated-run-name>` workspace. This includes
 `post-code-review`, so its normal start command needs no manual `workspaceDir`.
 Callers may still select another confined project-relative workspace with
@@ -125,24 +125,11 @@ with `--run-name <name>`. An existing legacy-only `.locus-pi/plans/<name>` is
 reused at its original physical identity; if both roots exist, launch fails
 before child execution.
 
-The launch selector never chooses final output. A root workflow may declare one
-literal project-relative `meta.outputDir`, for example `.local/airflow-dag-catalog`.
-That directory is then the run's single workflow directory: agents write handoffs
-under its `artifacts/` subdirectory and final files in it, relative paths in agent
-prompts resolve against it, and `--workspace-dir` and `--run-name` are refused.
-Run evidence stays under `.locus-pi/runs/<run-id>`; the directory receives only a
-`.workflow-runs.md` backlink to it. Without a declaration, final files go to
-`<workspaceDir>/outputs`. Saved children inherit both locations and cannot
-override either one. See [bound workflow directory](dsl.md#bound-workflow-directory).
+Launch selectors choose native runtime coordination only. Assign every agent-written handoff, report and final result an exact path in the whole semantic input, preferably absolute. Writers use ordinary tools; subsequent readers open those same files. There is no output directory declaration or implicit publication base. Placement changes neither agent cwd nor worktree choice. Parallel writers need distinct files; operators serialize roots sharing fixed domain files.
 
-Each accepted `post-code-review` workspace also owns one optional operator file,
-`style.md`. Before launch, the operator may place comment and project-style
-criteria at `<selected-workspace>/style.md`. After the workspace is
-confined, the runtime opens the existing regular non-symlink file without
-changing it, or creates it empty before any child starts. Empty means no extra
-operator criteria. A symlink or non-regular leaf fails before review work; the
-style agent treats the file as scoped guidance and cannot use it to expand the
-review boundary or weaken the read-only filesystem contract.
+For `post-code-review`, include exact destinations for the scope, four lane reports, necessity report and final report. Optionally name one exact caller-owned criteria file separately. Runtime neither seeds nor discovers criteria. Omitted criteria or an empty regular file means no additional criteria. Nonempty bytes are preserved as read-only guidance that cannot expand scope. A named missing, unreadable, nonregular or leaf-symlink file fails the style lane explicitly; no workspace fallback or empty substitute is used.
+
+Before using a requested file, reopen its exact assigned path. Native completion and a persisted receipt establish run evidence, not filesystem delivery. For generated source require successful review, a regular nonempty assigned file, the same persisted checked/reviewed-byte SHA-256 and fresh Node/source checks immediately before execution, including after replay or correction. A missing or drifted file, failed review or exhausted correction prohibits execution even when another source exists elsewhere. Never search fallback folders or reconstruct source from prose.
 
 `--workspace-dir` and `--resume` may appear in either order before semantic input.
 If either option is repeated, the last supplied value wins. Use the conventional
@@ -169,15 +156,7 @@ invocation therefore blocks for the whole run and there is no concurrent
 
 ### Workspace and output ownership recovery
 
-Every root run without `meta.outputDir` owns two independent single-writer
-leases; a bound root owns only the workspace lease, which fences its one
-directory:
-
-- `.locus-pi/workflow-state/v1/<hash>/lease.json` protects the runtime
-  workspace and the saved-child checkpoints stored beside it.
-- `.locus-pi/workflow-output-state/v1/<hash>/lease.json` protects the final
-  output directory selected by root `meta.outputDir` (or the default workspace
-  `outputs/` directory).
+Every root run owns one fenced native workspace lease at `.locus-pi/workflow-state/v1/<hash>/lease.json`. It protects runtime workspace identity and saved-child checkpoints. It does not lock arbitrary agent-file destinations. The retired output-state namespace is historical evidence, never a fresh placement authority.
 
 The runtime also uses a short-lived `reclaim.json` in the same namespace when
 replacing a proven stale lease. It never removes an existing reclaim guard
@@ -193,7 +172,7 @@ JavaScript cleanup. Recover in this order:
    `/workflows stop <runId>` and wait for terminal settlement.
 2. If Pi was suspended in the original terminal, return there, run `fg`, then
    exit Pi normally. Session shutdown aborts and drains the run before releasing
-   both leases.
+   the native workspace lease.
 3. For another POSIX process, inspect the PID printed by the error:
 
    ```bash
@@ -232,7 +211,7 @@ The project-local state map is:
 | `.locus-pi/workspaces/`            | Default/named working directories. Remove one only after its run has settled and its files are no longer needed.                                      |
 | `.locus-pi/runs/`                  | Run evidence, journals, results, artifacts, children, and attempts. Removing it loses inspection/resume evidence; it does not release a live process. |
 | `.locus-pi/workflow-state/`        | Workspace leases, reclaim guards, and saved-child checkpoints. Empty lease namespaces are rebuildable; checkpoints are durable reuse state.           |
-| `.locus-pi/workflow-output-state/` | Independent final-output leases and reclaim guards. Empty namespaces are rebuildable.                                                                 |
+| `.locus-pi/workflow-output-state/` | Historical output-lease records; no new runs allocate them.                                                                                           |
 | `.locus-pi/logs/errors.jsonl`      | Shared host error journal. Deleting the journal loses diagnostics but does not change ownership.                                                      |
 
 The two lease roots intentionally remain separate because they fence different
@@ -482,20 +461,13 @@ Open the group README: it links the original launch, workspace, saved children, 
   attempts/<runId>/         separate outputs/ and runtime/ for each resume attempt
 ```
 
-Workflow-owned working files live separately under a unique `.locus-pi/workspaces/<generated-run-name>/` directory by default or in an explicit confined output directory. Independent root launches receive different groups even in one session; resume uses the original workspace but writes its own receipt. The workflow workspace and run-evidence directory must never resolve to the same directory. Loose `.locus-pi/plans/*.md` files are plan documents left by the removed `plan` extension: user data, not workflow workspaces.
+Native runtime coordination lives under a unique `.locus-pi/workspaces/<generated-run-name>/` directory by default or in an explicitly selected confined native workspace. Independent root launches receive different groups even in one session; resume uses the original workspace but writes its own receipt. The workflow workspace and run-evidence directory must never resolve to the same directory. Loose `.locus-pi/plans/*.md` files are plan documents left by the removed `plan` extension: user data, not workflow workspaces.
 
-The workflow workspace is the durable location for handoffs, final results,
-review evidence, and explicit resume inputs. Keep disposable environments,
-dependency caches, test basetemp, transient renderer output, and staging in
-ordinary OS or tool temporary and cache locations. If renderer output is the
-final deliverable, write or promote it into the workflow workspace. Promote any
-scratch output needed for review or resume before its temporary or cache location
-expires. This guidance reduces accidental mixing; an authored prompt that
-explicitly requests another placement remains authoritative.
+The caller owns durable placement for handoffs, results and resume inputs through exact paths in prompts. Keep disposable environments and caches in normal temporary locations when authorized. A file needed after temporary-worktree cleanup must be written to its assigned durable destination before cleanup. Native workspaces provide no implicit user-file destination.
 
 Workspace `.workflow-runs.md` contains backlinks. It is a reserved runtime file: a user file with this name is never overwritten, and the launch explicitly rejects. The group README and backlink are replaced with complete durable content through temp+rename and parent-directory sync. An incomplete runtime-owned README is restored from root metadata; an incomplete backlink returns an explicit recovery error so earlier links are not lost. The shared pages contain permanent links, not the “latest status”; see each execution's current state in its `runtime/result.json` and journal. They are written only by the root under the workspace lease, never after it is released.
 
-Old flat runs remain readable and resumable in place. Each runId is resolved through the shared confined lookup; symlink paths and ambiguous IDs are never selected arbitrarily. A safely located resume adds `attempts/<newRunId>/`; an early unsafe or missing source stores a separate rejected receipt. Runs and workspaces are never migrated or deleted automatically.
+Old flat runs remain readable in place. Old output-format execution bindings require a fresh migrated run; they cannot resume or recover under the new contract. Each runId is resolved through the shared confined lookup; symlink paths and ambiguous IDs are never selected arbitrarily. A safely located resume adds `attempts/<newRunId>/`; an early unsafe or missing source stores a separate rejected receipt. Runs and workspaces are never migrated or deleted automatically.
 
 `runtime/journal.ndjson` is the chronological event authority. New `runtime/result.json` envelopes do not repeat the full journal. They retain only typed bounded finalization errors that must survive an independent best-effort journal write failure. Older envelopes with an embedded journal remain readable.
 
@@ -509,7 +481,7 @@ Root results and direct `parallel()`/`pipeline()` returns share one terminal-out
 
 For a stopped run, follow [recovery and continuation](recovery-and-continuation.md)
 and the [replay contract](replay.md#continuing-a-repaired-workflow). Replayed answers
-do not re-create files: preserve the source workspace and inspect what was actually reused.
+do not re-create files: preserve the assigned files and inspect what was actually reused; the next consumer reopens and rechecks them.
 
 [Model roles](models.md#use-model-roles) select models independently of source.
 [Fusion](fusion.md) describes multi-model panels and their separate opt-in tool.

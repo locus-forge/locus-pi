@@ -39,7 +39,6 @@ import {
   type WorkflowOperatorQuestion,
 } from "./workflow-handoff-contract.js";
 import type { PermissionMode } from "../../_shared/agent-runtime/agents.js";
-import type { WorkflowPrimaryFileReference } from "./workflow-output.js";
 // Every value this core reaches for a CONTRACT is the fs-free half of a pair, never its
 // durable counterpart: operator handoff declarations come from `workflow-handoff-contract.ts`
 // and not `workflow-handoff.ts`, the returned-outcome classification `workflow-groups.ts`
@@ -193,7 +192,7 @@ export class WorkflowRunWorkspaceRemovedError extends Error {
 
   constructor() {
     super(
-      "runWorkspaceDir() was removed: use workspaceDir() for handoffs and intermediate files, or outputDir() for final files",
+      "runWorkspaceDir() was removed: assign exact file destinations in agent prompts; workspaceDir() is native runtime state",
     );
     this.name = "WorkflowRunWorkspaceRemovedError";
   }
@@ -260,18 +259,18 @@ export interface WorkflowDsl {
   workspace(label: string, ref: string): Promise<string>;
   /** Absolute project root captured by the workflow runner. */
   projectRoot(): string;
-  /** @deprecated Removed. Use workspaceDir(); calling this throws WorkflowRunWorkspaceRemovedError. */
-  runWorkspaceDir(): string;
-  /** Absolute workflow workspace for handoffs and intermediate files. */
+  /** @deprecated Removed. Assign exact file destinations in agent prompts. */
+  runWorkspaceDir(): never;
+  /** Absolute confined native runtime workspace; not a user-file placement base. */
   workspaceDir(): string;
-  /** Absolute final-output directory, shared by this execution tree. */
-  outputDir(): string;
+  /** @deprecated Removed placement method; always throws an actionable migration error. */
+  outputDir(): never;
   /** Persist deterministic workflow-authored text and return its complete digest-bound reference. */
   publishArtifact(name: string, text: string): WorkflowArtifactRef;
-  /** Publish exact text, or host-check and retain a workspace workflow source file. */
-  publishPrimaryArtifact(name: string, text: string | { workflowSource: string }, stage?: string): WorkflowArtifactRef;
-  /** Validate and publish one non-empty regular file by reference without copying its content. */
-  publishPrimaryFile(relativePath: string): WorkflowPrimaryFileReference;
+  /** Retain exact text as optional native evidence; never reads or saves a user file. */
+  publishPrimaryArtifact(name: string, text: string, stage?: string): WorkflowArtifactRef;
+  /** @deprecated Removed file-publication method; agents write assigned files directly. */
+  publishPrimaryFile(relativePath: string): never;
   /** Verify and copy one complete prior-run text reference into this run. */
   consumeTextArtifact(ref: WorkflowArtifactRef): WorkflowConsumedTextArtifact;
   /** Host-verified continuation artifacts bound before trusted workflow code starts. */
@@ -322,11 +321,9 @@ export interface WorkflowSavedChildResult {
   status: "completed" | "skipped";
   key: string;
   workspaceDir: string;
-  outputDir: string;
   runId?: string;
   /** Completed run whose checkpoint caused this invocation to skip. */
   sourceRunId?: string;
-  primaryFile?: WorkflowPrimaryFileReference;
 }
 
 export type WorkflowSavedChildRunner = (input: WorkflowSavedChildInvocation) => Promise<WorkflowSavedChildResult>;
@@ -342,12 +339,6 @@ export interface WorkflowRuntimeOptions {
   projectRoot?: string;
   /** Absolute host-selected workflow workspace. */
   workspaceDir?: string;
-  /** Absolute final-output directory selected by root metadata. */
-  outputDir?: string;
-  /** Host-owned confined source read and syntax/orchestration-only check. */
-  readCheckedWorkflowSource?: (relativePath: string) => string;
-  /** Host-owned regular-file validator/reference publisher. */
-  publishPrimaryFile?: (relativePath: string) => WorkflowPrimaryFileReference;
   /** Host-owned saved-child runner. Absent in bare runtime embeddings. */
   invokeWorkflow?: WorkflowSavedChildRunner;
   /** Root-owned physical-agent counter, concurrency gate, and deadline.
@@ -627,7 +618,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
    * Without a choice this is one child run resolving to the child's EXACT final text: no
    * prompt augmentation, no parsing, no length policy, unchanged journal. A complete
    * report comes back complete, however long it is. Anything richer than text belongs in
-   * a named workspace file the next agent reads, not in a model-serialized value.
+   * an exact caller-assigned file destination in the prompt that the next agent reads, not a model-serialized value.
    *
    * With `choice` the child picks one declared string inside its own session through the
    * `workflow_return` tool (see `workflow-agent-output.ts`). The general shaped results —
@@ -765,11 +756,10 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
     return options.workspaceDir;
   }
 
-  function outputDir(): string {
-    if (options.outputDir === undefined || options.outputDir.trim() === "") {
-      throw new Error("workflow output directory is not configured");
-    }
-    return options.outputDir;
+  function outputDir(): never {
+    throw new Error(
+      "outputDir() was removed: assign exact file destinations in agent prompts; execution cwd is unchanged",
+    );
   }
 
   function publishArtifact(name: string, text: string): WorkflowArtifactRef {
@@ -778,47 +768,23 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
   }
 
   let primaryArtifactPublished = false;
-  function publishPrimaryArtifact(
-    name: string,
-    text: string | { workflowSource: string },
-    stage?: string,
-  ): WorkflowArtifactRef {
+  function publishPrimaryArtifact(name: string, text: string, stage?: string): WorkflowArtifactRef {
+    if (typeof text !== "string") {
+      throw new Error(
+        "publishPrimaryArtifact accepts only exact text: the { workflowSource } file overload was removed; agents write and consumers check the same explicit file",
+      );
+    }
     if (primaryArtifactPublished) throw new Error("workflow already published its primary output");
     if (options.artifactPorts === undefined) throw new Error("workflow artifact store is not configured");
-    if (typeof text !== "string") {
-      if (
-        text === null ||
-        typeof text !== "object" ||
-        Object.keys(text).length !== 1 ||
-        typeof text.workflowSource !== "string" ||
-        options.readCheckedWorkflowSource === undefined
-      ) {
-        throw new Error("workflow source publication requires a configured host and { workflowSource: relativePath }");
-      }
-      text = options.readCheckedWorkflowSource(text.workflowSource);
-    }
     const ref = options.artifactPorts.publishText(name, text, stage ?? currentPhase(), "primary");
     primaryArtifactPublished = true;
     return ref;
   }
 
-  let primaryFilePublished = false;
-  function publishPrimaryFile(relativePath: string): WorkflowPrimaryFileReference {
-    if (primaryFilePublished) throw new Error("workflow already published its primary file");
-    if (options.publishPrimaryFile === undefined) {
-      throw new Error("workflow primary-file publication is not configured");
-    }
-    const reference = options.publishPrimaryFile(relativePath);
-    primaryFilePublished = true;
-    emit({
-      ts: nowFn(),
-      runId,
-      kind: "log",
-      source: "runtime",
-      message: `[workflow:primary-file] path=${JSON.stringify(reference.relativePath)} sha256=${reference.sha256} bytes=${reference.bytes}`,
-      ...(currentPhase() !== undefined ? { phase: currentPhase()! } : {}),
-    });
-    return reference;
+  function publishPrimaryFile(_relativePath: string): never {
+    throw new Error(
+      "publishPrimaryFile() was removed: agents write the exact prompt destination and consumers read/check that same file; native completion does not attest user files",
+    );
   }
 
   function consumeTextArtifact(ref: WorkflowArtifactRef): WorkflowConsumedTextArtifact {

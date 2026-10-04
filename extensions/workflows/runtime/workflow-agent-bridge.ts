@@ -114,10 +114,6 @@ export interface WorkflowAgentBridgeOptions {
   resolveModel?: WorkflowModelResolver;
   workspaceManager?: WorkflowWorkspaceManager;
   evidenceDestinations?: (callId: string) => WorkflowChildEvidenceDestinations;
-  /** Project-local workflow workspace shared by the root and saved children. */
-  workflowWorkspaceDir?: string;
-  /** User-visible final-output directory shared by the root and saved children. */
-  workflowOutputDir?: string;
   /** Test seam: replaces the operator-question surface `workflow_ask` mounts, so
    *  tests can script answers without a TUI. Production callers leave it unset. */
   askRequestQuestion?: WorkflowAskToolDeps["requestQuestion"];
@@ -407,12 +403,10 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
     // No fallback. A turn budget nobody declared is unbounded, and the host says so
     // in its own header rather than inheriting a number invisible to the author.
     const maxTurns = req.maxTurns;
-    const childTask = composeWorkflowChildTask(
-      req.prompt,
-      options.workflowWorkspaceDir,
-      { pwd: worktreePath ?? projectRoot, projectRoot },
-      options.workflowOutputDir,
-    );
+    const childTask = composeWorkflowChildTask(req.prompt, {
+      pwd: worktreePath ?? getWorkingDirectory(ctx),
+      projectRoot,
+    });
     // Resolved before the request exists: the live-ask tool below records evidence
     // into these destinations from inside the child's pending tool call.
     const evidenceDestinations =
