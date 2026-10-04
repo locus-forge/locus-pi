@@ -11,8 +11,8 @@ export default async function run({ agent, publishArtifact, publishPrimaryArtifa
   for (let round = 0; round < 2; round += 1) {
     const work = await agent(
       `Implement the requested behavior and required checks in the existing checkout. Preserve unrelated work; do not commit. Inspect the actual state. ` +
-        `On a correction pass, read findings.md in the workflow workspace and address its concrete findings. Return changed paths, artifact locations, actual checks and remaining work. ` +
-        `Original request:\n${input}\nPrevious complete handoff:\n${previousWork}`,
+        `On a correction pass, read findings.md at its exact caller-assigned path and address its concrete findings. Write the complete handoff to the assigned implementation.md using ordinary file tools. Return changed paths, artifact locations, actual checks and remaining work. ` +
+        `Every named file means its exact path assigned in this whole input, preferably absolute; missing or ambiguous assignments are unmet required evidence. Never guess a runtime folder or fallback file. Original request:\n${input}\nPrevious complete handoff:\n${previousWork}`,
       { label: "implement", title: "Implement or correct the requested behavior" },
     );
     const decision = await agent(
@@ -20,7 +20,7 @@ export default async function run({ agent, publishArtifact, publishPrimaryArtifa
         `Read prior findings.md if present, then replace it with criteria, observed defects, missing required evidence, optional checks not performed, and actionable feedback. Retain prior check outcomes and their dispositions. ` +
         `Choose accept only when required behavior and evidence are established; disclose unavailable optional checks without claiming they passed. ` +
         `Choose revise for correctable findings, or blocked for a concrete unavailable required prerequisite. Do not weaken the criteria. ` +
-        `Original request:\n${input}\nComplete worker handoff:\n${work}`,
+        `Every named file means its exact path assigned in this whole input, preferably absolute; missing or ambiguous assignments are unmet required evidence. Never guess a runtime folder or fallback file. Original request:\n${input}\nComplete worker handoff:\n${work}`,
       {
         label: "review",
         title: "Review the actual change and choose the next action",

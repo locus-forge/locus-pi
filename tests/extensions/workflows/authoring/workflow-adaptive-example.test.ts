@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -21,6 +21,19 @@ afterEach(() => {
 async function example(name: string, overrides: Record<string, unknown[]> = {}) {
   const root = mkdtempSync(path.join(tmpdir(), "adaptive-example-"));
   roots.push(root);
+  const assigned = path.join(root, "assigned-files");
+  mkdirSync(assigned);
+  const names = [
+    "design.md",
+    "design-handoff.md",
+    "baseline.md",
+    "remaining-queue.md",
+    "verify-tests.md",
+    "verify-integration.md",
+    "implementation-handoff.md",
+    ...[1, 2, 3].flatMap((n) => [`slice-${n}-work.md`, `progress-${n}.md`, `review-${n}.md`, `decision-${n}.md`]),
+  ];
+  const wholeInput = `.tasks/example; task restrictions apply to every child.\nExact caller-assigned files:\n${names.map((file) => `${file}: ${path.join(assigned, file)}`).join("\n")}`;
   const seen: WorkflowAgentRequest[] = [];
   const counts: Record<string, number> = {};
   const answers: Record<string, unknown[]> = {
@@ -44,6 +57,7 @@ async function example(name: string, overrides: Record<string, unknown[]> = {}) 
     }),
     agentRunner: async (request) => {
       seen.push(request);
+      expect(request.prompt).toContain(wholeInput);
       const label = request.label!;
       const index = counts[label] ?? 0;
       counts[label] = index + 1;
@@ -51,6 +65,38 @@ async function example(name: string, overrides: Record<string, unknown[]> = {}) 
       const value = options[index] ?? options.at(-1);
       if (value instanceof Error) throw value;
       if (value && typeof value === "object" && "failureCause" in value) return value as never;
+      if (name === "adaptive-slices") {
+        if (["scope-assessment", "implement"].includes(label))
+          expect(readFileSync(path.join(assigned, "remaining-queue.md"), "utf8")).toBeTruthy();
+        if (["implement", "review", "arbiter"].includes(label))
+          expect(readFileSync(path.join(assigned, "baseline.md"), "utf8")).toBe("baseline evidence");
+        const file =
+          label === "baseline"
+            ? "baseline.md"
+            : label === "cut"
+              ? "remaining-queue.md"
+              : label === "implement" || label === "correct"
+                ? `slice-${counts.implement}-work.md`
+                : label === "record"
+                  ? `progress-${counts.implement}.md`
+                  : label === "tests"
+                    ? "verify-tests.md"
+                    : label === "integration"
+                      ? "verify-integration.md"
+                      : label === "final-arbiter"
+                        ? "implementation-handoff.md"
+                        : undefined;
+        if (file) writeFileSync(path.join(assigned, file), String(value));
+      } else {
+        const file =
+          label === "design" || label === "design-correct"
+            ? "design.md"
+            : label === "design-arbiter"
+              ? "design-handoff.md"
+              : undefined;
+        if (file) writeFileSync(path.join(assigned, file), String(value));
+        if (label === "design-review") expect(readFileSync(path.join(assigned, "design.md"), "utf8")).toBeTruthy();
+      }
       return {
         ok: true,
         status: "completed",
@@ -66,7 +112,14 @@ async function example(name: string, overrides: Record<string, unknown[]> = {}) 
   const module = await import(
     pathToFileURL(path.resolve(`extensions/workflows/references/examples/${name}.workflow.mjs`)).href
   );
-  return { run: () => module.default(runtime.dsl, ".tasks/example"), seen, counts, runtime };
+  return {
+    run: () => module.default(runtime.dsl, wholeInput),
+    seen,
+    counts,
+    runtime,
+    files: () =>
+      Object.fromEntries(readdirSync(assigned).map((file) => [file, readFileSync(path.join(assigned, file), "utf8")])),
+  };
 }
 
 describe("actual adaptive references with real runtime and scripted children", () => {
@@ -74,11 +127,13 @@ describe("actual adaptive references with real runtime and scripted children", (
     const h = await example("adaptive-slices");
     const result = await h.run();
     expect(result).toMatchObject({ ok: true, status: "complete" });
+    expect(h.files()["remaining-queue.md"]).toBe("remaining-queue.md: no items");
+    expect(h.files()["implementation-handoff.md"]).toBe("final-arbiter evidence");
     const workers = h.seen.filter((r) => r.label === "implement");
     expect(workers).toHaveLength(2);
     // Source never reads the queue: every worker is pointed at the file the cut agent owns.
     for (const worker of workers)
-      expect(worker.prompt).toContain("Slice:\nthe first numbered item of workspace remaining-queue.md");
+      expect(worker.prompt).toContain("Slice:\nthe first numbered item of the assigned remaining-queue.md");
     const assessments = h.seen.filter((r) => r.label === "scope-assessment");
     expect(assessments[0]!.prompt).toContain("slice A: replace parser");
     expect(assessments[1]!.prompt).toContain("slice C: verify new caller");

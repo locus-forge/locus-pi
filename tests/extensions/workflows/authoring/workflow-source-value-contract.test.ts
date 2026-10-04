@@ -35,7 +35,6 @@ const STANDARD_DSL_RETURN_CASES = [
   { method: "items", call: "dsl.items()", category: "list" },
   { method: "log", call: 'dsl.log("x")', category: "void" },
   { method: "now", call: "dsl.now()", category: "runtime" },
-  { method: "outputDir", call: "dsl.outputDir()", category: "runtime" },
   { method: "parallel", call: 'dsl.parallel([() => dsl.agent("x")])', category: "list" },
   { method: "phase", call: 'dsl.phase("x")', category: "void" },
   { method: "pipeline", call: 'dsl.pipeline(["x"], (item) => dsl.agent(item))', category: "list" },
@@ -47,7 +46,6 @@ const STANDARD_DSL_RETURN_CASES = [
     call: 'dsl.publishPrimaryArtifact("x.md", "x")',
     category: "runtime",
   },
-  { method: "publishPrimaryFile", call: 'dsl.publishPrimaryFile("x.md")', category: "runtime" },
   { method: "random", call: "dsl.random()", category: "runtime" },
   { method: "workflow", call: 'dsl.workflow(() => dsl.agent("x"))', category: "opaque" },
   { method: "workspace", call: 'dsl.workspace("work", "HEAD")', category: "opaque" },
@@ -167,7 +165,6 @@ describe("standard workflow source provenance and value uses", () => {
   it.each([
     ["publishArtifact", 'dsl.publishArtifact("intent.md", "intent")'],
     ["publishPrimaryArtifact", 'dsl.publishPrimaryArtifact("intent.md", "intent")'],
-    ["publishPrimaryFile", 'dsl.publishPrimaryFile("intent.md")'],
   ])("allows an unchanged %s ref in the exact operator handoff continuation array", (_method, call) => {
     expect(
       standardWorkflowSourceShapeErrors(
@@ -216,7 +213,7 @@ describe("standard workflow source provenance and value uses", () => {
   it.each([
     [
       "unrelated runtime value",
-      `const artifactRef = dsl.outputDir();
+      `const artifactRef = dsl.workspaceDir();
   await dsl.awaitOperator({
     reason: "review required",
     operatorHandoff: {

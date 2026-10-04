@@ -62,7 +62,7 @@ const REMOVED_DECLARATIONS: Array<[string, WorkflowAgentAnyOptions, RegExp]> = [
   [
     "schema",
     { schema: { type: "array" } } as WorkflowAgentAnyOptions,
-    /agent schema was removed: .*named workspace file/u,
+    /agent schema was removed: .*exact caller-assigned file destination.*prompt/u,
   ],
   ["validate", { validate: () => [] } as WorkflowAgentAnyOptions, /agent validate was removed with schema/u],
   ["output", { output: { type: "string" } } as WorkflowAgentAnyOptions, /agent output was removed/u],

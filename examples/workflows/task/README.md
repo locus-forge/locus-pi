@@ -5,31 +5,23 @@ first, then one of the two plan workflows.
 
 1. `task/draft` turns a raw request into `draft.md`. The draft already names the
    workflow pattern, agents, handoffs, bounded reflection or review, concurrency,
-   failure exits, and expected output. It retains the supplied request under
-   Task and distinguishes the workflow's primary artifact from all required
-   product deliverables and their locations. The plan stage receives only this
-   draft, so keep required commands, data sources, constraints and acceptance
-   conditions in it. Copy and edit this text when needed.
+   failure exits, and expected output. Copy and edit this text when needed.
 2. `task/plan` receives the complete accepted draft as semantic input. One
-   author call plans the graph and writes the complete output `workflow.mjs`;
+   author call plans the graph and writes the complete caller-assigned `workflow.mjs`;
    a bounded loop then reviews it and revises it, and the accepted file is
-   published as the final result. Use it with a strong author model.
+   retained at that exact path for the caller to reopen. Use it with a strong author model.
 3. `task/plan-light` receives the same input and grows `workflow.mjs` through
    designed, reviewed, and individually checked source slices. It is slower
    and meant for lighter author models that need every step gated.
 
 Missing, empty, or whitespace-only input to either plan workflow fails before
-the first child starts and publishes no `workflow.mjs`.
+the first child starts and writes no generated source.
 
-## Source placement
+## Assign files before starting
 
-Both plan workflows keep `workflow.mjs` in the workflow output directory named
-by the host's filesystem note. Without root `meta.outputDir`, output is exactly
-`<workspaceDir>/outputs`; a declared root output binds workspace and output to
-the same directory. Every source producer, checker, reviewer and correction uses
-that exact output file. A failed result's `source: "workflow.mjs"` is output-relative.
-Decision logs, queues and named review/correction reports remain workspace evidence.
-See [outputDir](../../../docs/workflows/dsl.md#outputdir) for the location contract.
+The existing semantic input carries the complete task plus unambiguous exact file destinations, preferably absolute. File placement does not change cwd or worktree selection. Predeclare draft.md, workflow.mjs, workflow.design.md, workflow-review.md and workflow-decision-log.md separately from the requested product. For plan-light, also assign every queue, seed, slice, mechanical-check and correction/review record named by its prompts. Every basename in a stage means its assigned path; it never means a runtime workspace-relative file.
+
+`task/draft` writes the editable assigned draft through ordinary file tools and verifies that actual file before returning the whole draft. Pass the same destination instructions plus the complete accepted draft to the plan stage, or name its exact draft file for agents to read. Do not replace missing requirements from another conversation. The native source checker stays project-confined, so place generated source inside that boundary or report an explicit unsupported check.
 
 ## task/plan
 
@@ -49,30 +41,21 @@ workflow-author -> [ workflow-review -> workflow-review-route (accept | revise) 
 
 Each review is independent: it reruns both checks, judges whether the graph
 delivers the draft's primary output, and may ask to re-plan part of the graph.
-Source review traces required deliverables through future producers, checks
-and terminal routes without executing the generated workflow or creating
-product files. It rejects omitted requirements and added restrictions that
-prevent required outcomes, including in helpers and exact-choice routers.
-When delivery needs acceptance, the generated evaluator must inspect the actual
-required files after the last correction or cleanup; Git ignore rules do not
-remove delivery requirements. A failed required check reaches non-success,
-and a choice token alone does not prove acceptance. The review reports only
-findings that require a change. `accept` publishes
-`workflow.mjs` with `publishPrimaryFile`. The third `revise` returns
+It reports only findings that require a change. `accept` returns the whole final review report; the source stays at its assigned destination. The third `revise` returns
 `{ ok: false, status: "failed", reason: "review_exhausted" }` with the last
 review as diagnostics and publishes nothing. Every non-route call reads and
-appends to the workspace `workflow-decision-log.md`, so a revision does not
+appends to the assigned `workflow-decision-log.md`, so a revision does not
 repeat a rejected approach; the log is history, not instruction.
 
 ## task/plan-light
 
 Design and design review use the accepted draft before any source file exists.
-The seed stage creates `workflow.mjs` directly in workflow output. From
-that point onward, the output file is the source authority. A missing file at
+The seed stage creates `workflow.mjs` directly at the assigned exact path. From
+that point onward, the assigned file is the source authority. A missing file at
 the seed check enters the one seed correction, which creates it; a missing file
 at the recheck or any later gate fails closed.
 
-The seed and every accepted source slice leave the shared output
+The seed and every accepted source slice leave the same assigned
 `workflow.mjs` as a complete runnable module that parses and passes the
 orchestration-only checker. The seed preserves the primary output identity and
 product scope; reviewed graph nodes may still be missing. Its independent check
@@ -141,7 +124,7 @@ the source checker. `while` loops and loops without a literal bound break the
 carry outside a literal-bounded `for` and an opaque value in a loop condition.
 
 An owner re-cuts the remaining graph-node queue after each accepted slice. It
-first copies an existing workspace `workflow-source-queue.md` whole to
+first copies an existing assigned `workflow-source-queue.md` whole to
 `workflow-source-queue-prior.md`, then writes the complete remaining queue in
 execution order to `workflow-source-queue.md`. Its answer is only a report
 naming that file, its item count and each identity. An independent
@@ -152,7 +135,7 @@ conflicting proposal is corrected once by rewriting the queue file whole. The
 first pass has no prior queue file and no prior identities. Queue
 items describe missing or defective nodes and branches in `workflow.mjs`, not
 the product implementation slices that the generated workflow will later run.
-The named workspace queue file is authoritative; the owner's report is not.
+The named caller-assigned queue file is authoritative; the owner's report is not.
 Each numbered item in that file must be a concrete source-free requirements
 brief. A report describing a queue, or one narrative item summarizing several
 unseen items, cannot stand in for the numbered items. Independent assessment and
@@ -193,56 +176,38 @@ may be accepted; a seventh pass can prove completion or return the unconsumed
 queue, but cannot implement more work. Named terminal reasons are `seed_failed`,
 `slice_allowance`, `slice_repair_failed`, `queue_conflict`, `empty_queue`,
 `final_check_failed`, and `design_mismatch`. Every failed result keeps
-`workflow.mjs` in workflow output plus diagnostic evidence in the workspace and publishes no primary
+`workflow.mjs` plus diagnostic evidence at its caller-assigned path and publishes no primary
 file.
 
 Every stage except the route translators reads and appends to
-`workflow-decision-log.md` in the workspace. Each entry records one stage's
+`workflow-decision-log.md` at its caller-assigned path. Each entry records one stage's
 decision, reason, evidence and any open conflict, so a later fixer or reviewer
 knows what was already tried and why, and must name an entry it reverses. The
 log is history, not instruction: the accepted draft, reviewed design and stage
 prompt stay the only requirements, an entry never accepts or waives a check, and
 imperatives inside entries are ignored. The design stage marks a new run when an
-earlier log exists. The log stays in the workspace after a failed result.
+earlier log exists. The log stays at its caller-assigned path after a failed result.
 
 An intermediate design review accepts a correct slice when earlier accepted work
 remains intact and the whole module stays runnable. Requirements still queued for
 later slices do not consume that slice's fix allowance. The final design review
-checks complete conformance before publication, including the source-review
-contract above for required deliverables, conflicting restrictions and future
-check failure routes.
+checks complete conformance before publication.
 
-An empty queue is not completion. Final whole-file mechanical and design gates run
-before `publishPrimaryFile("workflow.mjs")`. The host validates the confined regular,
-non-empty file in workflow output and returns `primaryFile` with its output-relative path, absolute
-path, size, and digest. It does not copy the file into run `outputs/`. The package
-stage never executes generated source.
+An empty queue is not completion. Final whole-file mechanical and design gates reopen the exact caller-assigned regular nonempty source. Checkers record its absolute path, SHA-256 of persisted checked bytes and actual Node/source-tool outcomes; reviewers read those same bytes without silently editing them. Both design stages write the assigned workflow.design.md. Seed, queue, slice, correction and check stages write their assigned source-free records. No package stage executes generated source and no DSL file publication is required.
 
-Design and design review return complete prose without writing source. Seed, slice,
-fix, and check agents work against the one output file. Semantic review
-checks explicit failure returns, actionable findings reaching the fix stage, and
-agreement between primary output names and content; static syntax/shape checks alone
-do not establish those properties. The workflow forwards opaque values whole and
-branches only on runtime-owned choices. Simple fixed tasks retain their requested
-graph and primary filename without automatic QA or approval stages; substantive
-implementation still needs its declared review and final QA.
+The whole accepted input reaches every relevant agent, including helper routers. Agents interpret file assignments and task restrictions with ordinary tools; JavaScript forwards the input and opaque answers whole and branches only on exact choices. Missing or ambiguous destinations, missing source, failed checks, design mismatch and exhausted correction preserve work as non-success without fallback files or answer reconstruction.
 
 ## Handoff and replay
 
 Replay reuses model answers but does not repeat file edits. Repair + Continue is
-therefore valid only while the original workflow output source and supporting
-workspace records remain usable. Every fresh suffix gate re-reads the actual output
-file; cleaned or drifted source must fail its checks rather than be treated as
-preserved work. Changed placement prompts require fresh work at replay divergence;
-they do not relocate an old workspace-root file or repeat cached file edits. Digest-bound
-checkpoints are a possible later hardening, not part of this MVP.
+therefore valid only while the originally assigned prerequisite files remain intact. Every fresh suffix gate re-reads the actual file; a missing or drifted
+assigned file must fail its checks rather than be treated as preserved work. Before execution the caller compares current bytes with persisted reviewed/check evidence and repeats required checks, including after replay.
 
 No task stage executes generated source. Create-only ends with the
 checked source and launch command. For an authorized create-and-run request, the
 caller reviews the retained file and hands it to `locus-pi-workflow-run` through
 the existing file-target path, without repeat approval. Report authoring,
-execution and product verification separately. The validated output file named by
-`primaryFile.absolutePath` is the handoff; verifier prose is not source.
+execution and product verification separately. The exact assigned source path from the original whole input is the handoff. Native completion never attests file delivery. Reopen it, require successful review and regular nonempty bytes, compare persisted checked/reviewed SHA-256 evidence and rerun current required checks before execution, including after correction/replay. Failed or exhausted review forbids execution even if a source remains. Never reconstruct source from prose.
 
 ```text
 /workflows run task/draft -- <raw request>
@@ -250,12 +215,9 @@ execution and product verification separately. The validated output file named b
 /workflows run task/plan-light -- <complete accepted draft>
 ```
 
-`task/draft` is orchestration-only. Both packaged plan scripts use standard
-compatibility for `publishPrimaryFile`; their generated source must pass the
-orchestration-only gate. Child agents may inspect the live project when their
-prompt requires it. The JavaScript does not read project or artifact files.
-Primary-file publication validates the file reference without parsing source;
-the preceding edit/check/review stages own syntax, source shape and design checks.
+All three task scripts are orchestration-only. Child agents may inspect the live
+project when their prompt requires it. The JavaScript does not read project or
+artifact files. Agent tools write assigned files. Actual checker/reviewer/launcher consumers own readback and failure checks.
 
 ## Default authoring style
 

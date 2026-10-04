@@ -2,11 +2,11 @@
 title: Workflow source contract
 type: guide
 status: active
-updated: "2026-10-03T01:37:59Z"
-source_commit: "c2a6547744e2"
+updated: "2026-10-02T22:53:28Z"
+source_commit: "0d098c9e06d1"
 update_event: "user_request"
-context: "changes=L files=14"
-description: "Align task workflow source with final-output publication"
+context: "changes=L files=29"
+description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
 # Workflow source contract
@@ -24,8 +24,8 @@ The rules below own source restrictions and diagnostics. Passing them does not p
 Both packaged workflow-create lessons emit an orchestration-only subset
 of this profile. New generated source contains author-known prompts, direct
 `agent()` edges, visible DSL control flow, and in-memory text publication. It
-does not call `consumeTextArtifact`, `continuationArtifacts`, `workspaceDir`, `outputDir`,
-`projectRoot`, `promptFile`, `publishPrimaryFile`, `workspace`, `now`, or
+does not call `consumeTextArtifact`, `continuationArtifacts`, `workspaceDir`,
+`projectRoot`, `promptFile`, `workspace`, `now`, or
 `random`. Those methods remain documented below only because the standard
 checker must validate existing reviewed workflows. The skill calls
 `workflow_check_source` with `mode: "orchestration-only"`, which machine-checks
@@ -46,8 +46,14 @@ source receives the accepted value. The [agent result contract](agent-results.md
 owns same-session correction, optional `choiceFallback`, journal evidence and
 failure behavior. Workflow code neither parses an answer nor implements format repair.
 
+Both checker modes validate a literal `choiceFallback` against a statically
+visible literal `choice` array before execution. The fallback must satisfy the
+runtime choice contract and be one of the declared choices. Dynamic values,
+option spreads and shorthand declarations remain runtime-validated; the checker
+does not evaluate expressions or resolve constants.
+
 An agent never returns a list or JSON for source to consume. When a stage discovers
-work at runtime, the agent writes the units to a named workspace file and returns
+work at runtime, the agent writes the units to a exact caller-assigned file and returns
 readable text; a later agent reads that file. When the caller already knows the units,
 pass them through `items()` and hand each string unchanged to visible `parallel()` or
 `pipeline()` workers. A queue that changes as work lands stays in its file and is
@@ -66,16 +72,15 @@ The remaining standard orchestration primitives are:
 | `publishPrimaryArtifact(name, text)` | One terminal semantic document.                                             |
 | `awaitOperator(declaration)`         | Declare a split-run human gate, then return; no suspended JavaScript stack. |
 | `items()`                            | Immutable exact caller-supplied text units.                                 |
-| `workspaceDir()`                     | Absolute workflow directory; equals `outputDir()` when declared by root.    |
-| `outputDir()`                        | Absolute final-output directory declared by root metadata or defaulted.     |
+| `workspaceDir()`                     | Absolute native runtime workspace; no agent-file placement authority.       |
 | `invokeWorkflow(declaration)`        | One real saved or exact-Package child run with durable item checkpointing.  |
-| `publishPrimaryFile(path)`           | Validate/reference one non-empty workflow output file.                      |
 | `promptFile(path, variables)`        | Long/shared role charter; never routing.                                    |
 | `workspace(label, ref)`              | Runtime-owned retained worktree for approved write flows.                   |
 
 `runWorkspaceDir()` is removed. Existing source that calls it fails with
-`WorkflowRunWorkspaceRemovedError`; migrate to `outputDir()` and the single
-project-local workflow workspace. The runtime does not create a run-local
+`WorkflowRunWorkspaceRemovedError`; assign exact intermediate and final paths
+in prompts. `outputDir()`, `publishPrimaryFile()` and the source-file overload
+of `publishPrimaryArtifact` are also removed and rejected by both check modes when statically visible. Literal root/child `meta.outputDir` fails before import. Trusted entry-only code can materialize metadata during import; the loaded module is then checked before its entry or any agent runs. The runtime does not create a run-local
 `workspace/` directory.
 
 Standard generated source uses only exact text and `choice` answers. Raw `schema`
@@ -180,21 +185,21 @@ These are all rules enforced for `meta.profile: "standard"`:
   this profile.
 - Calls are direct uses of the bound DSL primitives: `agent`, `awaitOperator`,
   `consumeTextArtifact`, `continuationArtifacts`, `invokeWorkflow`, `items`,
-  `log`, `now`, `outputDir`, `parallel`, `phase`, `pipeline`, `projectRoot`,
+  `log`, `now`, `parallel`, `phase`, `pipeline`, `projectRoot`,
   `promptFile`, `publishArtifact`, `publishPrimaryArtifact`,
-  `publishPrimaryFile`, `random`, `workflow`, and
+  `random`, `workflow`, and
   `workspace`. Computed calls, aliases, `.bind()` wrappers, unknown globals,
   and other method calls are rejected.
 - Every allowed DSL call has one exhaustive return classification:
 
-  | Classification     | DSL calls                                                                                                                      |
-  | ------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-  | Runtime control    | `agent({ choice })` exact identity only                                                                                        |
-  | Opaque list        | `continuationArtifacts`, `items`, `parallel`, `pipeline`                                                                       |
-  | Saved-child status | `invokeWorkflow`; only its exact `status` identity is control                                                                  |
-  | Opaque value       | ordinary/model `agent`, `consumeTextArtifact`, `promptFile`, `workflow`, `workspace`                                           |
-  | Runtime/host value | `now`, `random`, `workspaceDir`, `outputDir`, `projectRoot`, `publishArtifact`, `publishPrimaryArtifact`, `publishPrimaryFile` |
-  | Void               | `awaitOperator`, `log`, `phase`                                                                                                |
+  | Classification     | DSL calls                                                                                   |
+  | ------------------ | ------------------------------------------------------------------------------------------- |
+  | Runtime control    | `agent({ choice })` exact identity only                                                     |
+  | Opaque list        | `continuationArtifacts`, `items`, `parallel`, `pipeline`                                    |
+  | Saved-child status | `invokeWorkflow`; only its exact `status` identity is control                               |
+  | Opaque value       | ordinary/model `agent`, `consumeTextArtifact`, `promptFile`, `workflow`, `workspace`        |
+  | Runtime/host value | `now`, `random`, `workspaceDir`, `projectRoot`, `publishArtifact`, `publishPrimaryArtifact` |
+  | Void               | `awaitOperator`, `log`, `phase`                                                             |
 
   Adding an allowed method without a return category fails closed. Only runtime
   choice, list identity/length, and saved-child status are control primitives.
@@ -203,8 +208,7 @@ These are all rules enforced for `meta.profile: "standard"`:
   inspected, branched on, indexed, transformed, or embedded in `Error`.
   `invokeWorkflow` accepts no directory field; saved children inherit both root locations. Publication
   references and host paths may flow whole into an agent/log/return. A reference
-  returned by `publishArtifact`, `publishPrimaryArtifact`, or
-  `publishPrimaryFile` may also appear unchanged as a direct array element only
+  returned by `publishArtifact` or `publishPrimaryArtifact` may also appear unchanged as a direct array element only
   at `awaitOperator({ operatorHandoff: { continuationArtifactRefs: [...] } })`.
   A published reference may also flow unchanged to one question's
   `detailArtifactRef` when that exact ref appears in the continuation array; the

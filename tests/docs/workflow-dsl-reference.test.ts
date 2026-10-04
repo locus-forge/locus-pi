@@ -64,15 +64,12 @@ describe("workflow DSL reader reference", () => {
     }
   });
 
-  it.each(["orchestration-only", "checked-source-publication"])(
-    "admits the documented %s example in both checker modes",
-    (name) => {
-      const source = example(name);
-      for (const check of [standardWorkflowSourceShapeDiagnostics, orchestrationOnlyWorkflowSourceShapeDiagnostics]) {
-        expect(check(source).filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
-      }
-    },
-  );
+  it.each(["orchestration-only"])("admits the documented %s example in both checker modes", (name) => {
+    const source = example(name);
+    for (const check of [standardWorkflowSourceShapeDiagnostics, orchestrationOnlyWorkflowSourceShapeDiagnostics]) {
+      expect(check(source).filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    }
+  });
 
   it.each(["rejected-consumed-text", "rejected-continuation-text"])(
     "refuses property extraction from opaque host results in %s",
@@ -105,6 +102,7 @@ describe("workflow DSL reader reference", () => {
 
   it.each([
     ["rejected-schema", "agent schema was removed"],
+    ["rejected-source-publication", "workflowSource overload was removed"],
     ["rejected-fusion", "calls only direct DSL primitives"],
   ])("refuses the documented runtime-only %s example in both authoring modes", (name, reason) => {
     for (const check of [standardWorkflowSourceShapeDiagnostics, orchestrationOnlyWorkflowSourceShapeDiagnostics]) {

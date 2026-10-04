@@ -43,6 +43,7 @@ import { WORKFLOW_RESULT_ENVELOPE_NOT_JSON_SAFE, safeErrorMessage, serializeJson
 // The persisted envelope is checked with the SAME predicates the journal line is,
 // so a stored shape cannot be admitted here under looser rules than the event
 // contract applies next door.
+import { isNodeError, type WorkflowPrimaryFileReference } from "./workflow-workspace.js";
 import { hasExactFields, isArtifactRef, isRecord } from "./workflow-journal-format.js";
 import type { WorkflowArtifactRef } from "./workflow-artifact-format.js";
 import { parseWorkflowFailureDiagnostic, type WorkflowFailureDiagnostic } from "./workflow-failure.js";
@@ -191,6 +192,8 @@ export interface WorkflowRunResultEnvelope {
   workspacePhysicalIdentity?: string;
   workspacePhysicalIdentityInvalid?: string;
   workspacePhysicalIdentitySchemaVersion?: 1;
+  /** Historical placement only; new execution never writes these fields. */
+  primaryFile?: WorkflowPrimaryFileReference;
   outputDir?: string;
   outputDirRelative?: string;
   outputDirInvalid?: string;
@@ -296,7 +299,7 @@ export function readWorkflowRunResultText(projectRoot: string, runId: string): W
     runDir = resolveWorkflowRunDir(projectRoot, runId);
   } catch (error) {
     return {
-      status: isMissingFileError(error) ? "none" : "invalid",
+      status: isNodeError(error, "ENOENT") ? "none" : "invalid",
       runId,
       message: workflowLegacyRunMigrationMessage(projectRoot, runId) ?? errorMessage(error),
     };
@@ -657,44 +660,41 @@ export function readWorkflowRunResult(
       ...(runUnbound === undefined ? {} : { runUnbound }),
       ...(typeof record.ok === "boolean" ? { ok: record.ok } : {}),
       ...(okInvalid === undefined ? {} : { okInvalid }),
-      ...(!exposeBindingMetadata ||
-      workspaceDir === undefined ||
-      workspaceDirInvalid !== undefined ||
-      workspacePhysicalIdentityInvalid !== undefined
-        ? {}
-        : { workspaceDir }),
-      ...(!exposeBindingMetadata ||
-      workspaceDirRelative === undefined ||
-      workspaceDirInvalid !== undefined ||
-      workspacePhysicalIdentityInvalid !== undefined
-        ? {}
-        : { workspaceDirRelative }),
+      ...(exposeBindingMetadata
+        ? {
+            ...(workspaceDir !== undefined &&
+            workspaceDirRelative !== undefined &&
+            workspaceDirInvalid === undefined &&
+            workspacePhysicalIdentityInvalid === undefined
+              ? { workspaceDir, workspaceDirRelative }
+              : {}),
+            ...(workspaceDirExplicit === undefined ? {} : { workspaceDirExplicit }),
+            ...(workspaceDirInvalid !== undefined ||
+            workspacePhysicalIdentity === undefined ||
+            workspacePhysicalIdentitySchemaVersion === undefined
+              ? {}
+              : { workspacePhysicalIdentity, workspacePhysicalIdentitySchemaVersion }),
+            ...(semanticInputPresent === undefined || semanticInputSha256 === undefined
+              ? {}
+              : { semanticInputPresent, semanticInputSha256 }),
+            ...(isLegacyPrimaryFileReference(record.primaryFile) ? { primaryFile: record.primaryFile } : {}),
+            ...(outputDir === undefined || outputDirRelative === undefined ? {} : { outputDir, outputDirRelative }),
+            ...(outputPhysicalIdentity === undefined || outputPhysicalIdentitySchemaVersion === undefined
+              ? {}
+              : { outputPhysicalIdentity, outputPhysicalIdentitySchemaVersion }),
+            ...(outputSource === undefined ? {} : { outputSource }),
+            ...(target === undefined ? {} : { target }),
+            ...(scriptIdentity === undefined ? {} : { scriptIdentity }),
+          }
+        : {}),
       ...(workspaceDirInvalid === undefined ? {} : { workspaceDirInvalid }),
       ...(workspaceDirUnavailable === undefined ? {} : { workspaceDirUnavailable }),
-      ...(!exposeBindingMetadata || workspaceDirExplicit === undefined ? {} : { workspaceDirExplicit }),
       ...(workspaceDirExplicitInvalid === undefined ? {} : { workspaceDirExplicitInvalid }),
-      ...(!exposeBindingMetadata || workspaceDirInvalid !== undefined || workspacePhysicalIdentity === undefined
-        ? {}
-        : { workspacePhysicalIdentity }),
       ...(workspacePhysicalIdentityInvalid === undefined ? {} : { workspacePhysicalIdentityInvalid }),
-      ...(!exposeBindingMetadata ||
-      workspaceDirInvalid !== undefined ||
-      workspacePhysicalIdentitySchemaVersion === undefined
-        ? {}
-        : { workspacePhysicalIdentitySchemaVersion }),
-      ...(!exposeBindingMetadata || semanticInputPresent === undefined ? {} : { semanticInputPresent }),
-      ...(!exposeBindingMetadata || semanticInputSha256 === undefined ? {} : { semanticInputSha256 }),
       ...(semanticInputInvalid === undefined ? {} : { semanticInputInvalid }),
-      ...(!exposeBindingMetadata || outputDir === undefined ? {} : { outputDir }),
-      ...(!exposeBindingMetadata || outputDirRelative === undefined ? {} : { outputDirRelative }),
       ...(outputDirInvalid === undefined ? {} : { outputDirInvalid }),
       ...(outputDirUnavailable === undefined ? {} : { outputDirUnavailable }),
-      ...(!exposeBindingMetadata || outputPhysicalIdentity === undefined ? {} : { outputPhysicalIdentity }),
       ...(outputPhysicalIdentityInvalid === undefined ? {} : { outputPhysicalIdentityInvalid }),
-      ...(!exposeBindingMetadata || outputPhysicalIdentitySchemaVersion === undefined
-        ? {}
-        : { outputPhysicalIdentitySchemaVersion }),
-      ...(!exposeBindingMetadata || outputSource === undefined ? {} : { outputSource }),
       ...(outputSourceInvalid === undefined ? {} : { outputSourceInvalid }),
       ...(Object.prototype.hasOwnProperty.call(record, "disposition") ? { disposition: record.disposition } : {}),
       ...(Object.prototype.hasOwnProperty.call(record, "result") ? { result: record.result } : {}),
@@ -719,11 +719,9 @@ export function readWorkflowRunResult(
       // was ALLOWED to spend, which is true of the envelope whatever its runId says.
       ...(budget === undefined ? {} : { budget }),
       ...(budgetInvalid === undefined ? {} : { budgetInvalid }),
-      ...(exposeBindingMetadata && target !== undefined ? { target } : {}),
       ...(targetInvalid === undefined ? {} : { targetInvalid }),
       ...(scriptIdentityInvalid === undefined ? {} : { scriptIdentityInvalid }),
       ...(dispositionInvalid === undefined ? {} : { dispositionInvalid }),
-      ...(exposeBindingMetadata && scriptIdentity !== undefined ? { scriptIdentity } : {}),
     };
   } catch {
     return null;
@@ -815,18 +813,17 @@ function parsePersistedResultPersistence(value: unknown, runDir: string): Workfl
   throw new Error("resultPersistence.ok must be a boolean");
 }
 
-function isMissingFileError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "ENOENT";
-}
-
 function isWorkspaceUnavailableError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    ((error as { code?: unknown }).code === "ENOENT" || (error as { code?: unknown }).code === "ENOTDIR")
-  );
+  return isNodeError(error, "ENOENT") || isNodeError(error, "ENOTDIR");
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim() !== "" ? error.message : String(error);
+}
+
+function isLegacyPrimaryFileReference(value: unknown): value is WorkflowPrimaryFileReference {
+  if (!isRecord(value) || typeof value.relativePath !== "string" || value.relativePath === "") return false;
+  if (typeof value.absolutePath !== "string" || !path.isAbsolute(value.absolutePath)) return false;
+  if (typeof value.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(value.sha256)) return false;
+  return typeof value.bytes === "number" && Number.isSafeInteger(value.bytes) && value.bytes > 0;
 }

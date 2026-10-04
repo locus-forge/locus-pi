@@ -145,7 +145,7 @@ const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
     owner: "extensions/workflows",
     facade: WORKFLOW_LOCATION_FACADE,
     reason:
-      "workspace/output writer fencing is a workflow-runtime authority; other features consume only the stable location facade.",
+      "native workspace writer fencing is a workflow-runtime authority; other features consume only the stable location facade.",
   },
   {
     module: "extensions/workflows/runtime/location-state/workflow-lease-evidence.ts",
@@ -162,18 +162,11 @@ const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
       "symlink-safe state file primitives serve only workflow lease/checkpoint owners and are not a shared filesystem layer.",
   },
   {
-    module: "extensions/workflows/runtime/location-state/workflow-bound-directory.ts",
-    owner: "extensions/workflows",
-    facade: WORKFLOW_LOCATION_FACADE,
-    reason:
-      "binding a root meta.outputDir as the one workflow directory, and refusing launches, resumes, and handoffs that would split it, is workflow admission policy; other features read the resolved directory only through the stable location facade.",
-  },
-  {
     module: "extensions/workflows/runtime/location-state/workflow-child-task.ts",
     owner: "extensions/workflows",
     facade: WORKFLOW_AGENT_BRIDGE_FACADE,
     reason:
-      "the workflow-directory note in a child's task text is composed by the agent bridge when it spawns the child; any other reader reaches the composer and its prompt separator through the bridge's re-export.",
+      "the actual execution-cwd note in a child's task text is composed by the agent bridge when it spawns the child; any other reader reaches the composer and its prompt separator through the bridge's re-export.",
   },
   {
     module: "extensions/workflows/runtime/workflow-journal.ts",

@@ -404,6 +404,19 @@ function validateStandardOwnedPolicy(
   for (const pair of root.findAll({ rule: { kind: "pair" } })) {
     const key = staticObjectKey(pair.field("key"));
     if (key === "schema" || key === "validate") errors.add(`standard profile owns no raw ${key}`, pair);
+    if (key === "outputDir") {
+      errors.add("outputDir was removed: assign exact file destinations in agent prompts", pair);
+    }
+    if (key === "workflowSource") {
+      const call = pair.ancestors().find((ancestor) => ancestor.kind() === "call_expression");
+      const callee = call === undefined ? undefined : unwrapStandardParentheses(callCallee(call));
+      if (callee !== undefined && directStandardDslCall(callee, dslBindings) === "publishPrimaryArtifact") {
+        errors.add(
+          "publishPrimaryArtifact's workflowSource overload was removed; agents write and consumers check the same explicit file",
+          pair,
+        );
+      }
+    }
     if (key === "workspaceDir" || key === "outputDir") {
       const call = pair.ancestors().find((ancestor) => ancestor.kind() === "call_expression");
       const callee = call === undefined ? undefined : unwrapStandardParentheses(callCallee(call));

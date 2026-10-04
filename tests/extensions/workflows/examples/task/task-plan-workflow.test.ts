@@ -42,10 +42,10 @@ describe("Package workflow: task/plan", () => {
   it("publishes after one author call and an accepted first review", async () => {
     const fixture = planRun(["accept"]);
 
-    await expect(fixture.run()).resolves.toEqual({ relativePath: "workflow.mjs" });
+    await expect(fixture.run()).resolves.toBe("review 1: revise, missing failure exit");
     expect(fixture.labels()).toEqual(["workflow-author", "workflow-review", "workflow-review-route"]);
     expect(fixture.phases).toEqual(["author", "review", "publish"]);
-    expect(fixture.publishPrimaryFile).toHaveBeenCalledWith("workflow.mjs");
+    expect(fixture.publishPrimaryFile).not.toHaveBeenCalled();
 
     const [author, review, route] = fixture.calls;
     expect(author?.prompt).toContain("Accepted draft text");
@@ -80,7 +80,7 @@ describe("Package workflow: task/plan", () => {
   it("revises with the whole review and re-reviews the revision", async () => {
     const fixture = planRun(["revise", "accept"]);
 
-    await expect(fixture.run()).resolves.toEqual({ relativePath: "workflow.mjs" });
+    await expect(fixture.run()).resolves.toBe("review 2: revise, stale path");
     expect(fixture.labels()).toEqual([
       "workflow-author",
       "workflow-review",
@@ -133,10 +133,10 @@ describe("Package workflow: task/plan-light admission", () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe(
-        "task/plan-light requires the complete accepted draft as non-empty semantic input; no agent was started and no workflow.mjs was published.",
+        "task/plan-light requires the complete accepted draft as non-empty semantic input; no agent was started and no workflow source was written.",
       );
       expect(run).not.toHaveBeenCalled();
-      expect(result.primaryFile).toBeUndefined();
+      expect(result).not.toHaveProperty("primaryFile");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -181,10 +181,8 @@ describe("packaged task authoring execution constraints", () => {
       },
     };
     const workflow = variant === "plan" ? runPlanWorkflow : runLightPlan;
-    await expect(workflow(dsl as unknown as Parameters<typeof workflow>[0], executionConstraintDraft)).resolves.toEqual(
-      {
-        relativePath: "workflow.mjs",
-      },
+    await expect(workflow(dsl as unknown as Parameters<typeof workflow>[0], executionConstraintDraft)).resolves.toBe(
+      "Opaque stage report; no execution constraints are restated.",
     );
     // This single path covers seed, queue, mechanical and both semantic repairs.
     expect(new Set(calls.map((call) => call.label)).size).toBe(variant === "plan" ? 4 : 36);

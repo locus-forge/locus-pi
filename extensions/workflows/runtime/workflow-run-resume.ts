@@ -21,14 +21,14 @@ import { readWorkflowRunResult, workflowPersistedResultInvalidity } from "./work
 import type { WorkflowRunResultEnvelope } from "./workflow-journal.js";
 import {
   readWorkflowLaunchBinding,
-  workflowLaunchBindingExists,
+  workflowExecutionMigrationMessage,
   workflowLaunchBindingMatchesResult,
   type WorkflowLaunchBinding,
 } from "./workflow-launch-binding.js";
 import {
   isWorkflowPathWithinRoot,
-  resolveWorkflowOutputDirectoryForReuse,
-  type WorkflowOutputDirectory,
+  resolveWorkflowWorkspaceDirectoryForReuse,
+  type WorkflowWorkspaceDirectory,
   type WorkflowWorkspaceReuseBinding,
 } from "./workflow-output.js";
 import {
@@ -91,56 +91,11 @@ export interface WorkflowResumeWorkspaceIdentity {
   explicit: boolean;
 }
 
-export interface WorkflowResumeOutputIdentity {
-  relativePath: string;
-  absolutePath: string;
-  physicalPath: string;
-  physicalIdentity: string;
-  source: "declared" | "default";
-}
-
 export interface WorkflowResumeSourceBinding {
   result: WorkflowRunResultEnvelope;
   owner: boolean;
   workspace: WorkflowResumeWorkspaceIdentity;
-  output: WorkflowResumeOutputIdentity;
-  launchBinding?: WorkflowLaunchBinding;
-}
-
-export function readWorkflowResumeOutputIdentityFromResult(
-  projectRoot: string,
-  sourceResult: WorkflowRunResultEnvelope | null,
-  runId: string,
-): WorkflowResumeOutputIdentity {
-  if (
-    typeof sourceResult?.outputDir !== "string" ||
-    typeof sourceResult.outputDirRelative !== "string" ||
-    typeof sourceResult.outputPhysicalIdentity !== "string" ||
-    sourceResult.outputPhysicalIdentitySchemaVersion !== 1 ||
-    (sourceResult.outputSource !== "declared" && sourceResult.outputSource !== "default")
-  ) {
-    throw new Error(`Cannot resume workflow: source run ${runId} has no dual workspace/output binding.`);
-  }
-  const root = path.resolve(projectRoot);
-  const absolutePath = path.resolve(sourceResult.outputDir);
-  const physicalRoot = realpathSync(root);
-  const physicalPath = realpathSync(absolutePath);
-  const physicalIdentity = path.relative(physicalRoot, physicalPath).split(path.sep).join("/");
-  if (
-    !isWorkflowPathWithinRoot(root, absolutePath) ||
-    !isWorkflowPathWithinRoot(physicalRoot, physicalPath) ||
-    path.relative(root, absolutePath).split(path.sep).join("/") !== sourceResult.outputDirRelative ||
-    physicalIdentity !== sourceResult.outputPhysicalIdentity
-  ) {
-    throw new Error(`Cannot resume workflow: source run ${runId} output identity changed.`);
-  }
-  return {
-    relativePath: sourceResult.outputDirRelative,
-    absolutePath,
-    physicalPath,
-    physicalIdentity,
-    source: sourceResult.outputSource,
-  };
+  launchBinding: WorkflowLaunchBinding;
 }
 
 export interface WorkflowHandoffWorkspaceReuseBinding extends WorkflowWorkspaceReuseBinding {
@@ -195,31 +150,18 @@ export function readWorkflowResumeWorkspaceIdentity(
   if (invalidity !== undefined) {
     throw new Error(`Cannot resume workflow: source run ${runId} has malformed persisted metadata (${invalidity}).`);
   }
-  const bindingPresent = workflowLaunchBindingExists(projectRoot, runId, resolvedRunDir);
   const binding = readWorkflowLaunchBinding(projectRoot, runId, resolvedRunDir);
-  if (bindingPresent) {
-    if (binding === null || sourceResult === null || !workflowLaunchBindingMatchesResult(binding, sourceResult)) {
-      throw new Error(`Cannot resume post-code-review workflow: source run ${runId} has no valid host launch binding.`);
-    }
-    return {
-      relativePath: binding.workspace.relativePath,
-      absolutePath: binding.workspace.absolutePath,
-      physicalPath: binding.workspace.physicalPath,
-      physicalIdentity: binding.workspace.physicalIdentity,
-      explicit: binding.workspace.explicit,
-    };
+  if (binding === null) throw new Error(workflowExecutionMigrationMessage(runId));
+  if (sourceResult === null || !workflowLaunchBindingMatchesResult(binding, sourceResult)) {
+    throw new Error(`Cannot resume workflow: source run ${runId} has no valid host launch binding.`);
   }
-  if (
-    sourceResult !== null &&
-    sourceResult.target !== undefined &&
-    isPostCodeReviewTargetProjection(sourceResult.target, {
-      projectRoot,
-      resolvedPath: sourceResult.scriptIdentity?.sourcePath,
-    })
-  ) {
-    throw new Error(`Cannot resume post-code-review workflow: source run ${runId} has no valid host launch binding.`);
-  }
-  return readWorkflowResumeWorkspaceIdentityFromResult(projectRoot, sourceResult, runId);
+  return {
+    relativePath: binding.workspace.relativePath,
+    absolutePath: binding.workspace.absolutePath,
+    physicalPath: binding.workspace.physicalPath,
+    physicalIdentity: binding.workspace.physicalIdentity,
+    explicit: binding.workspace.explicit,
+  };
 }
 
 export function readWorkflowResumeWorkspaceIdentityFromResult(
@@ -306,12 +248,11 @@ export function assertWorkflowHandoffWorkspaceReuse(
   claim: WorkflowHandoffClaimLease,
   continuation: WorkflowContinuation,
   target: ResolvedWorkflowTarget,
-): WorkflowOutputDirectory {
+): WorkflowWorkspaceDirectory {
   if (binding.sourceRunId !== claim.sourceRunId || continuation.originRunId !== binding.sourceRunId) {
     throw new Error("Workflow handoff workspace reuse does not match the source run");
   }
   const source = readWorkflowRunResult(projectRoot, binding.sourceRunId);
-  const sourceLaunchBindingPresent = workflowLaunchBindingExists(projectRoot, binding.sourceRunId);
   const sourceLaunchBinding = readWorkflowLaunchBinding(projectRoot, binding.sourceRunId);
   if (
     source === null ||
@@ -323,10 +264,8 @@ export function assertWorkflowHandoffWorkspaceReuse(
   ) {
     throw new Error("Workflow handoff source has no valid persisted target");
   }
-  if (
-    sourceLaunchBindingPresent &&
-    (sourceLaunchBinding === null || !workflowLaunchBindingMatchesResult(sourceLaunchBinding, source))
-  ) {
+  if (sourceLaunchBinding === null) throw new Error(workflowExecutionMigrationMessage(binding.sourceRunId));
+  if (!workflowLaunchBindingMatchesResult(sourceLaunchBinding, source)) {
     throw new Error("Workflow handoff source has no valid host launch binding");
   }
   const sourceTarget = sourceLaunchBinding?.target ?? source.target;
@@ -346,7 +285,7 @@ export function assertWorkflowHandoffWorkspaceReuse(
   ) {
     throw new Error("Workflow handoff source workspace identity changed");
   }
-  return resolveWorkflowOutputDirectoryForReuse(projectRoot, binding, { create: false });
+  return resolveWorkflowWorkspaceDirectoryForReuse(projectRoot, binding, { create: false });
 }
 
 // ---------------------------------------------------------------------------

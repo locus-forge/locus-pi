@@ -1,9 +1,9 @@
 ---
-updated: "2026-10-03T01:37:59Z"
-source_commit: "c2a6547744e2"
+updated: "2026-10-02T22:53:29Z"
+source_commit: "0d098c9e06d1"
 update_event: "user_request"
-context: "changes=L files=14"
-description: "Align task workflow source with final-output publication"
+context: "changes=L files=29"
+description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
 # Design, review, Build
@@ -86,7 +86,7 @@ that Build must create; do not declare grandchildren or an implicit root.
 Concurrency: <groups or none>
 Loop bounds: <bounds or none>
 Budgets: <axis=value with a one-line reason, or none — launch defaults apply; every other undeclared workflow budget axis is unbounded>
-Named files: <each workspace file, its writer and its readers, or none>
+Named files: <each exact caller-assigned destination in prompts, its writer and its readers, or none>
 File boundary: workflow source performs no file reads; name any child-owned source inspection
 Worst-case calls: <exact formula including saved children>
 Failure exits: <fail-closed exits>
@@ -132,7 +132,7 @@ performed. An unavailable optional check is a coverage limitation, not
 implementation work or a new blocking criterion.
 
 When acceptance concerns file delivery, the evaluator inspects the actual
-required files at their declared locations after the last correction or
+required files at their exact caller-assigned paths after the last correction or
 cleanup. A report that files were created earlier is not evidence that they
 remain available.
 
@@ -142,7 +142,7 @@ remove disposable files belonging to this task; required deliverables remain.
 Correction receives the complete actionable findings and is followed by
 fresh review. A later delivery writer reports the reviewed state. If that
 writer performs a new required check, its failure must reach an explicit
-non-success route before successful publication.
+non-success route before successful completion.
 
 Walk terminal paths for a produced artifact with an optional check unavailable, a
 confirmed defect and an explicitly required verifier unavailable. Delivery reports the
@@ -196,21 +196,16 @@ unmet required evidence returns `{ ok: false, status: "failed" }` with the lates
 artifact and evidence; do not publish it as accepted or silently start a fresh run.
 An optional check not performed does not, by itself, make a completed implementation fail.
 
-The packaged `task/plan` writes the whole `workflow.mjs` in the host-injected workflow output directory in one author
+The packaged `task/plan` writes the whole caller-assigned `workflow.mjs` in one author
 call, then runs at most three independent reviews with at most two revisions.
 The packaged `task/plan-light`, for lighter author models, creates a minimal
-runnable `workflow.mjs` in that same directory, then grows it through at most six complete
+runnable caller-assigned `workflow.mjs`, then grows it through at most six complete
 graph-node slices. An owner re-cuts the source-free remaining queue after each
 accepted slice. Independent mechanical and design gates share one cumulative
 correction per slice; final whole-file gates run after the queue is empty. The exact routes and terminal reasons live in the
 [task authoring manual](../../../examples/workflows/task/README.md).
 
-`publishPrimaryFile("workflow.mjs")` returns `primaryFile` with the validated
-output-relative path, absolute path, byte count, and digest. It does not copy the
-file into run `outputs/`. The validated `primaryFile.absolutePath` remains the
-read-and-launch handoff; verifier prose is not source. Host publication validation
-is not syntax checking, semantic review or live proof. All editors and reviewers
-use that output file; queues, logs and review evidence remain in the workspace.
+The caller assigns one exact workflow.mjs path and the design, review, log and source-slice record paths in the whole semantic input. Agents write those files directly. The same source is used by Node, the project-confined native checker, reviewer and launcher; source outside the checker's existing boundary fails explicitly. Checks retain the actual source path, checked-byte SHA-256 and tool outcomes. Before launch, reopen the assigned regular nonempty source, compare the persisted reviewed/check evidence and repeat current required checks after correction or replay. Failed/exhausted review, missing or drifted source forbids execution. Native completion and returned prose never attest file delivery, and there is no publication prerequisite.
 
 A successful Build returns `/workflows run <name>` (or the qualified child ref).
 Create-only stops there. Create-and-run continues through

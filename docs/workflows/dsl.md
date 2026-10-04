@@ -2,18 +2,18 @@
 title: Workflow DSL reference
 type: guide
 status: active
-updated: "2026-10-03T01:37:59Z"
-source_commit: "c2a6547744e2"
-update_event: "user_request"
-context: "changes=L files=14"
-description: "Align task workflow source with final-output publication"
+updated: "2026-09-22T17:05:40Z"
+source_commit: "5365d3f8cd9c"
+update_event: "cleanup"
+context: "changes=XL files=47"
+description: "Correct handoff contracts and keep operator and Fusion details with their owning guides."
 ---
 
 # Workflow DSL reference
 
 [Workflow documentation](index.md) · [Create a workflow](create.md) · [Run a workflow](running.md) · [Runnable examples](../../examples/workflows/README.md)
 
-A workflow receives `dsl` and optional exact text `input` in its default async function. Destructure the methods you need; the examples below use that form. `Promise<T>` means await the result. The runtime has 23 method names, including the removed `runWorkspaceDir()` compatibility trap.
+A workflow receives `dsl` and optional exact text `input` in its default async function. Destructure the methods you need; the examples below use that form. `Promise<T>` means await the result. Removed methods retain narrow throwing migration traps; they never resolve user files.
 
 ## DSL surface (v0)
 
@@ -31,14 +31,14 @@ A workflow receives `dsl` and optional exact text `input` in its default async f
 | [`phase`](#phase)                                   | Yes           | Yes                        | Yes                                             |
 | [`log`](#log)                                       | Yes           | Yes                        | Yes                                             |
 | [`publishArtifact`](#publishartifact)               | Yes           | Yes                        | Yes, in-memory text                             |
-| [`publishPrimaryArtifact`](#publishprimaryartifact) | Yes           | Yes, both overloads        | Both admitted; create skill uses in-memory text |
+| [`publishPrimaryArtifact`](#publishprimaryartifact) | Yes           | Yes, text only             | Yes, in-memory text                             |
 | [`awaitOperator`](#awaitoperator)                   | Yes           | Yes                        | Yes; requires operator-capable launch           |
 | [`workspaceDir`](#workspacedir)                     | Yes           | Yes                        | No                                              |
-| [`outputDir`](#outputdir)                           | Yes           | Yes                        | No                                              |
+| [`outputDir`](#outputdir)                           | Always throws | No                         | No                                              |
 | [`projectRoot`](#projectroot)                       | Yes           | Yes                        | No                                              |
 | [`promptFile`](#promptfile)                         | Yes           | Yes                        | No                                              |
 | [`workspace`](#workspace)                           | Yes           | Yes                        | No                                              |
-| [`publishPrimaryFile`](#publishprimaryfile)         | Yes           | Yes                        | No                                              |
+| [`publishPrimaryFile`](#publishprimaryfile)         | Always throws | No                         | No                                              |
 | [`consumeTextArtifact`](#consumetextartifact)       | Yes           | Yes; result remains opaque | No                                              |
 | [`continuationArtifacts`](#continuationartifacts)   | Yes           | Yes; entries remain opaque | No                                              |
 | [`now`](#now)                                       | Yes           | Yes                        | No                                              |
@@ -60,7 +60,7 @@ Entries describe ordinary runtime behavior; a custom host that omits a required 
 | `choiceFallback: "revise"` with `choice` | Declared member after the one same-session correction is exhausted                                   | Must belong to `choice`; never substitutes for transport or host failure                |
 | `result: "report"`                       | Opaque host-rendered observation, `Promise<string>`                                                  | All three; accepted answer or eligible terminal failure, not semantic approval          |
 
-A choice call uses `workflow_return` inside the same child session with one package-owned correction turn; exhaustion throws `SchemaValidationError` unless `choiceFallback` applies. A transport without the return-tool capability fails closed. `handoffs`, `schema`, `validate`, `output`, `repair` and `returnVia` were removed and are refused by name before any child starts; richer results live in named workspace files, and caller-owned work units come from [`items()`](#items). See [agent results](agent-results.md#removed-shaped-result-options).
+A choice call uses `workflow_return` inside the same child session with one package-owned correction turn; exhaustion throws `SchemaValidationError` unless `choiceFallback` applies. A transport without the return-tool capability fails closed. `handoffs`, `schema`, `validate`, `output`, `repair` and `returnVia` were removed and are refused by name before any child starts; richer results live at exact caller-assigned file paths, and caller-owned work units come from [`items()`](#items). See [agent results](agent-results.md#removed-shaped-result-options).
 
 **Example — orchestration-only:** a complete module; every agent edge has a distinct literal label. Caller-supplied items go unchanged to each worker, reports stay opaque, and only the exact choice controls the branch.
 
@@ -161,7 +161,7 @@ export default async function run({ fusion }, input) {
 
 ### invokeWorkflow
 
-**Signature:** `invokeWorkflow({ child | name | scriptPath | packageName, input?, items?, key, keys }) -> Promise<{ status: "completed" | "skipped", key, workspaceDir, outputDir, runId?, sourceRunId?, primaryFile? }>`. Exactly one target selector is required. `child` binds a sibling to the current root source; `name` uses saved-name precedence; `scriptPath` is project-relative; `packageName` requires the exact Package source. `input` is optional semantic text; `items` carries exact work units. `key` identifies this unit and `keys` is the complete frozen unique set. Children inherit both root locations; `workspaceDir` and `outputDir` fields are rejected. Completion returns a child run ID; a matching checkpoint returns `skipped` with `sourceRunId`.
+**Signature:** `invokeWorkflow({ child | name | scriptPath | packageName, input?, items?, key, keys }) -> Promise<{ status: "completed" | "skipped", key, workspaceDir, runId?, sourceRunId? }>`. Exactly one target selector is required. `child` binds a sibling to the current root source; `name` uses saved-name precedence; `scriptPath` is project-relative; `packageName` requires the exact Package source. `input` is optional semantic text; `items` carries exact work units. `key` identifies this unit and `keys` is the complete frozen unique set. Children inherit the root native workspace; location overrides are rejected. Pass exact agent-file destinations in the same whole input. Completion returns a child run ID; a matching checkpoint returns `skipped` with `sourceRunId`.
 
 **Example:** `await invokeWorkflow({ child: "review", input, key: "review", keys: ["review"] })`. Do not invent a location or derive resumable keys from fresh model output. Missing selectors, invalid keys, directory overrides, grandchildren, and source cycles fail closed. [Saved-child details](#workspace-and-saved-child-contract) explain checkpointing and shared execution.
 
@@ -181,24 +181,26 @@ export default async function run({ fusion }, input) {
 
 ### publishPrimaryArtifact
 
-**Signatures:** `publishPrimaryArtifact(name: string, text: string, stage?: string) -> WorkflowArtifactRef`; compatibility form `publishPrimaryArtifact(name, { workflowSource: relativePath }, stage?) -> WorkflowArtifactRef`. Publish the run's one primary semantic document. Optional stage defaults to current phase. A second primary-artifact declaration fails. Names and returned reference match `publishArtifact`. **Example:** `publishPrimaryArtifact("decision.md", decision);`.
+**Signature:** `publishPrimaryArtifact(name: string, text: string, stage?: string) -> WorkflowArtifactRef`. Declare the run's one native text document. Optional stage defaults to the current phase; a second declaration fails. Names and references match `publishArtifact`. **Example:** `publishPrimaryArtifact("decision.md", decision)`.
 
-The compatibility file form reads a confined UTF-8 workspace file up to 512 KiB, checks Node syntax and orchestration-only shape, then retains those exact bytes. Both source-check modes admit this overload; the create skill's authoring policy uses in-memory text instead of workflow-side file reads. Checker acceptance does not enforce that policy or supply the required configured host. Static validation does not prove semantic correctness. `task/plan` currently uses `publishPrimaryFile("workflow.mjs")` after its mechanical/design gates; see [task authoring](../../examples/workflows/task/README.md).
+Both text methods retain optional native evidence and support verified text continuation. They neither save an agent-owned file nor attest its existence. A requested report, intermediate handoff or generated source is written by its assigned agent through ordinary file tools at the exact destination in the prompt. The next consumer opens that same file.
 
-**Example — checked-source publication admitted by both grammars, outside the create skill's in-memory publication policy:**
+The former `{ workflowSource: relativePath }` overload is removed. Both source-check modes reject it; runtime use fails with migration guidance. Do not reconstruct source from an answer or copy an old runtime projection as a substitute.
 
-<!-- dsl-example: checked-source-publication -->
+**Example — removed source-file publication, rejected by both grammars:**
 
-```js
-export const meta = { name: "publish-source", profile: "standard" };
-export default async function run({ publishPrimaryArtifact }) {
+<!-- dsl-example: rejected-source-publication -->
+
+```js expect-error
+export const meta = { name: "removed-source-publication", profile: "standard" };
+export default function run({ publishPrimaryArtifact }) {
   return publishPrimaryArtifact("workflow.mjs", { workflowSource: "workflow.mjs" });
 }
 ```
 
 ### publishPrimaryFile
 
-**Signature:** `publishPrimaryFile(relativePath: string) -> { relativePath, absolutePath, bytes, sha256 }`. Standard compatibility only. Validate one nonempty regular non-symlink file beneath `outputDir()` and return its reference without copying or parsing the content. A second primary-file declaration, missing/empty file, or confinement failure throws. **Example:** `const primary = publishPrimaryFile("report.md");`. Files survive failed runs; the digest is a point-in-time non-atomic observation, not protection against hostile concurrent filesystem replacement.
+**Signature:** `publishPrimaryFile(path: string) -> never`. **Removed:** a narrow trap always throws. Both source-check modes reject direct and destructured use. **Migration example:** prompt the writer with `Write /project/reports/review.md`, then have the reader open that exact file. Assign the exact destination in the writer's prompt; the reader verifies the file before using it. Native completion is not a generic file-existence, size or digest guarantee.
 
 ### consumeTextArtifact
 
@@ -242,11 +244,11 @@ export default async function run({ continuationArtifacts, parallel, agent }) {
 
 ### workspaceDir
 
-**Signature:** `workspaceDir() -> string`. Standard compatibility only. Return the absolute workflow directory shared by the execution tree. Use it for handoffs and intermediate files. When the root declares `meta.outputDir`, that directory is the single [bound workflow directory](#bound-workflow-directory) and `workspaceDir()` equals `outputDir()`. Otherwise the host selects it through `runName`, `workspaceDir`, or the generated `.locus-pi/workspaces/<run-id>-<workflow>` default. Runtime navigation and checkpoint identity belong to this directory. **Example:** `const handoffDir = workspaceDir();`.
+**Signature:** `workspaceDir() -> string`. Standard compatibility only. Return the execution tree's absolute native runtime workspace, selected by `runName`, `workspaceDir` or the generated `.locus-pi/workspaces/<generated-run-name>` default. Navigation, runtime leases and saved-child checkpoint identity belong here. This method supplies no placement authority for agent-written files; standard-generated source passes exact destinations through prompts instead. **Example:** `const nativeState = workspaceDir();`.
 
 ### outputDir
 
-**Signature:** `outputDir() -> string`. Standard compatibility only. Return the absolute final-output directory shared by the execution tree. The root may declare a project-relative literal `meta.outputDir`; `.local/...` is supported, and the declared directory is then also `workspaceDir()`. Without a declaration, output is exactly `<workspaceDir>/outputs`. Children inherit it and may not override it. **Example:** `const finalDir = outputDir();`. [Workspace details](#workspace-and-saved-child-contract) define confinement and ownership.
+**Signature:** `outputDir() -> never`. **Removed:** a narrow trap always throws. Both source-check modes reject direct and destructured use, and root/child `meta.outputDir` is refused before agent work. Literal metadata is checked before import; dynamically materialized trusted metadata is rejected on module load before its entry runs. **Migration example:** `Write /project/reports/result.md` in the agent prompt. Placement never changes cwd, tool resolution, loaded context or worktree selection.
 
 ### projectRoot
 
@@ -270,143 +272,43 @@ export default async function run({ continuationArtifacts, parallel, agent }) {
 
 ### runWorkspaceDir
 
-**Signature:** `runWorkspaceDir() -> never` (the deprecated interface retains `string`). **Removed:** always throws `WorkflowRunWorkspaceRemovedError` with code `WORKFLOW_RUN_WORKSPACE_REMOVED`; both source-check modes reject it. **Migration:** use `workspaceDir()` for handoffs/intermediate files and `outputDir()` for final files.
+**Signature:** `runWorkspaceDir() -> never` (the deprecated interface retains `string`). **Removed:** always throws `WorkflowRunWorkspaceRemovedError` with code `WORKFLOW_RUN_WORKSPACE_REMOVED`; both source-check modes reject it. **Migration:** put exact intermediate and final file destinations in agent prompts. Native workspace coordination remains separate.
 
 **Example — standard compatibility, rejected by orchestration-only:**
+
+## Workspace and saved-child contract
 
 <!-- dsl-example: standard -->
 
 ```js
-export const meta = { name: "workspace-review", profile: "standard", outputDir: ".local/review" };
+export const meta = { name: "native-workspace-context", profile: "standard" };
 export default async function run({ agent, workspaceDir }, input) {
-  const dir = workspaceDir(); // the bound .local/review directory; outputDir() returns the same path
+  const nativeState = workspaceDir();
   return agent(
-    `Workflow directory: ${dir}\nReview ${input}. Write the final report to review.md in the workflow directory with one complete write and write no other file.`,
-    { label: "review" },
+    `Inspect native runtime coordination read-only; this path is not a user-file destination. Native workspace: ${nativeState}\nWhole caller input:\n${input}`,
+    { label: "inspect-native-state" },
   );
 }
 ```
 
-## Workspace and saved-child contract
+### Explicit agent files and native workspace
 
-### Bound workflow directory
+Agents execute in their launch-selected inherited cwd or chosen worktree. The host labels the actual cwd separately from project root. File destinations do not rebase relative paths or change execution. Prefer absolute paths in prompts; every writer, reviewer, checker and downstream reader receives the same whole semantic input and exact destination. Source does not parse paths from opaque input.
 
-A root that declares `meta.outputDir` runs in exactly one directory. For
-`meta.outputDir: ".local/airflow-review"`, `workspaceDir()` and `outputDir()`
-both return `<project>/.local/airflow-review`, and the runtime creates no
-`.locus-pi/workspaces/...` directory for the run. The path is checked only by
-the `meta.outputDir` grammar: project-relative, safe components, not beneath
-`.locus-pi` or `.git`. Every child task names this one directory:
+The caller assigns intermediate and final files; agents create them with ordinary write/bash tools. Do not use a native workspace as an implicit base, search fallback folders, reconstruct files from final prose or declare an output setting. Parallel writers receive distinct files and finish before the reader barrier. Roots sharing fixed domain files must be serialized by their operator; runtime leases do not lock arbitrary prompt destinations.
 
-```text
-workflow directory (handoffs under artifacts/, final files): /abs/project/.local/airflow-review
+The runtime workspace stays project-confined and owns native coordination, navigation and checkpoints. Fresh launches default to `.locus-pi/workspaces/<generated-run-name>`; `--run-name` selects a stable name and `--workspace-dir` an explicit confined native workspace. A legacy-only `.locus-pi/plans/<name>` stays at its physical identity, while ambiguous dual roots fail before work. The runtime never moves or deletes user files. Preserve native state and sibling-owned files; a single-report assignment never authorizes cleanup.
 
-Relative handoff paths named in this task (for example artifacts/scope/scope.md) resolve against the workflow directory above, never against pwd or project root.
-```
+`post-code-review` receives exact report destinations and an optional exact caller-owned criteria-file path in its whole input. No runtime criteria file is created or discovered. Omission or an empty regular criteria file means no additional criteria. A nonempty supplied file is read-only guidance and cannot widen scope or override the workflow. A named missing, unreadable, nonregular or leaf-symlink file causes explicit non-success with that path, without fallback, substitution or link-target mutation.
 
-Write handoffs for other agents beneath `artifacts/` and final deliverables in
-the directory itself. Name the directory in the authored prompt as well, and
-give each agent one exact handoff instruction, for example: _You write a
-handoff for another agent: replace exactly `artifacts/scope/scope.md` with one
-complete write and write no other file._ `artifacts/` is an authoring
-convention; the runtime does not create, validate, or clean it.
+Native completed/resultPersisted evidence describes orchestration, not user-file effects. A file consumer independently opens the assigned regular nonempty file, verifies current required checks and, where reviewed identity is claimed, compares persisted checked/reviewed-byte SHA-256 evidence. Recheck after correction, replay/skip and immediately before generated-source execution. Missing, drifted or invalid files, failed review and exhaustion prohibit execution even when some source remains on disk.
 
-```text
-.local/airflow-review/
-  feature-x.md                  final report
-  .workflow-runs.md             runtime backlinks to .locus-pi/runs/<run-id>
-  artifacts/scope/scope.md      handoffs written by agents
-  artifacts/review/secrets.md
-```
-
-The directory is stable across runs, so earlier runs' files stay until an
-agent replaces them. The runtime never deletes them. When a later agent must
-not read a previous run's handoff, the workflow owns that check: for example,
-the first agent records the commit it reviewed, every handoff repeats it, and
-every consumer refuses a mismatch.
-
-Run evidence, leases, and checkpoints stay under `.locus-pi/`; only the
-`.workflow-runs.md` backlink appears in the workflow directory. One workspace
-lease fences the directory, so a second run targeting the same directory is
-refused while the first is live. Saved-child checkpoints of a bound root belong
-to one launch lineage: a fresh launch re-executes every item, while `--resume`
-(including a resume of a resume) and a workspace-reusing operator continuation
-reuse completed items.
-
-A bound root refuses `workspaceDir` and `runName` before any child starts:
-
-```text
-workflow declares meta.outputDir ".local/airflow-review", which is its workflow directory; workspaceDir and runName are not accepted for this workflow
-```
-
-A run recorded before this contract, with a separate workspace and declared
-output, cannot be resumed after the upgrade; the error names both recorded
-paths and asks for a fresh run. Workflows without `meta.outputDir` are
-unchanged.
-
-### Unbound workspace
-
-`workspaceDir()` returns the absolute runtime workspace. Fresh runs default to
-`.locus-pi/workspaces/<generated-run-name>` under the project root. The
-`--run-name <name>` form selects
-`.locus-pi/workspaces/<name>`. A legacy-only `.locus-pi/plans/<name>` remains
-bound to its original physical identity. The same workspace can be selected through the
-programmatic tool's `workspaceDir` or `/workflows run <name|path> --workspace-dir
-<path>`. The runtime
-preserves a qualified child's complete saved name in the generated workspace
-leaf; an invoked child still shares its parent's selected workspace. The
-runtime creates its absolute path before the first child and
-names it exactly once in every child task. Agent files keep their exact names;
-the runtime does not rename, move, or clean them. Each child task also says that
-pre-existing workspace files are owned state: the child may replace only its
-assigned filename and must preserve runtime-owned state beneath `.locus-pi`,
-`style.md`, and sibling handoffs. A lane instruction to write no other artifact
-forbids extra writes; it never authorizes cleanup. Confined absolute paths are
-accepted. `./path` resolves from the agent working directory. Traversal outside
-the project, whitespace tricks, backslashes, out-of-project working directories,
-and symlink escapes fail before a child starts.
-A task artifacts directory such as `.tasks/<task>/artifacts` is a legal
-`--workspace-dir`; running again into the same directory when it already holds
-durable workflow state fails closed through
-`assertFreshWorkflowOutputNamespace`.
-
-For `post-code-review`, the workspace is also a freshness boundary. Its
-generated default is unique. If a caller explicitly selects a workspace, fresh
-semantic input cannot reuse prior durable state there. Resume with the original
-`runId` to reuse the source workspace. This owner policy lives at
-launch/runtime boundaries, not in the workflow JavaScript.
-
-The same owner policy materializes `style.md` inside that workspace: preserve a
-regular existing file or create an empty one before the first child. This keeps
-request-specific style guidance beside the request id instead of embedding it
-in Package prompts or overloading semantic input.
-
-`runWorkspaceDir()` is removed and throws
-`WorkflowRunWorkspaceRemovedError`. New run evidence has no `workspace/`
-directory. Auto-captured readable material goes to `outputs/`; machine evidence
-and transcripts go to `runtime/artifacts/`. See [run evidence](evidence.md).
-
-`publishPrimaryFile(relativePath)` validates a regular, non-symlink, non-empty
-file beneath the workflow output directory and exposes absolute/output-relative path, byte count, and
-SHA-256 digest. It neither copies nor parses content. The reference is a
-point-in-time, non-atomic observation: portable Node cannot make ancestor
-replacement and path-based open/rename/unlink one indivisible operation against
-a hostile local process. Workflow output files survive failed runs; run-local evidence
-remains immutable under the run id.
-
-The workflow workspace is the durable location for handoffs, review evidence,
-and explicit resume inputs. Final results and deliverables belong beneath `outputDir()`. Keep disposable environments,
-dependency caches, test basetemp, transient renderer output, and staging in
-ordinary OS or tool temporary and cache locations. If renderer output is the
-final deliverable, write or promote it into the output directory. Promote any
-scratch output needed for review or resume before its temporary or cache location
-expires. This guidance reduces accidental mixing; an authored prompt that
-explicitly requests another placement remains authoritative.
+Replay reuses answers but never restores filesystem effects. New-format roots get distinct launch lineages; same-lineage resume preserves matching recorded calls. Old output-bound/default-output execution bindings remain inspectable but cannot resume, recover or reuse checkpoints under the new contract; start a fresh migrated run. Historical output and primary-file fields are read-only evidence. Verified historical text may be consumed into a fresh continuation through the existing provenance checks without importing old placement identity.
 
 `invokeWorkflow()` accepts exactly one source-bound sibling `child`, saved
 `name`, project-relative `scriptPath`, or exact legacy `packageName`, optional
 semantic `input` and exact `items`, one safe item `key`, the complete unique
-`keys` list. Directory fields are forbidden: the child inherits the root's workspace and output. It starts a real depth-one child with an
+`keys` list. Directory fields are forbidden: the child inherits the root's native workspace, while agent files use explicit prompt destinations. It starts a real depth-one child with an
 independent run directory, source snapshot, journal, result, and parent lineage.
 `child` resolves `<running-root>/<child>` inside the exact source and folder of
 the running root; it cannot fall through to another namespace owner. `name`
@@ -417,8 +319,8 @@ canonical path and source hash, so a higher-precedence shadow fails closed rathe
 than replacing the installed child.
 The root and children share cancellation, global concurrency, one physical-call
 counter, whatever run deadline the launch declared (none by default), and one
-fenced workspace lease plus a separate output lease under `.locus-pi`.
-The leases exclude concurrent writers to either physical location and prevent a stale
+fenced native workspace lease under `.locus-pi`.
+The lease excludes concurrent owners of native state and prevent a stale
 owner from committing a checkpoint after takeover. Keys are compact stable
 identities, not payloads.
 Saved children cannot invoke saved grandchildren; direct or source-identity

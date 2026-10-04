@@ -31,9 +31,9 @@ export default async function run({ agent, parallel, publishArtifact, publishPri
   );
   publishArtifact("critique.md", critique);
   const revised = await agent(
-    `Return the complete revised document, applying critique where the sources support it. Preserve evidence, disagreements and uncertainty. Do not modify sources. ` +
+    `Write the complete revised document through ordinary tools at the exact final path assigned in the whole request; missing or ambiguous assignment is non-success without fallback. Return the complete revised document, applying critique where the sources support it. Preserve evidence, disagreements and uncertainty. Do not modify sources. ` +
       `Request:\n${input}\nComplete investigations:\n${notes.join("\n\n")}\nComplete draft:\n${draft}\nComplete critique:\n${critique}`,
-    { label: "revise", title: "Revise the synthesis using the critique" },
+    { label: "revise", title: "Revise the document using actionable critique" },
   );
   return publishPrimaryArtifact("document.md", revised);
 }

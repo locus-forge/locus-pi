@@ -1,8 +1,9 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+/** Output-free launch format, exact root lineage and retained legacy evidence. */
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  readWorkflowOperatorHandoff,
+  readPersistedWorkflowOperatorHandoff,
   claimWorkflowOperatorHandoff,
   workflowContinuationForHandoff,
 } from "../../../../../extensions/workflows/runtime/workflow-handoff.js";
@@ -15,220 +16,333 @@ import {
   readWorkflowResumeWorkspaceIdentity,
   runWorkflowScript,
 } from "../../../../../extensions/workflows/runtime/workflow-runner.js";
+import { workflowWorkspaceStateDir } from "../../../../../extensions/workflows/runtime/workflow-output.js";
+import { workflowResultFile } from "../../../../../extensions/workflows/runtime/workflow-result.js";
 import { createHarness } from "../../../../test-harness.js";
 import { executor, project, writeWorkflow, CHILD, PARENT } from "../../../../fixtures/workflow-durable-project.js";
 
-/**
- * A root `meta.outputDir` binds one workflow directory. These cases pin what the
- * binding changes across runs: saved children admitted under the root's proven
- * `.local` binding, checkpoint reuse scoped to one launch lineage, operator
- * continuation in the same directory, and pre-lineage launch bindings that stay
- * readable for unbound owner resume.
- */
-
-/** Minimal awaiting-operator root: stops once, then consumes its continuation. */
-const BOUND_HANDOFF = `export const meta = { name: "bound-handoff", outputDir: ".local/handoff" };
-export default async function run(dsl, input) {
-  if (dsl.continuationArtifacts().length > 0) return { ok: true, input };
-  const intentRef = dsl.publishArtifact("intent.md", "review current changes", "prepare");
-  dsl.awaitOperator({
-    reason: "review clarification required",
-    operatorHandoff: {
-      title: "Choose review scope",
-      questions: [{ kind: "text", id: "scope", prompt: "What should be reviewed?" }],
-      continuationArtifactRefs: [intentRef],
-    },
-  });
-  return { mode: "prepared", intentRef };
+const HANDOFF = `export default function run(dsl, input) {
+  const refs = dsl.continuationArtifacts();
+  if (refs.length > 0) return dsl.consumeTextArtifact(refs[0].sourceRef).text + ":" + input;
+  const intentRef = dsl.publishArtifact("intent.md", "retained intent", "prepare");
+  dsl.awaitOperator({ reason: "clarification required", operatorHandoff: {
+    title: "Choose scope", questions: [{ kind: "text", id: "scope", prompt: "What should be reviewed?" }],
+    continuationArtifactRefs: [intentRef],
+  } });
+  return "prepared";
 }
 `;
 
-describe("bound workflow directory across runs", () => {
-  const BOUND_PARENT = PARENT.replace(
-    `export const meta = { name: "parent", profile: "standard" };`,
-    `export const meta = { name: "parent", profile: "standard", outputDir: ".local/catalog" };`,
-  );
-
-  function boundProject() {
-    const root = project();
-    writeWorkflow(root, "child", CHILD);
-    writeWorkflow(root, "parent", BOUND_PARENT);
-    const harness = createHarness(root);
-    const calls: string[] = [];
-    const directories: string[] = [];
-    const createExecutor = executor((prompt, request) => {
-      calls.push(prompt);
-      directories.push(request.task);
-      const key = prompt.slice(prompt.lastIndexOf(":") + 1);
-      writeFileSync(path.join(root, ".local", "catalog", `${key}.md`), `${prompt}\n`, "utf8");
-      return "written";
-    });
-    const run = (options: { resumeFromRunId?: string } = {}) =>
-      runWorkflowScript({
-        pi: harness.pi,
-        ctx: harness.ctx,
-        signal: new AbortController().signal,
-        name: "parent",
-        input: "payload",
-        items: ["alpha"],
-        createExecutor,
-        ...options,
-      });
-    return { root, calls, directories, run };
-  }
-
-  it("admits the child under the root's .local binding and shares that one directory", async () => {
-    const { root, calls, directories, run } = boundProject();
-    const first = await run();
-
-    expect(first.ok, first.error).toBe(true);
-    expect(first.workspaceDirRelative).toBe(".local/catalog");
-    expect(first.outputDirRelative).toBe(".local/catalog");
-    expect(first.childRuns).toEqual([expect.objectContaining({ status: "completed", key: "alpha" })]);
-    expect(calls).toEqual(["write:payload:alpha"]);
-    expect(directories[0]).toContain(
-      `workflow directory (handoffs under artifacts/, final files): ${path.join(root, ".local", "catalog")}`,
-    );
-    expect(readWorkflowRunResult(root, first.childRuns![0]!.runId!)).toMatchObject({
-      workspaceDirRelative: ".local/catalog",
-      outputDirRelative: ".local/catalog",
-    });
-    expect(existsSync(path.join(root, ".locus-pi", "workspaces"))).toBe(false);
-  });
-
-  it("re-executes items on a fresh launch but reuses them across resume and resume-of-resume", async () => {
-    const { root, calls, run } = boundProject();
-    const first = await run();
-    expect(first.ok, first.error).toBe(true);
-    expect(readWorkflowLaunchBinding(root, first.runId)?.rootLineageId).toBe(first.runId);
-
-    calls.length = 0;
-    const fresh = await run();
-    expect(fresh.ok, fresh.error).toBe(true);
-    expect(calls).toEqual(["write:payload:alpha"]);
-    expect(fresh.childRuns).toEqual([expect.objectContaining({ status: "completed", key: "alpha" })]);
-    expect(readWorkflowLaunchBinding(root, fresh.runId)?.rootLineageId).toBe(fresh.runId);
-
-    calls.length = 0;
-    const resumed = await run({ resumeFromRunId: first.runId });
-    expect(resumed.ok, resumed.error).toBe(true);
-    expect(calls).toEqual([]);
-    expect(resumed.childRuns).toEqual([expect.objectContaining({ status: "skipped", key: "alpha" })]);
-    expect(readWorkflowLaunchBinding(root, resumed.runId)?.rootLineageId).toBe(first.runId);
-
-    const resumedAgain = await run({ resumeFromRunId: resumed.runId });
-    expect(resumedAgain.ok, resumedAgain.error).toBe(true);
-    expect(calls).toEqual([]);
-    expect(resumedAgain.childRuns).toEqual([expect.objectContaining({ status: "skipped", key: "alpha" })]);
-    expect(readWorkflowLaunchBinding(root, resumedAgain.runId)?.rootLineageId).toBe(first.runId);
-  });
-
-  it("keeps cross-run checkpoint reuse for an unbound explicit stable workspace", async () => {
+describe("output-free execution format across runs", () => {
+  it("gives every fresh root a lineage and reuses exact child work only in that lineage", async () => {
     const root = project();
     writeWorkflow(root, "child", CHILD);
     writeWorkflow(root, "parent", PARENT);
     const harness = createHarness(root);
-    const workspaceDir = "outputs/stable";
     let calls = 0;
-    const createExecutor = executor((prompt) => {
-      calls += 1;
-      const key = prompt.slice(prompt.lastIndexOf(":") + 1);
-      writeFileSync(path.join(root, workspaceDir, "outputs", `${key}.md`), `${prompt}\n`, "utf8");
-      return "written";
-    });
-    const run = () =>
-      runWorkflowScript({
-        pi: harness.pi,
-        ctx: harness.ctx,
-        signal: new AbortController().signal,
-        name: "parent",
-        input: "payload",
-        items: ["alpha"],
-        workspaceDir,
-        createExecutor,
-      });
-
-    expect((await run()).ok).toBe(true);
-    const second = await run();
-    expect(second.ok, second.error).toBe(true);
-    expect(calls).toBe(1);
-    expect(second.childRuns).toEqual([expect.objectContaining({ status: "skipped", key: "alpha" })]);
-  });
-  it("continues a bound root in its .local directory and keeps the source launch lineage", async () => {
-    const root = project();
-    writeWorkflow(root, "bound-handoff", BOUND_HANDOFF);
-    const harness = createHarness(root);
-    const source = await runWorkflowScript({
-      pi: harness.pi,
-      ctx: harness.ctx,
-      signal: new AbortController().signal,
-      name: "bound-handoff",
-    });
-    const read = readWorkflowOperatorHandoff(source);
-    expect(read.status).toBe("ready");
-    if (read.status !== "ready") throw new Error("expected ready handoff");
-    const claim = claimWorkflowOperatorHandoff(root, read.handoff);
-    if (claim.status !== "claimed") throw new Error("expected claim");
-    const workspace = readWorkflowResumeWorkspaceIdentity(root, source.runId);
-    expect(workspace.relativePath).toBe(".local/handoff");
-
-    const child = await runWorkflowScript({
-      pi: harness.pi,
-      ctx: harness.ctx,
-      signal: new AbortController().signal,
-      name: "bound-handoff",
-      input: "operator answer",
-      continuation: workflowContinuationForHandoff(read.handoff),
-      operatorHandoffClaim: claim.claim,
-      operatorHandoffWorkspaceReuse: { sourceRunId: source.runId, ...workspace },
-    });
-    expect(child.ok, child.error).toBe(true);
-    expect(child.workspaceDirRelative).toBe(".local/handoff");
-    expect(child.outputDirRelative).toBe(".local/handoff");
-    expect(readWorkflowLaunchBinding(root, child.runId)?.rootLineageId).toBe(source.runId);
-  });
-
-  it("resumes an unbound owner run from a launch binding written before rootLineageId existed", async () => {
-    const root = project();
-    writeWorkflow(root, "child", CHILD);
-    writeWorkflow(root, "post-code-review", PARENT);
-    const harness = createHarness(root);
-    const workspaceDir = "outputs/pre-lineage-binding";
-    let calls = 0;
-    const createExecutor = executor((prompt) => {
-      calls += 1;
-      writeFileSync(path.join(root, workspaceDir, "outputs", "alpha.md"), `${prompt}\n`, "utf8");
-      return "written";
-    });
     const run = (resumeFromRunId?: string) =>
       runWorkflowScript({
         pi: harness.pi,
         ctx: harness.ctx,
         signal: new AbortController().signal,
-        name: "post-code-review",
-        input: "review alpha",
+        name: "parent",
+        input: "payload",
         items: ["alpha"],
-        workspaceDir,
+        workspaceDir: "state/shared",
         ...(resumeFromRunId === undefined ? {} : { resumeFromRunId }),
-        createExecutor,
+        createExecutor: executor(() => {
+          calls += 1;
+          return "written";
+        }),
       });
-
     const first = await run();
     expect(first.ok, first.error).toBe(true);
-    const bindingFile = workflowLaunchBindingFile(first.runDir);
-    const binding = JSON.parse(readFileSync(bindingFile, "utf8")) as Record<string, unknown>;
-    expect(binding.schema).toBe("locus-pi.workflow-launch-binding.v2");
-    expect(binding.rootLineageId).toBe(first.runId);
-    delete binding.rootLineageId;
-    writeFileSync(bindingFile, `${JSON.stringify(binding)}\n`, "utf8");
-    const preChange = readWorkflowLaunchBinding(root, first.runId);
-    expect(preChange).not.toBeNull();
-    expect(preChange).not.toHaveProperty("rootLineageId");
-
+    const checkpointRoot = path.join(workflowWorkspaceStateDir(root, "state/shared"), "checkpoints");
+    const legacyCheckpoint = path.join(checkpointRoot, "legacy.json");
+    const legacyBytes = JSON.stringify({
+      schema: "locus-pi.workflow-checkpoint.v2",
+      outputIdentity: "state/shared/outputs",
+      childRunId: first.childRuns![0]!.runId,
+    });
+    writeFileSync(legacyCheckpoint, legacyBytes);
+    const fresh = await run();
+    expect(first.ok, first.error).toBe(true);
+    expect(fresh.ok, fresh.error).toBe(true);
+    expect(calls).toBe(2);
+    expect(readWorkflowLaunchBinding(root, first.runId)).toMatchObject({
+      schema: "locus-pi.workflow-launch-binding.v3",
+      rootLineageId: first.runId,
+    });
+    expect(readWorkflowLaunchBinding(root, fresh.runId)?.rootLineageId).toBe(fresh.runId);
     const resumed = await run(first.runId);
+    const resumedAgain = await run(resumed.runId);
     expect(resumed.ok, resumed.error).toBe(true);
-    expect(calls).toBe(1);
-    expect(resumed.childRuns).toEqual([expect.objectContaining({ status: "skipped", key: "alpha" })]);
-    expect(readWorkflowLaunchBinding(root, resumed.runId)?.rootLineageId).toBe(first.runId);
+    expect(resumedAgain.ok, resumedAgain.error).toBe(true);
+    expect(calls).toBe(2);
+    expect(resumedAgain.childRuns).toEqual([expect.objectContaining({ status: "skipped", key: "alpha" })]);
+    expect(readWorkflowLaunchBinding(root, resumedAgain.runId)?.rootLineageId).toBe(first.runId);
+    for (const result of [first, fresh, resumed, resumedAgain]) {
+      expect(result).not.toHaveProperty("outputDir");
+      expect(result).not.toHaveProperty("primaryFile");
+      const binding = JSON.parse(readFileSync(workflowLaunchBindingFile(result.runDir), "utf8"));
+      expect(binding).not.toHaveProperty("output");
+    }
+    const checkpoints = readdirSync(path.join(checkpointRoot, "v3"))
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => JSON.parse(readFileSync(path.join(checkpointRoot, "v3", name), "utf8")));
+    expect(checkpoints).toHaveLength(2);
+    expect(checkpoints.map((record) => record.rootLineageId).sort()).toEqual([first.runId, fresh.runId].sort());
+    for (const checkpoint of checkpoints) {
+      expect(checkpoint.schema).toBe("locus-pi.workflow-checkpoint.v3");
+      expect(checkpoint).not.toHaveProperty("outputIdentity");
+      expect(checkpoint).not.toHaveProperty("primaryFile");
+    }
+    expect(readFileSync(legacyCheckpoint, "utf8")).toBe(legacyBytes);
+    expect(existsSync(path.join(root, "state/shared/outputs"))).toBe(false);
+    expect(existsSync(path.join(root, ".locus-pi/workflow-output-state"))).toBe(false);
   });
+
+  it("preserves an implicit task resume's explicit native workspace across resume-of-resume", async () => {
+    const root = project();
+    mkdirSync(path.join(root, ".locus-pi/workflows/task"));
+    writeWorkflow(root, "task/draft", `export default (dsl, input) => dsl.agent(input, { label: "draft" });\n`);
+    const harness = createHarness(root);
+    let calls = 0;
+    const run = (resumeFromRunId?: string) =>
+      runWorkflowScript({
+        pi: harness.pi,
+        ctx: harness.ctx,
+        signal: new AbortController().signal,
+        name: "task/draft",
+        input: "exact draft",
+        ...(resumeFromRunId === undefined ? { workspaceDir: "state/task-explicit" } : { resumeFromRunId }),
+        createExecutor: executor(() => {
+          calls += 1;
+          return "draft";
+        }),
+      });
+    const first = await run();
+    const resumed = await run(first.runId);
+    const resumedAgain = await run(resumed.runId);
+    for (const result of [first, resumed, resumedAgain]) {
+      expect(result.ok, result.error).toBe(true);
+      expect(result.workspaceDirExplicit).toBe(true);
+      expect(result.workspaceDirRelative).toBe("state/task-explicit");
+      expect(readWorkflowLaunchBinding(root, result.runId)?.workspace.explicit).toBe(true);
+      expect(readWorkflowLaunchBinding(root, result.runId)?.rootLineageId).toBe(first.runId);
+    }
+    expect(calls).toBe(1);
+  });
+
+  it("invalidates child checkpoints when exact input, ordered items or parent source changes", async () => {
+    const root = project();
+    writeWorkflow(root, "child", CHILD);
+    const parent = `export default (dsl, input) => dsl.invokeWorkflow({name: "child", key: "work", keys: ["work"], input, items: dsl.items()});\n`;
+    writeWorkflow(root, "parent", parent);
+    const harness = createHarness(root);
+    let calls = 0;
+    const run = (input: string, items: readonly string[], resumeFromRunId?: string) =>
+      runWorkflowScript({
+        pi: harness.pi,
+        ctx: harness.ctx,
+        signal: new AbortController().signal,
+        name: "parent",
+        input,
+        items,
+        workspaceDir: "state/input-bound",
+        ...(resumeFromRunId === undefined ? {} : { resumeFromRunId }),
+        createExecutor: executor(() => {
+          calls += 1;
+          return "written";
+        }),
+      });
+    const first = await run("one", ["a", "b"]);
+    const same = await run("one", ["a", "b"], first.runId);
+    expect(same.ok, same.error).toBe(true);
+    expect(calls).toBe(1);
+    const input = await run("two", ["a", "b"], same.runId);
+    expect(input.ok, input.error).toBe(true);
+    expect(calls).toBe(2);
+    const items = await run("two", ["b", "a"], input.runId);
+    expect(items.ok, items.error).toBe(true);
+    expect(calls).toBe(3);
+    writeWorkflow(root, "parent", parent + "// changed parent source\n");
+    const changed = await run("two", ["b", "a"], items.runId);
+    expect(changed.ok, changed.error).toBe(true);
+    expect(calls).toBe(4);
+    expect(readWorkflowLaunchBinding(root, changed.runId)?.rootLineageId).toBe(first.runId);
+  });
+
+  it("preserves verified string-artifact continuation and source lineage", async () => {
+    const root = project();
+    writeWorkflow(root, "handoff", HANDOFF);
+    const harness = createHarness(root);
+    const source = await runWorkflowScript({
+      pi: harness.pi,
+      ctx: harness.ctx,
+      signal: new AbortController().signal,
+      name: "handoff",
+      workspaceDir: "state/handoff",
+    });
+    expect(source.disposition).toMatchObject({ status: "awaiting_operator" });
+    const handoff = readPersistedWorkflowOperatorHandoff(root, source.runId);
+    if (handoff.status !== "ready") throw new Error("Expected ready handoff");
+    const claim = claimWorkflowOperatorHandoff(root, handoff.handoff);
+    if (claim.status !== "claimed") throw new Error("Expected handoff claim");
+    const child = await runWorkflowScript({
+      pi: harness.pi,
+      ctx: harness.ctx,
+      signal: new AbortController().signal,
+      name: "handoff",
+      input: "agreed scope",
+      continuation: workflowContinuationForHandoff(handoff.handoff),
+      operatorHandoffClaim: claim.claim,
+      operatorHandoffWorkspaceReuse: {
+        sourceRunId: source.runId,
+        ...readWorkflowResumeWorkspaceIdentity(root, source.runId),
+      },
+    });
+    expect(child.ok, child.error).toBe(true);
+    expect(child.result).toBe("retained intent:agreed scope");
+    expect(child.workspaceDir).toBe(source.workspaceDir);
+    expect(readWorkflowLaunchBinding(root, child.runId)?.rootLineageId).toBe(source.runId);
+    expect(child.continuation?.originRunId).toBe(source.runId);
+  });
+
+  it("refuses interrupted recovery of an old output-bound binding before any work", async () => {
+    const root = project();
+    writeWorkflow(root, "serial", `export default (dsl, input) => dsl.agent(input, { label: "serial" });\n`);
+    const harness = createHarness(root);
+    let calls = 0;
+    const options = {
+      pi: harness.pi,
+      ctx: harness.ctx,
+      signal: new AbortController().signal,
+      name: "serial",
+      input: "exact request",
+      createExecutor: executor(() => {
+        calls += 1;
+        return "confirmed";
+      }),
+    };
+    const first = await runWorkflowScript(options);
+    expect(first.ok, first.error).toBe(true);
+    const bindingPath = workflowLaunchBindingFile(first.runDir);
+    const binding = JSON.parse(readFileSync(bindingPath, "utf8"));
+    const oldBytes = JSON.stringify({
+      ...binding,
+      schema: "locus-pi.workflow-launch-binding.v2",
+      output: { source: "default" },
+    });
+    writeFileSync(bindingPath, oldBytes);
+    rmSync(workflowResultFile(first.runDir));
+    const recovered = await runWorkflowScript({ ...options, resumeFromRunId: first.runId, recoverInterrupted: true });
+    expect(recovered.ok).toBe(false);
+    expect(recovered.error).toMatch(/output-free v3 required.*Start a fresh migrated run/u);
+    expect(recovered.journal.some((line) => line.kind === "agent_start")).toBe(false);
+    expect(calls).toBe(1);
+    expect(readFileSync(bindingPath, "utf8")).toBe(oldBytes);
+    expect(existsSync(workflowResultFile(first.runDir))).toBe(false);
+  });
+
+  it.each(["default", "declared", "missing-binding"])(
+    "keeps %s legacy evidence readable but refuses resume and handoff before work",
+    async (legacy) => {
+      const root = project();
+      writeWorkflow(root, "handoff", HANDOFF);
+      const harness = createHarness(root);
+      const source = await runWorkflowScript({
+        pi: harness.pi,
+        ctx: harness.ctx,
+        signal: new AbortController().signal,
+        name: "handoff",
+        workspaceDir: "state/legacy",
+      });
+      const bindingPath = workflowLaunchBindingFile(source.runDir);
+      const binding = JSON.parse(readFileSync(bindingPath, "utf8"));
+      const resultPath = workflowResultFile(source.runDir);
+      const result = JSON.parse(readFileSync(resultPath, "utf8"));
+      if (legacy === "missing-binding") rmSync(bindingPath);
+      else {
+        const output = path.join(root, "legacy-output");
+        mkdirSync(output);
+        const outputRecord = {
+          absolutePath: output,
+          relativePath: "legacy-output",
+          physicalPath: output,
+          physicalIdentity: "legacy-output",
+          physicalIdentitySchemaVersion: 1,
+          source: legacy,
+        };
+        writeFileSync(
+          bindingPath,
+          JSON.stringify({ ...binding, schema: "locus-pi.workflow-launch-binding.v2", output: outputRecord }) + "\n",
+        );
+        writeFileSync(
+          resultPath,
+          JSON.stringify({
+            ...result,
+            outputDir: output,
+            outputDirRelative: "legacy-output",
+            outputPhysicalIdentity: "legacy-output",
+            outputPhysicalIdentitySchemaVersion: 1,
+            outputSource: legacy,
+            primaryFile: {
+              absolutePath: path.join(output, "gone.md"),
+              relativePath: "gone.md",
+              sha256: "a".repeat(64),
+              bytes: 7,
+            },
+          }) + "\n",
+        );
+      }
+      if (legacy === "declared") rmSync(path.join(root, "legacy-output"), { recursive: true });
+      const oldResultBytes = readFileSync(resultPath);
+      const oldBindingBytes = existsSync(bindingPath) ? readFileSync(bindingPath) : undefined;
+      const readable = readWorkflowRunResult(root, source.runId);
+      expect(readable?.result).toBe("prepared");
+      if (legacy === "declared") expect(readable?.outputDirUnavailable).toMatch(/unavailable/u);
+      if (legacy !== "missing-binding")
+        expect(readable?.primaryFile).toMatchObject({ relativePath: "gone.md", bytes: 7 });
+      expect(readWorkflowLaunchBinding(root, source.runId)).toBeNull();
+      const resumed = await runWorkflowScript({
+        pi: harness.pi,
+        ctx: harness.ctx,
+        signal: new AbortController().signal,
+        name: "handoff",
+        workspaceDir: "state/legacy",
+        resumeFromRunId: source.runId,
+        createExecutor: executor(() => {
+          throw new Error("legacy must not start work");
+        }),
+      });
+      expect(resumed.ok).toBe(false);
+      expect(resumed.error).toMatch(/output-free v3 required.*Start a fresh migrated run/u);
+      expect(resumed.journal.some((line) => line.kind === "agent_start")).toBe(false);
+      expect(() => readWorkflowResumeWorkspaceIdentity(root, source.runId)).toThrow(/output-free v3 required/u);
+      const handoff = readPersistedWorkflowOperatorHandoff(root, source.runId);
+      expect(handoff.status).toBe("ready");
+      if (handoff.status !== "ready") throw new Error("Expected retained legacy handoff");
+      const attempt = claimWorkflowOperatorHandoff(root, handoff.handoff);
+      if (attempt.status !== "claimed") throw new Error("Expected legacy claim");
+      const continued = await runWorkflowScript({
+        pi: harness.pi,
+        ctx: harness.ctx,
+        signal: new AbortController().signal,
+        name: "handoff",
+        input: "answer",
+        continuation: workflowContinuationForHandoff(handoff.handoff),
+        operatorHandoffClaim: attempt.claim,
+        createExecutor: executor(() => {
+          throw new Error("legacy handoff must not start work");
+        }),
+      });
+      expect(continued.ok).toBe(false);
+      expect(continued.error).toMatch(/output-free v3 required/u);
+      expect(continued.journal.some((line) => line.kind === "agent_start")).toBe(false);
+
+      expect(readFileSync(resultPath)).toEqual(oldResultBytes);
+      if (oldBindingBytes !== undefined) expect(readFileSync(bindingPath)).toEqual(oldBindingBytes);
+    },
+  );
 });

@@ -58,11 +58,11 @@ export function executor(
   });
 }
 
-/** A saved child that writes one item and publishes the primary file for it. */
+/** A saved child whose agent writes its assigned item through ordinary tools. */
 export const CHILD = `export const meta = { name: "child", profile: "standard" };
 export default async function run(dsl, input) {
   await dsl.agent("write:" + input, { label: "write item" });
-  return dsl.publishPrimaryFile(dsl.items()[0] + ".md");
+  return "item written";
 }
 `;
 

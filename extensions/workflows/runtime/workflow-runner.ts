@@ -81,16 +81,10 @@ import {
   type WorkflowScriptIdentity,
 } from "./workflow-script-identity.js";
 import {
-  acquireWorkflowLocationLeases,
-  referenceWorkflowPrimaryFile,
-  type WorkflowFinalOutputDirectory,
-  type WorkflowOutputLease,
-  type WorkflowOutputDirectory,
-  type WorkflowPrimaryFileReference,
+  acquireWorkflowRootLease,
+  type WorkflowWorkspaceDirectory,
   type WorkflowRootLease,
 } from "./workflow-output.js";
-import { readWorkflowPrimaryFile } from "./workflow-workspace.js";
-import { checkWorkflowSourceText } from "../tool/workflow-source-check-tool.js";
 import { createWorkflowResourceLoader, type WorkflowResourceLoader } from "./workflow-resources.js";
 import { createWorkflowWorkspaceManager, type WorkflowWorkspaceManager } from "./workflow-worktree.js";
 import {
@@ -260,6 +254,11 @@ export async function loadWorkflowScript(
       throw new Error(`${reason}: expected ${expectedSha256}, got ${afterImportSha256}`);
     }
   }
+  if (mod.meta && Object.hasOwn(mod.meta, "outputDir")) {
+    throw new Error(
+      "Workflow meta.outputDir was removed: assign exact file destinations in agent prompts; execution cwd and native workspace remain separate",
+    );
+  }
   return mod;
 }
 
@@ -360,13 +359,10 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   let continuationProjection: WorkflowContinuationJournal | undefined;
   let awaitOperatorDeclaration: WorkflowAwaitOperatorDeclaration | undefined;
   let handoffClaimBound = false;
-  let stableWorkspace: WorkflowOutputDirectory | undefined = inheritedCoordination?.workspace;
-  let stableOutput: WorkflowFinalOutputDirectory | undefined = inheritedCoordination?.output;
-  let handoffReuseWorkspace: WorkflowOutputDirectory | undefined;
+  let stableWorkspace: WorkflowWorkspaceDirectory | undefined = inheritedCoordination?.workspace;
+  let handoffReuseWorkspace: WorkflowWorkspaceDirectory | undefined;
   let rootLease: WorkflowRootLease | undefined = inheritedCoordination?.lease;
-  let outputLease: WorkflowOutputLease | undefined = inheritedCoordination?.outputLease;
   let coordination: WorkflowRunnerCoordination | undefined = inheritedCoordination;
-  let primaryFile: WorkflowPrimaryFileReference | undefined;
   const childRuns: WorkflowChildRunEvidence[] = [];
   let leaseReleased = false;
   const hasResume = requestedResumeFromRunId !== undefined;
@@ -419,16 +415,8 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     | "workspacePhysicalIdentity"
     | "workspacePhysicalIdentitySchemaVersion"
     | "workspaceDirExplicit"
-    | "outputDir"
-    | "outputDirRelative"
-    | "outputPhysicalIdentity"
-    | "outputPhysicalIdentitySchemaVersion"
-    | "outputSource"
     | "semanticInputPresent"
     | "semanticInputSha256"
-    | "stableOutputDir"
-    | "stableOutputDirRelative"
-    | "primaryFile"
     | "lineage"
     | "childRuns"
     | "storageRootRunId"
@@ -460,7 +448,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
             workspacePhysicalIdentitySchemaVersion: 1,
             // A handoff continuation carries a host-validated workspace binding.
             // Its explicit bit is authoritative even though the launcher does not
-            // repeat the source outputDir as an ordinary option.
+            // repeat the source workspaceDir as an ordinary option.
             workspaceDirExplicit:
               handoffReuseWorkspace === undefined
                 ? resumeSourceWorkspace?.explicit === true || opts.workspaceDir !== undefined
@@ -468,19 +456,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
             // Every new root launch has a binding; its result must project the same input identity.
             semanticInputPresent: requestedSemanticInput.present,
             semanticInputSha256: requestedSemanticInput.sha256,
-            stableOutputDir: stableWorkspace.absolutePath,
-            stableOutputDirRelative: stableWorkspace.relativePath,
           }),
-      ...(stableOutput === undefined
-        ? {}
-        : {
-            outputDir: stableOutput.absolutePath,
-            outputDirRelative: stableOutput.relativePath,
-            outputPhysicalIdentity: stableOutput.identity,
-            outputPhysicalIdentitySchemaVersion: 1 as const,
-            outputSource: stableOutput.source,
-          }),
-      ...(primaryFile === undefined ? {} : { primaryFile }),
       lineage,
       storageRootRunId,
       ...(childRuns.length === 0 ? {} : { childRuns: [...childRuns] }),
@@ -507,7 +483,6 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     // A saved child inherits its root's lease: it owns none, so it neither
     // fence-checks nor releases one.
     ownedRootLease: () => (inheritedCoordination === undefined ? rootLease : undefined),
-    ownedOutputLease: () => (inheritedCoordination === undefined ? outputLease : undefined),
     ...(opts.operatorHandoffClaim === undefined ? {} : { operatorHandoffClaim: opts.operatorHandoffClaim }),
     handoffClaimBound: () => handoffClaimBound,
     awaitOperator: () => awaitOperatorDeclaration,
@@ -612,7 +587,6 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   resumeSourceBinding = admission.resumeSourceBinding;
   handoffReuseWorkspace = admission.handoffReuseWorkspace;
   stableWorkspace = admission.stableWorkspace;
-  stableOutput = admission.stableOutput;
   if (!admission.admitted) {
     return finishRun({
       ok: false,
@@ -629,12 +603,15 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   // The admitted workspace, proven present by the verdict above. `stableWorkspace`
   // stays the mutable projection the terminal-result closures read.
   const admittedWorkspace = admission.stableWorkspace;
-  const admittedOutput = admission.stableOutput;
   // Acquire root leases after admission and before shared state, so no agent starts in an unadmitted run.
   try {
     if (inheritedCoordination === undefined) {
-      // prettier-ignore
-      [rootLease, outputLease] = acquireWorkflowLocationLeases(projectRoot, admittedWorkspace, admittedOutput, runId, opts.force === true);
+      rootLease = acquireWorkflowRootLease({
+        projectRoot,
+        workspace: admittedWorkspace,
+        rootRunId: runId,
+        force: opts.force === true,
+      });
       if (interruptedRecovery && resumeFromRunId !== undefined) {
         readInterruptedWorkflowResumeBinding(projectRoot, resumeFromRunId, {
           target: { kind: target.kind, ref: target.ref, source: target.source },
@@ -664,7 +641,6 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
           ...(budget.runtimeMs === undefined ? {} : { runtimeMs: budget.runtimeMs }),
         }),
         lease: rootLease,
-        outputLease,
         ...admission.coordinationDirectory,
         ancestry: [{ sourcePath: realpathSync(target.path), scriptSha256: scriptIdentity.scriptSha256 }],
         budget,
@@ -682,7 +658,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
       message:
         `[workflow:project-source] policy=live projectRoot=${JSON.stringify(projectRoot)} ` +
         `runBoundaryStartedAt=${JSON.stringify(budgetPrelude.ts)} ` +
-        `workspaceDir=${JSON.stringify(admittedWorkspace.relativePath)} outputDir=${JSON.stringify(admittedOutput.relativePath)}`,
+        `workspaceDir=${JSON.stringify(admittedWorkspace.relativePath)}`,
     });
     recordPrelude({
       ts: new Date().toISOString(),
@@ -871,8 +847,6 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     workflowRunDir: runDir,
     workspaceManager,
     evidenceDestinations: (callId) => artifactStore!.childEvidenceDestinations(callId),
-    workflowWorkspaceDir: stableWorkspace!.absolutePath,
-    workflowOutputDir: stableOutput!.absolutePath,
     ...(opts.input !== undefined ? { args: opts.input } : {}),
     ...(opts.createExecutor !== undefined ? { createExecutor: opts.createExecutor } : {}),
     ...(opts.resolveModel !== undefined ? { resolveModel: opts.resolveModel } : {}),
@@ -915,24 +889,6 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     journal,
     projectRoot,
     workspaceDir: stableWorkspace!.absolutePath,
-    outputDir: stableOutput!.absolutePath,
-    readCheckedWorkflowSource: (relativePath) => {
-      const { content } = readWorkflowPrimaryFile(stableWorkspace!, relativePath);
-      const text = content.toString("utf8");
-      if (!Buffer.from(text, "utf8").equals(content)) throw new Error("workflow source must be valid UTF-8");
-      const errors = checkWorkflowSourceText(text, "orchestration-only").filter((item) => item.severity === "error");
-      if (errors.length > 0)
-        throw new Error(
-          `${relativePath}: source publication failed:\n${errors
-            .map((item) => `${item.line}:${item.column} [${item.code}] ${item.message}`)
-            .join("\n")}`,
-        );
-      return text;
-    },
-    publishPrimaryFile: (relativePath) => {
-      primaryFile = referenceWorkflowPrimaryFile(stableOutput!, relativePath);
-      return primaryFile;
-    },
     invokeWorkflow: savedChildren.invoke,
     sharedExecution: executionCoordination.sharedExecution,
     resourceLoader,

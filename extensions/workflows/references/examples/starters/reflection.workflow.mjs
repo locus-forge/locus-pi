@@ -17,7 +17,7 @@ export default async function run({ agent, publishArtifact, publishPrimaryArtifa
   );
   publishArtifact("critique.md", critique);
   const revised = await agent(
-    `Return the complete revised document, applying critique where source evidence supports it. Preserve facts and explicit uncertainty; do not modify the sources. ` +
+    `Write the complete revised document through ordinary tools at the exact final path assigned in the whole request; missing or ambiguous assignment is non-success without fallback. Return the complete revised document, applying critique where source evidence supports it. Preserve facts and explicit uncertainty; do not modify the sources. ` +
       `Request:\n${input}\nComplete draft:\n${draft}\nComplete critique:\n${critique}`,
     { label: "revise", title: "Revise the document using actionable critique" },
   );

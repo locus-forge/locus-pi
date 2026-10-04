@@ -47,7 +47,7 @@ import type { WorkflowChoiceDecision, WorkflowJournalLine } from "./workflow-jou
 
 /** The file/text-first replacement every removed shaped-result option points to. */
 const FILE_TEXT_MIGRATION =
-  "have the agent write a named workspace file and return readable text, pass caller-owned work units through items(), " +
+  "have the agent write at the exact caller-assigned file destination in its prompt and return readable text, pass caller-owned work units through items(), " +
   "or branch on choice: [...] when workflow source needs one exact token";
 
 /**
@@ -66,7 +66,7 @@ const REMOVED_AGENT_OPTIONS: Readonly<Record<string, string>> = Object.freeze({
   schema: `agent schema was removed: an agent no longer returns JSON or another shaped value. Instead, ${FILE_TEXT_MIGRATION}`,
   validate:
     "agent validate was removed with schema: there is no shaped value left to validate. Put the rule in the prompt, " +
-    "or have a separate verifier agent check the named workspace file and write its own record",
+    "or have a separate verifier agent check that exact caller-assigned file and write its own record at an assigned destination",
   output:
     "agent output was removed: a plain agent(prompt) call already returns the exact full text. " +
     "Drop the option, or use choice: [...] when workflow source needs one exact token",

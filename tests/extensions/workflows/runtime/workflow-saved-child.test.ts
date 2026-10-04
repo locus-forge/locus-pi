@@ -13,9 +13,8 @@ import { once } from "node:events";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
-  resolveWorkflowOutputDirectory,
-  WORKFLOW_OUTPUT_LOCK_FILE,
-  workflowOutputStateDir,
+  resolveWorkflowWorkspaceDirectory,
+  workflowWorkspaceStateDir,
 } from "../../../../extensions/workflows/runtime/workflow-output.js";
 import {
   readWorkflowArtifactIndex,
@@ -175,7 +174,7 @@ export default (dsl, input) => dsl.agent(input);
     });
   });
 
-  it("skips changed opaque payload in one namespace but runs it in a fresh namespace", async () => {
+  it("reuses exact child work in one lineage and runs changed input or a fresh root", async () => {
     const root = project();
     writeWorkflow(root, "child", CHILD);
     writeWorkflow(root, "parent", PARENT);
@@ -185,6 +184,7 @@ export default (dsl, input) => dsl.agent(input);
       calls.push(prompt);
       const payload = prompt.slice("write:".length);
       const key = payload.slice(payload.lastIndexOf(":") + 1);
+      mkdirSync(path.dirname(path.join(root, "outputs", "resume", "outputs", `${key}.md`)), { recursive: true });
       writeFileSync(path.join(root, "outputs", "resume", "outputs", `${key}.md`), `${payload}\n`, "utf8");
       return "written";
     });
@@ -222,7 +222,8 @@ export default (dsl, input) => dsl.agent(input);
       });
       expect(persisted.workspaceDir).toBe(path.join(root, "outputs", "resume"));
       expect(persisted.workspaceDirRelative).toBe("outputs/resume");
-      expect(persisted.stableOutputDirRelative).toBe("outputs/resume");
+      expect(persisted).not.toHaveProperty("outputDir");
+      expect(persisted).not.toHaveProperty("primaryFile");
     }
     expect(first.journal.filter((line) => line.message?.includes("[workflow:child-start]"))).toHaveLength(2);
     expect(first.journal.filter((line) => line.message?.includes("[workflow:child-end]"))).toHaveLength(2);
@@ -233,7 +234,8 @@ export default (dsl, input) => dsl.agent(input);
       ctx: harness.ctx,
       signal: new AbortController().signal,
       name: "parent",
-      input: "payload-two",
+      input: "payload-one",
+      resumeFromRunId: first.runId,
       items: ["alpha", "beta"],
       workspaceDir: "outputs/resume",
       createExecutor,
@@ -268,12 +270,13 @@ export default (dsl, input) => dsl.agent(input);
       name: "parent",
       input: "payload-two",
       items: ["alpha", "beta"],
-      workspaceDir: "outputs/fresh",
+      workspaceDir: "outputs/resume",
       createExecutor: executor((prompt) => {
         freshCalls.push(prompt);
         const payload = prompt.slice("write:".length);
         const key = payload.slice(payload.lastIndexOf(":") + 1);
-        writeFileSync(path.join(root, "outputs", "fresh", "outputs", `${key}.md`), `${payload}\n`, "utf8");
+        mkdirSync(path.dirname(path.join(root, "outputs", "resume", "outputs", `${key}.md`)), { recursive: true });
+        writeFileSync(path.join(root, "outputs", "resume", "outputs", `${key}.md`), `${payload}\n`, "utf8");
         return "written";
       }),
     });
@@ -284,7 +287,7 @@ export default (dsl, input) => dsl.agent(input);
       expect.objectContaining({ status: "completed", key: "alpha" }),
       expect.objectContaining({ status: "completed", key: "beta" }),
     ]);
-    expect(readFileSync(path.join(root, "outputs", "fresh", "outputs", "alpha.md"), "utf8")).toBe(
+    expect(readFileSync(path.join(root, "outputs", "resume", "outputs", "alpha.md"), "utf8")).toBe(
       "payload-two:alpha\n",
     );
   });
@@ -300,6 +303,7 @@ export default (dsl, input) => dsl.agent(input);
       calls.push(prompt);
       const key = prompt.slice(prompt.lastIndexOf(":") + 1);
       if (key === "beta" && failBeta) throw new Error("interrupted beta");
+      mkdirSync(path.dirname(path.join(root, "outputs", "retry", "outputs", `${key}.md`)), { recursive: true });
       writeFileSync(path.join(root, "outputs", "retry", "outputs", `${key}.md`), `${prompt}\n`, "utf8");
       return "written";
     });
@@ -345,48 +349,9 @@ export default (dsl, input) => dsl.agent(input);
 
     calls.length = 0;
     writeWorkflow(root, "child", `${CHILD}\n// changed source identity\n`);
-    const changed = await run();
+    const changed = await run(resumedAgain.runId);
     expect(changed.ok, changed.error).toBe(true);
     expect(calls).toEqual(["write:payload:alpha", "write:payload:beta"]);
-  });
-
-  it("reruns completed children when checkpointed primary evidence is missing or changed", async () => {
-    const root = project();
-    writeWorkflow(root, "child", CHILD);
-    writeWorkflow(root, "parent", PARENT);
-    const harness = createHarness(root);
-    const stableFile = path.join(root, "outputs", "stale-primary", "outputs", "alpha.md");
-    let calls = 0;
-    const run = () =>
-      runWorkflowScript({
-        pi: harness.pi,
-        ctx: harness.ctx,
-        signal: new AbortController().signal,
-        name: "parent",
-        input: "payload",
-        items: ["alpha"],
-        workspaceDir: "outputs/stale-primary",
-        createExecutor: executor(() => {
-          calls += 1;
-          writeFileSync(stableFile, `version ${calls}\n`, "utf8");
-          return "written";
-        }),
-      });
-
-    expect((await run()).ok).toBe(true);
-    unlinkSync(stableFile);
-    const missing = await run();
-    expect(missing.ok, missing.error).toBe(true);
-    expect(missing.childRuns).toEqual([expect.objectContaining({ status: "completed", key: "alpha" })]);
-    expect(missing.journal.some((line) => line.message?.includes("[workflow:checkpoint-stale]"))).toBe(true);
-
-    writeFileSync(stableFile, "tampered\n", "utf8");
-    const changed = await run();
-    expect(changed.ok, changed.error).toBe(true);
-    expect(changed.childRuns).toEqual([expect.objectContaining({ status: "completed", key: "alpha" })]);
-    expect(changed.journal.some((line) => line.message?.includes("changed since checkpoint"))).toBe(true);
-    expect(calls).toBe(3);
-    expect(readFileSync(stableFile, "utf8")).toBe("version 3\n");
   });
 
   it("quarantines a corrupt checkpoint and reruns the child", async () => {
@@ -396,8 +361,10 @@ export default (dsl, input) => dsl.agent(input);
     const harness = createHarness(root);
     const stableFile = path.join(root, "outputs", "corrupt-checkpoint", "outputs", "alpha.md");
     let calls = 0;
+    let sourceRunId: string | undefined;
     const run = () =>
       runWorkflowScript({
+        ...(sourceRunId === undefined ? {} : { resumeFromRunId: sourceRunId }),
         pi: harness.pi,
         ctx: harness.ctx,
         signal: new AbortController().signal,
@@ -407,14 +374,17 @@ export default (dsl, input) => dsl.agent(input);
         workspaceDir: "outputs/corrupt-checkpoint",
         createExecutor: executor(() => {
           calls += 1;
+          mkdirSync(path.dirname(stableFile), { recursive: true });
           writeFileSync(stableFile, `version ${calls}\n`, "utf8");
           return "written";
         }),
       });
 
-    expect((await run()).ok).toBe(true);
-    const output = resolveWorkflowOutputDirectory(root, "outputs/corrupt-checkpoint", "unused", root);
-    const checkpoints = path.join(workflowOutputStateDir(root, output.identity), "checkpoints");
+    const first = await run();
+    expect(first.ok, first.error).toBe(true);
+    sourceRunId = first.runId;
+    const output = resolveWorkflowWorkspaceDirectory(root, "outputs/corrupt-checkpoint", "unused", root);
+    const checkpoints = path.join(workflowWorkspaceStateDir(root, output.identity), "checkpoints", "v3");
     const checkpointFile = path.join(
       checkpoints,
       readdirSync(checkpoints).find((name) => name.endsWith(".json"))!,
@@ -442,8 +412,10 @@ export default (dsl, input) => dsl.agent(input);
     const harness = createHarness(root);
     const stableFile = path.join(root, "outputs", "invalid-child-run-id", "outputs", "alpha.md");
     let calls = 0;
+    let sourceRunId: string | undefined;
     const run = () =>
       runWorkflowScript({
+        ...(sourceRunId === undefined ? {} : { resumeFromRunId: sourceRunId }),
         pi: harness.pi,
         ctx: harness.ctx,
         signal: new AbortController().signal,
@@ -453,14 +425,17 @@ export default (dsl, input) => dsl.agent(input);
         workspaceDir: "outputs/invalid-child-run-id",
         createExecutor: executor(() => {
           calls += 1;
+          mkdirSync(path.dirname(stableFile), { recursive: true });
           writeFileSync(stableFile, `version ${calls}\n`, "utf8");
           return "written";
         }),
       });
 
-    expect((await run()).ok).toBe(true);
-    const output = resolveWorkflowOutputDirectory(root, "outputs/invalid-child-run-id", "unused", root);
-    const checkpoints = path.join(workflowOutputStateDir(root, output.identity), "checkpoints");
+    const first = await run();
+    expect(first.ok, first.error).toBe(true);
+    sourceRunId = first.runId;
+    const output = resolveWorkflowWorkspaceDirectory(root, "outputs/invalid-child-run-id", "unused", root);
+    const checkpoints = path.join(workflowWorkspaceStateDir(root, output.identity), "checkpoints", "v3");
     const checkpointFile = path.join(
       checkpoints,
       readdirSync(checkpoints).find((name) => name.endsWith(".json"))!,
@@ -484,8 +459,10 @@ export default (dsl, input) => dsl.agent(input);
     const harness = createHarness(root);
     const stableFile = path.join(root, "outputs", "checkpoint-io-error", "outputs", "alpha.md");
     let calls = 0;
+    let sourceRunId: string | undefined;
     const run = () =>
       runWorkflowScript({
+        ...(sourceRunId === undefined ? {} : { resumeFromRunId: sourceRunId }),
         pi: harness.pi,
         ctx: harness.ctx,
         signal: new AbortController().signal,
@@ -495,14 +472,17 @@ export default (dsl, input) => dsl.agent(input);
         workspaceDir: "outputs/checkpoint-io-error",
         createExecutor: executor(() => {
           calls += 1;
+          mkdirSync(path.dirname(stableFile), { recursive: true });
           writeFileSync(stableFile, "complete\n", "utf8");
           return "written";
         }),
       });
 
-    expect((await run()).ok).toBe(true);
-    const output = resolveWorkflowOutputDirectory(root, "outputs/checkpoint-io-error", "unused", root);
-    const checkpoints = path.join(workflowOutputStateDir(root, output.identity), "checkpoints");
+    const first = await run();
+    expect(first.ok, first.error).toBe(true);
+    sourceRunId = first.runId;
+    const output = resolveWorkflowWorkspaceDirectory(root, "outputs/checkpoint-io-error", "unused", root);
+    const checkpoints = path.join(workflowWorkspaceStateDir(root, output.identity), "checkpoints", "v3");
     const checkpointName = readdirSync(checkpoints).find((name) => name.endsWith(".json"));
     expect(checkpointName).toBeDefined();
     const checkpointFile = path.join(checkpoints, checkpointName!);
@@ -525,8 +505,10 @@ export default (dsl, input) => dsl.agent(input);
     const harness = createHarness(root);
     const stableFile = path.join(root, "outputs", "checkpoint-permission", "outputs", "alpha.md");
     let calls = 0;
+    let sourceRunId: string | undefined;
     const run = () =>
       runWorkflowScript({
+        ...(sourceRunId === undefined ? {} : { resumeFromRunId: sourceRunId }),
         pi: harness.pi,
         ctx: harness.ctx,
         signal: new AbortController().signal,
@@ -536,14 +518,17 @@ export default (dsl, input) => dsl.agent(input);
         workspaceDir: "outputs/checkpoint-permission",
         createExecutor: executor(() => {
           calls += 1;
+          mkdirSync(path.dirname(stableFile), { recursive: true });
           writeFileSync(stableFile, "complete\n", "utf8");
           return "written";
         }),
       });
 
-    expect((await run()).ok).toBe(true);
-    const output = resolveWorkflowOutputDirectory(root, "outputs/checkpoint-permission", "unused", root);
-    const checkpoints = path.join(workflowOutputStateDir(root, output.identity), "checkpoints");
+    const first = await run();
+    expect(first.ok, first.error).toBe(true);
+    sourceRunId = first.runId;
+    const output = resolveWorkflowWorkspaceDirectory(root, "outputs/checkpoint-permission", "unused", root);
+    const checkpoints = path.join(workflowWorkspaceStateDir(root, output.identity), "checkpoints", "v3");
     const checkpointName = readdirSync(checkpoints).find((name) => name.endsWith(".json"));
     expect(checkpointName).toBeDefined();
     const checkpointFile = path.join(checkpoints, checkpointName!);
@@ -606,6 +591,9 @@ export default (dsl, input) => dsl.agent(input);
       createExecutor: executor((prompt) => {
         calls += 1;
         const key = prompt.slice(prompt.lastIndexOf(":") + 1);
+        mkdirSync(path.dirname(path.join(root, "outputs", "shared-budget", "outputs", `${key}.md`)), {
+          recursive: true,
+        });
         writeFileSync(path.join(root, "outputs", "shared-budget", "outputs", `${key}.md`), "done\n", "utf8");
         return "written";
       }),
@@ -647,6 +635,9 @@ export default (dsl, input) => dsl.agent(input);
         peak = Math.max(peak, active);
         await new Promise<void>((resolve) => setTimeout(resolve, 10));
         const key = prompt.slice("write:".length);
+        mkdirSync(path.dirname(path.join(root, "outputs", "shared-concurrency", "outputs", `${key}.md`)), {
+          recursive: true,
+        });
         writeFileSync(path.join(root, "outputs", "shared-concurrency", "outputs", `${key}.md`), "done\n", "utf8");
         active -= 1;
         return "written";
@@ -850,7 +841,7 @@ export default (dsl, input) => dsl.agent(input);
       }),
     });
     expect(result.ok).toBe(false);
-    expect(result.error).toContain("saved child workflow meta.outputDir is forbidden");
+    expect(result.error).toContain("meta.outputDir was removed");
     expect(calls).toBe(0);
   });
 });

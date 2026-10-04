@@ -62,7 +62,7 @@ describe("readable workflow authoring references", () => {
     expect(text).toContain("`task/draft` turns a raw request into `draft.md`");
     expect(text).toContain("Copy and edit this text when needed");
     expect(text).toContain("`task/plan` receives the complete accepted draft as semantic input");
-    expect(text).toContain("the complete output `workflow.mjs`");
+    expect(text).toContain("the complete caller-assigned `workflow.mjs`");
     expect(text).toContain("`task/plan-light` receives the same input");
     expect(text).toContain("No task stage executes generated source.");
     expect(text).toContain("For an authorized create-and-run request");
@@ -145,7 +145,10 @@ describe("readable workflow authoring references", () => {
       "docs/workflows/running.md",
     ]) {
       const text = source(relativePath);
-      expect(text).toContain(".locus-pi/workspaces/<generated-run-name>");
+      expect(text).toContain("exact");
+      expect(text).toContain("caller");
+      expect(text).toContain("cwd");
+      expect(text).not.toContain("host-provided workspace");
       expect(text).not.toContain("outputs/<workflow-name>");
     }
     expect(source("skills/locus-pi-workflow-create/SKILL.md")).not.toContain(
@@ -168,14 +171,13 @@ describe("readable workflow authoring references", () => {
       "docs/workflows/running.md",
     ]) {
       const text = source(relativePath);
-      expect(text).toMatch(/durable (?:handoffs|location)/iu);
-      expect(text).toMatch(/final results/iu);
-      expect(text).toMatch(/review evidence/iu);
-      expect(text).toMatch(/explicit resume inputs/iu);
-      expect(text).toMatch(/dependency caches/iu);
-      expect(text).toMatch(/test basetemp/iu);
-      expect(text).toMatch(/temporary and cache locations/iu);
-      expect(text).toMatch(/explicit.*remains authoritative/isu);
+      expect(text).toContain("durable");
+      expect(text).toContain("assigned");
+      expect(text).toContain("temporary");
+      expect(text).toContain("caller");
+      expect(text).toMatch(/replay|Replay/u);
+      expect(text).toMatch(/consumer|consuming/u);
+      expect(text).not.toContain("Final results and deliverables belong beneath `outputDir()`");
     }
   });
 
@@ -387,7 +389,7 @@ ${authoring[0] ?? ""}
   it("distinguishes recorded discovery replay from unsafe rediscovered checkpoint identity", () => {
     const card = source("skills/locus-pi-workflow-create/references/decomposition.md");
     expect(card).toContain("dsl.items()");
-    expect(card).toContain("named workspace file");
+    expect(card).toContain("exact caller-assigned file");
     expect(card).toContain("prefix");
     expect(card).toContain("keys");
     expect(card).not.toContain("intentionally non-resumable");

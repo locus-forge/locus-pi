@@ -25,14 +25,13 @@ import {
   ensureDirectoryWithoutSymlinks,
   isNodeError,
   isWorkflowPathWithinRoot,
-  resolveWorkflowOutputPhysicalIdentityWithoutCreation,
-  type WorkflowOutputDirectory,
-  type WorkflowOutputDirectoryPath,
-  type WorkflowPrimaryFileReference,
+  resolveWorkflowWorkspacePhysicalIdentityWithoutCreation,
+  type WorkflowWorkspaceDirectory,
+  type WorkflowWorkspaceDirectoryPath,
 } from "./workflow-workspace.js";
 import {
   assertWorkflowRootLease,
-  workflowOutputStateDir,
+  workflowWorkspaceStateDir,
   type WorkflowRootLease,
 } from "./location-state/workflow-location-lease.js";
 import {
@@ -44,9 +43,7 @@ import {
 } from "./location-state/workflow-state-files.js";
 
 const ITEM_KEY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u;
-const CHECKPOINT_SCHEMA = "locus-pi.workflow-checkpoint.v2" as const;
-/** @deprecated Runtime locks no longer live in workspace or output directories. */
-export const WORKFLOW_OUTPUT_LOCK_FILE = ".locus-pi-workflow.lock";
+const CHECKPOINT_SCHEMA = "locus-pi.workflow-checkpoint.v3" as const;
 const WORKFLOW_WORKSPACE_RUNS_MARKER = "<!-- locus-pi:workflow-workspace-runs:v1 -->";
 // Retained only to read and upgrade navigation written by earlier versions.
 const LEGACY_WORKFLOW_WORKSPACE_RUNS_HEADER =
@@ -61,13 +58,12 @@ export interface WorkflowCheckpointIdentity {
   parentScriptSha256: string;
   childScriptSha256: string;
   workspaceIdentity: string;
-  outputIdentity: string;
   itemKey: string;
-  /**
-   * Launch lineage of a bound root (`meta.outputDir`). Unbound identities omit it,
-   * so their checkpoint file names and records are exactly the earlier v2 ones.
-   */
-  rootLineageId?: string;
+  /** Every fresh root has its own lineage; resumes and children preserve it. */
+  rootLineageId: string;
+  /** Exact child work units, preserving input presence and item order. */
+  input?: string;
+  items: readonly string[];
 }
 
 export interface WorkflowCompletedCheckpoint extends WorkflowCheckpointIdentity {
@@ -75,7 +71,6 @@ export interface WorkflowCompletedCheckpoint extends WorkflowCheckpointIdentity 
   status: "completed";
   childRunId: string;
   completedAt: string;
-  primaryFile?: WorkflowPrimaryFileReference;
 }
 
 export function assertWorkflowItemKey(key: string): string {
@@ -182,13 +177,6 @@ export function readWorkflowCompletedCheckpoint(
     return undefined;
   }
   if (!isCompletedCheckpoint(value) || !sameCheckpointIdentity(value, identity)) {
-    if (
-      typeof value === "object" &&
-      value !== null &&
-      (value as { schema?: unknown }).schema === "locus-pi.workflow-checkpoint.v1"
-    ) {
-      throw new Error("legacy single-location workflow checkpoint cannot be reused after workspace/output separation");
-    }
     quarantineWorkflowCheckpoint(lease, file);
     return undefined;
   }
@@ -200,7 +188,6 @@ export function commitWorkflowCompletedCheckpoint(
   lease: WorkflowRootLease,
   input: WorkflowCheckpointIdentity & {
     childRunId: string;
-    primaryFile?: WorkflowPrimaryFileReference;
   },
 ): WorkflowCompletedCheckpoint {
   assertWorkflowRootLease(lease);
@@ -211,12 +198,12 @@ export function commitWorkflowCompletedCheckpoint(
     parentScriptSha256: input.parentScriptSha256,
     childScriptSha256: input.childScriptSha256,
     workspaceIdentity: input.workspaceIdentity,
-    outputIdentity: input.outputIdentity,
     itemKey: input.itemKey,
-    ...(input.rootLineageId === undefined ? {} : { rootLineageId: input.rootLineageId }),
+    rootLineageId: assertWorkflowRunId(input.rootLineageId),
+    ...(input.input === undefined ? {} : { input: input.input }),
+    items: [...input.items],
     childRunId,
     completedAt: new Date().toISOString(),
-    ...(input.primaryFile === undefined ? {} : { primaryFile: input.primaryFile }),
   };
   const file = checkpointFile(lease, input);
   ensureDirectoryWithoutSymlinks(lease.projectRoot, path.dirname(file));
@@ -237,47 +224,47 @@ export function commitWorkflowCompletedCheckpoint(
  * historical default/retry behavior, while an owner can reject unsafe fresh
  * reuse before acquiring a lease or reading checkpoints.
  */
-export function assertFreshWorkflowOutputNamespace(input: {
+export function assertFreshWorkflowWorkspaceNamespace(input: {
   projectRoot: string;
-  output: WorkflowOutputDirectory;
+  workspace: WorkflowWorkspaceDirectory;
 }): void {
-  assertFreshWorkflowOutputNamespaceIdentity({
+  assertFreshWorkflowWorkspaceNamespaceIdentity({
     projectRoot: input.projectRoot,
-    relativePath: input.output.relativePath,
-    identity: input.output.identity,
+    relativePath: input.workspace.relativePath,
+    identity: input.workspace.identity,
   });
 }
 
 /** Check fresh-owner durable state from a lexical candidate without creating it. */
-export function assertFreshWorkflowOutputNamespacePath(input: {
+export function assertFreshWorkflowWorkspaceNamespacePath(input: {
   projectRoot: string;
-  output: WorkflowOutputDirectoryPath;
+  workspace: WorkflowWorkspaceDirectoryPath;
 }): void {
   const projectRoot = path.resolve(input.projectRoot);
-  const identity = resolveWorkflowOutputPhysicalIdentityWithoutCreation(projectRoot, input.output.absolutePath);
-  assertFreshWorkflowOutputNamespaceIdentity({
+  const identity = resolveWorkflowWorkspacePhysicalIdentityWithoutCreation(projectRoot, input.workspace.absolutePath);
+  assertFreshWorkflowWorkspaceNamespaceIdentity({
     projectRoot,
-    relativePath: input.output.relativePath,
+    relativePath: input.workspace.relativePath,
     identity,
   });
 }
 
-function assertFreshWorkflowOutputNamespaceIdentity(input: {
+function assertFreshWorkflowWorkspaceNamespaceIdentity(input: {
   projectRoot: string;
   relativePath: string;
   identity: string;
 }): void {
   const projectRoot = path.resolve(input.projectRoot);
-  const stateDir = workflowOutputStateDir(projectRoot, input.identity);
+  const stateDir = workflowWorkspaceStateDir(projectRoot, input.identity);
   const state = lstatSync(stateDir, { throwIfNoEntry: false });
   if (state === undefined) return;
   if (state.isSymbolicLink() || !state.isDirectory()) {
-    throw new Error(`workflow outputDir state namespace is not a regular directory: ${stateDir}`);
+    throw new Error(`workflow workspace state namespace is not a regular directory: ${stateDir}`);
   }
   const physicalRoot = realpathSync(projectRoot);
   const physicalState = realpathSync(stateDir);
   if (!isWorkflowPathWithinRoot(physicalRoot, physicalState)) {
-    throw new Error(`workflow outputDir state namespace escapes the project root: ${stateDir}`);
+    throw new Error(`workflow workspace state namespace escapes the project root: ${stateDir}`);
   }
   throw new Error(
     `workflow workspace ${JSON.stringify(input.relativePath)} already has durable post-code-review state; ` +
@@ -293,13 +280,14 @@ function checkpointFile(lease: WorkflowRootLease, identity: WorkflowCheckpointId
         identity.parentScriptSha256,
         identity.childScriptSha256,
         identity.workspaceIdentity,
-        identity.outputIdentity,
         identity.itemKey,
-        ...(identity.rootLineageId === undefined ? [] : [identity.rootLineageId]),
+        assertWorkflowRunId(identity.rootLineageId),
+        identity.input ?? null,
+        identity.items,
       ]),
     )
     .digest("hex");
-  return path.join(lease.stateDir, "checkpoints", `${digest}.json`);
+  return path.join(lease.stateDir, "checkpoints", "v3", `${digest}.json`);
 }
 
 /**
@@ -344,30 +332,33 @@ function isCompletedCheckpoint(value: unknown): value is WorkflowCompletedCheckp
     return false;
   }
   return (
+    Object.keys(record).every((key) =>
+      [
+        "schema",
+        "status",
+        "parentScriptSha256",
+        "childScriptSha256",
+        "workspaceIdentity",
+        "itemKey",
+        "rootLineageId",
+        "input",
+        "items",
+        "childRunId",
+        "completedAt",
+      ].includes(key),
+    ) &&
     record.schema === CHECKPOINT_SCHEMA &&
     record.status === "completed" &&
     typeof record.parentScriptSha256 === "string" &&
     typeof record.childScriptSha256 === "string" &&
     typeof record.workspaceIdentity === "string" &&
-    typeof record.outputIdentity === "string" &&
     typeof record.itemKey === "string" &&
-    (record.rootLineageId === undefined || typeof record.rootLineageId === "string") &&
+    typeof record.rootLineageId === "string" &&
+    (record.input === undefined || typeof record.input === "string") &&
+    Array.isArray(record.items) &&
+    record.items.every((item) => typeof item === "string") &&
     record.childRunId === childRunId &&
-    typeof record.completedAt === "string" &&
-    (record.primaryFile === undefined || isPrimaryFileReference(record.primaryFile))
-  );
-}
-
-function isPrimaryFileReference(value: unknown): value is WorkflowPrimaryFileReference {
-  if (typeof value !== "object" || value === null) return false;
-  const record = value as Partial<WorkflowPrimaryFileReference>;
-  return (
-    typeof record.relativePath === "string" &&
-    typeof record.absolutePath === "string" &&
-    typeof record.sha256 === "string" &&
-    /^[a-f0-9]{64}$/u.test(record.sha256) &&
-    Number.isSafeInteger(record.bytes) &&
-    (record.bytes ?? 0) > 0
+    typeof record.completedAt === "string"
   );
 }
 
@@ -379,8 +370,9 @@ function sameCheckpointIdentity(
     checkpoint.parentScriptSha256 === identity.parentScriptSha256 &&
     checkpoint.childScriptSha256 === identity.childScriptSha256 &&
     checkpoint.workspaceIdentity === identity.workspaceIdentity &&
-    checkpoint.outputIdentity === identity.outputIdentity &&
     checkpoint.itemKey === identity.itemKey &&
-    checkpoint.rootLineageId === identity.rootLineageId
+    checkpoint.rootLineageId === identity.rootLineageId &&
+    checkpoint.input === identity.input &&
+    JSON.stringify(checkpoint.items) === JSON.stringify(identity.items)
   );
 }

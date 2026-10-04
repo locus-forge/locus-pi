@@ -48,12 +48,12 @@ import {
   releaseWorkflowRootLease,
   WORKFLOW_LEASE_RECLAIM_GUARD_FILE,
   WORKFLOW_WORKSPACE_LEASE_FILE,
-  workflowOutputStateDir,
+  workflowWorkspaceStateDir,
   type WorkflowRootLease,
 } from "../../../../../extensions/workflows/runtime/location-state/workflow-location-lease.js";
 import { ensureWorkflowRunDir } from "../../../../../extensions/workflows/runtime/workflow-run-layout.js";
 import { workflowResultFile } from "../../../../../extensions/workflows/runtime/workflow-result.js";
-import { resolveWorkflowOutputDirectory } from "../../../../../extensions/workflows/runtime/workflow-workspace.js";
+import { resolveWorkflowWorkspaceDirectory } from "../../../../../extensions/workflows/runtime/workflow-workspace.js";
 import { project } from "../../../../fixtures/workflow-durable-project.js";
 
 afterEach(() => {
@@ -67,16 +67,16 @@ afterEach(() => {
 describe("workflow lease reclaim interleavings", () => {
   it("never removes a foreign lease when exclusive open fails before path lookup", () => {
     const root = project();
-    const output = resolveWorkflowOutputDirectory(root, "outputs/open-failure", "unused", root);
-    const owner = acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "open-owner" });
+    const output = resolveWorkflowWorkspaceDirectory(root, "outputs/open-failure", "unused", root);
+    const owner = acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: "open-owner" });
     const original = readFileSync(owner.lockFile, "utf8");
     fsHooks.beforeOpen = (file) => {
       if (file === owner.lockFile) throw Object.assign(new Error("too many open files"), { code: "EMFILE" });
     };
 
-    expect(() => acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "open-contender" })).toThrow(
-      "too many open files",
-    );
+    expect(() =>
+      acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: "open-contender" }),
+    ).toThrow("too many open files");
     expect(readFileSync(owner.lockFile, "utf8")).toBe(original);
 
     fsHooks.beforeOpen = undefined;
@@ -85,8 +85,8 @@ describe("workflow lease reclaim interleavings", () => {
 
   it("never removes a foreign reclaim guard when exclusive open fails before path lookup", () => {
     const root = project();
-    const output = resolveWorkflowOutputDirectory(root, "outputs/guard-open-failure", "unused", root);
-    const stateDir = workflowOutputStateDir(root, output.identity);
+    const output = resolveWorkflowWorkspaceDirectory(root, "outputs/guard-open-failure", "unused", root);
+    const stateDir = workflowWorkspaceStateDir(root, output.identity);
     mkdirSync(stateDir, { recursive: true });
     const lockFile = path.join(stateDir, WORKFLOW_WORKSPACE_LEASE_FILE);
     const guardFile = path.join(stateDir, WORKFLOW_LEASE_RECLAIM_GUARD_FILE);
@@ -107,17 +107,17 @@ describe("workflow lease reclaim interleavings", () => {
       if (file === guardFile) throw Object.assign(new Error("too many open files"), { code: "EMFILE" });
     };
 
-    expect(() => acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "guard-contender" })).toThrow(
-      "too many open files",
-    );
+    expect(() =>
+      acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: "guard-contender" }),
+    ).toThrow("too many open files");
     expect(readFileSync(guardFile, "utf8")).toBe(originalGuard);
     expect(JSON.parse(readFileSync(lockFile, "utf8"))).toMatchObject({ rootRunId: "dead-owner" });
   });
 
   it("serializes a second reclaimer while the first owns the guard", () => {
     const root = project();
-    const output = resolveWorkflowOutputDirectory(root, "outputs/two-reclaimers", "unused", root);
-    const stateDir = workflowOutputStateDir(root, output.identity);
+    const output = resolveWorkflowWorkspaceDirectory(root, "outputs/two-reclaimers", "unused", root);
+    const stateDir = workflowWorkspaceStateDir(root, output.identity);
     mkdirSync(stateDir, { recursive: true });
     const lockFile = path.join(stateDir, WORKFLOW_WORKSPACE_LEASE_FILE);
     const guardFile = path.join(stateDir, WORKFLOW_LEASE_RECLAIM_GUARD_FILE);
@@ -140,13 +140,13 @@ describe("workflow lease reclaim interleavings", () => {
       if (file !== guardFile) return;
       fsHooks.afterFileFsync = undefined;
       try {
-        acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "second-reclaimer" });
+        acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: "second-reclaimer" });
       } catch (error) {
         secondError = error instanceof Error ? error.message : String(error);
       }
     };
 
-    const first = acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "first-reclaimer" });
+    const first = acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: "first-reclaimer" });
     expect(secondError).toContain("reclaim is already in progress for run first-reclaimer");
     expect(JSON.parse(readFileSync(first.lockFile, "utf8"))).toMatchObject({ rootRunId: "first-reclaimer" });
     expect(existsSync(guardFile)).toBe(false);
@@ -155,8 +155,8 @@ describe("workflow lease reclaim interleavings", () => {
 
   it("re-judges a new owner installed after guard creation", () => {
     const root = project();
-    const output = resolveWorkflowOutputDirectory(root, "outputs/guarded-reread", "unused", root);
-    const stateDir = workflowOutputStateDir(root, output.identity);
+    const output = resolveWorkflowWorkspaceDirectory(root, "outputs/guarded-reread", "unused", root);
+    const stateDir = workflowWorkspaceStateDir(root, output.identity);
     mkdirSync(stateDir, { recursive: true });
     const lockFile = path.join(stateDir, WORKFLOW_WORKSPACE_LEASE_FILE);
     const guardFile = path.join(stateDir, WORKFLOW_LEASE_RECLAIM_GUARD_FILE);
@@ -179,12 +179,12 @@ describe("workflow lease reclaim interleavings", () => {
       if (file !== guardFile) return;
       fsHooks.afterFileFsync = undefined;
       unlinkSync(lockFile);
-      winner = acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "guarded-reread-winner" });
+      winner = acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: "guarded-reread-winner" });
     };
 
-    expect(() => acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "guarded-reclaimer" })).toThrow(
-      "owned by live run guarded-reread-winner",
-    );
+    expect(() =>
+      acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: "guarded-reclaimer" }),
+    ).toThrow("owned by live run guarded-reread-winner");
     expect(existsSync(guardFile)).toBe(false);
     if (winner === undefined) throw new Error("guarded re-read winner did not run");
     releaseWorkflowRootLease(winner);
@@ -192,8 +192,8 @@ describe("workflow lease reclaim interleavings", () => {
 
   it("removes only its own guard when guarded rename fails", () => {
     const root = project();
-    const output = resolveWorkflowOutputDirectory(root, "outputs/rename-failure", "unused", root);
-    const stateDir = workflowOutputStateDir(root, output.identity);
+    const output = resolveWorkflowWorkspaceDirectory(root, "outputs/rename-failure", "unused", root);
+    const stateDir = workflowWorkspaceStateDir(root, output.identity);
     mkdirSync(stateDir, { recursive: true });
     const lockFile = path.join(stateDir, WORKFLOW_WORKSPACE_LEASE_FILE);
     const guardFile = path.join(stateDir, WORKFLOW_LEASE_RECLAIM_GUARD_FILE);
@@ -217,17 +217,17 @@ describe("workflow lease reclaim interleavings", () => {
       }
     };
 
-    expect(() => acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "rename-contender" })).toThrow(
-      "rename failed",
-    );
+    expect(() =>
+      acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: "rename-contender" }),
+    ).toThrow("rename failed");
     expect(existsSync(guardFile)).toBe(false);
     expect(JSON.parse(readFileSync(lockFile, "utf8"))).toMatchObject({ rootRunId: "dead-owner" });
   });
 
   it("removes its partially written guard and preserves the judged lease after a guard write failure", () => {
     const root = project();
-    const output = resolveWorkflowOutputDirectory(root, "outputs/guard-write-failure", "unused", root);
-    const stateDir = workflowOutputStateDir(root, output.identity);
+    const output = resolveWorkflowWorkspaceDirectory(root, "outputs/guard-write-failure", "unused", root);
+    const stateDir = workflowWorkspaceStateDir(root, output.identity);
     mkdirSync(stateDir, { recursive: true });
     const lockFile = path.join(stateDir, WORKFLOW_WORKSPACE_LEASE_FILE);
     const guardFile = path.join(stateDir, WORKFLOW_LEASE_RECLAIM_GUARD_FILE);
@@ -249,17 +249,17 @@ describe("workflow lease reclaim interleavings", () => {
       if (file === guardFile) throw Object.assign(new Error("guard fsync failed"), { code: "EIO" });
     };
 
-    expect(() => acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "write-contender" })).toThrow(
-      "guard fsync failed",
-    );
+    expect(() =>
+      acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: "write-contender" }),
+    ).toThrow("guard fsync failed");
     expect(existsSync(guardFile)).toBe(false);
     expect(JSON.parse(readFileSync(lockFile, "utf8"))).toMatchObject({ rootRunId: "dead-owner" });
   });
 
   it("removes its guard when replacement lease creation fails after the stale rename", () => {
     const root = project();
-    const output = resolveWorkflowOutputDirectory(root, "outputs/replacement-open-failure", "unused", root);
-    const stateDir = workflowOutputStateDir(root, output.identity);
+    const output = resolveWorkflowWorkspaceDirectory(root, "outputs/replacement-open-failure", "unused", root);
+    const stateDir = workflowWorkspaceStateDir(root, output.identity);
     mkdirSync(stateDir, { recursive: true });
     const lockFile = path.join(stateDir, WORKFLOW_WORKSPACE_LEASE_FILE);
     const guardFile = path.join(stateDir, WORKFLOW_LEASE_RECLAIM_GUARD_FILE);
@@ -284,9 +284,9 @@ describe("workflow lease reclaim interleavings", () => {
       if (leaseOpenCount === 2) throw Object.assign(new Error("replacement open failed"), { code: "EIO" });
     };
 
-    expect(() => acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "replacement-contender" })).toThrow(
-      "replacement open failed",
-    );
+    expect(() =>
+      acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: "replacement-contender" }),
+    ).toThrow("replacement open failed");
     expect(existsSync(guardFile)).toBe(false);
     expect(existsSync(lockFile)).toBe(false);
     expect(readdirSync(stateDir).some((name) => name.includes(".stale-"))).toBe(false);
@@ -294,8 +294,8 @@ describe("workflow lease reclaim interleavings", () => {
 
   it("does not displace a normal acquirer that wins the dead-owner rename-to-create gap", () => {
     const root = project();
-    const output = resolveWorkflowOutputDirectory(root, "outputs/dead-gap", "unused", root);
-    const stateDir = workflowOutputStateDir(root, output.identity);
+    const output = resolveWorkflowWorkspaceDirectory(root, "outputs/dead-gap", "unused", root);
+    const stateDir = workflowWorkspaceStateDir(root, output.identity);
     mkdirSync(stateDir, { recursive: true });
     const lockFile = path.join(stateDir, WORKFLOW_WORKSPACE_LEASE_FILE);
     writeFileSync(
@@ -315,12 +315,12 @@ describe("workflow lease reclaim interleavings", () => {
 
     let winner: WorkflowRootLease | undefined;
     fsHooks.afterLeaseRename = () => {
-      winner = acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "normal-winner" });
+      winner = acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: "normal-winner" });
     };
 
-    expect(() => acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "stale-reclaimer" })).toThrow(
-      "owned by live run normal-winner",
-    );
+    expect(() =>
+      acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: "stale-reclaimer" }),
+    ).toThrow("owned by live run normal-winner");
     expect(JSON.parse(readFileSync(lockFile, "utf8"))).toMatchObject({ rootRunId: "normal-winner" });
     expect(existsSync(path.join(stateDir, WORKFLOW_LEASE_RECLAIM_GUARD_FILE))).toBe(false);
     if (winner === undefined) throw new Error("normal acquirer did not run");
@@ -329,7 +329,7 @@ describe("workflow lease reclaim interleavings", () => {
 
   it("does not displace a normal acquirer that wins the force rename-to-create gap", () => {
     const root = project();
-    const output = resolveWorkflowOutputDirectory(root, "outputs/force-gap", "unused", root);
+    const output = resolveWorkflowWorkspaceDirectory(root, "outputs/force-gap", "unused", root);
     const settledRunId = "settled-force-owner";
     const runDir = ensureWorkflowRunDir(root, settledRunId);
     writeFileSync(
@@ -343,15 +343,15 @@ describe("workflow lease reclaim interleavings", () => {
       })}\n`,
       "utf8",
     );
-    const former = acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: settledRunId });
+    const former = acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: settledRunId });
 
     let winner: WorkflowRootLease | undefined;
     fsHooks.afterLeaseRename = () => {
-      winner = acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "force-gap-winner" });
+      winner = acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: "force-gap-winner" });
     };
 
     expect(() =>
-      acquireWorkflowRootLease({ projectRoot: root, output, rootRunId: "force-reclaimer", force: true }),
+      acquireWorkflowRootLease({ projectRoot: root, workspace: output, rootRunId: "force-reclaimer", force: true }),
     ).toThrow("owned by live run force-gap-winner");
     expect(JSON.parse(readFileSync(former.lockFile, "utf8"))).toMatchObject({ rootRunId: "force-gap-winner" });
     expect(existsSync(path.join(former.stateDir, WORKFLOW_LEASE_RECLAIM_GUARD_FILE))).toBe(false);

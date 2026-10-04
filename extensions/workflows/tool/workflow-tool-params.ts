@@ -83,14 +83,14 @@ export const WorkflowParams = Type.Object(
     ),
     workspaceDir: Type.Optional(
       Type.String({
-        description: `Optional workflow workspace path. Fresh workflows default to unique ${WORKFLOW_WORKSPACES_STORAGE_PREFIX}<generated-run-name> workspaces; resume repeats the source workspace. Existing legacy ${WORKFLOW_LEGACY_PLANS_STORAGE_PREFIX}<name> paths are accepted only when already present. A task artifacts directory such as .tasks/<task>/artifacts is a legal explicit workspace. Absolute paths must stay inside the project; ./ paths resolve from the agent working directory; other relative paths resolve from the project root. Refused when the root workflow declares meta.outputDir: that directory is then the single workflow directory.`,
+        description: `Optional workflow workspace path. Fresh workflows default to unique ${WORKFLOW_WORKSPACES_STORAGE_PREFIX}<generated-run-name> workspaces; resume repeats the source workspace. Existing legacy ${WORKFLOW_LEGACY_PLANS_STORAGE_PREFIX}<name> paths are accepted only when already present. A task artifacts directory such as .tasks/<task>/artifacts is a legal explicit workspace. Absolute paths must stay inside the project; ./ paths resolve from the agent working directory; other relative paths resolve from the project root. User-file destinations belong in agent prompts and never change cwd.`,
       }),
     ),
     runName: Type.Optional(
       Type.String({
         maxLength: WORKFLOW_RUN_NAME_MAX_CHARS,
         pattern: WORKFLOW_RUN_NAME_PATTERN,
-        description: `Optional short workflow run name. The runtime expands new names to ${WORKFLOW_WORKSPACES_STORAGE_PREFIX}<runName> and reuses an existing legacy-only ${WORKFLOW_LEGACY_PLANS_STORAGE_PREFIX}<runName>. Mutually exclusive with workspaceDir; refused when the root workflow declares meta.outputDir.`,
+        description: `Optional short workflow run name. The runtime expands new names to ${WORKFLOW_WORKSPACES_STORAGE_PREFIX}<runName> and reuses an existing legacy-only ${WORKFLOW_LEGACY_PLANS_STORAGE_PREFIX}<runName>. Mutually exclusive with workspaceDir.`,
       }),
     ),
     continuation: Type.Optional(WorkflowContinuationParams),

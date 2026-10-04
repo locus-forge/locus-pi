@@ -11,13 +11,12 @@ import {
 } from "../../../../extensions/workflows/command/receipts.js";
 import { createHarness } from "../../../test-harness.js";
 
-const primaryFilePath = "/repo/tmp/plan with spaces/workflow.mjs";
 const workspaceDir = "/repo/tmp/plan with spaces";
 const nextAction =
-  "Review /repo/tmp/plan with spaces/workflow.mjs. Copy it to the target project's .locus-pi/workflows/<name>/<name>.workflow.mjs path, verify its meta.name, then run the saved name through the normal reviewed-workflow path.";
+  "Open the exact assigned source file, verify its current bytes and source checks, then copy it to .locus-pi/workflows/<name>/<name>.workflow.mjs and run the saved name. Do not infer a path from returned prose.";
 
 describe("workflow completion presentation", () => {
-  it("ends the TUI on the exact result with primary path, grouped metadata, and gated next action", async () => {
+  it("ends the TUI on exact result prose without attesting or inferring a user file", async () => {
     const harness = createHarness();
     registerWorkflowTranscriptRenderers(harness.pi);
     const transcript = createWorkflowTranscript(harness.ctx, "task/plan", "command");
@@ -26,11 +25,10 @@ describe("workflow completion presentation", () => {
       runId: "run-plan-tui",
       runDir: "/repo/.pi/locus-pi/runs/run-plan-tui",
       ok: true,
-      result: "workflow.mjs is ready for review.",
+      result: "workflow.mjs is ready for review at /unverified/prose/workflow.mjs.",
       resultTextPath: "/repo/.pi/locus-pi/runs/run-plan-tui/outputs/workflow-result.md",
       workspaceDir,
       workspaceDirRelative: "tmp/plan with spaces",
-      primaryFile: { relativePath: "workflow.mjs", absolutePath: primaryFilePath, sha256: "abc123", bytes: 42 },
       journal: [],
       resultPersistence: { ok: true, path: "/repo/.pi/locus-pi/runs/run-plan-tui/runtime/result.json" },
     });
@@ -38,7 +36,7 @@ describe("workflow completion presentation", () => {
     expect(completion.digest).not.toContain("workflow.mjs is ready for review.");
     expect(completion.digest).not.toContain("workspace reuse:");
     expect(completion.digest.indexOf("Files")).toBeLessThan(completion.digest.indexOf("Commands"));
-    expect(completion.digest.indexOf("primary file:")).toBeLessThan(completion.digest.indexOf("workspace:"));
+    expect(completion.digest).not.toContain("primary file:");
     expect(completion.digest).not.toContain("execute.workflow.mjs");
     expect(completion.digest).not.toContain("Next action");
     expect(completion.digest).not.toContain(nextAction);
@@ -49,7 +47,11 @@ describe("workflow completion presentation", () => {
       "workflow_end",
       "workflow_result",
     ]);
-    expect(harness.sentMessages[1]?.message.details).toMatchObject({ primaryFilePath, nextAction });
+    expect(harness.sentMessages[1]?.message.details).toMatchObject({ nextAction });
+    expect(harness.sentMessages[1]?.message.details).not.toHaveProperty("primaryFilePath");
+    expect(harness.sentMessages[0]?.message.details).not.toHaveProperty("primaryFilePath");
+    expect(completion.nextAction).not.toContain("/unverified/prose/workflow.mjs");
+    expect(completion.nextAction).not.toContain(workspaceDir);
 
     const renderer = harness.messageRenderers.get(WORKFLOW_RESULT_CUSTOM_TYPE)!;
     const rendered = renderer(
@@ -59,9 +61,36 @@ describe("workflow completion presentation", () => {
     )
       ?.render(220)
       .join("\n");
-    expect(rendered).toContain(`Workflow result (${primaryFilePath})`);
+    expect(rendered).toContain("Workflow result");
     expect(rendered).toContain("Next action (after review and approval)");
     expect(rendered).toContain(".locus-pi/workflows/<name>/<name>.workflow.mjs");
+  });
+
+  it("renders a historical primary-file receipt without replacing its persisted path", () => {
+    const harness = createHarness();
+    registerWorkflowTranscriptRenderers(harness.pi);
+    const primaryFilePath = "/repo/legacy output/workflow.mjs";
+    const message = {
+      customType: WORKFLOW_RESULT_CUSTOM_TYPE,
+      content: "Historical source ready.",
+      details: {
+        eventKind: "workflow_result",
+        primaryFilePath,
+        resultTextPath: "/repo/legacy-run/outputs/workflow-result.md",
+      },
+    };
+    const original = JSON.stringify(message);
+    const rendered = harness.messageRenderers.get(WORKFLOW_RESULT_CUSTOM_TYPE)!(
+      message,
+      { expanded: true, outputPad: 0 },
+      plainTheme(),
+    )!
+      .render(220)
+      .join("\n");
+
+    expect(rendered).toContain(`Workflow result (${primaryFilePath})`);
+    expect(rendered).toContain("Historical source ready.");
+    expect(JSON.stringify(message)).toBe(original);
   });
 
   it("draws run rules at the live card width while persisted headers stay semantic", async () => {
@@ -108,7 +137,6 @@ describe("workflow completion presentation", () => {
       resultTextPath: "/repo/.pi/locus-pi/runs/run-plan-tone/outputs/workflow-result.md",
       workspaceDir,
       workspaceDirRelative: "tmp/plan with spaces",
-      primaryFile: { relativePath: "workflow.mjs", absolutePath: primaryFilePath, sha256: "abc123", bytes: 42 },
       journal: [],
       resultPersistence: { ok: true, path: "/repo/.pi/locus-pi/runs/run-plan-tone/runtime/result.json" },
     });
@@ -137,7 +165,7 @@ describe("workflow completion presentation", () => {
     expect(rendered).toContain("<accent>*Commands*</accent>");
     expect(rendered).toContain("<success>✓</success> workflow task/plan finished");
     // Only the marker is tinted — the sentence after it stays the digest's own text.
-    expect(rendered).toContain("primary file: /repo/tmp/plan with spaces/workflow.mjs");
+    expect(rendered).not.toContain("primary file:");
   });
 
   it("hands a completed task draft to task/plan as editable semantic input", () => {
@@ -152,20 +180,14 @@ describe("workflow completion presentation", () => {
       result: "Task drafting is complete.",
       workspaceDir: `/repo/${planningWorkspace}`,
       workspaceDirRelative: planningWorkspace,
-      primaryFile: {
-        relativePath: "draft.md",
-        absolutePath: `/repo/${planningWorkspace}/draft.md`,
-        sha256: "abc123",
-        bytes: 120,
-      },
       journal: [],
       resultPersistence: { ok: true, path: "/repo/.pi/locus-pi/runs/run-draft-tui/runtime/result.json" },
     });
 
-    expect(completion.nextAction).toContain("/workflows run task/plan -- <complete accepted draft>");
+    expect(completion.nextAction).toContain("/workflows run task/plan");
     expect(completion.digest).not.toContain("Next action");
-    expect(completion.digest).not.toContain("/workflows run task/plan -- <complete accepted draft>");
-    expect(completion.nextAction).toContain("Copy and edit the complete draft");
+    expect(completion.digest).not.toContain("/workflows run task/plan");
+    expect(completion.nextAction).toContain("accepted bytes and explicit destination instructions");
   });
 
   it("hands a completed workflow source to the normal saved-workflow path", () => {
@@ -180,19 +202,13 @@ describe("workflow completion presentation", () => {
       result: "Workflow source ready.",
       workspaceDir: `/repo/${workspace}`,
       workspaceDirRelative: workspace,
-      primaryFile: {
-        relativePath: "workflow.mjs",
-        absolutePath: `/repo/${workspace}/workflow.mjs`,
-        sha256: "abc123",
-        bytes: 120,
-      },
       journal: [],
       resultPersistence: { ok: true, path: "/repo/.locus-pi/runs/run-plan-named/runtime/result.json" },
     });
 
     expect(completion.nextAction).toContain(".locus-pi/workflows/<name>/<name>.workflow.mjs");
     expect(completion.digest).not.toContain("Next action");
-    expect(completion.nextAction).toContain("normal reviewed-workflow path");
+    expect(completion.nextAction).toContain("run the saved name");
   });
 
   it("keeps workflow_end last for non-interactive protocol callers", async () => {

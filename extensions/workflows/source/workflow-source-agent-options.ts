@@ -31,7 +31,10 @@ export function validateStandardAgentOptions(
     for (const pair of pairs) {
       const key = staticObjectKey(pair.field("key")) ?? "";
       if (REMOVED_AGENT_OPTION_NAMES.includes(key))
-        errors.add(`agent ${key} was removed: return exact text or one choice; use named workspace files`, pair);
+        errors.add(
+          `agent ${key} was removed: return exact text or one choice; write files at exact caller-assigned destinations in prompts`,
+          pair,
+        );
       else if (report && (key === "choice" || key === "choiceFallback"))
         errors.add(`agent result: report cannot be combined with ${key}`, pair);
     }

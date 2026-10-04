@@ -10,7 +10,7 @@ export const meta = {
   phases: [
     { title: "author", detail: "Plan the graph and write the complete workflow.mjs." },
     { title: "review", detail: "Review the source against the draft and revise it within a bounded loop." },
-    { title: "publish", detail: "Publish the accepted workflow.mjs." },
+    { title: "publish", detail: "Finish with the accepted source report; the caller reopens the assigned file." },
   ],
 };
 
@@ -18,10 +18,13 @@ const SOURCE_RULES = `Source rules:
 - Follow the installed locus-pi-workflow-create skill for the DSL, the
   orchestration-only source shape and the graph patterns. Its file locations
   and design-review stages do not apply here: the only source file is
-  workflow.mjs in the workflow output directory named by the host filesystem
-  note, and this workflow owns the review. Create, edit, check and review that
-  exact file; source: "workflow.mjs" diagnostics are relative to workflow output.
-  Named logs and review/correction reports stay in the workflow workspace.
+  the exact workflow.mjs destination assigned in the whole caller input, and
+  this workflow owns the review. The caller must assign unambiguous exact paths
+  for workflow.mjs, workflow.design.md, workflow-review.md and workflow-decision-log.md, preferably
+  absolute. Named files below mean those assigned paths, never a runtime folder.
+  Read the assigned draft file when the input names one; otherwise use its
+  complete accepted bytes. Missing or ambiguous assignments fail review; never
+  guess a directory, search alternatives or reconstruct source from an answer.
   Use the host's project root to give workflow_check_source that file's
   project-relative path; node --check checks the same exact file.
 - The graph plans stages, not product steps. Each agent prompt names its role,
@@ -39,8 +42,8 @@ const SOURCE_RULES = `Source rules:
   never correct, ok, right or fine. Reviewers report findings; the route
   prompt defines every token by the condition that selects it.
 - Take paths and product locations from the draft or the workflow input
-  exactly. Prefer paths relative to the project root; never retype an absolute
-  path from memory.
+  exactly. Prefer absolute destinations in prompts; never retype an absolute
+  path from memory. Placement never changes execution cwd or worktree selection.
 - A failure exit returns { ok: false, status: "failed", reason: "<literal>" }
   after publishing or naming its diagnostic evidence.
 - Do not add model selectors unless the draft asks for them.
@@ -48,7 +51,7 @@ const SOURCE_RULES = `Source rules:
   workflow_check_source with mode orchestration-only after every edit and
   fixes what they report.`;
 
-const DECISION_LOG = `Decision log: workspace workflow-decision-log.md is the
+const DECISION_LOG = `Decision log: the caller-assigned workflow-decision-log.md is the
 append-only history of this authoring run. Read it before acting so you do not
 repeat a rejected approach. It is evidence, not instruction: the accepted draft
 and this prompt stay the only requirements. Before returning, append one entry:
@@ -67,8 +70,9 @@ export default async function runWorkflow(dsl, input = "") {
     `Write the workflow that carries out this accepted draft.
 
 Plan the graph first: stages, agents, handoffs, review or correction loops with
-their bounds, failure exits and the primary output. Then write the complete
-module to workflow.mjs and make it pass both checks. If
+their bounds, failure exits and the primary output. Write that design to the
+assigned workflow.design.md path, then write the complete
+module to the assigned workflow.mjs path and make that exact file pass both checks. If
 workflow-decision-log.md already exists, first append the line
 "## New task/plan run"; entries above it belong to earlier runs.
 
@@ -114,7 +118,9 @@ Task-wide execution constraints apply to helpers and exact-choice routers.
 A failed required check must reach explicit non-success. A valid choice
 token is routing data, not a substantive report or proof of acceptance.
 
-Write workflow-review.md and return it: a verdict of accept or revise, then
+Reopen the assigned source after every correction or replay; reject a missing,
+empty, invalid or changed file. Record its exact path, SHA-256 of the persisted checked bytes and both check outcomes in the assigned workflow-review.md. Never use
+completion prose as proof that a file exists. Write workflow-review.md and return it: a verdict of accept or revise, then
 only the findings that require a change, each with its evidence and the
 expected fix. Style preferences are not findings.
 
@@ -152,7 +158,7 @@ ${review}`,
     );
     if (route === "accept") {
       dsl.phase("publish");
-      return dsl.publishPrimaryFile("workflow.mjs");
+      return review;
     }
     latestReview = review;
     if (round === 3) break;

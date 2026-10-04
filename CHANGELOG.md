@@ -4,23 +4,36 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
-### Fixed
+## [0.14.0] - 2026-10-04
 
-- Preserve the supplied task and all required deliverables through draft-only
-  authoring handoffs. Guide source review to reject conflicting restrictions and
-  trace checks of retained outputs after correction or cleanup to explicit
-  failure paths. Keep product verification in execution, with attainable checks.
-- Keep accepted-draft execution constraints available to every task/plan and
-  task/plan-light child, including exact-choice routing helpers.
-- Align task/plan and task/plan-light source creation, checks, review and correction
-  with the workflow output directory used by primary-file publication. Keep queues
-  and review evidence in the workspace; missing or misplaced source still fails
-  without automatic relocation.
-- Make task/plan review trace terminal acceptance, rejection and exhausted
-  correction to their returned status, and check task-wide constraints in
-  helper and routing prompts.
-- Reject a directly declared literal choice fallback outside its declared
-  choices during source checking, using the runtime's existing declaration rules.
+### Changed
+
+- Agents write intermediate and final files at the exact destinations assigned
+  in their prompts. Writers, checkers, reviewers and later readers use those
+  same paths while the launch-selected working directory, tools and worktree
+  behavior remain unchanged.
+- Packaged task, post-code-review, starter and adaptive workflows and authoring
+  lessons use explicit caller-assigned files. Optional style criteria are
+  caller-owned read-only inputs; an invalid named file fails its reader.
+- Fresh launch bindings and saved-child checkpoints use output-free version-3
+  identities and a separate lineage for each root run. Matching repaired-source
+  replay keeps its recorded prefix and executes the changed suffix again.
+  Historical evidence remains readable, but replay never restores file effects.
+- Workflow checks preserve the complete caller input, required deliverables
+  and restrictions across authors, reviewers and routing helpers. Native
+  completion records orchestration; consumers verify current file bytes and
+  required checks before using a workflow source or result.
+
+### Removed
+
+- **Breaking:** Remove `meta.outputDir`, `outputDir()`, `publishPrimaryFile()`
+  and the `publishPrimaryArtifact(name, { workflowSource })` overload. Assign
+  exact file paths in the prompt and use ordinary agent tools to write and read
+  them. String-only native text artifacts remain available as optional evidence.
+- **Breaking:** Old execution bindings and output-bound checkpoints cannot be
+  resumed or recovered under this contract. Migrate the workflow and start a
+  fresh run; retained results and receipts remain inspectable. Saved workflows
+  using implicit workspace handoff paths also need explicit destination prompts.
 
 ## [0.13.1] - 2026-10-03
 

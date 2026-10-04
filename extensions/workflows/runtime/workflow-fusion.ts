@@ -109,7 +109,7 @@ export interface WorkflowFusionOptions {
 const REMOVED_FUSION_OPTIONS: Readonly<Record<string, string>> = Object.freeze({
   schema:
     "fusion schema was removed: the judge returns exact text. State the required answer format in output, " +
-    "or have a later agent write a named workspace file from the judge's text",
+    "or have a later agent write the judge's text at an exact caller-assigned file destination in its prompt",
   validate:
     "fusion validate was removed with schema: the judge returns exact text and there is no shaped value to validate",
 });

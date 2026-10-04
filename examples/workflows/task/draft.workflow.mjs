@@ -9,7 +9,7 @@ export const meta = {
   phases: [
     { title: "recon", detail: "Collect only the project facts that change the workflow shape." },
     { title: "draft", detail: "Write one editable draft with patterns, agents, handoffs, and bounds." },
-    { title: "publish", detail: "Publish draft.md and stop before workflow construction." },
+    { title: "publish", detail: "Write the caller-assigned draft.md and stop before workflow construction." },
   ],
 };
 
@@ -18,10 +18,7 @@ export const meta = {
  * @param {string} [input]
  */
 export default async function runWorkflow(dsl, input = "") {
-  const requestText =
-    typeof input === "string" && input.trim()
-      ? input.trim()
-      : "No request was supplied. Preserve the missing input under Unclear instead of inventing a task.";
+  const requestText = input;
 
   dsl.phase("recon");
   const contextText = await dsl.agent(
@@ -55,7 +52,12 @@ a workflow brief or another authoring task.
 Before returning, compare the draft with the request: identify any omitted
 requirement or added restriction that would prevent a required outcome.
 
-Return the complete draft text. Do not write an implementation plan or
+Write the complete editable draft through ordinary file tools at the exact
+draft.md destination assigned in the request, preferably absolute. The request
+must assign that path unambiguously; if missing or ambiguous, report the missing
+assignment without writing a guessed file. Preserve all authoring destinations
+for the plan stage separately from product deliverables. Return the complete
+draft text as the handoff too. Do not write an implementation plan or
 JavaScript. Keep these English structural markers literal:
 
 Task:
@@ -112,5 +114,16 @@ ${contextText}
   );
 
   dsl.phase("publish");
-  return dsl.publishPrimaryArtifact("draft.md", draftText);
+  const draftRoute = await dsl.agent(
+    `Verify the editable draft at the exact caller-assigned destination using ordinary file tools. Choose written only when that assignment is unambiguous and the assigned regular nonempty file contains the complete draft. Missing or ambiguous assignment, absent file or incomplete bytes means failed. Do not create a substitute, discover another directory or treat completion prose as file evidence. Do not implement the product.
+
+Whole request:
+${requestText}
+
+Draft handoff:
+${draftText}`,
+    { label: "task-draft-file-route", title: "Verify the editable draft file", choice: ["written", "failed"] },
+  );
+  if (draftRoute !== "written") return { ok: false, status: "failed", reason: "draft_file_unavailable" };
+  return draftText;
 }

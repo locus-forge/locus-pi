@@ -201,9 +201,7 @@ export function createWorkflowTranscript(
       }
       const fileLines: string[] = [];
       const commandLines: string[] = [];
-      if (res.primaryFile?.absolutePath !== undefined && res.primaryFile.absolutePath !== "") {
-        fileLines.push(firstTranscriptLine(`primary file: ${res.primaryFile.absolutePath}`));
-      }
+
       if (res.workspaceDir !== undefined && res.workspaceDir !== "") {
         fileLines.push(firstTranscriptLine(`workspace: ${res.workspaceDir}`));
       }
@@ -254,7 +252,6 @@ export function createWorkflowTranscript(
         lineCount: bodyLines.length,
         ...(typeof res.result === "string" && res.result.trim() !== "" ? { resultText: res.result } : {}),
         ...(res.resultTextPath !== undefined ? { resultTextPath: res.resultTextPath } : {}),
-        ...(res.primaryFile?.absolutePath !== undefined ? { primaryFilePath: res.primaryFile.absolutePath } : {}),
         ...(presentation.nextAction === undefined ? {} : { nextAction: presentation.nextAction }),
       };
       return completion;

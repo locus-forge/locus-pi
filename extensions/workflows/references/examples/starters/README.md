@@ -13,14 +13,14 @@ These modules deepen reusable interactions. After the dependency lesson, choose 
 then adapt the prompts, criteria and finite allowances. They are starting points,
 not compulsory templates or runnable names in the Package catalog.
 
-| Source                                                                  | Task need and mechanism                                                                               | Terminal result                                                                                                |
-| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| [Project tour](project-tour.workflow.mjs)                               | Two known source readers before synthesis                                                             | Exact explanatory guide in `guide.md`, without independent product acceptance                                  |
-| [Caller audit](caller-audit.workflow.mjs)                               | Caller-owned per-source pipeline, then complete synthesis and coverage review                         | Exact reviewed `audit.md`, or incomplete candidate/findings; empty required items are non-success              |
-| [Evaluator-Optimizer](evaluator-optimizer.workflow.mjs)                 | Known implementation scope; reviewer-owned findings and choice, one correction followed by recheck    | Exact accepted handoff in `implementation.md`, or non-success with the preserved change and workspace findings |
-| [Plan/replan](plan-replan.workflow.mjs)                                 | Observed results change remaining work; planner replaces named files and executor reads the next step | Evidenced delivery account in `delivery.md`, or non-success with plan and latest execution                     |
-| [Reflection](reflection.workflow.mjs)                                   | Improve a low-risk explanation through draft, critique and revision                                   | Editorial revision in `document.md`; no independent acceptance claim                                           |
-| [Parallel investigation + Reflection](parallel-reflection.workflow.mjs) | Independent evidence and reader investigation before synthesis, critique and revision                 | Editorial revision in `document.md`, preserving both investigations in its handoffs                            |
+| Source                                                                  | Task need and mechanism                                                                               | Terminal result                                                                                                                        |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| [Project tour](project-tour.workflow.mjs)                               | Two known source readers before synthesis                                                             | Exact explanatory guide in `guide.md`, without independent product acceptance                                                          |
+| [Caller audit](caller-audit.workflow.mjs)                               | Caller-owned per-source pipeline, then complete synthesis and coverage review                         | Exact reviewed `audit.md`, or incomplete candidate/findings; empty required items are non-success                                      |
+| [Evaluator-Optimizer](evaluator-optimizer.workflow.mjs)                 | Known implementation scope; reviewer-owned findings and choice, one correction followed by recheck    | Exact accepted handoff in `implementation.md`, or non-success with the preserved change and findings at the exact caller-assigned path |
+| [Plan/replan](plan-replan.workflow.mjs)                                 | Observed results change remaining work; planner replaces named files and executor reads the next step | Evidenced delivery account in `delivery.md`, or non-success with plan and latest execution                                             |
+| [Reflection](reflection.workflow.mjs)                                   | Improve a low-risk explanation through draft, critique and revision                                   | Editorial revision in `document.md`; no independent acceptance claim                                                                   |
+| [Parallel investigation + Reflection](parallel-reflection.workflow.mjs) | Independent evidence and reader investigation before synthesis, critique and revision                 | Editorial revision in `document.md`, preserving both investigations in its handoffs                                                    |
 
 Project tour uses author-known README/package sources. Other semantic input is one string: supply the request, required evidence and
 source locations for agents to inspect. Caller audit additionally requires structured tool `items`; slash syntax cannot supply them.
@@ -29,7 +29,7 @@ Caller audit also passes all complete original units to verification, synthesis 
 A provider failure may have no answer or source identity; retain that unassigned failure and compare
 required coverage with the original units rather than guessing a source from a slot.
 File handoffs such as `findings.md`,
-`plan.md` and `next-step.md` live in the host-provided workflow workspace.
+`plan.md` and `next-step.md` use exact caller-assigned paths in the whole input. The final guide/audit/delivery files are also written directly by agents; optional text snapshots do not attest their existence.
 Workflow source never reads or parses them. Choose a fresh workspace for an
 independent run; a mentioned path does not change the child project directory.
 All calls inherit configured model routing. Independent sessions may use the
