@@ -54,9 +54,11 @@ when adapting; do not inherit example effects, bounds or executor choices withou
 
 ## Calls and handoffs
 
-`agent()` starts a clean child and returns whole text. Give each child its complete relevant Task, exact paths, evidence and constraints; parent conversation is absent.
+`agent()` starts a clean child and returns whole text. Give each child the complete relevant original Task, evidence and constraints; parent conversation is absent.
+Keep that Task authoritative; add role-specific duties without duplicating or changing its requirements.
 Use exact `choice` only at a branch.
-Assign exact paths in prompts for findings/plans and results; agents write/read those same files with ordinary tools.
+Assign exact paths for shared handoffs and Task-required outputs; writers/readers use those same files.
+Delegate internal file layout within an implementation actor's product root, subject to narrower Task boundaries.
 Source exposes control edges; children inspect and act with tools. Never parse prose, JSON or those files in source.
 `phase()`/`log()` show progress; text publication retains optional native evidence. It never saves or attests an agent-owned file.
 For decisions, reports or a translator, read [structured results](references/structured-results.md).

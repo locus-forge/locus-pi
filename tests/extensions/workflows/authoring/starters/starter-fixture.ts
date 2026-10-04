@@ -21,6 +21,7 @@ export async function runStarter(
   answers: Record<string, Array<string | WorkflowAgentResult>>,
   effect?: ChildEffect,
   items: string[] = [],
+  taskInput = input,
 ) {
   return temporaryValue(async (root) => {
     const workspace = path.join(root, "workspace");
@@ -37,7 +38,7 @@ export async function runStarter(
       "delivery.md",
       "document.md",
     ];
-    const wholeInput = `${input}\nExact file destinations:\n${names.map((file) => `${file}: ${path.join(assigned, file)}`).join("\n")}`;
+    const wholeInput = `${taskInput}\nExact file destinations:\n${names.map((file) => `${file}: ${path.join(assigned, file)}`).join("\n")}`;
     const seen: WorkflowAgentRequest[] = [];
     const counts: Record<string, number> = {};
     const store = createWorkflowArtifactStore({ projectRoot: root, runId: name, runDir: tempRun(root, name) });

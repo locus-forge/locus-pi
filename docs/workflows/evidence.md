@@ -247,10 +247,11 @@ verify that its owning process has stopped; do not remove run history.
 Legacy top-level `.locus-pi/runs/<runId>/` evidence remains readable without
 migration. New child and resume evidence is always nested under its physical group.
 
-Files deliberately written by agents live at the exact caller-assigned paths in
-their prompts, independently of native evidence and runtime workspace selection.
-Text snapshots do not attest those filesystem effects. Consumers reopen assigned
-files; replay does not recreate them.
+Shared handoffs and Task-required outputs live at exact caller-assigned paths,
+independently of native evidence and runtime workspace selection. Implementation
+actors may choose internal files within delegated product roots, subject to narrower
+Task boundaries. Text snapshots do not attest filesystem effects. Consumers reopen
+assigned files; replay does not recreate them.
 
 `agent_end` carries `usage` (token/cost), the child session's model and reasoning-effort
 readback when the host exposes them, and — for a choice call —

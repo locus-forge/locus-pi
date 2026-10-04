@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { WorkflowAgentResult } from "../../../../../extensions/workflows/runtime/workflow-runtime.js";
@@ -239,6 +239,50 @@ describe("small agentic starters with real runtime and scripted children", () =>
     expect(got.primary).toEqual([correctedWork]);
     expect(got.published).toEqual([originalWork, correctedWork]);
     expect(got.journal.filter((line) => line.choiceDecision)).toHaveLength(2);
+  });
+
+  it("carries actor-selected internal paths through whole handoffs and fresh review", async () => {
+    const task =
+      "Original Task: implement in product/; choose internal files. Review product read-only; write assigned findings.";
+    const answers = { implement: ["", ""], review: ["revise", "accept"] };
+    const got = await runStarter(
+      "evaluator-optimizer",
+      answers,
+      (request, occurrence, assigned) => {
+        if (request.label === "implement") {
+          // This layout is chosen by the scripted actor, not the workflow source or Task.
+          const product = path.join(path.dirname(assigned), "product");
+          mkdirSync(product, { recursive: true });
+          const internalFile = path.join(product, "actor-selected-module.ts");
+          if (occurrence === 1)
+            expect(readFileSync(path.join(assigned, "findings.md"), "utf8")).toContain("R1: return 2");
+          writeFileSync(internalFile, `export const value = ${occurrence + 1};\n`);
+          answers.implement[occurrence] = `Complete handoff\nChanged: ${internalFile}\nRevision: ${occurrence + 1}\n`;
+        } else if (request.label === "review") {
+          const handoff = readFileSync(path.join(assigned, "implementation.md"), "utf8");
+          expect(request.prompt).toContain(handoff);
+          expect(handoff).toBe(answers.implement[occurrence]);
+          expect(request.prompt).toContain("Do not edit product source");
+          expect(request.prompt).toContain(task);
+          const discoveredPath = /^Changed: (.+)$/mu.exec(handoff)?.[1];
+          expect(discoveredPath).toBeDefined();
+          const product = readFileSync(discoveredPath!, "utf8");
+          expect(product).toBe(`export const value = ${occurrence + 1};\n`);
+          writeFileSync(
+            path.join(assigned, "findings.md"),
+            occurrence === 0 ? "R1: return 2" : "R1 verified on revision 2",
+          );
+          expect(readFileSync(discoveredPath!, "utf8")).toBe(product);
+        }
+      },
+      [],
+      task,
+    );
+    expect(readFileSync(`${base}/evaluator-optimizer.workflow.mjs`, "utf8")).not.toContain("actor-selected-module.ts");
+    expect(task).not.toContain("actor-selected-module.ts");
+    expect(got.seen.map((request) => request.label)).toEqual(["implement", "review", "implement", "review"]);
+    expect(got.primary).toEqual([answers.implement[1]]);
+    expect(got.files["findings.md"]).toBe("R1 verified on revision 2");
   });
 
   it("preserves latest reviewed work and required residuals on exhaustion without another worker", async () => {

@@ -49,16 +49,16 @@ Return the complete guide too. Whole input:\n${input}\nComplete notes:\n${notes.
 
 Purpose and commands are independent; composition needs both whole answers.
 The composer writes the assigned file; returned text is not file acceptance proof.
-Labels identify replay calls; titles describe work.
 Read [the exact source and guide](../../extensions/workflows/references/examples/starters/README.md).
 
 ## Read handoffs before adding control
 
-`agent()` returns whole text; reviewers/planners can own `choice`. Each child needs its complete relevant Task, exact paths, evidence and constraints; parent conversation is absent.
-Give file writers/readers the same exact caller-assigned paths, preferably absolute. Children inspect with tools; source never parses
-files, JSON or prose.
-For decisions, reports or a translator, read [structured results](../locus-pi-workflow-create/references/structured-results.md).
-`phase()`/`log()` show progress; text publication retains optional native evidence, not an agent-owned file.
+`agent()` returns whole text; reviewers/planners can own `choice`. Each child needs the complete original Task, evidence and constraints.
+Keep the Task authoritative; avoid changed paraphrases. Parent context is absent.
+Assign exact shared handoff and Task-required output paths; reuse them for reads. Implementation actors choose internal files in assigned product roots, subject to narrower Task bounds.
+Children use tools; source never parses files, JSON or prose.
+Read [structured results](../locus-pi-workflow-create/references/structured-results.md).
+`phase()`/`log()` show progress; text publication retains native evidence, never file proof.
 Read the [DSL table](../../docs/workflows/dsl.md#dsl-surface-v0) for selected methods before source:
 `agent`, `parallel`, `pipeline`, `items` and text publication pass runtime and both checker modes.
 Path/clock helpers remain outside orchestration-only; shaped results stay refused. Runtime JavaScript is
@@ -71,7 +71,7 @@ Callbacks get previous value/composite index, not original item. Keep full calle
 `items()` needs the structured tool; slash launch cannot carry it. Empty required caller input is non-success.
 Cross-source synthesis waits for all reports. An agent can deduplicate into a named file; source cannot turn
 discoveries into parallel workers. Failed groups throw with evidence.
-For that task read [the caller-audit case](references/worked-decisions.md#caller-owned-audit), including its complete tested module.
+For that task read [the caller-audit case](references/worked-decisions.md#caller-owned-audit), including its tested module.
 For reuse, read DSL `workflow()` versus `invokeWorkflow()`: inline callbacks have no saved checkpoint;
 saved children receive explicit destinations and use fixed keys. Saved grandchildren are refused.
 
@@ -80,7 +80,7 @@ saved children receive explicit destinations and use fixed keys. Saved grandchil
 Known implementation/review stays fixed: worker handoff → evaluator-owned choice/findings → correction → fresh recheck.
 Observed results changing remaining work justify plan/replan; the planner assesses even after the last allowed step.
 Read the task's [worked case](references/worked-decisions.md): consumers, evidence and exits traced
-against tested starters. Read only the relevant case.
+against tested starters. Select the relevant case.
 Editorial critique/revision improves text without final independent acceptance. Add a verifier only when required.
 Use evidence lenses, adversarial checks or completeness critique when findings change next work.
 For repeated discovery an agent retains seen/rejected findings and “nothing new” evidence in a file. Source
