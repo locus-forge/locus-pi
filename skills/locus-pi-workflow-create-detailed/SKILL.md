@@ -47,14 +47,14 @@ Return the complete guide too. Whole input:\n${input}\nComplete notes:\n${notes.
 }
 ```
 
-Purpose and commands are independent inputs; the composer needs both whole answers. This barrier has a real
-dependency. The composer writes the assigned file; returned text is not file acceptance proof.
-Metadata names entry/profile; labels identify replay calls, titles describe work.
+Purpose and commands are independent; composition needs both whole answers.
+The composer writes the assigned file; returned text is not file acceptance proof.
+Labels identify replay calls; titles describe work.
 Read [the exact source and guide](../../extensions/workflows/references/examples/starters/README.md).
 
 ## Read handoffs before adding control
 
-`agent()` returns whole text; reviewers/planners can own `choice`. Pass task context; children inherit no earlier conversation.
+`agent()` returns whole text; reviewers/planners can own `choice`. Each child needs its complete relevant Task, exact paths, evidence and constraints; parent conversation is absent.
 Give file writers/readers the same exact caller-assigned paths, preferably absolute. Children inspect with tools; source never parses
 files, JSON or prose.
 For decisions, reports or a translator, read [structured results](../locus-pi-workflow-create/references/structured-results.md).
