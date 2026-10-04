@@ -27,8 +27,10 @@ Preserve the user's scoped authorization; create-and-run needs no repeat approva
 Require one exact saved name or project-relative `.workflow.mjs` path. Source creation or repair belongs
 to the ordinary or detailed [authoring route](../../docs/workflows/create.md#choose-an-authoring-route).
 Accept either checked-source handoff under existing execution authorization.
-For `task/plan` or `task/plan-light`, use `primaryFile.absolutePath` from completed run evidence, with its validated path,
-byte count and digest. Launch that existing file; do not guess `outputs/workflow.mjs` or use verifier prose.
+For `task/plan` or `task/plan-light`, reopen the exact workflow.mjs path assigned in the original whole input.
+Require completed successful review, a regular nonempty file, matching persisted checked/reviewed-byte SHA-256
+evidence and current Node/orchestration-only checks before launch, including after correction or replay.
+Missing/drifted source or failed/exhausted review forbids execution; never guess another file or reconstruct prose.
 Check an existing session/run before replacing it; silence or a lost tool handle does not prove it stopped.
 
 ## Native Pi path
@@ -41,10 +43,10 @@ Use `resumeFromRunId` only through [run recovery](references/recovery.md), not a
 Use `force: true` only for a lease error whose named run already has complete matching terminal evidence;
 it is not a process-stop switch and must remain fail-closed for active, unverifiable, partial or ambiguous owners.
 
-Choose either `workspaceDir` or `runName`, never both, and neither for a workflow whose root declares `meta.outputDir`. A name selects `.locus-pi/workspaces/<name>`;
+Choose either `workspaceDir` or `runName`, never both; these select native runtime coordination, not agent files. A name selects `.locus-pi/workspaces/<name>`;
 a legacy-only `.locus-pi/plans/<name>` stays bound in place, and both paths existing fails closed.
 Resume repeats the source workspace. Read the returned run id, paths, disposition, result and artifacts.
-Success requires a completed disposition and retained result. Failed/cancelled dispositions, unavailable
+Run evidence requires a completed disposition and retained result; requested files require independent exact-path readback. Failed/cancelled dispositions, unavailable
 terminal evidence, a static source check or a process exit code alone are not semantic success.
 
 ## Preserve model configuration

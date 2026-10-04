@@ -1,6 +1,6 @@
 export const meta = {
   name: "post-code-review",
-  description: "Run modular code-shape review lanes and publish the code-shape decision.",
+  description: "Run modular code-shape review lanes that write caller-assigned reports.",
   profile: "standard",
   phases: [
     { title: "scope" },
@@ -63,7 +63,7 @@ export default async function runWorkflow(dsl, input) {
   });
 
   dsl.phase("synthesis");
-  await dsl.invokeWorkflow({
+  const synthesis = await dsl.invokeWorkflow({
     child: "synthesis",
     input,
     keys,
@@ -71,5 +71,5 @@ export default async function runWorkflow(dsl, input) {
   });
 
   dsl.phase("publish");
-  return dsl.publishPrimaryFile("post-code-review.md");
+  return synthesis;
 }

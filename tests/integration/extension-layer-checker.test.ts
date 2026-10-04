@@ -66,6 +66,16 @@ describe("extension layer checker negative rules", () => {
     await expectRule(root, "rule 5 (mutable module state)");
   });
 
+  it("rejects a cross-feature import of source agent-option policy", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, CROSS_FEATURE_READER),
+      '\nimport "../workflows/source/workflow-source-agent-options.js";\n',
+      "utf8",
+    );
+    await expectRule(root, "rule 6 (feature-internal facade)");
+  });
+
   it("rejects a cross-feature import that bypasses the read facade", async () => {
     const root = await extensionFixture();
     await appendFile(
@@ -77,22 +87,19 @@ describe("extension layer checker negative rules", () => {
     await expectRule(root, "rule 6 (feature-internal facade)");
   });
 
-  it.each([
-    "workflow-location-lease",
-    "workflow-lease-evidence",
-    "workflow-state-files",
-    "workflow-bound-directory",
-    "workflow-child-task",
-  ])("rejects a cross-feature import of location-state owner %s", async (moduleName) => {
-    const root = await extensionFixture();
-    await appendFile(
-      path.join(root, CROSS_FEATURE_READER),
-      `\nimport "../workflows/runtime/location-state/${moduleName}.js";\n`,
-      "utf8",
-    );
+  it.each(["workflow-location-lease", "workflow-lease-evidence", "workflow-state-files", "workflow-child-task"])(
+    "rejects a cross-feature import of location-state owner %s",
+    async (moduleName) => {
+      const root = await extensionFixture();
+      await appendFile(
+        path.join(root, CROSS_FEATURE_READER),
+        `\nimport "../workflows/runtime/location-state/${moduleName}.js";\n`,
+        "utf8",
+      );
 
-    await expectRule(root, "rule 6 (feature-internal facade)");
-  });
+      await expectRule(root, "rule 6 (feature-internal facade)");
+    },
+  );
 
   it("rejects a cross-feature import of workflow workspace state", async () => {
     const root = await extensionFixture();

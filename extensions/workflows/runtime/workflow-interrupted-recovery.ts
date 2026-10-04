@@ -1,6 +1,10 @@
 /** Explicit, conservative recovery admission. This never manufactures or writes a terminal result. */
 import { createHash } from "node:crypto";
-import { readWorkflowLaunchBinding, type WorkflowLaunchBinding } from "./workflow-launch-binding.js";
+import {
+  readWorkflowLaunchBinding,
+  workflowExecutionMigrationMessage,
+  type WorkflowLaunchBinding,
+} from "./workflow-launch-binding.js";
 import { readWorkflowRunJournalState, type WorkflowRunResultEnvelope } from "./workflow-journal.js";
 import { readWorkflowReplayLog, workflowReplayFile, type WorkflowReplayEntry } from "./workflow-replay.js";
 import {
@@ -61,8 +65,7 @@ export function readInterruptedWorkflowResumeBinding(
     throw new Error("Interrupted recovery currently supports root serial workflows without saved children only");
   }
   const binding = readWorkflowLaunchBinding(projectRoot, runId, runDir);
-  if (binding === null || binding.recoveryInputSha256 === undefined)
-    throw new Error("Interrupted recovery requires a valid pre-execution launch binding with input fingerprint");
+  if (binding === null) throw new Error(workflowExecutionMigrationMessage(runId));
   if (
     JSON.stringify(binding.target) !== JSON.stringify(expected.target) ||
     binding.scriptIdentity.scriptSha256 !== expected.scriptSha256 ||
@@ -149,11 +152,6 @@ export function readInterruptedWorkflowResumeBinding(
     workspaceDirExplicit: binding.workspace.explicit,
     workspacePhysicalIdentity: binding.workspace.physicalIdentity,
     workspacePhysicalIdentitySchemaVersion: 1,
-    outputDir: binding.output.absolutePath,
-    outputDirRelative: binding.output.relativePath,
-    outputPhysicalIdentity: binding.output.physicalIdentity,
-    outputPhysicalIdentitySchemaVersion: 1,
-    outputSource: binding.output.source,
     semanticInputPresent: binding.semanticInput.present,
     semanticInputSha256: binding.semanticInput.sha256,
   };

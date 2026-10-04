@@ -19,7 +19,7 @@ import {
 import { workflowJournalFile } from "../../../../extensions/workflows/runtime/workflow-run-layout.js";
 import {
   WORKFLOW_WORKSPACE_LEASE_FILE,
-  workflowOutputStateDir,
+  workflowWorkspaceStateDir,
 } from "../../../../extensions/workflows/runtime/workflow-output.js";
 import { workflowReportDir } from "../../../../extensions/workflows/runtime/workflow-run-report.js";
 import { workflowResultFile } from "../../../../extensions/workflows/runtime/workflow-result.js";
@@ -136,7 +136,7 @@ describe("workflow run finalization", () => {
     const root = trackProject();
     const runName = "stale-fencing";
     const lockFile = path.join(
-      workflowOutputStateDir(root, `.locus-pi/workspaces/${runName}`),
+      workflowWorkspaceStateDir(root, `.locus-pi/workspaces/${runName}`),
       WORKFLOW_WORKSPACE_LEASE_FILE,
     );
     writeWorkflow(root, "stale-fencing", `export default (dsl) => dsl.agent("break the lease");\n`);
@@ -171,7 +171,7 @@ describe("workflow run finalization", () => {
     const root = trackProject();
     const runName = "released-lease";
     const lockFile = path.join(
-      workflowOutputStateDir(root, `.locus-pi/workspaces/${runName}`),
+      workflowWorkspaceStateDir(root, `.locus-pi/workspaces/${runName}`),
       WORKFLOW_WORKSPACE_LEASE_FILE,
     );
     writeWorkflow(root, "released-lease", `export default async function run() { return "done"; }\n`);

@@ -75,82 +75,7 @@ function project(): string {
   return root;
 }
 
-function workflowWorkspaceFromChildTask(task: string): string {
-  const line = task
-    .split("\n")
-    .find((candidate) => candidate.startsWith("workflow workspace (handoffs and intermediate files): "));
-  const directory = line?.split(": ").slice(1).join(": ");
-  assert.ok(
-    directory !== undefined && path.isAbsolute(directory),
-    `child task must name an absolute workspace: ${task}`,
-  );
-  return directory;
-}
-
 describe("workflow workspace and run evidence", () => {
-  it("uses a unique .locus-pi/workspaces workspace, gives every child that path once, and keeps run evidence separate", async () => {
-    const root = project();
-    const workingDirectory = path.join(root, "packages", "docs site");
-    mkdirSync(workingDirectory, { recursive: true });
-    writeFileSync(
-      path.join(root, ".locus-pi", "workflows", "files.workflow.mjs"),
-      [
-        "export default async function runWorkflow(dsl) {",
-        '  const answer = await dsl.agent("write the plan", { label: "writer" });',
-        "  return `${dsl.workspaceDir()}\\n${answer}`;",
-        "}",
-        "",
-      ].join("\n"),
-    );
-    const harness = createHarness(root, { sessionId: "run-files" });
-    harness.ctx.session = { ...harness.ctx.session!, workingDirectory };
-    const tasks: string[] = [];
-    const createExecutor = (): AgentExecutor => ({
-      async run(request: AgentRunRequest) {
-        tasks.push(request.task);
-        writeFileSync(path.join(workflowWorkspaceFromChildTask(request.task), "plan.md"), "the plan body", "utf8");
-        return {
-          status: "completed",
-          agentName: request.agent?.name ?? "sub-agent",
-          reason: "wrote plan.md",
-          text: "wrote plan.md",
-          diagnostics: [],
-          lifecycleEntryIds: [],
-        };
-      },
-    });
-
-    const result = await runWorkflowScript({
-      pi: harness.pi,
-      ctx: harness.ctx,
-      signal: new AbortController().signal,
-      name: "files",
-      createExecutor,
-    });
-
-    const workspaceDir = path.join(root, ".locus-pi", "workspaces", `${result.runId}-files`);
-    assert.equal(result.ok, true, result.error);
-    assert.equal(result.workspaceDir, workspaceDir);
-    assert.equal(result.workspaceDirRelative, `.locus-pi/workspaces/${result.runId}-files`);
-    assert.equal(String(result.result).split("\n")[0], workspaceDir);
-    assert.equal(result.outputDir, path.join(workspaceDir, "outputs"));
-    const persisted = readWorkflowRunResult(root, result.runId);
-    assert.equal(persisted?.workspacePhysicalIdentity, `.locus-pi/workspaces/${result.runId}-files`);
-    assert.equal(persisted?.workspacePhysicalIdentityInvalid, undefined);
-    assert.deepEqual(readdirSync(workspaceDir), [".workflow-runs.md", "outputs", "plan.md"]);
-    assert.equal(readFileSync(path.join(workspaceDir, "plan.md"), "utf8"), "the plan body");
-    assert.equal(tasks.length, 1);
-    assert.equal(tasks[0]!.split(workspaceDir).length - 1, 2);
-    assert.match(tasks[0]!, /workflow output \(final deliverables\): /u);
-
-    const outputNames = readdirSync(workflowRunOutputsDir(workflowRunDir(root, result.runId))).sort();
-    assert.deepEqual(outputNames, ["README.md", "workflow-result.md"]);
-    assert.ok(!outputNames.includes("plan.md"));
-    assert.deepEqual(readdirSync(result.runDir).sort(), ["README.md", "outputs", "runtime"]);
-    assert.ok(readdirSync(workflowRunRuntimeDir(result.runDir)).includes("journal.ndjson"));
-    assert.match(result.runDir, /\.locus-pi\/runs\//u);
-  });
-
   it("keeps generated workspaces under .locus-pi/workspaces from a deep working directory", async () => {
     const root = project();
     const workingDirectory = path.join(root, "p".repeat(150), "q".repeat(150), "r".repeat(150));
@@ -194,7 +119,7 @@ describe("workflow workspace and run evidence", () => {
     assert.equal(result.ok, true, result.error);
     assert.equal(result.workspaceDir, path.join(root, ".locus-pi", "workspaces", `${result.runId}-empty`));
     assert.equal(existsSync(result.workspaceDir!), true);
-    assert.deepEqual(readdirSync(result.workspaceDir!), [".workflow-runs.md", "outputs"]);
+    assert.deepEqual(readdirSync(result.workspaceDir!), [".workflow-runs.md"]);
   });
 
   it("fails runWorkspaceDir() with the named migration error", async () => {
@@ -213,7 +138,7 @@ describe("workflow workspace and run evidence", () => {
 
     assert.equal(result.ok, false);
     assert.match(result.error ?? "", /runWorkspaceDir\(\) was removed/u);
-    assert.match(result.error ?? "", /use workspaceDir\(\)/u);
+    assert.match(result.error ?? "", /assign exact file destinations in agent prompts/u);
   });
 
   it("rejects a Pi working directory outside the project before an agent starts", async () => {
@@ -921,43 +846,21 @@ describe("grouped run lookup", () => {
 });
 
 describe("workflow child task composition", () => {
-  it("names the workflow workspace exactly once and leaves the workflow prompt last", () => {
-    const task = composeWorkflowChildTask("draft the plan", "/project/tmp/plan");
-    assert.match(task, /^## Workflow filesystem locations/u);
-    assert.equal(task.split("/project/tmp/plan").length - 1, 1);
-    assert.ok(task.endsWith("draft the plan"));
-    assert.match(task, /workflow workspace \(handoffs and intermediate files\)/u);
-    assert.doesNotMatch(task, /write intermediate and final workflow files here/u);
-    assert.match(task, /replace only assigned files, idempotently/u);
-    assert.match(task, /Durable handoffs, review evidence, and explicit resume inputs/u);
-    assert.match(task, /environments, dependency caches, test basetemp, transient renderer output, and staging/u);
-    assert.match(task, /never beside evidence/u);
-    assert.match(task, /another owner's state/u);
-    assert.match(task, /Never modify runtime-owned state or leases beneath \.locus-pi/u);
-    assert.match(task, /instruction to write no other artifact means create or modify no other file/u);
-    assert.match(task, /authored prompt that explicitly requests another placement remains authoritative/u);
-    assert.doesNotMatch(task, /do not invent another project-relative durable root/u);
-  });
-
-  it("distinguishes a worktree code workspace from the workflow workspace and project context", () => {
-    const task = composeWorkflowChildTask("implement the change", "/projects/main/tmp/review", {
+  it("names actual execution and project context, with the authored prompt last", () => {
+    const task = composeWorkflowChildTask("Write /reports/plan.md", {
       pwd: "/worktrees/child",
       projectRoot: "/projects/main",
     });
-
-    assert.match(task, /workflow workspace .*: \/projects\/main\/tmp\/review/u);
-    assert.match(task, /pwd \(code workspace\): \/worktrees\/child/u);
+    assert.match(task, /^## Workflow execution context/u);
+    assert.match(task, /pwd \(actual execution directory\): \/worktrees\/child/u);
     assert.match(task, /project root \(source context\): \/projects\/main/u);
-    assert.match(task, /Use pwd for code work/u);
-    assert.match(
-      task,
-      /task artifact folder \(\.tasks\/<task>\/artifacts\/<stage>\/\) remains authoritative when the authored prompt selects one/u,
-    );
-    assert.doesNotMatch(task, /not as a default artifact destination/u);
+    assert.ok(task.endsWith("Write /reports/plan.md"));
+    assert.doesNotMatch(task, /workflow workspace|workflow output|resolve against the workflow directory/u);
+    assert.match(task, /Never modify runtime-owned journals/u);
   });
 
-  it("leaves the prompt untouched when no directory or location is configured", () => {
-    assert.equal(composeWorkflowChildTask("draft the plan", undefined), "draft the plan");
-    assert.equal(composeWorkflowChildTask("draft the plan", "   "), "draft the plan");
+  it("leaves an unconfigured author's exact prompt unchanged", () => {
+    const prompt = "  Write /reports/plan.md\n";
+    assert.equal(composeWorkflowChildTask(prompt), prompt);
   });
 });

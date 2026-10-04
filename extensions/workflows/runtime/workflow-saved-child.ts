@@ -37,13 +37,8 @@ import {
   type WorkflowSavedChildResult,
 } from "./workflow-runtime.js";
 import { sha256WorkflowBytes, type WorkflowScriptIdentity } from "./workflow-script-identity.js";
-import {
-  revalidateWorkflowPrimaryFile,
-  type WorkflowFinalOutputDirectory,
-  type WorkflowOutputDirectory,
-  type WorkflowPrimaryFileReference,
-} from "./workflow-workspace.js";
-import { assertWorkflowRootLease, type WorkflowOutputLease, type WorkflowRootLease } from "./workflow-output.js";
+import type { WorkflowWorkspaceDirectory } from "./workflow-workspace.js";
+import { assertWorkflowRootLease, type WorkflowRootLease } from "./workflow-output.js";
 import {
   assertUniqueWorkflowItemKeys,
   assertWorkflowItemKey,
@@ -82,15 +77,9 @@ export interface WorkflowRunnerCoordination {
   parentItemKey?: string;
   sharedExecution: WorkflowSharedExecutionState;
   lease: WorkflowRootLease;
-  /** Absent when a root meta.outputDir bound workspace and output to one directory. */
-  outputLease?: WorkflowOutputLease | undefined;
-  /**
-   * Launch lineage that scopes completed-item checkpoints of a bound root, so a
-   * fresh launch never reuses an earlier run's work in its stable directory.
-   */
-  checkpointLineageId?: string | undefined;
-  workspace: WorkflowOutputDirectory;
-  output: WorkflowFinalOutputDirectory;
+  /** Launch lineage scopes every child completion to its root execution. */
+  checkpointLineageId: string;
+  workspace: WorkflowWorkspaceDirectory;
   ancestry: readonly { sourcePath: string; scriptSha256: string }[];
   budget: WorkflowBudget;
   /** Run-level no-operator mode. Lives on coordination so a saved child can
@@ -114,7 +103,6 @@ export interface SavedChildRunOutcome {
   ok: boolean;
   disposition?: WorkflowDisposition;
   error?: string;
-  primaryFile?: WorkflowPrimaryFileReference;
   scriptIdentity?: WorkflowScriptIdentity;
 }
 
@@ -141,10 +129,7 @@ export type LaunchSavedChildWorkflow = (request: SavedChildLaunchRequest) => Pro
 // ---------------------------------------------------------------------------
 
 interface SavedChildLifecycleOwner {
-  recordSkipped(checkpoint: {
-    childRunId: string;
-    primaryFile?: WorkflowPrimaryFileReference;
-  }): WorkflowSavedChildResult;
+  recordSkipped(checkpoint: { childRunId: string }): WorkflowSavedChildResult;
   recordStarted(run: { runId: string; runDir: string }): void;
   recordTerminal(
     child: SavedChildRunOutcome,
@@ -161,10 +146,8 @@ function savedChildResult(evidence: WorkflowChildRunEvidence): WorkflowSavedChil
     status: evidence.status,
     key: evidence.key,
     workspaceDir: evidence.workspaceDir,
-    outputDir: evidence.outputDir,
     ...(evidence.runId === undefined ? {} : { runId: evidence.runId }),
     ...(evidence.sourceRunId === undefined ? {} : { sourceRunId: evidence.sourceRunId }),
-    ...(evidence.primaryFile === undefined ? {} : { primaryFile: evidence.primaryFile }),
   };
 }
 
@@ -172,7 +155,6 @@ function savedChildResult(evidence: WorkflowChildRunEvidence): WorkflowSavedChil
 function createSavedChildLifecycleOwner(input: {
   key: string;
   workspaceDir: string;
-  outputDir: string;
   childScriptSha256: string;
   childRuns: WorkflowChildRunEvidence[];
   record: (message: string) => void;
@@ -186,10 +168,8 @@ function createSavedChildLifecycleOwner(input: {
         status: "skipped",
         key: input.key,
         workspaceDir: input.workspaceDir,
-        outputDir: input.outputDir,
         sourceRunId: checkpoint.childRunId,
         childScriptSha256: input.childScriptSha256,
-        ...(checkpoint.primaryFile === undefined ? {} : { primaryFile: checkpoint.primaryFile }),
       };
       input.childRuns.push(evidence);
       input.record(
@@ -204,7 +184,6 @@ function createSavedChildLifecycleOwner(input: {
         status: "running",
         key: input.key,
         workspaceDir: input.workspaceDir,
-        outputDir: input.outputDir,
         runId: run.runId,
         runDir: run.runDir,
         childScriptSha256: input.childScriptSha256,
@@ -223,11 +202,9 @@ function createSavedChildLifecycleOwner(input: {
         status,
         key: input.key,
         workspaceDir: input.workspaceDir,
-        outputDir: input.outputDir,
         runId: child.runId,
         runDir: child.runDir,
         childScriptSha256: input.childScriptSha256,
-        ...(child.primaryFile === undefined ? {} : { primaryFile: child.primaryFile }),
       };
       if (evidenceIndex === undefined) evidenceIndex = input.childRuns.push(evidence) - 1;
       else input.childRuns[evidenceIndex] = evidence;
@@ -281,21 +258,19 @@ export class SavedChildExecutionOwner {
       parentScriptSha256: this.options.parentScriptSha256,
       childScriptSha256: source.scriptSha256,
       workspaceIdentity: this.options.coordination.workspace.identity,
-      outputIdentity: this.options.coordination.output.identity,
       itemKey: validated.key,
-      ...(this.options.coordination.checkpointLineageId === undefined
-        ? {}
-        : { rootLineageId: this.options.coordination.checkpointLineageId }),
+      rootLineageId: this.options.coordination.checkpointLineageId,
+      ...(input.input === undefined ? {} : { input: input.input }),
+      items: validated.items,
     };
     const lifecycle = createSavedChildLifecycleOwner({
       key: validated.key,
       workspaceDir: this.options.coordination.workspace.absolutePath,
-      outputDir: this.options.coordination.output.absolutePath,
       childScriptSha256: source.scriptSha256,
       childRuns: this.options.childRuns,
       record: this.options.record,
     });
-    const skipped = this.reuseCheckpoint(checkpointIdentity, lifecycle, validated.key);
+    const skipped = this.reuseCheckpoint(checkpointIdentity, lifecycle);
     if (skipped !== undefined) return skipped;
     const child = await this.runChild(input, validated, source, lifecycle);
     if ((child.disposition?.status ?? (child.ok ? "completed" : "failed")) === "completed") {
@@ -315,7 +290,6 @@ export class SavedChildExecutionOwner {
     commitWorkflowCompletedCheckpoint(this.options.coordination.lease, {
       ...checkpointIdentity,
       childRunId: child.runId,
-      ...(child.primaryFile === undefined ? {} : { primaryFile: child.primaryFile }),
     });
     return savedChildResult(evidence);
   };
@@ -364,28 +338,11 @@ export class SavedChildExecutionOwner {
   private reuseCheckpoint(
     identity: WorkflowCheckpointIdentity,
     lifecycle: SavedChildLifecycleOwner,
-    key: string,
   ): WorkflowSavedChildResult | undefined {
     const checkpoint = readWorkflowCompletedCheckpoint(this.options.coordination.lease, identity);
     if (checkpoint === undefined) return undefined;
-    let primaryFile = checkpoint.primaryFile;
-    if (primaryFile !== undefined) {
-      try {
-        primaryFile = revalidateWorkflowPrimaryFile(this.options.coordination.output, primaryFile);
-      } catch (error) {
-        this.options.record(
-          `[workflow:checkpoint-stale] key=${JSON.stringify(key)} reason=${JSON.stringify(
-            error instanceof Error ? error.message : String(error),
-          )}`,
-        );
-        return undefined;
-      }
-    }
     assertWorkflowRootLease(this.options.coordination.lease);
-    return lifecycle.recordSkipped({
-      ...checkpoint,
-      ...(primaryFile === undefined ? {} : { primaryFile }),
-    });
+    return lifecycle.recordSkipped(checkpoint);
   }
 
   private async runChild(
@@ -402,10 +359,8 @@ export class SavedChildExecutionOwner {
       parentItemKey: validated.key,
       sharedExecution: this.options.coordination.sharedExecution,
       lease: this.options.coordination.lease,
-      outputLease: this.options.coordination.outputLease,
       checkpointLineageId: this.options.coordination.checkpointLineageId,
       workspace: this.options.coordination.workspace,
-      output: this.options.coordination.output,
       ancestry: [...this.options.coordination.ancestry, { sourcePath: source.path, scriptSha256: source.scriptSha256 }],
       budget: this.options.coordination.budget,
       ...(this.options.coordination.noOperator === undefined

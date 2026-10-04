@@ -24,8 +24,9 @@ An `agent()` call has exactly two result modes:
 
 There is no third mode. An agent does not return JSON, an object, a list, or a value the
 workflow script has to parse. When a stage produces something richer than one routing
-token, the agent writes it to a **named workspace file** and returns readable text; the
-next agent reads that file. The runtime persists every answer before emitting terminal
+token, the agent writes it to an **exact caller-assigned file destination in its prompt** and returns readable text; the
+next agent reads that same file. Native runtime workspaces own coordination and
+navigation, not user-file placement. The runtime persists every answer before emitting terminal
 `agent_end`; child metadata and diagnostics stay in journal and result evidence.
 
 ## The principle
@@ -58,9 +59,12 @@ stored data is AVAILABLE. An invalid result is still stored and still readable.
 
 ```js
 // Plain text: the exact full answer, nothing parsed.
-const review = await agent("Review the change and write findings to review.md in the workspace.", {
-  label: "review",
-});
+const review = await agent(
+  "Review the change and write findings to the exact review.md destination assigned in the whole input.",
+  {
+    label: "review",
+  },
+);
 // One exact routing token, selected from the declared members.
 const route = await agent(`Choose the next step from this review:\n${review}`, {
   label: "route",
@@ -88,16 +92,16 @@ before the replay lookup**, with the replacement below. A fresh run and a resume
 source still declares one fail with the same sentence, so an old shaped receipt is never
 reinterpreted under the reduced contract.
 
-| Removed                             | Use instead                                                                                                                                                                          |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `handoffs`                          | Have an agent write a named workspace file and return readable text; pass caller-owned work units through `items()`; or loop with a bounded `for` and route each pass with `choice`. |
-| `schema`                            | Have the agent write the record to a named workspace file and return readable text; use `choice` when source needs one exact token.                                                  |
-| `validate`                          | Put the rule in the prompt, or run a separate verifier agent that checks the named workspace file and writes its own record.                                                         |
-| `output`                            | Drop it: plain `agent(prompt)` already returns the exact full text.                                                                                                                  |
-| `repair`                            | Drop it: a choice call uses the package-owned single same-session correction.                                                                                                        |
-| `returnVia`                         | Drop it: a choice call always returns through `workflow_return`, and a plain call returns exact text.                                                                                |
-| `maxAnswerChars`, `schemaMaxLength` | Both are refused by name; state a length requirement in the prompt.                                                                                                                  |
-| Fusion `schema`, `validate`         | The judge returns exact text; state the required format in the prompt, or have a later agent write a named workspace file from the judge's text.                                     |
+| Removed                             | Use instead                                                                                                                                                                                                       |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `handoffs`                          | Have an agent write the exact caller-assigned destination in its prompt and return readable text; pass caller-owned work units through `items()`; or loop with a bounded `for` and route each pass with `choice`. |
+| `schema`                            | Have the agent write the record to the exact caller-assigned destination in its prompt and return readable text; use `choice` when source needs one exact token.                                                  |
+| `validate`                          | Put the rule in the prompt, or run a separate verifier agent that checks the same exact caller-assigned file and writes its own record at an assigned destination.                                                |
+| `output`                            | Drop it: plain `agent(prompt)` already returns the exact full text.                                                                                                                                               |
+| `repair`                            | Drop it: a choice call uses the package-owned single same-session correction.                                                                                                                                     |
+| `returnVia`                         | Drop it: a choice call always returns through `workflow_return`, and a plain call returns exact text.                                                                                                             |
+| `maxAnswerChars`, `schemaMaxLength` | Both are refused by name; state a length requirement in the prompt.                                                                                                                                               |
+| Fusion `schema`, `validate`         | The judge returns exact text; state the required format in the prompt, or have a later agent write the exact caller-assigned destination in its prompt from the judge's text.                                     |
 
 The standard source checker names `handoffs`, `output`, `repair` and `returnVia` on an
 `agent()` call, and still refuses raw `schema` and `validate`.

@@ -34,7 +34,6 @@ const STANDARD_DSL_RETURN_CASES = [
   { method: "items", call: "dsl.items()", category: "list" },
   { method: "log", call: 'dsl.log("x")', category: "void" },
   { method: "now", call: "dsl.now()", category: "runtime" },
-  { method: "outputDir", call: "dsl.outputDir()", category: "runtime" },
   { method: "parallel", call: 'dsl.parallel([() => dsl.agent("x")])', category: "list" },
   { method: "phase", call: 'dsl.phase("x")', category: "void" },
   { method: "pipeline", call: 'dsl.pipeline(["x"], (item) => dsl.agent(item))', category: "list" },
@@ -46,7 +45,6 @@ const STANDARD_DSL_RETURN_CASES = [
     call: 'dsl.publishPrimaryArtifact("x.md", "x")',
     category: "runtime",
   },
-  { method: "publishPrimaryFile", call: 'dsl.publishPrimaryFile("x.md")', category: "runtime" },
   { method: "random", call: "dsl.random()", category: "runtime" },
   { method: "workflow", call: 'dsl.workflow(() => dsl.agent("x"))', category: "opaque" },
   { method: "workspace", call: 'dsl.workspace("work", "HEAD")', category: "opaque" },
@@ -64,7 +62,6 @@ describe("standard workflow source grammar and policy", () => {
       "items",
       "log",
       "now",
-      "outputDir",
       "parallel",
       "phase",
       "pipeline",
@@ -72,7 +69,6 @@ describe("standard workflow source grammar and policy", () => {
       "promptFile",
       "publishArtifact",
       "publishPrimaryArtifact",
-      "publishPrimaryFile",
       "random",
       "workflow",
       "workspace",
@@ -138,7 +134,7 @@ describe("standard workflow source grammar and policy", () => {
       items: [item],
     });
   }
-  return dsl.publishPrimaryFile("report.md");
+  return "completed";
 }`),
     ],
     ["literal Error construction", standardSource('export default function run() { throw new Error("stop"); }')],

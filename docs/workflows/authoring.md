@@ -60,9 +60,7 @@ const {
   workflow,
   promptFile,
   workspace,
-  outputDir,
   invokeWorkflow,
-  publishPrimaryFile,
 } = dsl;
 ```
 
@@ -104,7 +102,7 @@ The diagram is an ownership map, not a decorative code trace:
   code makes and which a model makes without opening the source.
 - Every agent box says what it **receives** and what it **returns**. The handoffs
   between stages are the pipeline; a box that names only a role explains nothing.
-- Say what constrains each child: its prompt, its named workspace files, and whether
+- Say what constrains each child: its prompt, its exact caller-assigned files, and whether
   it returns text or one exact choice. Every child already receives all tools. A branch
   on an exact choice is not the same claim as a branch on prose, and the picture must
   not blur them.
@@ -291,7 +289,7 @@ frozen snapshot. Order and bytes, including whitespace, empty strings, and
 duplicates, are unchanged; there is no Locus items count or character policy.
 Physical constraints still include caller/tool JSON, context, memory, total
 attempts, and time. A source array or caller items may feed the same visible `pipeline()` plus inline
-`dsl.workflow()` mini-flow. Model discovery writes a named workspace file instead of
+`dsl.workflow()` mini-flow. Model discovery writes a exact caller-assigned file instead of
 returning a list; the operator or a later invocation turns that file into items.
 Fresh rediscovery must not be attached to old positional saved-child keys.
 Durable execution instead begins in a separate invocation with a caller-frozen,

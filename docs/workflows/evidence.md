@@ -247,9 +247,10 @@ verify that its owning process has stopped; do not remove run history.
 Legacy top-level `.locus-pi/runs/<runId>/` evidence remains readable without
 migration. New child and resume evidence is always nested under its physical group.
 
-Files deliberately written by workflow agents are outside this tree, under the
-selected project-local workflow workspace. Fresh workflows default to
-`.locus-pi/workspaces/<generated-run-name>/`.
+Files deliberately written by agents live at the exact caller-assigned paths in
+their prompts, independently of native evidence and runtime workspace selection.
+Text snapshots do not attest those filesystem effects. Consumers reopen assigned
+files; replay does not recreate them.
 
 `agent_end` carries `usage` (token/cost), the child session's model and reasoning-effort
 readback when the host exposes them, and — for a choice call —

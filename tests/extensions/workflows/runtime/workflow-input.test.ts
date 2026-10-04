@@ -118,10 +118,10 @@ describe("string-only workflow input", () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe(
-        "task/plan requires the complete accepted draft as non-empty semantic input; no agent was started and no workflow.mjs was published.",
+        "task/plan requires the complete accepted draft as non-empty semantic input; no agent was started and no workflow source was written.",
       );
       expect(childCalls).toBe(0);
-      expect(result.primaryFile).toBeUndefined();
+      expect(result).not.toHaveProperty("primaryFile");
       expect(result.journal.some((line) => line.kind === "agent_start")).toBe(false);
       expect(JSON.parse(readFileSync(result.resultPersistence.path, "utf8"))).toMatchObject({
         ok: false,

@@ -1,19 +1,14 @@
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  bindWorkflowHandoffClaim,
-  createWorkflowOperatorHandoffEnvelope,
-  readCurrentWorkflowScriptIdentity,
-} from "../../../../extensions/workflows/runtime/workflow-handoff.js";
+import { bindWorkflowHandoffClaim } from "../../../../extensions/workflows/runtime/workflow-handoff.js";
 import type { CustomUiFactory } from "../../../../extensions/_shared/host/pi-api.js";
 import * as runner from "../../../../extensions/workflows/runtime/workflow-runner.js";
-import { resolveWorkflowTarget } from "../../../../extensions/workflows/runtime/workflow-discovery.js";
 import { ensureWorkflowRunDir } from "../../../../extensions/workflows/runtime/workflow-run-layout.js";
-import { workflowRunRuntimeDir } from "../../../../extensions/workflows/runtime/workflow-run-layout.js";
 import { workflowResultFile } from "../../../../extensions/workflows/runtime/workflow-result.js";
 import workflows from "../../../../extensions/workflows/index.js";
+import { writeNativeHandoffRun } from "../../../fixtures/workflow-persisted-run.js";
 import { createHarness, emit } from "../../../test-harness.js";
 
 const roots: string[] = [];
@@ -26,76 +21,7 @@ afterEach(() => {
 function projectWithHandoff(runId: string, existingRoot?: string): string {
   const root = existingRoot ?? mkdtempSync(path.join(tmpdir(), "workflow-handoff-integration-"));
   if (existingRoot === undefined) roots.push(root);
-  const workflowsDir = path.join(root, ".locus-pi", "workflows");
-  mkdirSync(workflowsDir, { recursive: true });
-  const sourcePath = path.join(workflowsDir, "alpha.workflow.mjs");
-  writeFileSync(
-    sourcePath,
-    'export const meta={name:"alpha",description:"Alpha"}; export default async()=>({ok:true});\n',
-    "utf8",
-  );
-  const target = resolveWorkflowTarget({ script: "alpha" }, root, root);
-  const currentIdentity = readCurrentWorkflowScriptIdentity(target.path);
-  const runDir = ensureWorkflowRunDir(root, runId);
-  const snapshotPath = path.join(workflowRunRuntimeDir(runDir), `script-${currentIdentity.scriptSha256}.workflow.mjs`);
-  writeFileSync(snapshotPath, readFileSync(target.path));
-  const scriptIdentity = {
-    ...currentIdentity,
-    sourcePath: target.path,
-    snapshotPath,
-    nodeVersion: process.version,
-    platform: process.platform,
-    arch: process.arch,
-    builtinImports: [],
-    unboundDependencies: [],
-  };
-  const artifactRef = {
-    runId,
-    artifactId: "intent",
-    name: "intent.md",
-    sha256: "0".repeat(64),
-  };
-  const operatorHandoff = createWorkflowOperatorHandoffEnvelope({
-    declaration: {
-      title: "Review clarification",
-      questions: [
-        {
-          kind: "select",
-          id: "scope",
-          prompt: "Choose review scope",
-          options: [{ label: "Current changes" }, { label: "Last commit" }],
-          recommended: "Current changes",
-          allowCustom: true,
-        },
-      ],
-      continuationArtifactRefs: [artifactRef],
-    },
-    runId,
-    target,
-    scriptIdentity,
-    terminalArtifactRefs: [artifactRef],
-  });
-  const workspaceDir = path.join(root, "handoff-workspace");
-  mkdirSync(workspaceDir, { recursive: true });
-  writeFileSync(
-    workflowResultFile(runDir),
-    `${JSON.stringify({
-      runId,
-      ok: true,
-      result: { mode: "prepared" },
-      disposition: { status: "awaiting_operator", detail: "review clarification required" },
-      journal: [],
-      resultPersistence: { ok: true, path: workflowResultFile(runDir) },
-      workspaceDir,
-      workspaceDirRelative: "handoff-workspace",
-      workspaceDirExplicit: true,
-      target,
-      scriptIdentity,
-      artifactRefs: [artifactRef],
-      operatorHandoff,
-    })}\n`,
-    "utf8",
-  );
+  writeNativeHandoffRun(root, runId);
   return root;
 }
 

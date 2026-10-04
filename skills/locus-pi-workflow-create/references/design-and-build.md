@@ -86,7 +86,7 @@ that Build must create; do not declare grandchildren or an implicit root.
 Concurrency: <groups or none>
 Loop bounds: <bounds or none>
 Budgets: <axis=value with a one-line reason, or none — launch defaults apply; every other undeclared workflow budget axis is unbounded>
-Named files: <each workspace file, its writer and its readers, or none>
+Named files: <each exact caller-assigned destination in prompts, its writer and its readers, or none>
 File boundary: workflow source performs no file reads; name any child-owned source inspection
 Worst-case calls: <exact formula including saved children>
 Failure exits: <fail-closed exits>
@@ -177,20 +177,16 @@ unmet required evidence returns `{ ok: false, status: "failed" }` with the lates
 artifact and evidence; do not publish it as accepted or silently start a fresh run.
 An optional check not performed does not, by itself, make a completed implementation fail.
 
-The packaged `task/plan` writes the whole workspace `workflow.mjs` in one author
+The packaged `task/plan` writes the whole caller-assigned `workflow.mjs` in one author
 call, then runs at most three independent reviews with at most two revisions.
 The packaged `task/plan-light`, for lighter author models, creates a minimal
-runnable workspace `workflow.mjs`, then grows it through at most six complete
+runnable caller-assigned `workflow.mjs`, then grows it through at most six complete
 graph-node slices. An owner re-cuts the source-free remaining queue after each
 accepted slice. Independent mechanical and design gates share one cumulative
 correction per slice; final whole-file gates run after the queue is empty. The exact routes and terminal reasons live in the
 [task authoring manual](../../../examples/workflows/task/README.md).
 
-`publishPrimaryFile("workflow.mjs")` returns `primaryFile` with the validated
-workspace-relative path, absolute path, byte count, and digest. It does not copy the
-file into run `outputs/`. The validated `primaryFile.absolutePath` remains the
-read-and-launch handoff; verifier prose is not source. Host publication validation
-is not semantic review or live proof.
+The caller assigns one exact workflow.mjs path and the design, review, log and source-slice record paths in the whole semantic input. Agents write those files directly. The same source is used by Node, the project-confined native checker, reviewer and launcher; source outside the checker's existing boundary fails explicitly. Checks retain the actual source path, checked-byte SHA-256 and tool outcomes. Before launch, reopen the assigned regular nonempty source, compare the persisted reviewed/check evidence and repeat current required checks after correction or replay. Failed/exhausted review, missing or drifted source forbids execution. Native completion and returned prose never attest file delivery, and there is no publication prerequisite.
 
 A successful Build returns `/workflows run <name>` (or the qualified child ref).
 Create-only stops there. Create-and-run continues through

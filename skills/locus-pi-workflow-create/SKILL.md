@@ -26,37 +26,38 @@ export const meta = {
   profile: "standard",
 };
 
-export default async function run({ agent, parallel, publishPrimaryArtifact }) {
+export default async function run({ agent, parallel }, input) {
   const notes = await parallel([
     () =>
-      agent("Read README.md for the project purpose. Do not modify files.", {
+      agent(`Read README.md for the project purpose. Do not modify files.\nWhole caller input:\n${input}`, {
         label: "purpose",
         title: "Read project purpose",
       }),
     () =>
-      agent("Read package.json for development commands. Do not modify files.", {
+      agent(`Read package.json for development commands. Do not modify files.\nWhole caller input:\n${input}`, {
         label: "commands",
         title: "Read development commands",
       }),
   ]);
   const guide = await agent(
-    `Combine these complete notes into a getting-started guide. Preserve uncertainty; do not modify files.\n${notes.join("\n\n")}`,
+    `Combine notes into a guide; preserve uncertainty. Write only the exact guide.md path assigned in input using tools; missing/ambiguous path means failure, never guess.
+Return the complete guide too. Whole input:\n${input}\nComplete notes:\n${notes.join("\n\n")}`,
     { label: "compose", title: "Write getting-started guide" },
   );
-  return publishPrimaryArtifact("guide.md", guide);
+  return guide;
 }
 ```
 
-Readers can start independently; composition needs both complete notes. Publication keeps exact guide text.
+Readers can start independently; composition needs both complete notes. The composer writes the assigned file and returns its whole text.
 Read [the exact example and guide](../../extensions/workflows/references/examples/starters/README.md)
 when adapting; do not inherit example effects, bounds or executor choices without a task reason.
 
 ## Calls and handoffs
 
 `agent()` starts a clean child and returns complete text; pass it whole. Use exact `choice` only at a branch.
-Findings/plans live in named workspace files that agents write/read using the host-provided workspace.
+Assign exact paths in prompts for findings/plans and results; agents write/read those same files with ordinary tools.
 Source exposes control edges; children inspect and act with tools. Never parse prose, JSON or those files in source.
-`phase()`/`log()` show progress; `publishArtifact()` retains evidence and `publishPrimaryArtifact()` final text.
+`phase()`/`log()` show progress; text publication retains optional native evidence. It never saves or attests an agent-owned file.
 For decisions, reports or a translator, read [structured results](references/structured-results.md).
 
 ## Schedule from dependencies
@@ -104,4 +105,4 @@ For stopped source read [Repair + Continue](references/repair-and-continue.md) f
 [error evidence](../../docs/workflows/error-diagnostics.md), preserve confirmed calls/labels/prompts/order,
 and check repaired source before authorized continuation. Replay reuses answers, not files or current observations.
 For reuse, read inline `workflow()` versus saved `invokeWorkflow()` in the DSL: saved children use fixed keys,
-shared locations and no saved grandchildren. Adapt the reviewed design/source; changed prerequisites need fresh evidence.
+the same explicit prompt destinations and no saved grandchildren. Adapt the reviewed design/source; changed prerequisites need fresh evidence.

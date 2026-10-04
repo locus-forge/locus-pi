@@ -22,26 +22,21 @@ import type { WorkflowRunResultEnvelope } from "./workflow-journal.js";
 import {
   assertWorkflowPhysicalWorkspaceIdentity,
   isWorkflowPathWithinRoot,
-  type WorkflowFinalOutputDirectory,
-  type WorkflowOutputDirectory,
+  type WorkflowWorkspaceDirectory,
 } from "./workflow-output.js";
 import { parseWorkflowPersistedBinding } from "./workflow-persisted-binding.js";
 
-export const WORKFLOW_LAUNCH_BINDING_SCHEMA = "locus-pi.workflow-launch-binding.v2" as const;
+export const WORKFLOW_LAUNCH_BINDING_SCHEMA = "locus-pi.workflow-launch-binding.v3" as const;
 const WORKFLOW_LAUNCH_BINDING_FILENAME = "launch-binding.json";
 const WORKFLOW_LAUNCH_BINDING_TEMP_FILENAME = "launch-binding.json.tmp";
 
 export interface WorkflowLaunchBinding {
   schema: typeof WORKFLOW_LAUNCH_BINDING_SCHEMA;
   runId: string;
-  /** New root launches bind exact recovery inputs; old bindings remain readable, not crash-resumable. */
-  recoveryInputSha256?: string;
-  /**
-   * Original root run id of this launch lineage: a fresh launch records its own
-   * run id, every resume copies the source value unchanged. Optional under the
-   * same schema so bindings written before it existed stay readable.
-   */
-  rootLineageId?: string;
+  /** Exact launch inputs required for conservative interruption recovery. */
+  recoveryInputSha256: string;
+  /** Fresh roots start a lineage; every continuation preserves it. */
+  rootLineageId: string;
   target: {
     kind: "name" | "scriptPath";
     ref: string;
@@ -55,14 +50,6 @@ export interface WorkflowLaunchBinding {
     physicalIdentity: string;
     physicalIdentitySchemaVersion: 1;
     explicit: boolean;
-  };
-  output: {
-    absolutePath: string;
-    relativePath: string;
-    physicalPath: string;
-    physicalIdentity: string;
-    physicalIdentitySchemaVersion: 1;
-    source: "declared" | "default";
   };
   semanticInput: {
     present: boolean;
@@ -87,12 +74,11 @@ export function createWorkflowLaunchBinding(input: {
   recoveryInputSha256: string;
   target: WorkflowLaunchBinding["target"];
   scriptIdentity: WorkflowScriptIdentity;
-  workspace: WorkflowOutputDirectory;
+  workspace: WorkflowWorkspaceDirectory;
   workspaceExplicit: boolean;
-  output: WorkflowFinalOutputDirectory;
   semanticInput: WorkflowLaunchBinding["semanticInput"];
 }): WorkflowLaunchBinding {
-  const location = ({ absolutePath, relativePath, physicalPath, identity }: WorkflowOutputDirectory) => ({
+  const location = ({ absolutePath, relativePath, physicalPath, identity }: WorkflowWorkspaceDirectory) => ({
     absolutePath,
     relativePath,
     physicalPath,
@@ -107,18 +93,11 @@ export function createWorkflowLaunchBinding(input: {
     target: input.target,
     scriptIdentity: input.scriptIdentity,
     workspace: { ...location(input.workspace), explicit: input.workspaceExplicit },
-    output: { ...location(input.output), source: input.output.source },
     semanticInput: input.semanticInput,
   };
 }
 
-/**
- * The original root run id a launch continues. A fresh launch starts its own
- * lineage; resume and workspace-reusing handoff continuation copy the source
- * binding's value unchanged. A source binding written before the field existed
- * (or unreadable) anchors the lineage at the source run itself, which can only
- * cost checkpoint reuse, never reuse another lineage's work.
- */
+/** Preserve only a current-format source lineage; legacy runs require a fresh launch. */
 export function readWorkflowRootLineageId(
   projectRoot: string,
   runId: string,
@@ -126,7 +105,13 @@ export function readWorkflowRootLineageId(
   sourceBinding?: WorkflowLaunchBinding,
 ): string {
   if (sourceRunId === undefined) return runId;
-  return (sourceBinding ?? readWorkflowLaunchBinding(projectRoot, sourceRunId))?.rootLineageId ?? sourceRunId;
+  const binding = sourceBinding ?? readWorkflowLaunchBinding(projectRoot, sourceRunId);
+  if (binding === null) throw new Error(workflowExecutionMigrationMessage(sourceRunId));
+  return binding.rootLineageId;
+}
+
+export function workflowExecutionMigrationMessage(runId: string): string {
+  return `Workflow run ${runId} has no valid host launch binding (output-free v3 required); incompatible or unverifiable execution cannot resume, recover or continue. Start a fresh migrated run with exact file destinations in prompts. Retained evidence remains readable.`;
 }
 
 /** Write once, atomically, after all launch values passed runtime validation. */
@@ -172,11 +157,6 @@ export function projectWorkflowLaunchBindingOntoResult(
     workspacePhysicalIdentity: binding.workspace.physicalIdentity,
     workspacePhysicalIdentitySchemaVersion: 1,
     workspaceDirExplicit: binding.workspace.explicit,
-    outputDir: binding.output.absolutePath,
-    outputDirRelative: binding.output.relativePath,
-    outputPhysicalIdentity: binding.output.physicalIdentity,
-    outputPhysicalIdentitySchemaVersion: 1,
-    outputSource: binding.output.source,
     semanticInputPresent: binding.semanticInput.present,
     semanticInputSha256: binding.semanticInput.sha256,
   };
@@ -196,11 +176,12 @@ export function workflowLaunchBindingMatchesResult(
     result.workspacePhysicalIdentity === binding.workspace.physicalIdentity &&
     result.workspacePhysicalIdentitySchemaVersion === 1 &&
     result.workspaceDirExplicit === binding.workspace.explicit &&
-    result.outputDir === binding.output.absolutePath &&
-    result.outputDirRelative === binding.output.relativePath &&
-    result.outputPhysicalIdentity === binding.output.physicalIdentity &&
-    result.outputPhysicalIdentitySchemaVersion === 1 &&
-    result.outputSource === binding.output.source &&
+    result.outputDir === undefined &&
+    result.outputDirRelative === undefined &&
+    result.outputPhysicalIdentity === undefined &&
+    result.outputPhysicalIdentitySchemaVersion === undefined &&
+    result.outputSource === undefined &&
+    result.primaryFile === undefined &&
     result.semanticInputPresent === binding.semanticInput.present &&
     result.semanticInputSha256 === binding.semanticInput.sha256
   );
@@ -220,7 +201,6 @@ function parseWorkflowLaunchBinding(
       "target",
       "scriptIdentity",
       "workspace",
-      "output",
       "semanticInput",
       "recoveryInputSha256",
       "rootLineageId",
@@ -252,47 +232,22 @@ function parseWorkflowLaunchBinding(
   if (!isWorkspace(value.workspace, projectRoot)) {
     throw new Error("workflow launch binding workspace is invalid");
   }
-  if (!isOutput(value.output, projectRoot)) {
-    throw new Error("workflow launch binding output is invalid");
-  }
   if (!isSemanticInput(value.semanticInput)) {
     throw new Error("workflow launch binding semantic identity is invalid");
   }
-  if (
-    value.recoveryInputSha256 !== undefined &&
-    (typeof value.recoveryInputSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(value.recoveryInputSha256))
-  )
+  if (typeof value.recoveryInputSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(value.recoveryInputSha256))
     throw new Error("workflow recovery input identity is invalid");
-  if (value.rootLineageId !== undefined) assertWorkflowRunId(value.rootLineageId);
+  assertWorkflowRunId(value.rootLineageId);
   return {
     schema: WORKFLOW_LAUNCH_BINDING_SCHEMA,
-    ...(value.recoveryInputSha256 === undefined ? {} : { recoveryInputSha256: value.recoveryInputSha256 as string }),
-    ...(value.rootLineageId === undefined ? {} : { rootLineageId: value.rootLineageId as string }),
+    recoveryInputSha256: value.recoveryInputSha256 as string,
+    rootLineageId: value.rootLineageId as string,
     runId,
     target: parsed.target,
     scriptIdentity: parsed.scriptIdentity as WorkflowScriptIdentity,
     workspace: value.workspace,
-    output: value.output,
     semanticInput: value.semanticInput,
   };
-}
-
-function isOutput(value: unknown, projectRoot: string): value is WorkflowLaunchBinding["output"] {
-  if (
-    !isRecord(value) ||
-    !hasOnlyKeys(value, [
-      "absolutePath",
-      "relativePath",
-      "physicalPath",
-      "physicalIdentity",
-      "physicalIdentitySchemaVersion",
-      "source",
-    ])
-  )
-    return false;
-  if (value.source !== "declared" && value.source !== "default") return false;
-  const { source: _source, ...workspaceShape } = value;
-  return isWorkspace({ ...workspaceShape, explicit: false }, projectRoot);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
