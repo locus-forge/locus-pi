@@ -2,14 +2,19 @@ import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createAssistantMessageEventStream, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
+import { getModel } from "@earendil-works/pi-ai/compat";
+import type { ExtensionCommandContext } from "../../../../extensions/_shared/host/pi-api.js";
 import { type SdkAgentSessionEventLike } from "../../../../extensions/_shared/agent-runtime/agent-sdk-host.js";
 import { agentLiveStore } from "../../../../extensions/_shared/agent-runtime/agent-live-store.js";
 import { createHarness, runTool } from "../../../test-harness.js";
+import { restoreGlobalModelRolesHome, writeGlobalModelRoles } from "../../../model-roles-fixture.js";
 
 const tempRoots: string[] = [];
 
 afterEach(() => {
   agentLiveStore.reset();
+  restoreGlobalModelRolesHome();
   vi.restoreAllMocks();
   vi.resetModules();
   vi.doUnmock("@earendil-works/pi-coding-agent");
@@ -241,5 +246,223 @@ describe("agent task tool execution", () => {
       {},
     );
     expect(component.render(100).some((line) => line.includes("error") || line.includes("FAILED"))).toBe(true);
+  });
+});
+
+const strong = { ...getModel("openai", "gpt-5.2") };
+const limited = { ...getModel("openai", "gpt-5.1") };
+const nonReasoning = { ...getModel("openai", "gpt-4o-mini") };
+
+/** Real SDK selection/defaults/clamping/readback, with only provider generation scripted. */
+async function thinkingFixture(
+  input: { profileModel?: string | undefined; profileThinking?: string; hideThinking?: boolean } = {},
+) {
+  const root = mkdtempSync(path.join(tmpdir(), "locus-agent-thinking-"));
+  tempRoots.push(root);
+  writeGlobalModelRoles(root, {});
+  mkdirSync(path.join(root, ".agents", "agents"), { recursive: true });
+  writeFileSync(
+    path.join(root, ".agents", "agents", "reviewer.md"),
+    [
+      "---",
+      "name: reviewer",
+      "description: Fixture reviewer",
+      ...(input.profileModel === undefined ? [] : [`model: ${input.profileModel}`]),
+      ...(input.profileThinking === undefined ? [] : [input.profileThinking]),
+      "---",
+      "Return READY.",
+    ].join("\n"),
+  );
+  const sdk = await vi.importActual<typeof import("@earendil-works/pi-coding-agent")>(
+    "@earendil-works/pi-coding-agent",
+  );
+  const settingsManager = sdk.SettingsManager.inMemory({
+    defaultThinkingLevel: "low",
+    retry: { enabled: false },
+  });
+  const modelRuntime = await sdk.ModelRuntime.create({
+    authPath: path.join(root, "fixture-auth.json"),
+    modelsPath: null,
+    modelsStorePath: path.join(root, "models-store.json"),
+    refreshOnCreate: false,
+  });
+  await modelRuntime.setRuntimeApiKey("openai", "fixture-key");
+  const captured: Array<Record<string, unknown>> = [];
+  const stream = vi.fn((model: Model<Api>) => {
+    const message: AssistantMessage = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      timestamp: Date.now(),
+      content: [{ type: "text", text: "READY" }],
+      stopReason: "stop",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+    };
+    const events = createAssistantMessageEventStream();
+    events.push({ type: "done", reason: "stop", message });
+    events.end();
+    return events;
+  });
+  vi.doMock("@earendil-works/pi-coding-agent", () => ({
+    ...sdk,
+    getAgentDir: () => root,
+    DefaultResourceLoader: class extends sdk.DefaultResourceLoader {
+      constructor(options: Record<string, unknown>) {
+        super({
+          ...options,
+          cwd: root,
+          agentDir: root,
+          settingsManager,
+          noExtensions: true,
+          noSkills: true,
+          noPromptTemplates: true,
+          noThemes: true,
+          noContextFiles: true,
+        });
+      }
+    },
+    async createAgentSession(options: Record<string, unknown>) {
+      captured.push(options);
+      const result = await sdk.createAgentSession({
+        ...options,
+        modelRuntime,
+        settingsManager,
+        noTools: "all",
+        tools: [],
+      });
+      result.session.agent.streamFunction = stream;
+      if (input.hideThinking === true) {
+        Object.defineProperty(result.session, "thinkingLevel", { get: () => undefined });
+      }
+      return result;
+    },
+  }));
+  const { default: agents } = await import("../../../../extensions/agents/index.js");
+  const { agentLiveStore } = await import("../../../../extensions/_shared/agent-runtime/agent-live-store.js");
+  agentLiveStore.reset();
+  const h = createHarness(root, { models: [strong, limited, nonReasoning], sessionId: "fixture-parent" });
+  h.ctx.model = strong;
+  agents(h.pi);
+  const readback = () => {
+    const row = [...agentLiveStore.rows.values()].at(-1)!;
+    const envelope = JSON.parse(readFileSync(row.resultArtifact!, "utf8")) as { content: string };
+    return { row, result: JSON.parse(envelope.content) as Record<string, unknown> };
+  };
+  return { root, h, settingsManager, captured, stream, agentLiveStore, readback };
+}
+
+describe("standalone child SDK thinking routing", () => {
+  it.each(["high", "xhigh"] as const)("bare %s overrides low SDK defaults without an implicit role", async (effort) => {
+    const f = await thinkingFixture();
+    writeGlobalModelRoles(f.root, { agent: "openai/gpt-4o-mini:low" });
+    f.h.pi.setThinkingLevel?.(effort);
+
+    const result = await runTool(f.h, "spawn_agent", { task: "Return READY" });
+
+    expect(result.isError).not.toBe(true);
+    expect(f.captured).toHaveLength(1);
+    expect(f.captured[0]).toMatchObject({ model: strong, thinkingLevel: effort });
+    expect(f.stream).toHaveBeenCalledOnce();
+    const { row, result: receipt } = f.readback();
+    expect(row).toMatchObject({ status: "done", model: "openai/gpt-5.2", thinking: effort });
+    expect(row.agentName).toBeUndefined();
+    expect(receipt).toMatchObject({ executedModel: "openai/gpt-5.2", executedThinking: effort });
+  });
+
+  it.each([undefined, "smol"])("inherits parent high for a named inherited tier %s", async (profileModel) => {
+    const f = await thinkingFixture({ profileModel });
+    f.h.pi.setThinkingLevel?.("high");
+
+    await f.h.commands.get("agent")!.handler("run reviewer Return READY", f.h.ctx as ExtensionCommandContext);
+
+    expect(f.captured[0]).toMatchObject({ model: strong, thinkingLevel: "high" });
+    expect(f.readback().result).toMatchObject({ executedThinking: "high" });
+  });
+
+  it.each([
+    { profileModel: "openai/gpt-5.2:medium", roles: {}, requested: "medium", actual: "medium" },
+    { profileModel: "smol", roles: { smol: "openai/gpt-5.2:xhigh" }, requested: "xhigh", actual: "xhigh" },
+    { profileModel: "openai/gpt-5.2", roles: {}, requested: undefined, actual: "low" },
+    { profileModel: "smol", roles: { smol: "openai/gpt-5.2" }, requested: undefined, actual: "low" },
+  ] as const)("resolves $profileModel with SDK effort $requested and readback $actual", async (route) => {
+    const f = await thinkingFixture({ profileModel: route.profileModel });
+    writeGlobalModelRoles(f.root, route.roles);
+    f.h.pi.setThinkingLevel?.("high");
+
+    const result = await runTool(f.h, "spawn_agent", { agent: "reviewer", task: "Return READY" });
+
+    expect(result.isError).not.toBe(true);
+    expect(f.captured[0]?.thinkingLevel).toBe(route.requested);
+    expect(f.readback().result).toMatchObject({ executedModel: "openai/gpt-5.2", executedThinking: route.actual });
+  });
+
+  it.each([undefined, "smol"])("uses SDK per-model fallback when parent thinking is unknown (%s)", async (agent) => {
+    const f = await thinkingFixture({ profileModel: agent });
+    delete f.h.pi.getThinkingLevel;
+    f.settingsManager.setModelThinkingLevel("openai", "gpt-5.2", "medium");
+
+    await runTool(f.h, "spawn_agent", { ...(agent === undefined ? {} : { agent: "reviewer" }), task: "Return READY" });
+
+    expect(f.captured[0]).not.toHaveProperty("thinkingLevel");
+    expect(f.readback().result).toMatchObject({ executedThinking: "medium" });
+  });
+
+  it.each(["thinking-level: xhigh", "thinkingLevel: xhigh"])("leaves separate profile %s inert", async (field) => {
+    const f = await thinkingFixture({ profileModel: "openai/gpt-5.2", profileThinking: field });
+    f.h.pi.setThinkingLevel?.("high");
+    f.settingsManager.setModelThinkingLevel("openai", "gpt-5.2", "medium");
+
+    await runTool(f.h, "spawn_agent", { agent: "reviewer", task: "Return READY" });
+
+    expect(f.captured[0]).not.toHaveProperty("thinkingLevel");
+    expect(f.readback().result).toMatchObject({ executedThinking: "medium" });
+  });
+
+  it.each([
+    { model: limited, actual: "high" },
+    { model: nonReasoning, actual: "off" },
+  ] as const)("keeps SDK capability clamping for $model.id", async ({ model, actual }) => {
+    const f = await thinkingFixture();
+    f.h.ctx.model = model;
+    f.h.pi.setThinkingLevel?.("xhigh");
+
+    await runTool(f.h, "spawn_agent", { task: "Return READY" });
+
+    expect(f.captured[0]?.thinkingLevel).toBe("xhigh");
+    expect(f.readback().row).toMatchObject({ thinking: actual });
+    expect(f.readback().result).toMatchObject({ executedThinking: actual });
+  });
+
+  it("leaves unavailable child thinking readback absent despite a known request", async () => {
+    const f = await thinkingFixture({ hideThinking: true });
+    f.h.pi.setThinkingLevel?.("high");
+
+    await runTool(f.h, "spawn_agent", { task: "Return READY" });
+
+    expect(f.captured[0]?.thinkingLevel).toBe("high");
+    expect(f.readback().row.thinking).toBeUndefined();
+    expect(f.readback().result).not.toHaveProperty("executedThinking");
+  });
+
+  it.each(["openai/missing:high", "openai/gpt-5.2:invalid"])("refuses %s before SDK creation", async (selector) => {
+    const f = await thinkingFixture({ profileModel: "smol" });
+    writeGlobalModelRoles(f.root, { smol: selector });
+    f.h.pi.setThinkingLevel?.("high");
+
+    const result = await runTool(f.h, "spawn_agent", { agent: "reviewer", task: "Return READY" });
+
+    expect(result.isError).toBe(true);
+    expect(f.captured).toEqual([]);
+    expect(f.stream).not.toHaveBeenCalled();
+    expect([...f.agentLiveStore.rows.values()].at(-1)).toMatchObject({ status: "error" });
+    expect([...f.agentLiveStore.rows.values()].at(-1)?.thinking).toBeUndefined();
   });
 });

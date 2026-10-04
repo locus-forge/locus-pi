@@ -54,7 +54,7 @@ when adapting; do not inherit example effects, bounds or executor choices withou
 
 ## Calls and handoffs
 
-`agent()` starts a clean child and returns whole text; pass it with the task context its consumer needs.
+`agent()` starts a clean child and returns whole text. Give each child its complete relevant Task, exact paths, evidence and constraints; parent conversation is absent.
 Use exact `choice` only at a branch.
 Assign exact paths in prompts for findings/plans and results; agents write/read those same files with ordinary tools.
 Source exposes control edges; children inspect and act with tools. Never parse prose, JSON or those files in source.

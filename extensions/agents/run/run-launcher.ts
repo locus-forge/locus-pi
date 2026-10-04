@@ -27,7 +27,12 @@ import {
   type ModelRoleResolution,
 } from "../../_shared/model/model-settings.js";
 import { resolveWorkflowModel } from "../../_shared/model/workflow-model-resolve.js";
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "../../_shared/host/pi-api.js";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+  ThinkingLevel,
+} from "../../_shared/host/pi-api.js";
 import type { AgentDefinition } from "../../_shared/agent-runtime/agents.js";
 import { setOperatorWidget } from "../../_shared/operator/widget-render.js";
 import { appendProjectError } from "../../_shared/host/error-journal.js";
@@ -140,8 +145,12 @@ export async function runAgentLiveTask(
       lifecycleEntryIds: [],
     });
   }
+  // Inherited models keep known parent effort. Concrete tiers use their suffix,
+  // or leave SDK per-model/global defaults intact when no suffix was declared.
+  const thinkingLevel = tier.model === undefined ? input.pi.getThinkingLevel?.() : tier.thinking;
   const executor = createAgentSdkSessionExecutor({
     model: tier.model ?? (ctx as { model?: unknown }).model,
+    ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
     childTimeoutMs: input.childTimeoutMs,
     live: {
       rowId,
@@ -259,7 +268,7 @@ async function resolveAgentExecutorModel(
   ctx: ExtensionContext,
   agent: AgentDefinition,
   resolution: ModelRoleResolution,
-): Promise<{ model?: unknown; refusal?: string; fallback?: string }> {
+): Promise<{ model?: unknown; thinking?: ThinkingLevel; refusal?: string; fallback?: string }> {
   if (resolution.malformed !== undefined) {
     // Same rule as the bridge (OD2 parity): a malformed assignment is a config error
     // and refuses, only a genuinely unassigned role degrades.
@@ -284,7 +293,8 @@ async function resolveAgentExecutorModel(
     };
   }
   const resolved = await resolveWorkflowModel(formatAssignment(resolution.assignment), ctx);
-  if (resolved.ok) return { model: resolved.model };
+  if (resolved.ok)
+    return { model: resolved.model, ...(resolved.thinking === undefined ? {} : { thinking: resolved.thinking }) };
   return {
     refusal:
       `Agent "${agent.name}" declares the model ${JSON.stringify(agent.model?.[0] ?? resolution.role)}, ` +

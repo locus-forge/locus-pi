@@ -16,6 +16,15 @@
 
 `spawn_agent` accepts one required `task` plus optional `agent`, `title`, and explicit parent context. Omitting `agent` starts a clean child without a role profile. An explicit name resolves only from the project or user catalog.
 
+Bare standalone children inherit the current session model without consulting the
+`agent` model role. Bare children and named profiles whose model tier inherits also
+receive known parent thinking; unknown parent thinking leaves Pi SDK defaults.
+A resolved profile selector or assigned role uses its `:off|minimal|low|medium|high|xhigh`
+suffix. Without a suffix it leaves the SDK's per-model/global thinking fallback,
+even under a high parent. Separate profile `thinking-level`/`thinkingLevel` fields
+do not affect this routing. Pi still clamps effort to model capabilities; terminal
+evidence records the child's effective readback, leaving it absent when unavailable.
+
 ## Contract and limits
 
 Standalone task defaults and workflow constraints are listed together in the

@@ -100,6 +100,11 @@ really decomposes into more coherent subtasks.
 Review whether each brief gives the agent enough to complete its task. Remove
 mechanical headings, repeated completion criteria, tool choreography and
 general policy that add no task-specific information.
+Give each clean child the complete relevant Task, exact paths, evidence and
+constraints in its own brief; do not assume it inherits the parent conversation.
+When a role needs a write boundary, permit both its product work and assigned
+evidence: "Write product code only under the assigned product root. Also write
+the exact evidence files explicitly assigned to your role. No other writes are permitted."
 For a review edge, let the reviewer inspect the full current diff with its own tools.
 Commit only within existing task authorization; require it to account for every
 in-scope path in that diff before a favorable verdict. Do not have the producer
@@ -143,6 +148,9 @@ Correction receives the complete actionable findings and is followed by
 fresh review. A later delivery writer reports the reviewed state. If that
 writer performs a new required check, its failure must reach an explicit
 non-success route before successful completion.
+Read a correction record only on a path where a correction produced it. An initial
+acceptance path does not require correction evidence. Determine current acceptance
+from the latest independent review; preserve earlier failures as history.
 
 Walk terminal paths for a produced artifact with an optional check unavailable, a
 confirmed defect and an explicitly required verifier unavailable. Delivery reports the

@@ -162,6 +162,11 @@ ready for the owner, not that implementation is authorized.
 
 ### Choose a graph and prompt detail
 
+This choice shapes the generated product workflow, whether an installed authoring
+skill or a packaged authoring pipeline creates it. Running accepted source follows
+that graph; execution does not select a new graph. Choose from the Task's required
+outcomes and dependencies, independently of the author or executor model.
+
 Start with the task need, then select a semantic approach and its smallest useful
 graph. The [approach guide](../../skills/locus-pi-workflow-create/references/agentic-approaches.md)
 explains role ownership, feedback, stopping and adaptation:
