@@ -54,7 +54,7 @@ Read [the exact source and guide](../../extensions/workflows/references/examples
 
 ## Read handoffs before adding control
 
-`agent()` returns whole text; only `choice` supplies a branch. The responsible reviewer/planner can own it directly.
+`agent()` returns whole text; reviewers/planners can own `choice`. Pass task context; children inherit no earlier conversation.
 Give file writers/readers the same exact caller-assigned paths, preferably absolute. Children inspect with tools; source never parses
 files, JSON or prose.
 For decisions, reports or a translator, read [structured results](../locus-pi-workflow-create/references/structured-results.md).

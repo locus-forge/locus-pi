@@ -46,6 +46,12 @@ source receives the accepted value. The [agent result contract](agent-results.md
 owns same-session correction, optional `choiceFallback`, journal evidence and
 failure behavior. Workflow code neither parses an answer nor implements format repair.
 
+Both checker modes validate a literal `choiceFallback` against a statically
+visible literal `choice` array before execution. The fallback must satisfy the
+runtime choice contract and be one of the declared choices. Dynamic values,
+option spreads and shorthand declarations remain runtime-validated; the checker
+does not evaluate expressions or resolve constants.
+
 An agent never returns a list or JSON for source to consume. When a stage discovers
 work at runtime, the agent writes the units to a exact caller-assigned file and returns
 readable text; a later agent reads that file. When the caller already knows the units,

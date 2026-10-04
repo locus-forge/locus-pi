@@ -117,13 +117,32 @@ checks apply to every design:
 
 Use the already selected pattern card as an algorithm, not a full workflow to copy blindly.
 
-For each acceptance edge, trace blocking criteria to the request or an authoritative
-contract and identify how a child can establish them. A product requirement does not
-by itself require one particular verification method. Do not assume the author's
-tools are available to children; assign any needed capability discovery to an existing
-worker or reviewer. Separate observed defects, unmet required evidence and optional
-checks not performed. Check that correction can address the finding: an unavailable
-optional verifier is a coverage limitation, not implementation work.
+For each acceptance edge, trace blocking criteria to the request or an
+authoritative contract and identify evidence an available child can obtain.
+A product requirement does not by itself require one particular verification method.
+Do not assume the author's tools are available to children; assign any needed
+capability discovery to an existing worker or reviewer.
+
+Review both directions: preserve every required outcome, and reject any
+added restriction that would prevent one. Workflow design changes
+orchestration; it does not rewrite the task's requirements.
+
+Separate observed defects, unmet required evidence and optional checks not
+performed. An unavailable optional check is a coverage limitation, not
+implementation work or a new blocking criterion.
+
+When acceptance concerns file delivery, the evaluator inspects the actual
+required files at their exact caller-assigned paths after the last correction or
+cleanup. A report that files were created earlier is not evidence that they
+remain available.
+
+Repository ignore rules govern version control, not delivery. Cleanup may
+remove disposable files belonging to this task; required deliverables remain.
+
+Correction receives the complete actionable findings and is followed by
+fresh review. A later delivery writer reports the reviewed state. If that
+writer performs a new required check, its failure must reach an explicit
+non-success route before successful completion.
 
 Walk terminal paths for a produced artifact with an optional check unavailable, a
 confirmed defect and an explicitly required verifier unavailable. Delivery reports the
