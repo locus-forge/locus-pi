@@ -86,7 +86,7 @@ that Build must create; do not declare grandchildren or an implicit root.
 Concurrency: <groups or none>
 Loop bounds: <bounds or none>
 Budgets: <axis=value with a one-line reason, or none — launch defaults apply; every other undeclared workflow budget axis is unbounded>
-Named files: <each exact caller-assigned destination in prompts, its writer and its readers, or none>
+Named files: <shared handoffs and Task-required output paths, each writer and its readers; delegated product roots>
 File boundary: workflow source performs no file reads; name any child-owned source inspection
 Worst-case calls: <exact formula including saved children>
 Failure exits: <fail-closed exits>
@@ -100,11 +100,20 @@ really decomposes into more coherent subtasks.
 Review whether each brief gives the agent enough to complete its task. Remove
 mechanical headings, repeated completion criteria, tool choreography and
 general policy that add no task-specific information.
-Give each clean child the complete relevant Task, exact paths, evidence and
-constraints in its own brief; do not assume it inherits the parent conversation.
-When a role needs a write boundary, permit both its product work and assigned
-evidence: "Write product code only under the assigned product root. Also write
-the exact evidence files explicitly assigned to your role. No other writes are permitted."
+Give each clean child the complete relevant original Task, evidence and constraints
+in its own brief; do not assume it inherits the parent conversation. Keep the
+original Task authoritative. Add role-specific duties without redundant task
+paraphrases that change semantics or turn workflow bookkeeping into product requirements.
+Pass that Task once per child with relevant current evidence, not repeated task
+copies or cumulative handoff history; corrections still need complete actionable findings.
+Separate Task-required output paths, shared coordination records and product internals.
+Assign exact paths and writers/readers to the first two. An implementation actor
+may choose internal files within its delegated product root unless the Task sets
+a narrower boundary, such as an `index.html`-only product. Preserve unrelated work.
+A product-read-only reviewer may write its assigned report, not product files.
+The fixed control skeleton states dependencies, observations and exits; it need
+not enumerate runtime-discovered implementation work. Existing worker/evaluator
+and plan/replan patterns cover these choices without a mandatory planner.
 For a review edge, let the reviewer inspect the full current diff with its own tools.
 Commit only within existing task authorization; require it to account for every
 in-scope path in that diff before a favorable verdict. Do not have the producer
@@ -125,6 +134,10 @@ Use the already selected pattern card as an algorithm, not a full workflow to co
 For each acceptance edge, trace blocking criteria to the request or an
 authoritative contract and identify evidence an available child can obtain.
 A product requirement does not by itself require one particular verification method.
+Keep verification task-derived: use controlled fixtures for required behavior,
+not an unrequested solver or optimization goal. Bound costly checker commands
+with a task-justified limit; exhaustion leaves required evidence incomplete.
+Nonblocking suggestions do not become acceptance criteria.
 Do not assume the author's tools are available to children; assign any needed
 capability discovery to an existing worker or reviewer.
 

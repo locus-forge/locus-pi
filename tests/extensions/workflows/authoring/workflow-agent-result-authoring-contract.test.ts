@@ -20,10 +20,10 @@ const activeAuthoringGuides = [
   "skills/locus-pi-workflow-create-detailed/SKILL.md",
   "skills/locus-pi-workflow-create-detailed/references/worked-decisions.md",
   ...readdirSync(path.join(root, "skills/locus-pi-workflow-create/references"))
-    .filter((name) => name.endsWith(".md"))
+    .filter((name) => name.endsWith(".md") && name !== "dsl.md")
     .map((name) => `skills/locus-pi-workflow-create/references/${name}`),
   ...readdirSync(path.join(root, "docs/workflows"))
-    .filter((name) => name.endsWith(".md"))
+    .filter((name) => name.endsWith(".md") && name !== "dsl.md")
     .map((name) => `docs/workflows/${name}`),
   "examples/workflows/README.md",
   "examples/workflows/task/README.md",
@@ -332,9 +332,10 @@ describe("agent result authoring contract", () => {
       "skills/locus-pi-workflow-create-detailed/SKILL.md",
       "skills/locus-pi-workflow-create-detailed/references/worked-decisions.md",
       ...readdirSync(path.join(root, "skills/locus-pi-workflow-create/references"))
-        .filter((name) => name.endsWith(".md"))
+        .filter((name) => name.endsWith(".md") && name !== "dsl.md")
         .map((name) => `skills/locus-pi-workflow-create/references/${name}`),
     ];
+    // The generated full DSL reference also documents runtime-only Fusion options; its API coverage has its own suite.
     const removedMention =
       /`(?:handoffs|schema|validate|output|repair|returnVia|maxAnswerChars|schemaMaxLength|maxItemChars|maxLength|maxItems)(?![-\w])[^`]*`|\b(?:raw|advanced)\s+(?:schema|validate)\b/iu;
     const removalLabel = /\b(?:removed|refuse[sd]?|refusal|do not|never|no source carries)\b/iu;

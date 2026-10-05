@@ -68,7 +68,7 @@ output, credentials, or workstation-specific paths.
   behavior in `extensions/<name>/README.md`.
 - `scripts/` owns development checks and generators; it is not part of the npm
   package.
-- `dist/public-catalogs.json` and the fenced public catalog regions are generated
+- `dist/public-catalogs.json`, the skill-local `references/dsl.md` projection, and the fenced public catalog regions are generated
   by `npm run build:catalogs`. Do not edit them by hand.
 
 Shared modules may not import feature directories. Cross-feature access uses an

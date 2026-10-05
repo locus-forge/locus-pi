@@ -18,7 +18,7 @@ import {
   listPackagedWorkflowEntries,
   packagedWorkflowNames,
 } from "../../extensions/workflows/runtime/workflow-discovery.js";
-import { verifyInstalledWorkflowDocs } from "../docs/helpers/installed-workflow-docs.js";
+import { installedSkillSelectionScript, verifyInstalledWorkflowDocs } from "../docs/helpers/installed-workflow-docs.js";
 import { deadMarkdownLinks } from "../../scripts/markdown-links.js";
 import { installedStandardSource, RETIRED_DSL_PROBES } from "./fixtures/package-source-probes.js";
 
@@ -353,7 +353,8 @@ describe("npm public package boundary", () => {
     // Four agentic starters and their two guides add six teaching resources.
     // Two authoring lessons share contracts; detailed has one conditional case reference and two new starters.
     // Agent-option policy leaves the checker facade under the same packaged extensions owner.
-    expect(dryRun.files).toHaveLength(265);
+    // One generated, version-matched DSL reference is co-located with the authoring skills.
+    expect(dryRun.files).toHaveLength(266);
     expect(dryRun.files.map((file) => file.path)).not.toContain(
       "extensions/workflows/runtime/location-state/workflow-bound-directory.ts",
     );
@@ -546,11 +547,17 @@ describe("npm public package boundary", () => {
         const loaded = await import(workflow.url);
         if (typeof loaded.default !== "function") throw new Error(\`Missing workflow export: \${workflow.url}\`);
         if (loaded.meta?.name !== workflow.name) throw new Error(\`Wrong workflow name: \${workflow.url}\`);
-      }`;
+      }
+      ${installedSkillSelectionScript(packageRoot, temporaryRoot)}`;
 
       execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", loadScript], {
         cwd: packageRoot,
         encoding: "utf8",
+        env: {
+          ...process.env,
+          HOME: path.join(temporaryRoot, "pi-home"),
+          XDG_CONFIG_HOME: path.join(temporaryRoot, "pi-config"),
+        },
       });
     } finally {
       rmSync(temporaryRoot, { recursive: true, force: true });

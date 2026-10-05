@@ -26,15 +26,51 @@ Example authoring requests:
 
 The graph must support the user-selected model, including arbitration of review findings; it must not require a particular brand or tier. Preserve existing session/user routing; this is not permission to change models or billing routes. Outcome-led briefs state role, expected result, SOURCES and essential constraints. They give the agent enough context and leave method selection to it. Use headings when helpful, not as a repeated template. Never remove acceptance criteria or unresolved risks to shorten a prompt. [Procedural briefs](procedural-briefs.md) is the separate detail reference; graph style remains an independent choice.
 
+A fixed control skeleton does not require precomputed implementation work. The existing worker → evaluator → correction loop can leave internal design to its worker; plan/replan lets observed evidence change remaining work. Use a planner only when that responsibility is needed. Known, separable tasks may keep granular per-item or per-file work fixed.
+
 ## Folder-level context
 
 Pi's public `input` remains one semantic string; it does not accept an `args` object. Do not embed and parse a second JSON protocol.
 
-Start with the task directory as input. The first agent discovers `task.md`, design and referenced evidence there. Keep concrete filenames inside the relevant brief. A reusable workflow may accept ordinary text naming a task directory and extra context; agents interpret that text. Runnable references also require exact file assignments when their agents save reports.
+Use one short shared working context in the existing semantic input or an author-owned prompt string,
+then append each role's responsibility. It is not a new DSL `preamble` option, a detailed solution,
+or another task specification. Preserve the complete original Task or direct each child to its unchanged
+source; list additional evidence separately. Children do not inherit the parent conversation.
 
-Run Pi in the target repository. A destination in a prompt does not change child cwd or selected worktree. `--workspace-dir` selects confined native runtime coordination only. The whole input names the task context and every exact agent-file destination, preferably absolute. Agents interpret it; source never parses paths or files. Run evidence remains under the run's `outputs/` and `runtime/`.
+The native Pi child bridge already injects **actual execution pwd** (including a selected worktree)
+and **source project root** before the author's unchanged prompt. Use those facts; do not restate guessed
+cwd/root values or call unavailable path helpers in orchestration-only source. It does **not** inject the
+requested Git branch, Task source, delegated product root or author-owned evidence destinations.
+Record those after inspection during authoring; each child verifies the requested checkout/branch
+against its actual context before writing. A branch mismatch is a blocker, not permission to switch it.
+Run Pi in the intended repository; a prompt destination never changes cwd or selected worktree.
 
-For example, pass a task plus exact `baseline.md`, `remaining-queue.md`, per-slice work/progress/review/decision/correction, final checks and `implementation-handoff.md` paths in the existing input to `adaptive-slices`. Assign different files to parallel writers; consumers reopen those same files after their barriers. Missing/ambiguous assignments fail without a default folder. See [runtime inputs](../../../docs/workflows/authoring.md#workflow-input-and-host-continuation).
+Example input context after inspection (replace these illustrative paths/branch with actual verified values):
+
+```text
+Original Task: <complete unchanged request; task source below contains its supporting specification>
+Expected checkout: /work/widget; branch: task/widget-fix
+Task source: /work/widget/.tasks/widget-fix/task.md
+Product root: /work/widget (preserve unrelated files and narrower Task restrictions)
+Orchestration/evidence folder: /work/widget/.tasks/widget-fix/orchestration
+implementation.md: /work/widget/.tasks/widget-fix/orchestration/implementation.md (developer writes; reviewer reads)
+findings.md: /work/widget/.tasks/widget-fix/orchestration/findings.md (reviewer writes; developer reads on correction)
+```
+
+The developer may choose internal product files. It writes its full result and actual check evidence to
+`implementation.md`, then returns a short status and exact path. The reviewer reopens that file and
+actual changes, writes only `findings.md`, then returns its declared `choice`. No source-side file parsing,
+second JSON protocol, cumulative review transcript or duplicate solution is needed. Missing/ambiguous
+assignments fail closed. Readers never reconstruct a missing artifact from the returned status.
+
+Keep this author-owned orchestration folder separate from runtime-owned journals and checkpoints.
+`--workspace-dir` selects confined native coordination only; it is not the product/evidence destination.
+Native run evidence stays under `outputs/` and `runtime/`; children must not modify it. The primary
+[sequential starter](../../../extensions/workflows/references/examples/starters/evaluator-optimizer.workflow.mjs)
+uses this contract. The optional [parallel tour](../../../extensions/workflows/references/examples/starters/project-tour.workflow.mjs)
+adds distinct `purpose.md`/`commands.md` writer paths and one `guide.md` merge owner.
+For richer adaptive work assign each shared queue, slice, review and final handoff explicitly;
+consumers reopen the same files after dependencies finish. See [runtime inputs](../../../docs/workflows/authoring.md#workflow-input-and-host-continuation).
 
 ## Executor selection
 

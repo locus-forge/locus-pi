@@ -19,16 +19,17 @@ recorded-call replay, or operator continuation.
 
 ## Run a saved workflow
 
-After [creating and checking project-tour](create.md#your-first-workflow),
+After [creating and checking evaluator-optimizer](create.md#your-first-workflow),
+supply the original Task and verified working context with exact orchestration paths;
 start Pi in that project and run:
 
 ```text
-/workflows run project-tour
+/workflows run evaluator-optimizer -- <original Task and verified working context>
 ```
 
 Wait for Pi to finish its current response before launching. The command returns
 to the editor while the agents work. The live panel shows their progress and the
-run ID; two exploration agents run together, followed by the summary agent.
+run ID; implementation is followed by review, with one correction and fresh review when needed.
 
 - Open `/ps`, select an agent with Up/Down, and press Enter to read its output.
   Esc returns without stopping the run. This viewer is available with the full
@@ -68,15 +69,17 @@ reported as missing when runs were found.
 
 ## Run again or resume
 
-| What you want                       | Command                                        | What happens                                                                        |
-| ----------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Read the current project again      | `/workflows run project-tour`                  | A fresh run with a new workspace; agents execute again.                             |
-| Reuse eligible recorded steps       | `/workflows run project-tour --resume <runId>` | A new attempt in the original workspace; matching recorded answers can be reused.   |
-| Answer a workflow's pending handoff | `/workflows continue <runId>`                  | Opens an actionable operator handoff; after your answer, starts a continuation run. |
+| What you want                       | Command                                                                                               | What happens                                                                        |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Implement and review a task again   | `/workflows run evaluator-optimizer -- <original Task and verified working context>`                  | A fresh run with a new workspace; agents execute again.                             |
+| Reuse eligible recorded steps       | `/workflows run evaluator-optimizer --resume <runId> -- <original Task and verified working context>` | A new attempt in the original workspace; matching recorded answers can be reused.   |
+| Answer a workflow's pending handoff | `/workflows continue <runId>`                                                                         | Opens an actionable operator handoff; after your answer, starts a continuation run. |
 
 Use the full run ID from the run directory name (for example,
 `20260922-120027-07ef`), not the short `#07ef` badge shown in the panel.
 
+For resume, repeat the identical original semantic input, including Task, working context and exact artifact paths,
+so matching calls remain eligible for reuse. The resume flag does not restore omitted input.
 Resume reuses answers, not file changes or a fresh reading of the project. Use a
 fresh run when you want new observations. After repairing a workflow, check the
 replay markers to see what was actually reused. Parallel calls can change order

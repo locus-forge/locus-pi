@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseRunCommand } from "../../extensions/workflows/command/command-parser.js";
 
 const root = process.cwd();
 const runPath = "skills/locus-pi-workflow-run/SKILL.md";
@@ -132,6 +133,18 @@ describe("shipped workflow skill routes", () => {
     expect(run).not.toContain("gpt-5.6");
   });
 
+  it("keeps original Task/context input in both documented starter rerun commands", () => {
+    const guide = read("docs/workflows/running.md").split("## Run again or resume\n")[1]!.split("\n## ")[0]!;
+    const commands = [...guide.matchAll(/`(\/workflows run evaluator-optimizer[^`]+)`/gu)].map((match) => match[1]!);
+    expect(commands).toHaveLength(2);
+    const input = "<original Task and verified working context>";
+    expect(commands.map((command) => parseRunCommand(command.slice("/workflows ".length)))).toEqual([
+      { scriptRef: "evaluator-optimizer", input },
+      { scriptRef: "evaluator-optimizer", resumeFromRunId: "<runId>", input },
+    ]);
+    expect(guide).toContain("repeat the identical original semantic input");
+  });
+
   it.each(createPaths)("routes %s through selected owners and the exact-source gate", (createPath) => {
     const create = read(createPath);
     containsAll(create, [
@@ -144,7 +157,8 @@ describe("shipped workflow skill routes", () => {
       "Never import unchecked source",
       "unavailable or failed gate means Build failed",
     ]);
-    linkedText(createPath, "../../docs/workflows/dsl.md#dsl-surface-v0");
+    const referencePrefix = createPath.includes("-detailed/") ? "../locus-pi-workflow-create/" : "";
+    linkedText(createPath, `${referencePrefix}references/dsl.md#dsl-surface-v0`);
     linkedText(createPath, "../../docs/workflows/create.md#choose-an-authoring-route");
     linkedText(createPath, "../../extensions/workflows/references/examples/starters/README.md");
     linkedText(createPath, "../locus-pi-workflow-run/SKILL.md");

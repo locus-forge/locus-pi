@@ -6,7 +6,7 @@ context: "changes=XL files=30"
 description: "Preserve complete caller-owned scope across answerless audit failures"
 ---
 
-# Trace a selected authoring case
+# Work through a selected authoring case
 
 Read only the case matching the current task. These cases deepen real decisions;
 they do not add roles, permissions or a second design contract. Use the common
@@ -24,16 +24,16 @@ Read the complete [Evaluator-Optimizer module](../../../extensions/workflows/ref
 and [starter guide](../../../extensions/workflows/references/examples/starters/README.md).
 Trace its edges before adapting the design:
 
-1. The worker gets the original request and complete previous handoff. It inspects
+1. The worker gets the original Task and shared working context. It inspects
    the existing state, changes only assigned scope, and reports actual evidence
-   and artifact locations. It does not commit merely because it implemented work.
+   and artifact locations in assigned `implementation.md`, returning only a short status/path.
+   It does not commit merely because it implemented work.
 2. The reviewer reads the full actual diff, including uncommitted work. It owns
    acceptance and replaces the assigned `findings.md`, preserving prior check
    outcomes/dispositions. Its same call returns `accept`, `revise` or `blocked`.
-3. On `revise`, the fresh worker reads that file and receives the previous handoff
-   whole. The next reviewer checks the new state. No translator is necessary
+3. On `revise`, the fresh worker reopens that file and `implementation.md`. The next reviewer checks the new state. No translator is necessary
    because the reviewer already owns the choice.
-4. `accept` publishes exactly the reviewed handoff. A concrete unavailable required
+4. `accept` returns a short status and the reviewed handoff path. A concrete unavailable required
    prerequisite returns blocked with the work/findings. After the illustrative
    one-correction allowance, residuals return incomplete, with no last unreviewed
    correction. Adapt the allowance to the task, not a preferred graph size.

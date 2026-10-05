@@ -189,7 +189,7 @@ describe("readable workflow authoring references", () => {
       const modules = javascriptDocSnippets(`skills/${lesson}/SKILL.md`);
       expect(modules).toHaveLength(1);
       expect(modules[0]!.trim()).toBe(
-        source("extensions/workflows/references/examples/starters/project-tour.workflow.mjs").trim(),
+        source("extensions/workflows/references/examples/starters/evaluator-optimizer.workflow.mjs").trim(),
       );
       expect(standardWorkflowSourceShapeErrors(modules[0]!)).toEqual([]);
     }
@@ -253,6 +253,41 @@ ${authoring[0] ?? ""}
     },
   );
 
+  it("separates Task deliverables, shared handoffs and delegated internals in both lessons", () => {
+    for (const lesson of ["locus-pi-workflow-create", "locus-pi-workflow-create-detailed"]) {
+      const text = source(`skills/${lesson}/SKILL.md`);
+      expect(text).toContain("original Task");
+      expect(text).toContain("Task authoritative");
+      expect(text).toMatch(/shared handoff/u);
+      expect(text).toContain("Task-required output");
+      expect(text).toMatch(/internal file/u);
+      expect(text).toMatch(/narrower Task bound/u);
+    }
+    const design = source("skills/locus-pi-workflow-create/references/design-and-build.md");
+    expect(design).toContain("an `index.html`-only product");
+    expect(design).toContain("reviewer may write its assigned report, not product files");
+    expect(design).toContain("without a mandatory planner");
+    expect(design).toContain("bookkeeping into product requirements");
+    expect(design).toContain("not repeated task");
+    expect(design).toContain("or cumulative handoff history");
+    expect(design).toContain("Bound costly checker commands");
+    expect(design).toContain("exhaustion leaves required evidence incomplete");
+    expect(design).toContain("Nonblocking suggestions do not become acceptance criteria");
+    const styles = source("skills/locus-pi-workflow-create/references/authoring-styles.md");
+    expect(styles).toContain("fixed control skeleton does not require precomputed implementation work");
+    expect(styles).toContain("granular per-item or per-file work fixed");
+    expect(styles).not.toContain("every exact agent-file destination");
+    const boundary = source("skills/locus-pi-workflow-create/references/source-boundary.md");
+    expect(boundary).toContain("source-context root alone grants no write permission");
+    expect(boundary).toContain("complete worker handoff can convey discovered paths");
+    for (const manual of ["evidence", "dsl"]) {
+      const text = source(`docs/workflows/${manual}.md`);
+      expect(text).toMatch(/[Ss]hared handoff/u);
+      expect(text).toContain("Task-required output");
+      expect(text).toContain("internal files within delegated product roots");
+    }
+  });
+
   it("keeps source grammar, labels, output and failure authority in canonical references", () => {
     const authoring =
       source("docs/workflows/source-shape.md") +
@@ -287,7 +322,7 @@ ${authoring[0] ?? ""}
       "skills/locus-pi-workflow-create/SKILL.md",
       "skills/locus-pi-workflow-create-detailed/SKILL.md",
       ...readdirSync(path.join(root, "skills/locus-pi-workflow-create/references"))
-        .filter((name) => name.endsWith(".md"))
+        .filter((name) => name.endsWith(".md") && name !== "dsl.md")
         .map((name) => `skills/locus-pi-workflow-create/references/${name}`),
     ];
     for (const relativePath of authoredDocs) {
@@ -368,6 +403,7 @@ ${authoring[0] ?? ""}
       "bounded-refinement.md",
       "decomposition.md",
       "design-and-build.md",
+      "dsl.md",
       "fixed-graph.md",
       "human-continuation.md",
       "procedural-briefs.md",

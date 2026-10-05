@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { realpathSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -104,6 +104,17 @@ async function loadProfile(selectedIds: string[], options: ProfileOptions = {}) 
     return loader.getExtensions();
   });
   const loadedSkills = loader.getSkills();
+  if (options.includeSkills) {
+    for (const name of ["locus-pi-workflow-create", "locus-pi-workflow-create-detailed"]) {
+      const skill = loadedSkills.skills.find((entry) => entry.name === name);
+      expect(skill, `Pi discovers ${name}`).toBeDefined();
+      const entry = realpathSync(skill!.filePath);
+      const source = readFileSync(entry, "utf8");
+      const reference = /\[DSL\/API reference\]\(([^)#]+)(?:#[^)]*)?\)/u.exec(source);
+      expect(reference, `${name}: installed API reference`).not.toBeNull();
+      expect(readFileSync(path.resolve(path.dirname(entry), reference![1]!), "utf8")).toContain("### invokeWorkflow");
+    }
+  }
   expect(loaded.errors, `Pi ${VERSION} extension load errors`).toEqual([]);
   expect(loaded.warnings ?? [], `Pi ${VERSION} extension package warnings`).toEqual([]);
 
