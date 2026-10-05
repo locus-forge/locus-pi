@@ -33,6 +33,15 @@ describe("first implementation/review lesson", () => {
       [],
     );
   });
+
+  it.each(createPaths)("routes %s to requirement dispositions and discriminating evidence", (createPath) => {
+    const prefix = createPath.includes("-detailed/") ? "../locus-pi-workflow-create/" : "";
+    const guide = linkedText(createPath, `${prefix}references/design-and-build.md`).replace(/\s+/gu, " ");
+    containsAll(guide, [
+      "every original requirement as verified, unmet or unverified",
+      "evidence that distinguishes the required behavior from a violation that could produce the same output",
+    ]);
+  });
 });
 
 describe("shipped workflow skill routes", () => {
