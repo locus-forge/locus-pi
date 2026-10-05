@@ -3,7 +3,7 @@ name: locus-pi-workflow-create-detailed
 description: Detailed Pi authoring and repair with exact-source checks. Use for explicit detailed authoring, not detailed reports. Existing runs use locus-pi-workflow-run.
 ---
 
-# Author a Pi workflow with traced decisions
+# Create a Pi workflow step by step
 
 Do not load ordinary first. [Route selection](../../docs/workflows/create.md#choose-an-authoring-route)
 owns invocation precedence. Detail changes explanation, not graph, child autonomy, routing or authorization.
@@ -16,79 +16,71 @@ Inspect the actual task sources. Name deliverables, required evidence and allowe
 Workflow design is separate, and a proposal alone does not authorize implementation.
 Before source, read [Design → review → Build](../locus-pi-workflow-create/references/design-and-build.md).
 Write/review `.locus-pi/workflows/<name>/<name>.design.md`; build exactly its `Entries`, not an implicit root.
-This project tour has two readers and one consumer, without a product gate:
+The first example implements a Task, reviews it and allows one correction followed by fresh review.
+Read [working context](../locus-pi-workflow-create/references/authoring-styles.md#folder-level-context) first:
 
 ```js
 export const meta = {
-  name: "project-tour",
-  description: "Read a project and explain where to start.",
+  name: "evaluator-optimizer",
+  description: "Implement a task, review the actual change, and correct once if needed.",
   profile: "standard",
 };
 
-export default async function run({ agent, parallel }, input) {
-  const notes = await parallel([
-    () =>
-      agent(`Read README.md for the project purpose. Do not modify files.\nWhole caller input:\n${input}`, {
-        label: "purpose",
-        title: "Read project purpose",
-      }),
-    () =>
-      agent(`Read package.json for development commands. Do not modify files.\nWhole caller input:\n${input}`, {
-        label: "commands",
-        title: "Read development commands",
-      }),
-  ]);
-  const guide = await agent(
-    `Combine notes into a guide; preserve uncertainty. Write only the exact guide.md path assigned in input using tools; missing/ambiguous path means failure, never guess.
-Return the complete guide too. Whole input:\n${input}\nComplete notes:\n${notes.join("\n\n")}`,
-    { label: "compose", title: "Write getting-started guide" },
-  );
-  return guide;
+export default async function run({ agent }, input) {
+  const context = `Use injected pwd/project root for execution context; verify the requested checkout and branch.
+The input supplies the original Task, sources, product root and exact orchestration file paths.
+Read those sources; missing or conflicting context/paths means blocked. Do not guess destinations.`;
+  // Teaching bound: initial implementation plus one correction, both independently reviewed.
+  for (let round = 0; round < 2; round += 1) {
+    const work = await agent(
+      `${context}\nOriginal Task and working context:\n${input}\nImplement the Task in its assigned product root; choose internal files within its bounds.
+Preserve unrelated work; do not commit. On correction, read the assigned findings.md and implementation.md.
+Write the complete result, changed paths, actual checks and remaining work to assigned implementation.md;
+read it back. Return only a short status and its exact path. This is pass ${round + 1}.`,
+      { label: "implement", title: "Implement or correct the task" },
+    );
+    const decision = await agent(
+      `${context}\nOriginal Task and working context:\n${input}\nRead assigned implementation.md, then inspect the complete actual diff and required evidence.
+Do not edit product source. Write only assigned findings.md: criteria, defects, check outcomes, prior
+finding dispositions and next action. Read it back before choosing. Keep nonblocking suggestions separate.
+Accept only verified Task requirements; disclose optional checks not performed. Revise correctable defects;
+block on missing required prerequisites or handoff files. Do not weaken criteria. Short worker status:\n${work}`,
+      { label: "review", title: "Review the change", choice: ["accept", "revise", "blocked"] },
+    );
+    if (decision === "accept") return { ok: true, status: "accepted", handoff: work };
+    if (decision === "blocked") return { ok: false, status: "blocked", handoff: work };
+    if (round === 1) {
+      return { ok: false, status: "incomplete", reason: "correction_allowance", handoff: work };
+    }
+  }
 }
 ```
 
-Purpose and commands are independent; composition needs both whole answers.
-The composer writes the assigned file; returned text is not file acceptance proof.
-Read [the exact source and guide](../../extensions/workflows/references/examples/starters/README.md).
+The developer writes product files/result; the reviewer writes only its review artifact.
+Both reopen exact files. Source routes `choice`, never report text.
+The [starter guide](../../extensions/workflows/references/examples/starters/README.md) includes optional parallel work.
 
 ## Read handoffs before adding control
 
-`agent()` returns whole text; reviewers/planners can own `choice`. Each child needs the complete original Task, evidence and constraints.
+`agent()` returns whole text; reviewers/planners can own `choice`. Each child needs the original Task and evidence.
 Keep the Task authoritative; avoid changed paraphrases. Parent context is absent.
 Assign exact shared handoff and Task-required output paths; reuse them for reads. Implementation actors choose internal files in assigned product roots, subject to narrower Task bounds.
 Children use tools; source never parses files, JSON or prose.
 Read [structured results](../locus-pi-workflow-create/references/structured-results.md).
-`phase()`/`log()` show progress; text publication retains native evidence, never file proof.
-Read the [DSL table](../../docs/workflows/dsl.md#dsl-surface-v0) for selected methods before source:
-`agent`, `parallel`, `pipeline`, `items` and text publication pass runtime and both checker modes.
-Path/clock helpers remain outside orchestration-only; shaped results stay refused. Runtime JavaScript is
-trusted, not sandboxed; child tools have host constraints.
-
-## Trace dependencies, then compose
-
-Use `pipeline()` when source A can reach verification while B is still inspecting.
-Callbacks get previous value/composite index, not original item. Keep full caller units beside reports.
-`items()` needs the structured tool; slash launch cannot carry it. Empty required caller input is non-success.
-Cross-source synthesis waits for all reports. An agent can deduplicate into a named file; source cannot turn
-discoveries into parallel workers. Failed groups throw with evidence.
-For that task read [the caller-audit case](references/worked-decisions.md#caller-owned-audit), including its tested module.
-For reuse, read DSL `workflow()` versus `invokeWorkflow()`: inline callbacks have no saved checkpoint;
-saved children receive explicit destinations and use fixed keys. Saved grandchildren are refused.
+Before source, read the installed [DSL/API reference](../locus-pi-workflow-create/references/dsl.md#dsl-surface-v0):
+Read selected method signatures/options and availability; runtime support is not source permission.
 
 ## Work through the task's choices
 
-Known implementation/review stays fixed: worker handoff → evaluator-owned choice/findings → correction → fresh recheck.
-Observed results changing remaining work justify plan/replan; the planner assesses even after the last allowed step.
-Read the task's [worked case](references/worked-decisions.md): consumers, evidence and exits traced
-against tested starters. Select the relevant case.
-Editorial critique/revision improves text without final independent acceptance. Add a verifier only when required.
-Use evidence lenses, adversarial checks or completeness critique when findings change next work.
-For repeated discovery an agent retains seen/rejected findings and “nothing new” evidence in a file. Source
-routes its choice under finite task-derived bounds; exhaustion retains uncovered work.
-Choose the relevant [semantic explanation](../locus-pi-workflow-create/references/agentic-approaches.md) and
-[card](../locus-pi-workflow-create/references/INDEX.md) after these dependencies; no universal judge is added.
-For command/data order read [the brief case](references/worked-decisions.md#brief-detail-with-a-real-dependency).
-Outcome-led briefs leave methods to children; detail does not force choreography.
+Read the matching [worked case](references/worked-decisions.md) for dependencies, evidence and exits.
+Known work uses implementation → review → correction → fresh recheck. Replan when observed results
+change remaining work; reassess even after the last step. Editorial critique alone is not acceptance.
+Independent per-item inspect → verify uses `pipeline(items(), ...)`; structured caller items are required.
+Cross-source synthesis waits for all reports, with separate writer paths and one merge owner.
+For reuse read DSL `workflow()` versus saved `invokeWorkflow()`; saved grandchildren are refused.
+Choose the relevant [semantic guide](../locus-pi-workflow-create/references/agentic-approaches.md)
+and [card](../locus-pi-workflow-create/references/INDEX.md). Outcome-led briefs leave methods to children;
+read the [procedural case](references/worked-decisions.md#brief-detail-with-a-real-dependency) only for a real dependency.
 
 ## Review, Build and report honestly
 
@@ -101,7 +93,7 @@ Match `Entries`, filenames and logical identities; calls need unique literal `la
 Re-review material algorithm changes. Check every exact file with `workflow_check_source`,
 `mode: "orchestration-only"`, and `node --check <exact-path>`; without the native tool, use
 `npm run check:workflow-source -- --mode orchestration-only <exact-path>`. Never import unchecked source.
-An unavailable or failed gate means Build failed; never report success after skipping it. Static checks are not live proof.
+An unavailable or failed gate means Build failed; never report success after skipping it.
 Review the complete actual diff, including uncommitted work. Retain full findings and failed/missing/skipped checks.
 Required defects/evidence need action; optional unavailability alone is disclosed. Fresh review follows correction.
 Exhaustion retains latest reviewed work, unmet criteria and next action as `{ ok: false, status }`.

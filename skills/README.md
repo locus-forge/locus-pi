@@ -38,6 +38,13 @@ set back after an unexpected filesystem error.
 
 ## Find the installed workflow documentation
 
+Both authoring entries require the [co-located DSL/API reference](locus-pi-workflow-create/references/dsl.md)
+before source is written. It contains every runtime method, signature, example and source-mode constraint.
+`docs/workflows/dsl.md` is canonical; `npm run build:catalogs` generates this version-matched projection
+and `check:generated` rejects drift. Pi loads it with the package skill; Codex and Claude Code reach the
+same file through their managed skill links, in either user or project scope. References are read by the
+authoring instructions, not silently injected into every child context.
+
 The [workflow manual](../docs/workflows/index.md) ships in the same npm package.
 Pi loads these skills through `package.json#pi.skills`. Codex and Claude Code may
 expose a managed directory symlink as the skill's location. Resolve the physical

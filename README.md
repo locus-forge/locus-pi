@@ -119,14 +119,14 @@ For an explicitly detailed walkthrough, [choose the authoring route](docs/workfl
 It designs the agent graph, reviews it, builds the source, and checks it:
 
 ```text
-/skill:locus-pi-workflow-create Create a project-tour workflow: two agents read README.md and package.json in parallel, then a third combines their notes into a getting-started guide. Do not modify project files during the run. Build and check the workflow, but do not run it yet.
+/skill:locus-pi-workflow-create Create an evaluator-optimizer workflow for the Task in .tasks/example/task.md: implement, independently review, and allow one correction followed by fresh review. Record verified working context and exact result/review paths in an orchestration folder. Build and check the workflow, but do not run it yet.
 ```
 
-Review `project-tour.design.md` and `project-tour.workflow.mjs` saved under
-`.locus-pi/workflows/project-tour/`, then run:
+Review `evaluator-optimizer.design.md` and `evaluator-optimizer.workflow.mjs` saved under
+`.locus-pi/workflows/evaluator-optimizer/`, then run:
 
 ```text
-/workflows run project-tour
+/workflows run evaluator-optimizer -- <original Task and verified working context>
 /ps
 /workflows result last
 ```

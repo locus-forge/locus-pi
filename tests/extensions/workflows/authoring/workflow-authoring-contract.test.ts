@@ -189,7 +189,7 @@ describe("readable workflow authoring references", () => {
       const modules = javascriptDocSnippets(`skills/${lesson}/SKILL.md`);
       expect(modules).toHaveLength(1);
       expect(modules[0]!.trim()).toBe(
-        source("extensions/workflows/references/examples/starters/project-tour.workflow.mjs").trim(),
+        source("extensions/workflows/references/examples/starters/evaluator-optimizer.workflow.mjs").trim(),
       );
       expect(standardWorkflowSourceShapeErrors(modules[0]!)).toEqual([]);
     }
@@ -322,7 +322,7 @@ ${authoring[0] ?? ""}
       "skills/locus-pi-workflow-create/SKILL.md",
       "skills/locus-pi-workflow-create-detailed/SKILL.md",
       ...readdirSync(path.join(root, "skills/locus-pi-workflow-create/references"))
-        .filter((name) => name.endsWith(".md"))
+        .filter((name) => name.endsWith(".md") && name !== "dsl.md")
         .map((name) => `skills/locus-pi-workflow-create/references/${name}`),
     ];
     for (const relativePath of authoredDocs) {
@@ -403,6 +403,7 @@ ${authoring[0] ?? ""}
       "bounded-refinement.md",
       "decomposition.md",
       "design-and-build.md",
+      "dsl.md",
       "fixed-graph.md",
       "human-continuation.md",
       "procedural-briefs.md",
