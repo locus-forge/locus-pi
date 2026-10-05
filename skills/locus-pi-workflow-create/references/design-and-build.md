@@ -133,6 +133,12 @@ Use the already selected pattern card as an algorithm, not a full workflow to co
 
 For each acceptance edge, trace blocking criteria to the request or an
 authoritative contract and identify evidence an available child can obtain.
+Account for every original requirement as verified, unmet or unverified in the
+existing review artifact. For required reuse or state transitions, inspect the
+transition the Task names, including already-created state when relevant.
+Choose evidence that distinguishes the required behavior from a violation that
+could produce the same output: deterministic recreation does not prove reuse.
+A successful command or file presence alone cannot close unrelated requirements.
 A product requirement does not by itself require one particular verification method.
 Keep verification task-derived: use controlled fixtures for required behavior,
 not an unrequested solver or optimization goal. Bound costly checker commands

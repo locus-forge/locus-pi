@@ -41,10 +41,11 @@ read it back. Return only a short status and its exact path. This is pass ${roun
     );
     const decision = await agent(
       `${context}\nOriginal Task and working context:\n${input}\nRead assigned implementation.md, then inspect the complete actual diff and required evidence.
-Do not edit product source. Write only assigned findings.md: criteria, defects, check outcomes, prior
-finding dispositions and next action. Read it back before choosing. Keep nonblocking suggestions separate.
-Accept only verified Task requirements; disclose optional checks not performed. Revise correctable defects;
-block on missing required prerequisites or handoff files. Do not weaken criteria. Short worker status:\n${work}`,
+Verify each Task requirement; equal outputs do not prove reuse or state transitions.
+Do not edit product source. Write only assigned findings.md: verified/unmet/unverified requirements, defects,
+checks, prior finding dispositions and next action, keep optional checks separate. Read it back.
+Accept only verified requirements; revise correctable defects;
+block on missing required prerequisites or handoff files. Worker status:\n${work}`,
       { label: "review", title: "Review the change", choice: ["accept", "revise", "blocked"] },
     );
     if (decision === "accept") return { ok: true, status: "accepted", handoff: work };
