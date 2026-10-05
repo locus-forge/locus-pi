@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseRunCommand } from "../../extensions/workflows/command/command-parser.js";
+import { orchestrationOnlyWorkflowSourceShapeDiagnostics } from "../../extensions/workflows/tool/workflow-source-shape.js";
 
 const root = process.cwd();
 const runPath = "skills/locus-pi-workflow-run/SKILL.md";
@@ -21,6 +22,27 @@ function linkedText(from: string, target: string): string {
 function containsAll(text: string, contracts: string[]): void {
   for (const contract of contracts) expect(text, contract).toContain(contract);
 }
+
+describe("first implementation/review lesson", () => {
+  const starter = "extensions/workflows/references/examples/starters/evaluator-optimizer.workflow.mjs";
+  const source = read(starter).trim();
+  it.each(createPaths)("teaches the same complete checked module in %s", (createPath) => {
+    const snippet = /```js\n([\s\S]*?)\n```/u.exec(read(createPath))?.[1];
+    expect(snippet?.trim()).toBe(source);
+    expect(orchestrationOnlyWorkflowSourceShapeDiagnostics(source).filter((item) => item.severity === "error")).toEqual(
+      [],
+    );
+  });
+
+  it.each(createPaths)("routes %s to requirement dispositions and discriminating evidence", (createPath) => {
+    const prefix = createPath.includes("-detailed/") ? "../locus-pi-workflow-create/" : "";
+    const guide = linkedText(createPath, `${prefix}references/design-and-build.md`).replace(/\s+/gu, " ");
+    containsAll(guide, [
+      "every original requirement as verified, unmet or unverified",
+      "evidence that distinguishes the required behavior from a violation that could produce the same output",
+    ]);
+  });
+});
 
 describe("shipped workflow skill routes", () => {
   it("selects native execution or an inspectable external session without losing structured fields", () => {

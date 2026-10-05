@@ -292,6 +292,17 @@ describe("small agentic starters with real runtime and scripted children", () =>
     },
   );
 
+  it("delivers the requirement/evidence instruction contract to the actual reviewer call", async () => {
+    // Protect shipped instructions, not a scripted actor's ability to judge compliance.
+    await runStarter("evaluator-optimizer", { implement: [originalWork], review: ["blocked"] }, (request) => {
+      if (request.label !== "review") return;
+      const prompt = request.prompt.replace(/\s+/gu, " ");
+      expect(prompt).toContain("Verify each Task requirement");
+      expect(prompt).toContain("equal outputs do not prove reuse or state transitions");
+      expect(prompt).toContain("verified/unmet/unverified requirements");
+    });
+  });
+
   it("lets a reviewer block on a missing result file despite a successful-looking worker answer", async () => {
     const got = await runStarter(
       "evaluator-optimizer",
