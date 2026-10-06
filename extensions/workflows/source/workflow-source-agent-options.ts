@@ -30,8 +30,7 @@ export function validateStandardAgentOptions(
     if (report && reportValue !== "report") errors.add('agent result must be the static literal "report"', report);
     for (const pair of pairs) {
       const key = staticObjectKey(pair.field("key")) ?? "";
-      if (["schema", "validate", "repair", "outputTransport"].includes(key))
-        errors.add(`agent ${key} is runtime-only and outside this authoring grammar`, pair);
+      if (key === "schema") errors.add(`agent ${key} is runtime-only and outside this authoring grammar`, pair);
       else if (REMOVED_AGENT_OPTION_NAMES.includes(key))
         errors.add(
           `agent ${key} was removed: return exact text or one choice; write files at exact caller-assigned destinations in prompts`,

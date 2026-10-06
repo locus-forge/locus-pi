@@ -394,9 +394,8 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
             throw new Error(`replay-contract-failure: v${req.structuredCall.contract.version} receipt missing`);
           await req.structuredCall.replay(lookup.structuredReceipt, lookup.text);
           replayedAcceptance = {
-            ...(lookup.structuredReceipt.version === 5
-              ? { source: "native" as const, contractVersion: 5 as const }
-              : { source: "tool" as const, toolName: "workflow_return" }),
+            source: "tool",
+            toolName: "workflow_return",
             attempts: lookup.structuredReceipt.spent.outputAttempts,
             structuredReceipt: lookup.structuredReceipt,
           };

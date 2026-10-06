@@ -137,7 +137,6 @@ export interface SdkAgentSessionLike {
 }
 /** The two pre-dispatch admission hooks this host installs on a child's agent loop. */
 export interface SdkAgentAdmissionHooksLike {
-  onPayload?: ((payload: unknown, model: unknown) => unknown | Promise<unknown>) | undefined;
   /** Runs before a tool executes; `{ block: true }` means the tool never runs. */
   onProviderStreamEvent?: ((event: unknown, model: unknown) => void | Promise<void>) | undefined;
   prepareRequest?: ((context: unknown, signal?: AbortSignal) => unknown | Promise<unknown>) | undefined;
@@ -465,12 +464,7 @@ async function runChildSession(
 
   const diagnostics: string[] = [];
   const capsule = createAgentExecutionPromptCapsule(request, diagnostics, promptEnv);
-  const responseMode =
-    request.responseAcceptance?.observedReturn?.native !== undefined
-      ? "native"
-      : request.responseAcceptance === undefined
-        ? "text"
-        : "tool";
+  const responseMode = request.responseAcceptance === undefined ? "text" : "tool";
   const kickoff = formatAgentKickoffPrompt(capsule, responseMode);
 
   const cwd = request.workingDirectory ?? request.projectRoot ?? process.cwd();

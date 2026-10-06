@@ -4,18 +4,14 @@ export type WorkflowJSONValue =
 export type WorkflowJSONSchema = Readonly<Record<string, unknown>>;
 export const WORKFLOW_SCHEMA_DIALECT = "locus-json-subset-v1" as const;
 export const WORKFLOW_RAW_OBSERVER_REVISION = "codex-responses-v3" as const;
-export const WORKFLOW_NATIVE_OBSERVER_REVISION = "openai-responses-native-v2" as const;
 
-interface WorkflowStructuredContractBase {
+export interface WorkflowStructuredContract {
+  version: 4;
   choices?: never;
   dialect: typeof WORKFLOW_SCHEMA_DIALECT;
   schema: WorkflowJSONSchema;
   maxAttempts: number;
 }
-export type WorkflowStructuredContract = WorkflowStructuredContractBase &
-  ({ version: 4; outputTransport?: never } | { version: 5; outputTransport: "native" });
-export type WorkflowValueValidator = (value: WorkflowJSONValue) => string[];
-
 /** JSON data cloning. Only transport payloads may omit undefined object fields, as JSON serialization does. */
 export function immutableJSON(value: unknown, options?: { omitUndefinedObjectFields: true }): WorkflowJSONValue {
   const ancestors = new Set<object>();
@@ -69,7 +65,7 @@ export function canonicalWorkflowJSON(value: unknown): string {
 }
 
 /** Checks author declarations synchronously, before the logical call spends any work. */
-export function normalizeWorkflowStructuredContract(schema: unknown, repair?: unknown): WorkflowStructuredContract {
+export function normalizeWorkflowStructuredContract(schema: unknown): WorkflowStructuredContract {
   let detached: WorkflowJSONValue;
   try {
     detached = immutableJSON(schema);
@@ -148,24 +144,11 @@ export function normalizeWorkflowStructuredContract(schema: unknown, repair?: un
     }
   }
   check(detached, "$");
-  let maxAttempts = 2;
-  if (repair !== undefined) {
-    if (
-      repair === null ||
-      typeof repair !== "object" ||
-      Array.isArray(repair) ||
-      Object.keys(repair).some((key) => key !== "maxAttempts")
-    )
-      throw new Error("agent repair requires only maxAttempts");
-    maxAttempts = (repair as { maxAttempts: number }).maxAttempts;
-    if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1)
-      throw new Error("agent repair.maxAttempts must be a positive safe integer");
-  }
   return Object.freeze({
     version: 4,
     dialect: WORKFLOW_SCHEMA_DIALECT,
     schema: detached as WorkflowJSONSchema,
-    maxAttempts,
+    maxAttempts: 2,
   });
 }
 function unsupported(path: string, message: string): Error {
@@ -187,53 +170,7 @@ export async function compileWorkflowSchema(contract: WorkflowStructuredContract
   };
 }
 
-/** A detached frozen graph whose write traps record even a swallowed mutation attempt. */
-export function runWorkflowValueValidator(value: WorkflowJSONValue, validate?: WorkflowValueValidator): string[] {
-  if (validate === undefined) return [];
-  let attemptedWrite = false;
-  const deny = (): never => {
-    attemptedWrite = true;
-    throw new Error("validate input is immutable");
-  };
-  function monitored(input: WorkflowJSONValue): WorkflowJSONValue {
-    if (input === null || typeof input !== "object") return input;
-    const target = Array.isArray(input)
-      ? input.map(monitored)
-      : Object.fromEntries(Object.entries(input).map(([key, child]) => [key, monitored(child)]));
-    Object.freeze(target);
-    return new Proxy(target, {
-      set: deny,
-      deleteProperty: deny,
-      defineProperty: deny,
-      setPrototypeOf: deny,
-      preventExtensions: deny,
-    });
-  }
-  let errors: unknown;
-  try {
-    errors = validate(monitored(immutableJSON(value)));
-  } catch (error) {
-    throw new Error(`author-validation-error: ${String(error)}`);
-  }
-  if (errors !== null && typeof errors === "object" && "then" in errors) {
-    void Promise.resolve(errors).catch(() => {});
-    throw new Error("author-validation-error: validate must be synchronous");
-  }
-  try {
-    const detached = immutableJSON(errors);
-    if (
-      attemptedWrite ||
-      !Array.isArray(detached) ||
-      detached.some((error) => typeof error !== "string" || error.trim() === "")
-    )
-      throw new Error("validate must return dense nonblank string[] without mutating its input");
-    return detached as string[];
-  } catch (error) {
-    throw new Error(`author-validation-error: ${String(error)}`);
-  }
-}
-
-/** Common raw envelope and immutable canonical candidate for both real evidence transports. */
+/** Raw tool envelope and immutable canonical candidate. */
 export function decodeWorkflowProposal(raw: string): { value: WorkflowJSONValue; canonical: string } {
   const parsed = JSON.parse(raw) as unknown;
   if (
@@ -250,16 +187,29 @@ export function decodeWorkflowProposal(raw: string): { value: WorkflowJSONValue;
 export function validateWorkflowProposal(
   value: WorkflowJSONValue,
   schema: WorkflowSchemaValidator,
-  validate?: WorkflowValueValidator,
 ): string | undefined {
-  const schemaErrors = schema.errors(value);
-  const errors = schemaErrors.length > 0 ? schemaErrors : runWorkflowValueValidator(value, validate);
+  const errors = schema.errors(value);
   return errors.length === 0
     ? undefined
     : errors
         .slice(0, 20)
         .map((error) => error.slice(0, 500))
         .join("; ");
+}
+
+/** Pi strict conversion must preserve the caller's accepted values, including object optionality.
+ * Provider/model support belongs to Pi; this only guards our dialect's semantics. */
+export function workflowSchemaSupportsStrictPreference(schema: WorkflowJSONSchema): boolean {
+  if (schema.type === "string" && (schema.minLength !== undefined || schema.maxLength !== undefined)) return false;
+  if (schema.type === "array")
+    return schema.items !== undefined && workflowSchemaSupportsStrictPreference(schema.items as WorkflowJSONSchema);
+  if (schema.type !== "object") return true;
+  if (schema.additionalProperties !== false) return false;
+  const properties = (schema.properties ?? {}) as Record<string, WorkflowJSONSchema>;
+  const required = new Set((schema.required ?? []) as string[]);
+  return Object.entries(properties).every(
+    ([key, child]) => required.has(key) && workflowSchemaSupportsStrictPreference(child),
+  );
 }
 
 /** Persisted protocol content identity, never an in-memory freshness check. */

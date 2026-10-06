@@ -10,7 +10,7 @@ import {
   readWorkflowReplayLog,
 } from "../../../../../extensions/workflows/runtime/workflow-replay.js";
 import { completed, temporary, tempRun } from "../../../../fixtures/scripted-agent-runtime.js";
-import { nativeTurn, rawTurn, structuredSdk } from "../../../../fixtures/agent-runtime/structured-sdk.js";
+import { rawTurn, structuredSdk } from "../../../../fixtures/agent-runtime/structured-sdk.js";
 
 const identity = { sha256: "a".repeat(64), covered: true, inputSha256: "c".repeat(64) };
 const values = ["FIRST", "SECOND", "THIRD"];
@@ -31,30 +31,22 @@ const permutations = [
   [2, 1, 0],
 ];
 
-describe.each(["tool", "native"] as const)("structured %s admission and group settlement", (transport) => {
+describe("structured tool admission and group settlement", () => {
   const options = {
     schema: { type: "string" },
-    validate: () => [],
-    ...(transport === "native" ? { outputTransport: "native" as const } : {}),
   };
   const seeds: Array<Awaited<ReturnType<typeof structuredSdk>>> = [];
   beforeAll(async () => {
     for (const value of values) {
       const raw = JSON.stringify({ value });
-      const seed = await structuredSdk(options, [transport === "native" ? nativeTurn(raw) : rawTurn([raw])]);
+      const seed = await structuredSdk(options, [rawTurn([raw])]);
       expect(seed.error).toBeUndefined();
       seeds.push(seed);
     }
   });
-  const route = async () => {
-    const receipt = seeds[0]!.acceptance!.structuredReceipt!;
-    if (receipt.version !== 5) throw new Error("Not a native receipt");
-    return receipt.rawTurns[0]!.payload.route;
-  };
   const replayDependencies = {
     structuredSourceIdentity: identity,
     structuredReplayHostVersion: async () => VERSION,
-    ...(transport === "native" ? { structuredReplayRoute: route } : {}),
   };
   const answer = (index: number): WorkflowAgentResult => ({
     ok: true,
@@ -68,7 +60,7 @@ describe.each(["tool", "native"] as const)("structured %s admission and group se
   it("refuses an empty executable tool name before correction or effects", async () => {
     const result = await structuredSdk(options, [
       rawTurn(["{}"], "completed", [], [""]),
-      transport === "native" ? nativeTurn('{"value":"FIRST"}') : rawTurn(['{"value":"FIRST"}']),
+      rawTurn(['{"value":"FIRST"}']),
     ]);
     expect(result.error).toMatchObject({ result: { failureCause: "output-protocol-unknown" } });
     expect(result.counters).toMatchObject({ generations: 1, effects: 0, tools: 0 });
@@ -199,6 +191,12 @@ describe.each(["tool", "native"] as const)("structured %s admission and group se
         if (first.kind !== "agent" || !first.ok) throw new Error("Missing seed");
         if (reason === "missing") delete first.structuredReceipt;
         if (reason === "legacy-log") first.v = 3;
+        if (reason === "domain") {
+          const invalid = first as any;
+          invalid.text = "7";
+          invalid.structuredReceipt.value = 7;
+          invalid.structuredReceipt.rawTurns[0].calls[0].arguments = '{"value":7}';
+        }
         let fresh = 0;
         const replay = createWorkflowReplayController({ runDir: tempRun(root, "caught"), recorded: records });
         const runtime = createWorkflowRuntime({
@@ -214,7 +212,6 @@ describe.each(["tool", "native"] as const)("structured %s admission and group se
         await expect(
           runtime.dsl.agent("Return authoritative data", {
             ...options,
-            ...(reason === "domain" ? { validate: () => ["Changed membership"] } : {}),
           }),
         ).rejects.toThrow("replay-contract-failure");
         expect(fresh).toBe(0);
@@ -281,6 +278,10 @@ describe.each(["tool", "native"] as const)("structured %s admission and group se
     temporary(async (root) => {
       const held = deferred();
       const records = seeds.slice(0, 2).map((seed, seq) => ({ ...structuredClone(seed.replayRecord[0]!), seq }));
+      const invalid = records[0] as any;
+      invalid.text = "7";
+      invalid.structuredReceipt.value = 7;
+      invalid.structuredReceipt.rawTurns[0].calls[0].arguments = '{"value":7}';
       const replay = createWorkflowReplayController({ runDir: tempRun(root, "offered"), recorded: records });
       let hostReads = 0,
         fresh = 0;
@@ -298,9 +299,7 @@ describe.each(["tool", "native"] as const)("structured %s admission and group se
           return completed(request, "FRESH");
         },
       });
-      const rejected = runtime.dsl
-        .agent("Return authoritative data", { ...options, validate: () => ["Changed membership"] })
-        .catch((error: unknown) => error);
+      const rejected = runtime.dsl.agent("Return authoritative data", options).catch((error: unknown) => error);
       const offered = runtime.dsl.agent("Return authoritative data", options);
       try {
         expect(await rejected).toMatchObject({ message: expect.stringContaining("replay-contract-failure") });

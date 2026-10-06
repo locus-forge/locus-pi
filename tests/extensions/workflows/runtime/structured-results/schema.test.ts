@@ -4,7 +4,6 @@ import {
   compileWorkflowSchema,
   immutableJSON,
   normalizeWorkflowStructuredContract,
-  runWorkflowValueValidator,
 } from "../../../../../extensions/workflows/runtime/structured-results/schema.js";
 
 describe("locus-json-subset-v1 conformance on installed TypeBox", () => {
@@ -82,15 +81,4 @@ describe("locus-json-subset-v1 conformance on installed TypeBox", () => {
       expect(() => canonicalWorkflowJSON(data)).toThrow();
     },
   );
-  it("permits normal nested reads on the monitored immutable input and preserves its original", () => {
-    const input = { child: { id: "known" }, values: [1, 2] };
-    expect(
-      runWorkflowValueValidator(input, (value: any) => {
-        expect(Object.isFrozen(value.child)).toBe(true);
-        expect(value.values.map((n: number) => n + 1)).toEqual([2, 3]);
-        return value.child.id === "known" ? [] : ["Unknown id"];
-      }),
-    ).toEqual([]);
-    expect(input).toEqual({ child: { id: "known" }, values: [1, 2] });
-  });
 });

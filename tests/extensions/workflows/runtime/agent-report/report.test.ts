@@ -173,7 +173,7 @@ describe("explicit plain-text execution reports", () => {
         key === "schema"
           ? "agent schema cannot be combined with result"
           : key === "validate" || key === "repair"
-            ? `agent ${key} requires schema`
+            ? `agent ${key} was removed`
             : `agent ${key} was removed`,
       );
       expect(runner).not.toHaveBeenCalled();

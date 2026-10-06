@@ -266,7 +266,7 @@ export function createWorkflowAgentAttempt(
       req.returnContract !== undefined &&
       finalResult.ok &&
       finalResult.status === "completed" &&
-      finalResult.outputAcceptance?.source !== (req.returnContract.version === 5 ? "native" : "tool")
+      finalResult.outputAcceptance?.source !== "tool"
     ) {
       finalResult = {
         ...finalResult,

@@ -23,7 +23,7 @@ An `agent()` call supports these result contracts:
   submitted through the same-session `workflow_return` tool.
 
 - **Structured JSON v4.** Reviewed trusted runtime source can opt into `schema`,
-  optional synchronous `validate`, and a bounded `repair` allowance. It resolves to an
+  with one package-owned correction after the initial submission. It resolves to an
   immutable JSON value after raw-protocol validation, whole child completion and storage.
   The existing standard and orchestration-only source-check profiles still refuse these
   options; the create skills keep their current text/choice grammar.
@@ -96,13 +96,14 @@ before the replay lookup**, with the replacement below. A fresh run and a resume
 source still declares one fail with the same sentence, so an old shaped receipt is never
 reinterpreted under the reduced contract.
 
-| Removed                             | Use instead                                                                                                                                                                                                       |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `handoffs`                          | Have an agent write the exact caller-assigned destination in its prompt and return readable text; pass caller-owned work units through `items()`; or loop with a bounded `for` and route each pass with `choice`. |
-| `output`                            | Drop it: plain `agent(prompt)` already returns the exact full text.                                                                                                                                               |
-| `returnVia`                         | Drop it: a choice call always returns through `workflow_return`, and a plain call returns exact text.                                                                                                             |
-| `maxAnswerChars`, `schemaMaxLength` | Both are refused by name; state a length requirement in the prompt.                                                                                                                                               |
-| Fusion `schema`, `validate`         | The judge returns exact text; state the required format in the prompt, or have a later agent write the exact caller-assigned destination in its prompt from the judge's text.                                     |
+| Removed                                 | Use instead                                                                                                                                                                                                       |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `handoffs`                              | Have an agent write the exact caller-assigned destination in its prompt and return readable text; pass caller-owned work units through `items()`; or loop with a bounded `for` and route each pass with `choice`. |
+| `output`                                | Drop it: plain `agent(prompt)` already returns the exact full text.                                                                                                                                               |
+| `returnVia`                             | Drop it: a choice call always returns through `workflow_return`, and a plain call returns exact text.                                                                                                             |
+| `maxAnswerChars`, `schemaMaxLength`     | Both are refused by name; state a length requirement in the prompt.                                                                                                                                               |
+| `validate`, `repair`, `outputTransport` | Use schema constraints and ordinary workflow decisions; the runtime owns one correction and one validated tool path.                                                                                              |
+| Fusion `schema`, `validate`             | The judge returns exact text; state the required format in the prompt, or have a later agent write the exact caller-assigned destination in its prompt from the judge's text.                                     |
 
 Both source-check profiles also refuse `schema`, `validate`, `repair` and `outputTransport`: structured output is a
 trusted-runtime capability in this release, outside their existing authoring grammar.
@@ -170,21 +171,19 @@ cause may appear on records written while `validate` existed.
 
 ```js
 // Reviewed trusted Node workflow; neither source-check profile admits this yet.
-const allowedIds = new Set(["record-17", "record-23"]);
+const allowedIds = ["record-17", "record-23"];
 const record = await agent("Return one authoritative record id from the supplied evidence.", {
   label: "record",
   schema: {
     type: "object",
-    properties: { id: { type: "string" } },
+    properties: { id: { type: "string", enum: allowedIds } },
     required: ["id"],
     additionalProperties: false,
   },
-  validate: (value) => (allowedIds.has(value.id) ? [] : ["Use an authoritative input id"]),
-  repair: { maxAttempts: 2 },
 });
 ```
 
-`schema` selects v4. `validate` or `repair` without it fails before a child exists.
+`schema` selects v4. The removed `validate`, `repair` and `outputTransport` options fail by name before a child exists or replay begins.
 It cannot combine with choice, fallback or report mode. `output`, `returnVia` and
 `handoffs` remain removed aliases. Text, report and choice v3 defaults, return types
 and canonical replay keys remain unchanged.
@@ -195,8 +194,23 @@ Other routes and older hosts fail `output-contract-unavailable` before prompt.
 Version alone is insufficient: callbacks must be installable and chainable, active-tool
 restriction must round-trip, and raw call identity/final arguments/terminal status must
 remain observable. Legacy text and choice continue to load on Pi 0.84.3. This route is
-a return tool with local validation; it does not inject a native provider schema or
-force tool selection, and does not change the caller's model, authentication or permissions.
+one return tool carrying the caller's actual schema under `parameters.properties.value`.
+For the semantics-preserving subset, it requests Pi's standard
+`constrainedSampling: { type: "json_schema", strict: "prefer" }`. Pi owns model and
+provider support, including falling back to ordinary tool sampling. Locus does not
+select a second transport, force tool selection, or change model, authentication or permissions.
+
+Strict preference requires every object to explicitly reject additional properties
+and require all declared properties, every array to declare an item schema, and no
+string length bounds anywhere. Pi's strict conversion otherwise makes optional
+properties required/nullable and closes open objects; provider string length also
+cannot preserve this dialect's grapheme counts. Such schemas use the same ordinary
+validated tool with the exact schema and no strict preference. Canonical validation
+and raw terminal proof remain authoritative in both cases. This uses Pi's
+[constrained sampling contract](https://github.com/earendil-works/pi/blob/v1.0.0/packages/ai/README.md#constrained-sampling-for-tools),
+not a package-owned model allowlist. Broader provider support in Pi does not establish
+raw-observer support in Locus; other routes, including public OpenAI Responses, still
+fail the explicit v4 capability check.
 
 **Dialect `locus-json-subset-v1`.** Every schema node is an object with one string
 `type`: `null`, `boolean`, `string`, `number`, `integer`, `array` or `object`.
@@ -238,16 +252,14 @@ incomplete is `output-incomplete`; provider errors remain failures; lost termina
 observation is `output-protocol-unknown`. None is inferred from English narrative or
 converted into a success. A failed store has no authoritative structured receipt.
 
-**Custom validation.** `validate(value)` is pure and synchronous, after schema validation,
-on a detached deeply frozen input with monitored mutation attempts. It returns `[]`
-to accept or nonblank error strings for same-session feedback. Throw, Promise/thenable,
-malformed return, or mutation (even caught by the callback) is `author-validation-error`
-without model repair. It is a predicate, not a transformer or security sandbox for
-trusted Node code. ID membership and cross-field checks need authoritative caller data;
-an accepted model assertion is not evidence that tests or required reviews happened.
+**Domain constraints.** Encode finite allowed values with `enum` using authoritative
+caller data. Cross-field or domain decisions that exceed this dialect belong in
+trusted workflow source after the awaited result. Schema acceptance is not evidence
+that tests or required reviews happened. No custom validation/repair callback runs
+inside the output acceptance loop.
 
-**Allowances.** Default `repair.maxAttempts` is **2 submissions**, including the initial
-one. An explicit positive safe integer changes it. Each distinct finalized return,
+**Allowances.** There are **2 submissions**: the initial one and one package-owned
+correction. This allowance is not configurable. Each distinct finalized return,
 including one rejected by the host before execution, and each completed output turn
 without a return consumes one slot. Partial events or repeated observations of the
 same call id do not consume another. Ordinary research before the first return uses
@@ -267,8 +279,8 @@ axes remain unbounded. A new explicit run receives a new ledger and preserves ea
 
 **Replay.** Only a committed v4 receipt replays: exact contract/dialect/schema digest,
 observer revision (`codex-responses-v3`), full source and caller-input identities, applied allowances, spent
-counters, completed raw turn/call provenance, and schema/custom validation outcome must
-agree. Changed validator/closure source or caller inputs refuses reuse. Uncovered
+counters, completed raw turn/call provenance, and schema validation outcome must
+agree. Changed closure source or caller inputs refuses reuse. Uncovered
 external callbacks/imports or non-replayable source cannot resume v4. The runner uses
 conservative lexical coverage: source-declared functions and local aliases can be covered;
 ambient/free callbacks, `globalThis`/`process`, reflection and nonliteral property indexes
@@ -280,7 +292,7 @@ unproven in this subset. Source-owned object callbacks need a declaration on the
 receiver. This can
 refuse replay for otherwise valid trusted JavaScript; it does not restrict fresh execution
 or establish a sandbox or a full JavaScript dependency proof. Current validation
-runs again on immutable replayed data; mismatch or author errors are
+runs again on immutable replayed data; mismatches are
 `replay-contract-failure`, without correction or a new child for that failed call.
 A rejected offered receipt is settled as failure, excluded from successful reuse
 counts, and closes reuse of the remaining prefix even if trusted code catches the
@@ -301,97 +313,15 @@ The existing child/result and replay stores retain the immutable receipt. The op
 `agent_end.outputAcceptance` is only `{source:"tool", toolName:"workflow_return", attempts,
 contractVersion:4}`; raw arguments and full receipts are not copied into each journal event.
 
-## Native structured results v5 — trusted runtime source
+## Historical native structured results v5
 
-Trusted source can explicitly add `outputTransport: "native"` to the same
-`schema`/`validate`/`repair` call. Omitting the selector retains v4, including its
-canonical request and receipt bytes. Any other selector, or a selector without a
-schema, refuses before child work. Choice, fallback and report cannot combine with it.
-Both authoring checkers continue to refuse this runtime-only syntax.
-
-```js
-const result = await agent("Return an authoritative id from the supplied evidence", {
-  schema: {
-    type: "object",
-    properties: { id: { type: "string" } },
-    required: ["id"],
-    additionalProperties: false,
-  },
-  validate: (value) => (allowedIds.includes(value.id) ? [] : ["Use an authoritative id"]),
-  outputTransport: "native",
-});
-```
-
-**Route and wire.** This slice admits Pi >=1.0.0 with actual writable payload/raw,
-pre-dispatch admission, active-tool readback/restriction and cancellation hooks.
-The compatibility policy is the existing public `openai` / `openai-responses` route
-at `https://api.openai.com/v1`, with IDs `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-luna`.
-Unknown IDs, snapshots, fine-tuned models, other APIs and proxies refuse. These are
-synthetic compatibility tests, not live qualification or an entitlement claim.
-The caller's model, host-managed authentication and permissions are unchanged;
-authentication remains unverified. Provider denial is terminal with no fallback.
-
-The inherited payload hook runs first. The runtime detaches JSON data before checking
-the effective payload; accessors and executable serialization hooks cannot change
-the dispatched model or format after validation. Undefined object fields use ordinary
-JSON transport omission. The runtime then observes the effective
-non-secret route and applies strict `text.format` named `locus_workflow_result`.
-Conflicting format, model, stream or route changes refuse. Input, work tools,
-verbosity and unrelated fields remain intact. Every supported canonical root uses
-one closed required wrapper, exactly `{value: canonicalValue}`; no return tool is
-registered. `$schema` metadata is removed only from the wire projection.
-
-**Exact supported subset.** Native requires every object to be closed and require
-all declared properties, and every array to have items. Non-null scalar/object/array
-roots, matching primitive enums, numeric and array bounds retain their canonical
-semantics. Root or nested null, incompatible/null enums, optional/open objects,
-untyped arrays and string grapheme length bounds refuse before model work; they
-are not rewritten into nullable fields or a different length rule. The provider's
-schema limits include the wrapper: 5000 total properties, ten nesting levels,
-120000 property/enum characters, 1000 enum entries, and 15000 characters in a
-single string enum exceeding 250 entries. Exceeding a limit refuses rather than
-truncates. See the [official supported-schema limits](https://developers.openai.com/api/docs/guides/structured-outputs#supported-schemas).
-There is no new global answer-size limit.
-
-**Finalization and correction.** Matching raw created/completed response identity
-and one completed assistant message with one complete output-text part are required.
-Explicit `final_answer`, absent phase and null phase qualify. Commentary or unknown
-phase terminates as `output-protocol-unknown` without correction; partials, readable
-last text or a subset of several messages cannot authorize data. Raw phase is
-preserved before session JSONL persistence and in the next correction input.
-After inherited finish hooks, the live message, context history and returned messages
-must still match that raw text and phase; a conflict terminates without relabeling.
-Research work calls must appear exactly once in the completed terminal set, matching
-observed unique item/call IDs, names and finalized arguments, before any tool executes.
-Repeated work-item added/done frames fail because the SDK can dispatch them again;
-matching argument-finalization and exact terminal duplicates remain idempotent.
-Research work turns consume the existing turn/tool/time axes without spending an
-output slot. The first native output restricts active tools to empty; correction
-uses `tool_choice: "none"`. Unexpected correction calls have no effects and spend a
-slot, as does a missing output. The shared schema-first synchronous custom validator,
-immutable value, default two output attempts, same child feedback and cumulative
-budgets remain unchanged. A valid last slot succeeds without another generation;
-author errors, refusal, incomplete/error/disconnect, cancellation or lost evidence
-are terminal. Whole child completion and successful storage still establish authority.
-
-**Receipts and replay.** Native uses distinct v5 provenance: raw response/message,
-text and original phase, payload-observed wire revision/schema digest and non-secret
-route, plus existing source/input/schema/validation and allowance/spent evidence.
-Native raw evidence uses observer revision `openai-responses-native-v2`; its wire
-revision remains `openai-responses-native-v1`. Earlier native observer-v1 receipts
-remain readable but cannot replay because exact research-tool membership was not proven.
-Zero real tool calls are valid; no tool name or fictional return call is present.
-The journal carries only `{source:"native", contractVersion:5, attempts}`.
-Replay revalidates committed data and freshly resolves the existing current
-selected/registry model and role mapping before any child, credential or network
-work. It compares established provider/id/API/base facts to the recorded
-payload-observed route, catching inherited model changes and same-role remapping.
-Unknown, opaque custom routing or mismatches refuse without a paid fresh suffix.
-This read-only comparison is not fresh post-auth endpoint or credential attestation:
-Pi exposes no public secret-free accessor for that stronger claim. Host-managed auth
-remains unverified. V4 receipts stay strict and neither version upgrades to the other.
-Custom embedders need the current route port in addition to the v4 identity/version
-ports. Source coverage, storage, retry and restart limitations remain the v4 contract.
+The bespoke native Responses transport and `outputTransport` selector have been removed.
+Existing v5 result artifacts, journal entries and immutable receipts remain readable
+with their original native identity and phase evidence. They cannot become current
+v4 tool acceptance, and attempting structured replay refuses without a new model call.
+Earlier v4 receipts requiring a removed custom validator are likewise refused rather
+than silently dropping their recorded validation authority. Explicitly start a new run
+with `schema` to obtain a current result.
 
 ## Command completed, answer rejected
 

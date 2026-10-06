@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import { rawTurn, structuredSdk } from "../../../../fixtures/agent-runtime/structured-sdk.js";
 
 describe("v4 through real Pi SDK / Codex SSE / Agent loop / workflow storage", () => {
-  it("commits a null root in the last allowed initial slot and chains existing hooks", async () => {
-    const result = await structuredSdk({ schema: { type: "null" }, repair: { maxAttempts: 1 } }, [
-      rawTurn(['{"value":null}']),
-    ]);
+  it("commits a null root in the initial slot and chains existing hooks", async () => {
+    const result = await structuredSdk({ schema: { type: "null" } }, [rawTurn(['{"value":null}'])]);
     expect(result.error).toBeUndefined();
     expect(result.value).toBeNull();
     expect(result.counters).toMatchObject({ sessions: 1, generations: 1, priorPrepare: 1, priorFinish: 1, tools: 1 });
@@ -19,34 +17,32 @@ describe("v4 through real Pi SDK / Codex SSE / Agent loop / workflow storage", (
     });
   });
   it("corrects authoritative membership in the same child and succeeds on slot two", async () => {
-    const result = await structuredSdk(
-      { schema: { type: "string" }, validate: (value) => (value === "known" ? [] : ["Unknown id"]) },
-      [rawTurn(['{"value":"unknown"}']), rawTurn(['{"value":"known"}'])],
-    );
+    const result = await structuredSdk({ schema: { type: "string", enum: ["known"] } }, [
+      rawTurn(['{"value":"unknown"}']),
+      rawTurn(['{"value":"known"}']),
+    ]);
     expect(result.error).toBeUndefined();
     expect(result.value).toBe("known");
-    expect(result.counters).toMatchObject({ sessions: 1, generations: 2, tools: 2, prompts: 2 });
+    expect(result.counters).toMatchObject({ sessions: 1, generations: 2, tools: 1, prompts: 2 });
     expect(result.acceptance?.structuredReceipt?.spent.outputAttempts).toBe(2);
-    expect(result.acceptance?.structuredReceipt?.spent.toolCalls).toBe(2);
+    expect(result.acceptance?.structuredReceipt?.spent.toolCalls).toBe(1);
   });
-  it("counts a host-rejected missing argument before execute and denies the next generation", async () => {
-    const result = await structuredSdk({ schema: { type: "null" }, repair: { maxAttempts: 1 } }, [
+  it("counts both host-rejected missing arguments before execute and denies a third generation", async () => {
+    const result = await structuredSdk({ schema: { type: "null" } }, [
+      rawTurn(["{}"]),
       rawTurn(["{}"]),
       rawTurn(['{"value":null}']),
     ]);
     expect(result.error).toMatchObject({ result: { failureCause: "output-contract-exhausted" } });
-    expect(result.counters).toMatchObject({ generations: 1, tools: 0 });
+    expect(result.counters).toMatchObject({ generations: 2, tools: 0 });
     expect(result.acceptance).toBeUndefined();
   });
   it("permits ordinary research before the first return without spending output slots", async () => {
-    const result = await structuredSdk(
-      { schema: { type: "null" }, repair: { maxAttempts: 1 }, maxTurns: 3, maxToolCalls: 3 },
-      [
-        rawTurn(["{}"], "completed", [], ["fixture_work"]),
-        rawTurn(["{}"], "completed", [], ["fixture_work"]),
-        rawTurn(['{"value":null}']),
-      ],
-    );
+    const result = await structuredSdk({ schema: { type: "null" }, maxTurns: 3, maxToolCalls: 3 }, [
+      rawTurn(["{}"], "completed", [], ["fixture_work"]),
+      rawTurn(["{}"], "completed", [], ["fixture_work"]),
+      rawTurn(['{"value":null}']),
+    ]);
     expect(result.error).toBeUndefined();
     expect(result.value).toBeNull();
     expect(result.counters).toMatchObject({ generations: 3, sessions: 1, effects: 2 });
@@ -70,7 +66,7 @@ describe("v4 through real Pi SDK / Codex SSE / Agent loop / workflow storage", (
       rawTurn(['{"value":null}']),
     ]);
     expect(result.error).toMatchObject({ result: { failureCause: "tool-call-budget" } });
-    expect(result.counters).toMatchObject({ generations: 2, sessions: 1, tools: 1 });
+    expect(result.counters).toMatchObject({ generations: 2, sessions: 1, tools: 0 });
     expect(result.value).toBeUndefined();
   });
   it("charges disallowed research in a correction turn instead of resetting output allowance", async () => {
@@ -155,14 +151,14 @@ describe("v4 through real Pi SDK / Codex SSE / Agent loop / workflow storage", (
     ["raw malformed repaired by host", rawTurn(['{"value":"first\nsecond"}']), "output-contract-exhausted"],
     ["fenced JSON", rawTurn(['```json\n{"value":null}\n```']), "output-contract-exhausted"],
   ])("never commits %s or retries its terminal failure", async (_name, events, cause) => {
-    const result = await structuredSdk({ schema: { type: "null" }, repair: { maxAttempts: 1 } }, [events as object[]]);
+    const result = await structuredSdk({ schema: { type: "null" } }, [events as object[]]);
     expect(result.value).toBeUndefined();
     expect(result.acceptance).toBeUndefined();
     expect(result.error).toMatchObject({ result: { failureCause: cause } });
-    expect(result.counters.generations).toBe(1);
+    expect(result.counters.generations).toBe(cause === "output-contract-exhausted" ? 2 : 1);
   });
   it("treats canonical object-order duplicates as one proposal", async () => {
-    const result = await structuredSdk({ schema: { type: "object" }, repair: { maxAttempts: 1 } }, [
+    const result = await structuredSdk({ schema: { type: "object" } }, [
       rawTurn(['{"value":{"b":2,"a":1}}', '{"value":{"a":1,"b":2}}']),
     ]);
     expect(result.error).toBeUndefined();
@@ -185,49 +181,14 @@ describe("v4 through real Pi SDK / Codex SSE / Agent loop / workflow storage", (
     expect(result.error).toMatchObject({ result: { failureCause: "output-contract-exhausted" } });
     expect(result.counters.generations).toBe(2);
   });
-  it("checks schema before the author callback and preserves data without coercion", async () => {
-    let validations = 0;
-    const result = await structuredSdk(
-      {
-        schema: { type: "number" },
-        validate: () => {
-          validations++;
-          return [];
-        },
-      },
-      [rawTurn(['{"value":"2"}']), rawTurn(['{"value":2}'])],
-    );
+  it("checks raw schema constraints without accepting Pi argument coercion", async () => {
+    const result = await structuredSdk({ schema: { type: "number" } }, [
+      rawTurn(['{"value":"2"}']),
+      rawTurn(['{"value":2}']),
+    ]);
     expect(result.error).toBeUndefined();
     expect(result.value).toBe(2);
-    expect(validations).toBe(1);
-  });
-  it.each([
-    () => {
-      throw new Error("author error");
-    },
-    () => Promise.resolve([]),
-    () => Promise.reject(new Error("async author error")),
-    () => [""],
-    () => new Array(1),
-    (value: any) => {
-      try {
-        value.n = 2;
-      } catch {}
-      return [];
-    },
-    (value: any) => {
-      try {
-        value.child.n = 2;
-      } catch {}
-      return [];
-    },
-  ])("never repairs an author validator failure", async (validate) => {
-    const result = await structuredSdk({ schema: { type: "object" }, validate: validate as never }, [
-      rawTurn(['{"value":{"n":1,"child":{"n":1}}}']),
-      rawTurn(['{"value":{}}']),
-    ]);
-    expect(result.error).toMatchObject({ result: { failureCause: "author-validation-error" } });
-    expect(result.counters.generations).toBe(1);
+    expect(result.acceptance?.structuredReceipt?.spent.outputAttempts).toBe(2);
   });
 });
 
@@ -365,15 +326,11 @@ it("rejects a prior return call identity reused in a later mixed batch before co
     if (event.item?.call_id === repeatedId) event.item.call_id = priorId;
     for (const item of event.response?.output ?? []) if (item.call_id === repeatedId) item.call_id = priorId;
   }
-  const result = await structuredSdk({ schema: { type: "null" }, repair: { maxAttempts: 3 } }, [
-    first,
-    mixed,
-    rawTurn(['{"value":null}']),
-  ]);
+  const result = await structuredSdk({ schema: { type: "null" } }, [first, mixed, rawTurn(['{"value":null}'])]);
   expect(result.error).toMatchObject({ result: { failureCause: "output-protocol-unknown" } });
   expect(result.value).toBeUndefined();
   expect(result.acceptance).toBeUndefined();
-  expect(result.counters).toMatchObject({ generations: 2, tools: 1, effects: 0 });
+  expect(result.counters).toMatchObject({ generations: 2, tools: 0, effects: 0 });
 });
 
 it.each(["workflow_return", "fixture_work"])("rejects distinct %s items sharing one call identity", async (name) => {

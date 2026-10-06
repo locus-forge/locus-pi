@@ -130,13 +130,6 @@ interface FeatureInternalEntry {
 
 const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
   {
-    module: "extensions/workflows/runtime/structured-results/native-response.ts",
-    owner: "extensions/workflows",
-    facade: WORKFLOW_AGENT_BRIDGE_FACADE,
-    reason:
-      "Native wire/route/raw phase is private workflow evidence; shared hosts consume lifecycle ports, not this provider adapter.",
-  },
-  {
     module: "extensions/workflows/runtime/structured-results/source-coverage.ts",
     owner: "extensions/workflows",
     facade: "extensions/workflows/runtime/workflow-script-identity.ts",

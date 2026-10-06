@@ -53,11 +53,11 @@ create another replay ordinal. Transport retries also share that logical ordinal
 see [the two retry loops](outcomes.md#the-two-retries-and-which-failure-each-one-owns).
 
 Structured calls also revalidate their committed receipt, full source and caller
-input; native calls check the current route. Replay-log v4 is separate from tool
-return-contract v4 and native return-contract v5. Structured intake detaches the
+input; native v5 evidence cannot be reused. Replay-log v4 is separate from tool
+return-contract v4 and historical native return-contract v5. Native v5 evidence remains readable but cannot supply current tool acceptance or start a fresh retry. Structured intake detaches the
 recorded evidence; its declared return-contract version must match the call.
 Missing or unproven structured evidence refuses before child work, including
-historical log-v3 identity misses.
+historical log-v3 identity misses. Retired-native evidence in log v3 refuses execution before any call, because its settlement order does not prove admission order; passive historical readback stays available.
 If revalidation fails and the workflow catches it, subsequent prefix reuse still
 stops: ordinary suffix calls run fresh and structured suffix calls refuse. Calls
 already admitted concurrently retain their own settlement; this does not roll

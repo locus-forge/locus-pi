@@ -238,7 +238,7 @@ describe("standard bounded carry and author-owned records; requires native ast-g
       .map((item) => item.message);
     expect(messages).toContainEqual(
       expect.stringContaining(
-        ["schema", "validate", "repair", "outputTransport"].includes(key)
+        key === "schema"
           ? `agent ${key} is runtime-only and outside this authoring grammar`
           : `agent ${key} was removed`,
       ),

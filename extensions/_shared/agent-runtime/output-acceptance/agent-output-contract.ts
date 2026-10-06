@@ -37,11 +37,6 @@ export interface AgentExecutionLedger {
 }
 /** The caller understands provider data; the shared host only chains lifecycle hooks. */
 export interface AgentObservedReturn {
-  readonly native?: {
-    route(model: unknown): void;
-    payload(payload: unknown, model: unknown): unknown;
-    sessionEvent(event: unknown): void;
-  };
   observationLost(): void;
   initialize(): Promise<void>;
   beforeRequest(context: unknown): void;
@@ -67,6 +62,7 @@ interface AgentStructuredReceiptBase {
   customValidation: "accepted" | "absent";
 }
 
+/** Historical v5 evidence only; current output uses the validated tool protocol. */
 export interface AgentNativeRoute {
   provider: "openai";
   api: "openai-responses";
@@ -109,17 +105,12 @@ export type AgentOutputAcceptance =
     }
   | { source: "native"; contractVersion: 5; attempts: number; structuredReceipt?: AgentStructuredReceipt };
 
-/** Truthful public receipt projection at the SDK boundary; native evidence has no tool identity. */
+/** Only current tool acceptance can be newly projected at the SDK boundary. */
 export function agentOutputAcceptance(
   accepted: Extract<ReturnType<AgentResponseAcceptance["inspect"]>, { status: "accepted" }>,
 ): AgentOutputAcceptance {
   if (accepted.structuredReceipt?.version === 5)
-    return {
-      source: "native",
-      contractVersion: 5,
-      attempts: accepted.attempts,
-      structuredReceipt: accepted.structuredReceipt,
-    };
+    throw new Error("Historical native v5 evidence is not current output acceptance");
   if (accepted.toolName === undefined) throw new Error("Accepted tool output has no tool identity");
   return {
     source: "tool",
@@ -136,21 +127,4 @@ export interface ReadOnlyAgentToolResult {
   isError?: boolean;
   /** Stop the current Pi tool turn; supported structured hosts also fence generation. */
   terminate?: boolean;
-}
-
-/** Exact identity comparison for the native message contract; absent phase remains distinct from null. */
-export const sameAgentNativeMessage = (left: AgentNativeMessage, right: AgentNativeMessage): boolean =>
-  left.messageId === right.messageId &&
-  left.text === right.text &&
-  Object.hasOwn(left, "phase") === Object.hasOwn(right, "phase") &&
-  left.phase === right.phase;
-
-/** Scalar equality for the established route contract, without qualification or secret inspection. */
-export function sameAgentNativeRoute(left: AgentNativeRoute, right: AgentNativeRoute): boolean {
-  return (
-    left.provider === right.provider &&
-    left.api === right.api &&
-    left.baseUrl === right.baseUrl &&
-    left.model === right.model
-  );
 }

@@ -7,7 +7,7 @@ goes into a **exact caller-assigned file** that the agent writes and a later age
 `handoffs`, `output` and `returnVia` remain removed. The checker also refuses
 `schema`, `validate`, `repair` and `outputTransport`. Reviewed trusted runtime source has an opt-in
 [structured v4 contract](../../../docs/workflows/agent-results.md#structured-results-v4--trusted-runtime-source);
-explicit native transport is described in the [v5 runtime contract](../../../docs/workflows/agent-results.md#native-structured-results-v5--trusted-runtime-source). This lesson does not teach that syntax before its authoring grammar is supported.
+`validate`, `repair` and `outputTransport` are removed runtime options. Historical native v5 evidence remains readable but cannot be replayed as current output. This lesson does not teach schema syntax before its authoring grammar is supported.
 Caller-owned work units come from `dsl.items()`.
 
 A choice is corrected in that same child session by construction: there is no other

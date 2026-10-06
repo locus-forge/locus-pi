@@ -1,4 +1,9 @@
 import {
+  createWorkflowJournalSink,
+  readWorkflowRunJournalState,
+} from "../../../extensions/workflows/runtime/workflow-journal.js";
+import { zstdDecompressSync } from "node:zlib";
+import {
   createWorkflowReplayController,
   readWorkflowReplayLog,
 } from "../../../extensions/workflows/runtime/workflow-replay.js";
@@ -7,7 +12,7 @@ import type { ReadOnlyAgentCustomTool } from "../../../extensions/_shared/agent-
 import * as sdk from "@earendil-works/pi-coding-agent";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import { stream } from "@earendil-works/pi-ai/api/openai-codex-responses";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -93,20 +98,11 @@ export async function structuredSdk(
   const runId = "structured-sdk";
   const runDir = path.join(root, ".locus-pi", "runs", runId);
   mkdirSync(runDir, { recursive: true });
-  const native = "outputTransport" in options && options.outputTransport === "native";
-  const nativeApi = native ? await import("@earendil-works/pi-ai/api/openai-responses") : undefined;
-  const catalogModel = native
-    ? (await import("@earendil-works/pi-ai/providers/openai"))
-        .openaiProvider()
-        .getModels()
-        .find((model) => model.id === "gpt-6.1-sol")!
-    : openaiCodexProvider().getModels()[0]!;
+  const catalogModel = openaiCodexProvider().getModels()[0]!;
   if (catalogModel === undefined) throw new Error("Actual installed model catalog lacks fixture model");
   const model = { ...catalogModel };
   const payloads: unknown[] = [];
   const urls: string[] = [];
-  let messages: unknown[] = [];
-  let persisted: unknown[] = [];
   const syntheticToken =
     "fixture." +
     Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "fixture-only" } })).toString(
@@ -120,25 +116,27 @@ export async function structuredSdk(
     refreshOnCreate: false,
     allowModelNetwork: false,
   });
-  models.registerProvider(native ? "openai" : "openai-codex", {
+  models.registerProvider("openai-codex", {
     api: model.api,
-    apiKey: native ? "synthetic-offline-only" : syntheticToken,
+    apiKey: syntheticToken,
     streamSimple: (actual, context, args) => {
       const fetch: typeof globalThis.fetch = async (url, init) => {
         urls.push(String(url));
-        if (typeof init?.body === "string") payloads.push(JSON.parse(init.body));
+        const body = init?.body;
+        if (typeof body === "string") payloads.push(JSON.parse(body));
+        else if (body instanceof Uint8Array && new Headers(init?.headers).get("content-encoding") === "zstd")
+          payloads.push(JSON.parse(zstdDecompressSync(body).toString("utf8")));
         const events = scripted[counters.generations++] ?? rawTurn([]);
         return new Response(events.map((event) => "data: " + JSON.stringify(event) + "\n\n").join(""), {
           headers: { "Content-Type": "text/event-stream" },
         });
       };
-      return native
-        ? nativeApi!.stream(actual as Parameters<NonNullable<typeof nativeApi>["stream"]>[0], context, {
-            ...args,
-            maxRetries: 0,
-            fetch,
-          })
-        : stream(actual as Parameters<typeof stream>[0], context, { ...args, transport: "sse", maxRetries: 0, fetch });
+      return stream(actual as Parameters<typeof stream>[0], context, {
+        ...args,
+        transport: "sse",
+        maxRetries: 0,
+        fetch,
+      });
     },
   });
   const settings = sdk.SettingsManager.inMemory({ retry: { enabled: false }, cacheWarming: "off" });
@@ -155,7 +153,6 @@ export async function structuredSdk(
   });
   await loader.reload();
   const harness = createHarness(root);
-  if (native) harness.ctx.model = { ...model };
   const store = createWorkflowArtifactStore({ projectRoot: root, runId, runDir });
   const bridge = createWorkflowAgentRunner({
     pi: harness.pi,
@@ -198,9 +195,7 @@ export async function structuredSdk(
             model,
             settingsManager: settings,
             resourceLoader: loader,
-            sessionManager: native
-              ? sdk.SessionManager.create(root, path.join(root, "sessions"))
-              : sdk.SessionManager.inMemory(root),
+            sessionManager: sdk.SessionManager.inMemory(root),
             noTools: "all",
             tools: tools.map((tool) => tool.name),
             customTools: tools as unknown as NonNullable<sdk.CreateAgentSessionOptions["customTools"]>,
@@ -220,15 +215,6 @@ export async function structuredSdk(
           session.prompt = async (...args) => {
             counters.prompts++;
             await prompt(...args);
-            if (native) {
-              messages = structuredClone(session.messages);
-              const file = session.sessionManager.getSessionFile();
-              if (file !== undefined)
-                persisted = readFileSync(file, "utf8")
-                  .trim()
-                  .split("\n")
-                  .map((line) => JSON.parse(line));
-            }
           };
           tweak?.(session);
           return { session: session as unknown as SdkAgentSessionLike, hostVersion: sdk.VERSION };
@@ -272,12 +258,26 @@ export async function structuredSdk(
     journal: runtime.getJournal(),
     payloads,
     urls,
-    messages,
-    persisted,
   };
 }
 
 export async function structuredCause(kind: "refusal" | "incomplete" | "unknown" | "author") {
+  // Removed callback failures are historical evidence, not a live producer.
+  if (kind === "author") {
+    const root = mkdtempSync(path.join(tmpdir(), "locus-cause-historical-"));
+    const runId = "historical-author";
+    const sink = createWorkflowJournalSink(root, runId);
+    sink.write({
+      ts: "2026-10-06T00:00:00.000Z",
+      runId,
+      kind: "error",
+      message: "Historical author callback failed",
+      failureCause: "author-validation-error",
+    });
+    const state = readWorkflowRunJournalState(root, runId);
+    rmSync(root, { recursive: true, force: true });
+    return state.lines.find((line) => line.failureCause === "author-validation-error")?.failureCause;
+  }
   const events =
     kind === "refusal"
       ? rawTurn([], "completed", [{ type: "response.refusal.done" }])
@@ -285,52 +285,8 @@ export async function structuredCause(kind: "refusal" | "incomplete" | "unknown"
           ['{"value":null}'],
           kind === "incomplete" ? "incomplete" : kind === "unknown" ? "disconnect" : "completed",
         );
-  const result = await structuredSdk(
-    {
-      schema: { type: "null" },
-      repair: { maxAttempts: 1 },
-      ...(kind === "author"
-        ? {
-            validate: () => {
-              throw new Error("author bug");
-            },
-          }
-        : {}),
-    },
-    [events],
-  );
+  const result = await structuredSdk({ schema: { type: "null" } }, [events]);
   return (
     result.error as import("../../../extensions/workflows/runtime/workflow-agent-contract.js").WorkflowAgentExecutionError
   )?.result.failureCause;
-}
-
-let serial = 0;
-export function nativeTurn(raw = '{"value":"known"}', phase: unknown = "final_answer", terminal = "completed") {
-  const id = ++serial;
-  const item = {
-    type: "message",
-    id: `native_message_${id}`,
-    role: "assistant",
-    status: "completed",
-    content: [{ type: "output_text", text: raw, annotations: [] }],
-    ...(phase === "absent" ? {} : { phase }),
-  };
-  return [
-    { type: "response.created", response: { id: `native_response_${id}`, status: "in_progress" } },
-    { type: "response.output_item.added", output_index: 0, item: { ...item, content: [] } },
-    { type: "response.output_text.delta", output_index: 0, item_id: item.id, content_index: 0, delta: raw },
-    { type: "response.output_item.done", output_index: 0, item },
-    ...(terminal === "disconnect"
-      ? []
-      : [
-          {
-            type: `response.${terminal}`,
-            response: {
-              id: `native_response_${id}`,
-              status: terminal,
-              output: [item],
-            },
-          },
-        ]),
-  ];
 }

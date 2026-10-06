@@ -166,7 +166,7 @@ describe("agent({ choice }) exact routing output", () => {
     [{ choice: ["accept", ""] }, /value at index 1 must be a non-empty string/u],
     [{ choice: ["accept", "accept"] }, /duplicate value "accept"/u],
     [{ choice: ["accept", "revise"], schema: { type: "string" } }, /agent schema cannot be combined with choice/u],
-    [{ choice: ["accept", "revise"], repair: { maxAttempts: 2 } }, /agent repair requires schema/u],
+    [{ choice: ["accept", "revise"], repair: { maxAttempts: 2 } }, /agent repair was removed/u],
     [{ choiceFallback: "accept" }, /agent choiceFallback requires choice/u],
     [
       { choice: ["accept", "revise"], choiceFallback: "blocked" },

@@ -53,7 +53,6 @@ import type { AgentExecutor } from "../../_shared/agent-runtime/agent-runner.js"
 import {
   createWorkflowAgentPreflight,
   createWorkflowAgentRunner,
-  createWorkflowStructuredReplayRoute,
   type WorkflowAgentBridgeOptions,
 } from "./workflow-agent-bridge.js";
 import {
@@ -890,7 +889,6 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     signal: opts.signal,
     agentRunner,
     structuredReplayHostVersion: readAgentSdkHostVersion,
-    structuredReplayRoute: createWorkflowStructuredReplayRoute(agentBridgeOptions),
     structuredSourceIdentity: {
       sha256: scriptIdentity.scriptSha256,
       covered:

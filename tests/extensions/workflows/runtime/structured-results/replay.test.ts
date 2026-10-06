@@ -51,8 +51,7 @@ async function resume(
 describe("immutable committed v4 replay on existing record owner", () => {
   it("reuses a persisted successful receipt, revalidates membership, and dispatches no model", async () => {
     const options = {
-      schema: { type: "string" },
-      validate: (value: unknown) => (value === "known" ? [] : ["Unknown id"]),
+      schema: { type: "string", enum: ["known"] },
     };
     const first = await structuredSdk(options, [rawTurn(['{"value":"known"}'])]);
     expect(first.error).toBeUndefined();
@@ -102,28 +101,25 @@ describe("immutable committed v4 replay on existing record owner", () => {
       expect(result.calls).toBe(0);
     }
   });
-  it("revalidation failure is not a fresh correction or a physical child", async () => {
-    const first = await structuredSdk({ schema: { type: "string" }, validate: () => [] }, [
-      rawTurn(['{"value":"unknown"}']),
-    ]);
-    const result = await resume(first.replayRecord, {
-      schema: { type: "string" },
-      validate: () => ["Authoritative membership changed"],
-    });
+  it("schema revalidation failure never starts a fresh correction or physical child", async () => {
+    const options = { schema: { type: "string", enum: ["known"] } };
+    const first = await structuredSdk(options, [rawTurn(['{"value":"known"}'])]);
+    const records = structuredClone(first.replayRecord);
+    const entry = records[0] as any;
+    entry.text = '"unknown"';
+    entry.structuredReceipt.value = "unknown";
+    entry.structuredReceipt.rawTurns[0].calls[0].arguments = '{"value":"unknown"}';
+    const result = await resume(records, options);
     expect(result.value).toBeUndefined();
     expect(result.error).toMatchObject({ message: expect.stringContaining("replay-contract-failure") });
     expect(result.calls).toBe(0);
   });
-  it("names author exceptions during replay as replay-contract failure without dispatch", async () => {
-    const first = await structuredSdk({ schema: { type: "string" }, validate: () => [] }, [
-      rawTurn(['{"value":"known"}']),
-    ]);
-    const result = await resume(first.replayRecord, {
-      schema: { type: "string" },
-      validate: () => {
-        throw new Error("changed closure");
-      },
-    });
+  it("refuses historical custom-validation receipts without silently discarding their authority", async () => {
+    const options = { schema: { type: "string" } };
+    const first = await structuredSdk(options, [rawTurn(['{"value":"known"}'])]);
+    const records = structuredClone(first.replayRecord);
+    (records[0] as any).structuredReceipt.customValidation = "accepted";
+    const result = await resume(records, options);
     expect(result.error).toMatchObject({ message: expect.stringContaining("replay-contract-failure") });
     expect(result.calls).toBe(0);
   });
@@ -163,13 +159,12 @@ describe("immutable committed v4 replay on existing record owner", () => {
   });
 });
 
-it.each(["old-observer", "missing-receipt", "host-version", "validator"] as const)(
+it.each(["old-observer", "missing-receipt", "host-version", "schema"] as const)(
   "invalidates following replay when caught structured acceptance fails: %s",
   async (mode) =>
     temporary(async (root) => {
       const options: WorkflowAgentStructuredOptions = {
         schema: { type: "null" },
-        ...(mode === "validator" ? { validate: () => [] } : {}),
       };
       const first = await structuredSdk(options, [rawTurn(['{"value":null}'])]);
       expect(first.error).toBeUndefined();
@@ -178,6 +173,7 @@ it.each(["old-observer", "missing-receipt", "host-version", "validator"] as cons
         throw new Error("missing fixture receipt");
       if (mode === "old-observer") bad.structuredReceipt.observerRevision = "codex-responses-v1";
       if (mode === "missing-receipt") delete bad.structuredReceipt;
+      if (mode === "schema") bad.structuredReceipt!.value = "not null";
       const tail = createWorkflowRuntime({
         runId: "tail",
         replay: createWorkflowReplayController({ runDir: tempRun(root, "tail") }),
@@ -201,13 +197,6 @@ it.each(["old-observer", "missing-receipt", "host-version", "validator"] as cons
       await expect(
         resumed.dsl.agent("Return authoritative data", {
           ...options,
-          ...(mode === "validator"
-            ? {
-                validate: () => {
-                  throw new Error("changed authority");
-                },
-              }
-            : {}),
         }),
       ).rejects.toThrow();
       expect(calls).toBe(0);

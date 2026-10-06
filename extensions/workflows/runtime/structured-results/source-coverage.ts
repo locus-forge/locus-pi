@@ -129,36 +129,6 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
     if (options?.kind() !== "object") return false;
     optionObjects.add(options.id());
   }
-  function validatorFunction(node: SgNode | undefined): SgNode | undefined {
-    if (node === undefined) return undefined;
-    const value = localValue(node, new Set());
-    if (value?.kind() !== "member_expression") return value;
-    const receiver = value.field("object");
-    const owner = receiver == null ? undefined : localValue(receiver, new Set());
-    const own =
-      owner?.kind() === "object"
-        ? owner
-            .children()
-            .find(
-              (child) =>
-                child.kind() === "pair" && staticObjectKey(child.field("key")) === value.field("property")?.text(),
-            )
-        : undefined;
-    return own?.field("value") ?? undefined;
-  }
-  const validatorParameters = new Set<number>();
-  for (const object of root.findAll({ rule: { kind: "object" } }).filter((node) => optionObjects.has(node.id())))
-    for (const property of object.children()) {
-      const value =
-        property.kind() === "pair" && staticObjectKey(property.field("key")) === "validate"
-          ? (property.field("value") ?? undefined)
-          : property.kind() === "shorthand_property_identifier" && property.text() === "validate"
-            ? property
-            : undefined;
-      const fn = validatorFunction(value);
-      const parameters = fn === undefined ? undefined : standardFunctionParameters(fn);
-      if (parameters !== undefined) validatorParameters.add(parameters.id());
-    }
   function inputData(node: SgNode | undefined, seen = new Set<number>()): boolean {
     if (node === undefined || seen.has(node.id())) return false;
     seen.add(node.id());
@@ -175,11 +145,7 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
       if (object?.text() === "dsl" && property === "items" && isDsl(object)) return true;
     }
     const binding = bindingOf(node);
-    return (
-      binding !== undefined &&
-      (validatorParameters.has(binding.bindingId) ||
-        (node.text() === "input" && entryVocabulary.has(binding.bindingId)))
-    );
+    return binding !== undefined && node.text() === "input" && entryVocabulary.has(binding.bindingId);
   }
   function callable(node: SgNode | undefined, seen = new Set<number>()): boolean {
     const expression = unwrapParentheses(node);
@@ -272,12 +238,12 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
   for (const pair of root.findAll({ rule: { kind: "pair" } }))
     if (
       optionObjects.has(pair.parent()?.id() ?? -1) &&
-      staticObjectKey(pair.field("key")) === "validate" &&
-      !callable(pair.field("value") ?? undefined)
+      ["validate", "repair", "outputTransport"].includes(staticObjectKey(pair.field("key")) ?? "")
     )
       return false;
   for (const node of root.findAll({ rule: { kind: "shorthand_property_identifier" } }))
-    if (optionObjects.has(node.parent()?.id() ?? -1) && node.text() === "validate" && !callable(node)) return false;
+    if (optionObjects.has(node.parent()?.id() ?? -1) && ["validate", "repair", "outputTransport"].includes(node.text()))
+      return false;
   for (const kind of ["this", "meta_property", "subscript_expression"])
     for (const node of root.findAll({ rule: { kind } })) {
       if (kind !== "subscript_expression") return false;

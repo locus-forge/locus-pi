@@ -66,6 +66,10 @@ const FILE_TEXT_MIGRATION =
  * declares `output`, so presence is tested with `Object.hasOwn` rather than `!== undefined`.
  */
 const REMOVED_AGENT_OPTIONS: Readonly<Record<string, string>> = Object.freeze({
+  validate:
+    "agent validate was removed: express result constraints in schema and check domain decisions in workflow source",
+  repair: "agent repair was removed: structured results allow one initial submission and one package-owned correction",
+  outputTransport: "agent outputTransport was removed: structured results use the validated workflow_return tool",
   handoffs: `agent handoffs was removed: an agent no longer returns a runtime list. Instead, ${FILE_TEXT_MIGRATION}`,
   output:
     "agent output was removed: a plain agent(prompt) call already returns the exact full text. " +
@@ -84,9 +88,6 @@ const REMOVED_AGENT_OPTIONS: Readonly<Record<string, string>> = Object.freeze({
 export const REMOVED_AGENT_OPTION_NAMES: readonly string[] = Object.freeze([
   ...Object.keys(REMOVED_AGENT_OPTIONS),
   "schema",
-  "validate",
-  "repair",
-  "outputTransport",
 ]);
 
 export function assertNoRemovedAgentOptions(opts: unknown, scope = "agent"): void {
@@ -137,9 +138,6 @@ export function normalizeAgentChoiceFallback(value: unknown, choices: readonly s
  *  root already owns; none of them is an SDK session. */
 export interface WorkflowAgentOutputDeps {
   readonly runId: string;
-  readonly structuredReplayRoute?: (
-    opts: WorkflowAgentStructuredOptions,
-  ) => Promise<import("../../_shared/agent-runtime/output-acceptance/agent-output-contract.js").AgentNativeRoute>;
   readonly structuredReplayHostVersion?: () => Promise<string | undefined>;
   readonly structuredSourceIdentity?: WorkflowStructuredSourceIdentity;
   readonly now: () => string;
@@ -179,18 +177,11 @@ export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): Workfl
    */
   function dispatchWorkflowAgentShape(opts: WorkflowAgentAnyOptions | undefined): "plain" | "choice" | "structured" {
     assertNoRemovedAgentOptions(opts);
-    if (opts !== undefined && Object.hasOwn(opts, "outputTransport") && opts.outputTransport !== "native")
-      throw new Error("agent outputTransport must be native when declared");
     if (opts !== undefined && Object.hasOwn(opts, "schema")) {
       for (const key of ["choice", "choiceFallback", "result"] as const)
         if (Object.hasOwn(opts, key)) throw new Error(`agent schema cannot be combined with ${key}`);
-      if (Object.hasOwn(opts, "validate") && typeof opts.validate !== "function")
-        throw new Error("agent validate must be a synchronous function");
       return "structured";
     }
-    if (opts !== undefined)
-      for (const key of ["validate", "repair", "outputTransport"] as const)
-        if (Object.hasOwn(opts, key)) throw new Error(`agent ${key} requires schema`);
     if (opts?.result !== undefined) {
       if (opts.result !== "report") throw new Error("agent result must be report when supplied");
       for (const key of ["choice", "choiceFallback"] as const) {
@@ -305,17 +296,11 @@ export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): Workfl
   }
 
   async function runStructuredAgent(prompt: string, opts: WorkflowAgentStructuredOptions): Promise<WorkflowJSONValue> {
-    const canonicalContract = normalizeWorkflowStructuredContract(opts.schema, opts.repair);
-    const contract =
-      opts.outputTransport === "native"
-        ? Object.freeze({ ...canonicalContract, version: 5 as const, outputTransport: "native" as const })
-        : canonicalContract;
+    const contract = normalizeWorkflowStructuredContract(opts.schema);
     const call = createWorkflowStructuredCall(
       contract,
-      opts.validate,
       deps.structuredSourceIdentity,
       deps.structuredReplayHostVersion,
-      deps.structuredReplayRoute === undefined ? undefined : () => deps.structuredReplayRoute!(opts),
     );
     const outcome = await runAgentAttempt(prompt, {
       ...opts,

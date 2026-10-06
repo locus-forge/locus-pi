@@ -44,9 +44,9 @@ describe("structured runtime declaration before child admission", () => {
       expect(test.calls()).toBe(0);
     },
   );
-  it.each([{ validate: () => [] }, { repair: { maxAttempts: 2 } }])("requires schema for %j", async (options) => {
+  it.each([{ validate: () => [] }, { repair: { maxAttempts: 2 } }])("refuses removed options %j", async (options) => {
     const test = declaration(options);
-    await expect(test.run()).rejects.toThrow(/requires schema/);
+    await expect(test.run()).rejects.toThrow(/was removed/);
     expect(test.journal()).toEqual([]);
     expect(test.calls()).toBe(0);
   });
@@ -78,3 +78,15 @@ describe("structured runtime declaration before child admission", () => {
     expect(test.calls()).toBe(0);
   });
 });
+
+it.each(["validate", "repair", "outputTransport"])(
+  "refuses declared removed %s even when undefined",
+  async (option) => {
+    for (const extra of [{}, { schema: { type: "null" } }, { result: "report" }, { choice: ["a", "b"] }]) {
+      const test = declaration({ ...extra, [option]: undefined });
+      await expect(test.run()).rejects.toThrow(`agent ${option} was removed`);
+      expect(test.calls()).toBe(0);
+      expect(test.journal()).toEqual([]);
+    }
+  },
+);

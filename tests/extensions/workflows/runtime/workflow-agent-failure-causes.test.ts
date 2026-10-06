@@ -82,7 +82,7 @@ const CAUSE_MATRIX: Record<AgentFailureCause, CauseCase> = {
   },
   "output-protocol-unknown": { what: "a missing raw terminal fails closed", produce: () => structuredCause("unknown") },
   "author-validation-error": {
-    what: "author validator errors never retry the model",
+    what: "HISTORICAL — removed author validation errors retain their recorded cause",
     produce: () => structuredCause("author"),
   },
   "host-turn-timeout": {

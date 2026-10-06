@@ -31,7 +31,7 @@ never infers ownership from a path or replaces a real directory or foreign
 symlink. See
 [`skills/README.md`](../../skills/README.md).
 
-Reviewed trusted runtime source can opt into [immutable structured results v4](../../docs/workflows/agent-results.md#structured-results-v4--trusted-runtime-source) on the actual Pi >=1.0.0 `openai-codex` route. The standard and orchestration-only authoring profiles keep their existing text/choice grammar; host permissions remain unchanged. Explicit `outputTransport: "native"` selects the [bounded native v5 contract](../../docs/workflows/agent-results.md#native-structured-results-v5--trusted-runtime-source) on the public OpenAI Responses route; omission retains v4.
+Reviewed trusted runtime source can opt into [immutable structured results v4](../../docs/workflows/agent-results.md#structured-results-v4--trusted-runtime-source) on the actual Pi >=1.0.0 `openai-codex` route. The standard and orchestration-only authoring profiles keep their existing text/choice grammar; host permissions remain unchanged. The `workflow_return` tool carries the actual caller schema and uses Pi’s standard `strict: "prefer"` sampling hint only where schema conversion preserves its semantics. `validate`, `repair` and `outputTransport` are removed; historical v5 evidence remains readable but cannot replay as current output.
 
 The `workflow` tool is the structured execution surface for agents. It supports fields that cannot always be represented safely by slash-command text, including caller `items` and approved continuations.
 

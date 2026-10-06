@@ -24,11 +24,9 @@ export async function installAgentOutputAdmission(
     acceptance.toolNames.some((name) => !active.includes(name))
   )
     throw new Error(
-      acceptance.observedReturn?.native !== undefined
-        ? "output-contract-unavailable: native v5 needs host tool-set readback/restriction"
-        : acceptance.observedReturn !== undefined
-          ? "output-contract-unavailable: structured v4 needs a registered return tool and host tool-set readback/restriction"
-          : "Transport cannot carry a choice result: same-session output acceptance requires the return tool to be " +
+      acceptance.observedReturn !== undefined
+        ? "output-contract-unavailable: structured v4 needs a registered return tool and host tool-set readback/restriction"
+        : "Transport cannot carry a choice result: same-session output acceptance requires the return tool to be " +
             "registered on the child session plus host tool-set readback (getActiveToolNames) and restriction " +
             "(setActiveToolsByName). This host provides neither, and there is no text fallback. " +
             "Use a plain text call on this transport, or run the choice call on a host that supports it.",
@@ -53,7 +51,6 @@ export async function installObservedOutputAdmission(
   if (port === undefined) return () => {};
   const agent = session.agent;
   const model = session.model as { provider?: unknown; api?: unknown } | undefined;
-  const native = port.native;
   if (
     !supportsObservedOutputVersion(hostVersion) ||
     agent === undefined ||
@@ -64,16 +61,12 @@ export async function installObservedOutputAdmission(
     typeof session.abort !== "function" ||
     typeof session.getActiveToolNames !== "function" ||
     typeof session.setActiveToolsByName !== "function" ||
-    (native === undefined && (model?.provider !== "openai-codex" || model.api !== "openai-codex-responses")) ||
-    (native !== undefined &&
-      (!("onPayload" in agent) || (agent.onPayload !== undefined && typeof agent.onPayload !== "function")))
+    model?.provider !== "openai-codex" ||
+    model.api !== "openai-codex-responses"
   )
     throw new Error(
-      native === undefined
-        ? "output-contract-unavailable: v4 requires Pi >=1.0.0, the openai-codex Responses route and actual raw/admission/cancellation capabilities"
-        : "output-contract-unavailable: v5 requires Pi >=1.0.0, the public OpenAI Responses route and actual payload/raw/admission/cancellation capabilities",
+      "output-contract-unavailable: v4 requires Pi >=1.0.0, the openai-codex Responses route and actual raw/admission/cancellation capabilities",
     );
-  native?.route(session.model);
   const active = session.getActiveToolNames();
   if (!Array.isArray(active) || !active.every((name) => typeof name === "string"))
     throw new Error("Host active-tool readback unavailable");
@@ -95,12 +88,8 @@ export async function installObservedOutputAdmission(
     prepare: agent.prepareRequest,
     finish: agent.finishTurn,
     before: agent.beforeToolCall,
-    payload: agent.onPayload,
   };
-  let unsubscribeNative: (() => void) | undefined;
   const restore = (): void => {
-    unsubscribeNative?.();
-    if (native !== undefined) agent.onPayload = previous.payload;
     agent.onProviderStreamEvent = previous.raw;
     agent.prepareRequest = previous.prepare;
     agent.finishTurn = previous.finish;
@@ -116,15 +105,6 @@ export async function installObservedOutputAdmission(
     port.providerEvent(event, model);
     await previous.raw?.call(agent, event, model);
     assertHooks();
-    native?.route(model);
-  };
-  const payload: NonNullable<typeof agent.onPayload> = async (value, model) => {
-    assertHooks();
-    native!.route(model);
-    const inherited = await previous.payload?.call(agent, value, model);
-    assertHooks();
-    native!.route(model);
-    return native!.payload(inherited === undefined ? value : inherited, model);
   };
   const prepare: NonNullable<typeof agent.prepareRequest> = async (context, signal) => {
     assertHooks();
@@ -150,26 +130,14 @@ export async function installObservedOutputAdmission(
     const actualBefore = agent.beforeToolCall as typeof agent.beforeToolCall & { [CHILD_BUDGET_PREVIOUS]?: unknown };
     if (
       agent.onProviderStreamEvent !== raw ||
-      (native !== undefined &&
-        (agent.onPayload !== payload ||
-          agent.prepareRequest !== prepare ||
-          agent.finishTurn !== finish ||
-          (actualBefore !== before && actualBefore?.[CHILD_BUDGET_PREVIOUS] !== before)))
+      agent.prepareRequest !== prepare ||
+      agent.finishTurn !== finish ||
+      (actualBefore !== before && actualBefore?.[CHILD_BUDGET_PREVIOUS] !== before)
     )
       lost();
   };
   try {
     agent.onProviderStreamEvent = raw;
-    if (native !== undefined) {
-      agent.onPayload = payload;
-      unsubscribeNative = session.subscribe((event) => {
-        try {
-          native.sessionEvent(event);
-        } catch {
-          port.observationLost();
-        }
-      });
-    }
     agent.prepareRequest = prepare;
     agent.beforeToolCall = before;
     agent.finishTurn = finish;
@@ -177,8 +145,7 @@ export async function installObservedOutputAdmission(
       agent.onProviderStreamEvent !== raw ||
       agent.prepareRequest !== prepare ||
       agent.beforeToolCall !== before ||
-      agent.finishTurn !== finish ||
-      (native !== undefined && agent.onPayload !== payload)
+      agent.finishTurn !== finish
     )
       throw new Error("Host lifecycle hooks cannot be installed");
     await port.initialize();

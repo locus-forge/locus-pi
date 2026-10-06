@@ -1,9 +1,4 @@
-import type {
-  WorkflowJSONSchema,
-  WorkflowJSONValue,
-  WorkflowValueValidator,
-  WorkflowStructuredContract,
-} from "./structured-results/schema.js";
+import type { WorkflowJSONSchema, WorkflowJSONValue, WorkflowStructuredContract } from "./structured-results/schema.js";
 import type { ReadOnlyAgentCustomTool } from "../../_shared/agent-runtime/agent-read-only-policy.js";
 /**
  * workflow-agent-contract.ts — the shared agent-call contract: what a workflow asks a
@@ -327,14 +322,8 @@ export interface WorkflowAgentReportOptions extends Omit<WorkflowAgentOptions, "
   result: "report";
 }
 
-export interface WorkflowAgentStructuredOptions extends Omit<
-  WorkflowAgentOptions,
-  "schema" | "validate" | "repair" | "outputTransport"
-> {
+export interface WorkflowAgentStructuredOptions extends Omit<WorkflowAgentOptions, "schema"> {
   schema: WorkflowJSONSchema;
-  validate?: WorkflowValueValidator;
-  repair?: { maxAttempts: number };
-  outputTransport?: "native";
 }
 export type WorkflowAgentAnyOptions =
   WorkflowAgentOptions | WorkflowAgentReportOptions | WorkflowAgentChoiceOptions | WorkflowAgentStructuredOptions;

@@ -53,6 +53,7 @@ export const AGENT_FAILURE_CAUSES = [
   "output-refused",
   "output-incomplete",
   "output-protocol-unknown",
+  /** HISTORICAL. Removed structured-result callbacks could fail before acceptance. */
   "author-validation-error",
   // A second, different proposal is a protocol conflict, not a format fallback.
   "output-contract-conflict",

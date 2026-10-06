@@ -345,13 +345,13 @@ describe("npm public package boundary", () => {
       "schemas/extension-manifest.schema.json",
       "skills/",
     ]);
-    // V4 adds two shared admission/contract owners and three cohesive structured-result owners.
-    // Native adds one narrow public-Responses wire/evidence owner, reusing the v4 controller.
-    expect(dryRun.files).toHaveLength(273);
+    // V4 uses two shared admission/contract owners and four cohesive structured-result owners.
+    // The standard tool path removes the bespoke native Responses owner, reusing the v4 controller.
+    expect(dryRun.files).toHaveLength(272);
     for (const filename of [
       "extensions/_shared/agent-runtime/output-acceptance/agent-output-contract.ts",
       "extensions/_shared/agent-runtime/output-acceptance/agent-output-admission.ts",
-      ...["schema", "return", "receipt", "source-coverage", "native-response"].map(
+      ...["schema", "return", "receipt", "source-coverage"].map(
         (name) => `extensions/workflows/runtime/structured-results/${name}.ts`,
       ),
     ])

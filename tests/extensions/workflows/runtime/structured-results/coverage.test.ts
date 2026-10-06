@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assessWorkflowStructuredReplayCoverage } from "../../../../../extensions/workflows/runtime/workflow-script-identity.js";
-const workflow = (declaration: string, validator: string) => `${declaration}
-export default async function run({agent, input, items}) { return agent('inspect', {schema:{type:'string'}, validate:${validator}}); }`;
+const workflow = (declaration: string, callback: string) => `${declaration}
+export default async function run({agent, input, items}) { const check = ${callback}; await agent('inspect', {schema:{type:'string'}}); return check(input); }`;
 describe("conservative v4 closure coverage, separate from legacy source grammar", () => {
   it.each([
     workflow("", 'value => value === input ? [] : ["Wrong input id"]'),
@@ -9,16 +9,18 @@ describe("conservative v4 closure coverage, separate from legacy source grammar"
     workflow("", 'value => Number.isInteger(value) ? [] : ["Not integral"]'),
     workflow('function local(value) { return value === "known" ? [] : ["Wrong id"]; } const alias = local;', "alias"),
     workflow('const known = new Set(["known"]);', 'value => known.has(value) ? [] : ["Wrong id"]'),
-    workflow('const helpers = { check: value => value === "known" ? [] : ["Wrong id"] };', "helpers.check"),
+    workflow(
+      'const helpers = { check: value => value === "known" ? [] : ["Wrong id"] };',
+      "value => helpers.check(value)",
+    ),
     workflow("function local(value) { return []; } const first = local; const second = first;", "second"),
     workflow("", 'value => JSON.parse(input).ids.includes(value) ? [] : ["Wrong input id"]'),
-    workflow("", 'value => value.reduce((sum, item) => sum + item.n, 0) === 10 ? [] : ["Wrong sum"]'),
-  ])("covers local/source-declared validator and bound inputs: %s", (source) => {
+  ])("covers local/source-declared callback and bound inputs: %s", (source) => {
     expect(assessWorkflowStructuredReplayCoverage(source)).toBe(true);
   });
   it("refuses callback accessors", () => {
     const source =
-      'export default async function run(dsl) { return dsl.agent("inspect", {schema:{type:"null"}, get validate(){ return [].externalWorkflowValidator; }}); }';
+      'export default async function run(dsl) { return dsl.agent("inspect", {schema:{type:"null"}, get schema(){ return [].externalWorkflowValidator; }}); }';
     expect(assessWorkflowStructuredReplayCoverage(source)).toBe(false);
   });
   it("refuses opaque options instead of assuming their callback belongs to source", () => {
@@ -27,19 +29,13 @@ describe("conservative v4 closure coverage, separate from legacy source grammar"
     expect(assessWorkflowStructuredReplayCoverage(source)).toBe(false);
     expect(
       assessWorkflowStructuredReplayCoverage(
-        source.replace("const opts = [].externalOptions", 'const opts = {schema:{type:"null"},validate:value=>[]}'),
+        source.replace("const opts = [].externalOptions", 'const opts = {schema:{type:"null"}}'),
       ),
     ).toBe(true);
   });
-  it("requires source proof for shorthand validate", () => {
-    const source =
-      'const validate = [].externalWorkflowValidator; export default async function run(dsl) { return dsl.agent("inspect", {schema:{type:"null"},validate}); }';
+  it.each(["validate", "repair", "outputTransport"])("refuses removed %s declarations", (option) => {
+    const source = `const ${option} = undefined; export default async function run({agent}) { return agent("inspect", {schema:{type:"null"},${option}}); }`;
     expect(assessWorkflowStructuredReplayCoverage(source)).toBe(false);
-    expect(
-      assessWorkflowStructuredReplayCoverage(
-        source.replace("const validate = [].externalWorkflowValidator", "const validate = value => []"),
-      ),
-    ).toBe(true);
   });
   it.each([
     workflow("", "globalThis.externalWorkflowValidator"),

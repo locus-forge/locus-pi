@@ -1,4 +1,3 @@
-import { WORKFLOW_NATIVE_WIRE_REVISION, nativeWorkflowRoute } from "./native-response.js";
 /** Immutable structured replay provenance, identities and cumulative ledger validation. */
 import type {
   AgentStructuredReceipt,
@@ -7,13 +6,9 @@ import type {
 } from "../../../_shared/agent-runtime/agent-runner.js";
 import {
   immutableJSON,
-  decodeWorkflowProposal,
-  runWorkflowValueValidator,
   type WorkflowSchemaValidator,
-  type WorkflowValueValidator,
   canonicalWorkflowJSON,
   WORKFLOW_RAW_OBSERVER_REVISION,
-  WORKFLOW_NATIVE_OBSERVER_REVISION,
   type WorkflowStructuredContract,
   type WorkflowJSONValue,
 } from "./schema.js";
@@ -26,19 +21,20 @@ export function verifyWorkflowStructuredReceipt(
     limits: { maxTurns?: number | undefined; maxToolCalls?: number | undefined; timeoutMs?: number | undefined };
     sourceIdentity: string;
     inputIdentity: string;
-    customValidation: "accepted" | "absent";
   },
 ): AgentStructuredReceipt {
-  const { contract, limits, sourceIdentity, inputIdentity, customValidation } = expected;
+  const { contract, limits, sourceIdentity, inputIdentity } = expected;
   try {
     // Disk/caller input gets a detached immutable snapshot before either consumer sees it.
     receipt = immutableJSON(receipt) as unknown as AgentStructuredReceipt;
+    if (receipt.version !== 4)
+      throw new Error("Historical native v5 output cannot be replayed as a current tool result");
     const allowance = receipt.allowances;
     const spent = receipt.spent;
     if (
       allowance === undefined ||
       spent === undefined ||
-      receipt.customValidation !== customValidation ||
+      receipt.customValidation !== "absent" ||
       allowance.outputAttempts !== contract.maxAttempts ||
       allowance.assistantTurns !== (limits.maxTurns ?? "unbounded") ||
       allowance.toolCalls !== (limits.maxToolCalls ?? "unbounded") ||
@@ -49,7 +45,7 @@ export function verifyWorkflowStructuredReceipt(
       !Number.isSafeInteger(spent.assistantTurns) ||
       spent.assistantTurns < 1 ||
       !Number.isSafeInteger(spent.toolCalls) ||
-      spent.toolCalls < (contract.version === 5 ? 0 : 1) ||
+      spent.toolCalls < 1 ||
       typeof spent.elapsedMs !== "number" ||
       !Number.isFinite(spent.elapsedMs) ||
       spent.elapsedMs < 0 ||
@@ -64,93 +60,52 @@ export function verifyWorkflowStructuredReceipt(
     const ids = new Set<string>();
     let counted = 0;
     let proposal: string | undefined;
-    if (receipt.version === 5) {
-      for (const turn of receipt.rawTurns) {
+    for (const turn of receipt.rawTurns) {
+      if (
+        turn.terminal !== "completed" ||
+        typeof turn.responseId !== "string" ||
+        turn.responseId === "" ||
+        responses.has(turn.responseId) ||
+        typeof turn.workTools !== "boolean" ||
+        !Array.isArray(turn.calls)
+      )
+        throw new Error("Invalid raw terminal provenance");
+      if (proposal !== undefined) throw new Error("Raw generation followed accepted output");
+      responses.add(turn.responseId);
+      const mixed = turn.workTools && turn.calls.length > 0;
+      if (mixed) counted++;
+      if (turn.calls.length === 0 && (!turn.workTools || counted > 0)) counted++;
+      for (const call of turn.calls) {
         if (
-          turn.terminal !== "completed" ||
-          typeof turn.responseId !== "string" ||
-          turn.responseId === "" ||
-          responses.has(turn.responseId) ||
-          typeof turn.workTools !== "boolean" ||
-          Object.hasOwn(turn, "calls") ||
-          turn.payload?.wireRevision !== WORKFLOW_NATIVE_WIRE_REVISION ||
-          !/^[a-f0-9]{64}$/u.test(turn.payload.wireSchemaSha256)
+          typeof call.callId !== "string" ||
+          call.callId === "" ||
+          ids.has(call.callId) ||
+          typeof call.arguments !== "string"
         )
-          throw new Error("Invalid native terminal/payload provenance");
-        nativeWorkflowRoute({ ...turn.payload.route, id: turn.payload.route.model });
-        responses.add(turn.responseId);
-        if (turn.validation === "research") {
-          if (counted > 0 || !turn.workTools || turn.output !== undefined)
-            throw new Error("Invalid native research turn");
+          throw new Error("Invalid raw call identity");
+        ids.add(call.callId);
+        if (mixed && call.validation !== "rejected") throw new Error("Mixed batch cannot supply accepted output");
+        if (call.validation === "rejected" && proposal === undefined) {
+          if (!mixed) counted++;
           continue;
         }
-        counted++;
-        if (proposal !== undefined || !["accepted", "rejected"].includes(turn.validation))
-          throw new Error("Invalid native output sequence");
-        if (turn.output !== undefined) {
-          const output = turn.output;
-          if (
-            typeof output.messageId !== "string" ||
-            output.messageId === "" ||
-            ids.has(output.messageId) ||
-            typeof output.text !== "string" ||
-            (Object.hasOwn(output, "phase") && output.phase !== null && output.phase !== "final_answer")
-          )
-            throw new Error("Invalid native final message");
-          ids.add(output.messageId);
-        }
-        if (turn.validation === "accepted") {
-          if (turn.workTools || turn.output === undefined) throw new Error("Invalid native accepted output");
-          proposal = decodeWorkflowProposal(turn.output.text).canonical;
-        }
-      }
-    } else
-      for (const turn of receipt.rawTurns) {
+        const raw = JSON.parse(call.arguments) as unknown;
         if (
-          turn.terminal !== "completed" ||
-          typeof turn.responseId !== "string" ||
-          turn.responseId === "" ||
-          responses.has(turn.responseId) ||
-          typeof turn.workTools !== "boolean" ||
-          !Array.isArray(turn.calls)
+          raw === null ||
+          typeof raw !== "object" ||
+          Array.isArray(raw) ||
+          Object.keys(raw).length !== 1 ||
+          !Object.hasOwn(raw, "value")
         )
-          throw new Error("Invalid raw terminal provenance");
-        if (proposal !== undefined) throw new Error("Raw generation followed accepted output");
-        responses.add(turn.responseId);
-        const mixed = turn.workTools && turn.calls.length > 0;
-        if (mixed) counted++;
-        if (turn.calls.length === 0 && (!turn.workTools || counted > 0)) counted++;
-        for (const call of turn.calls) {
-          if (
-            typeof call.callId !== "string" ||
-            call.callId === "" ||
-            ids.has(call.callId) ||
-            typeof call.arguments !== "string"
-          )
-            throw new Error("Invalid raw call identity");
-          ids.add(call.callId);
-          if (mixed && call.validation !== "rejected") throw new Error("Mixed batch cannot supply accepted output");
-          if (call.validation === "rejected" && proposal === undefined) {
-            if (!mixed) counted++;
-            continue;
-          }
-          const raw = JSON.parse(call.arguments) as unknown;
-          if (
-            raw === null ||
-            typeof raw !== "object" ||
-            Array.isArray(raw) ||
-            Object.keys(raw).length !== 1 ||
-            !Object.hasOwn(raw, "value")
-          )
-            throw new Error("Invalid accepted raw envelope");
-          const canonical = canonicalWorkflowJSON((raw as { value: unknown }).value);
-          if (call.validation === "accepted" && proposal === undefined) {
-            proposal = canonical;
-            counted++;
-          } else if (call.validation !== "duplicate" || canonical !== proposal)
-            throw new Error("Invalid accepted raw proposal sequence");
-        }
+          throw new Error("Invalid accepted raw envelope");
+        const canonical = canonicalWorkflowJSON((raw as { value: unknown }).value);
+        if (call.validation === "accepted" && proposal === undefined) {
+          proposal = canonical;
+          counted++;
+        } else if (call.validation !== "duplicate" || canonical !== proposal)
+          throw new Error("Invalid accepted raw proposal sequence");
       }
+    }
     if (proposal !== text || counted !== spent.outputAttempts) throw new Error("Raw proposal/ledger mismatch");
   } catch (error) {
     throw new Error(`replay-contract-failure: ${String(error)}`);
@@ -163,17 +118,12 @@ export function verifyWorkflowStructuredReceipt(
     receipt.validation !== "accepted" ||
     receipt.sourceIdentity !== sourceIdentity ||
     canonicalWorkflowJSON(receipt.contract) !== canonicalWorkflowJSON(contract) ||
-    receipt.observerRevision !==
-      (contract.version === 5 ? WORKFLOW_NATIVE_OBSERVER_REVISION : WORKFLOW_RAW_OBSERVER_REVISION)
+    receipt.observerRevision !== WORKFLOW_RAW_OBSERVER_REVISION
   )
     throw new Error("replay-contract-failure: structured receipt/source identity mismatch");
   return receipt;
 }
 
-import type {
-  AgentNativeMessage,
-  AgentNativeTurn,
-} from "../../../_shared/agent-runtime/output-acceptance/agent-output-contract.js";
 export interface WorkflowStructuredRawTurn {
   workTools: boolean;
   responseId: string;
@@ -181,11 +131,6 @@ export interface WorkflowStructuredRawTurn {
   calls: Map<string, string>;
   items: Map<string, WorkflowRawToolIdentity>;
   rejectedBatch?: string;
-  native?: {
-    payload?: AgentNativeTurn["payload"];
-    output?: AgentNativeMessage;
-    validation?: AgentNativeTurn["validation"];
-  };
 }
 /** The one serialized provenance projection. Runtime maps never escape into disk/journal values. */
 export function createWorkflowStructuredReceipt(input: {
@@ -199,7 +144,6 @@ export function createWorkflowStructuredReceipt(input: {
   attempts: number;
   elapsedMs: number;
   turns: readonly WorkflowStructuredRawTurn[];
-  customValidation: "accepted" | "absent";
   callValidation(callId: string): "accepted" | "rejected" | "duplicate";
 }): AgentStructuredReceipt {
   return immutableJSON({
@@ -208,7 +152,7 @@ export function createWorkflowStructuredReceipt(input: {
     schemaSha256: input.schemaSha256,
     sourceIdentity: input.sourceIdentity,
     inputIdentity: input.inputIdentity,
-    observerRevision: input.contract.version === 5 ? WORKFLOW_NATIVE_OBSERVER_REVISION : WORKFLOW_RAW_OBSERVER_REVISION,
+    observerRevision: WORKFLOW_RAW_OBSERVER_REVISION,
     value: input.value,
     allowances: {
       outputAttempts: input.contract.maxAttempts,
@@ -222,26 +166,18 @@ export function createWorkflowStructuredReceipt(input: {
       toolCalls: input.ledger.admittedToolCalls,
       elapsedMs: input.elapsedMs,
     },
-    rawTurns:
-      input.contract.version === 5
-        ? input.turns.map((turn) => ({
-            responseId: turn.responseId,
-            terminal: turn.terminal!,
-            workTools: turn.workTools,
-            ...turn.native,
-          }))
-        : input.turns.map((turn) => ({
-            responseId: turn.responseId,
-            terminal: turn.terminal!,
-            workTools: turn.workTools,
-            calls: [...turn.calls].map(([callId, args]) => ({
-              callId,
-              arguments: args,
-              validation: input.callValidation(callId),
-            })),
-          })),
+    rawTurns: input.turns.map((turn) => ({
+      responseId: turn.responseId,
+      terminal: turn.terminal!,
+      workTools: turn.workTools,
+      calls: [...turn.calls].map(([callId, args]) => ({
+        callId,
+        arguments: args,
+        validation: input.callValidation(callId),
+      })),
+    })),
     validation: "accepted",
-    customValidation: input.customValidation,
+    customValidation: "absent",
   }) as unknown as AgentStructuredReceipt;
 }
 
@@ -266,15 +202,13 @@ export function revalidateWorkflowStructuredValue(
   text: string,
   schemaSha256: string,
   schema: WorkflowSchemaValidator,
-  validate?: WorkflowValueValidator,
 ): WorkflowJSONValue {
   try {
     const value = immutableJSON(receipt.value);
     if (
       receipt.schemaSha256 !== schemaSha256 ||
       text !== canonicalWorkflowJSON(value) ||
-      schema.errors(value).length !== 0 ||
-      runWorkflowValueValidator(value, validate).length !== 0
+      schema.errors(value).length !== 0
     )
       throw new Error("structured value failed revalidation");
     return value;
