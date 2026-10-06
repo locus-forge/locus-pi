@@ -2,11 +2,11 @@
 title: Agent results and output acceptance
 type: guide
 status: active
-updated: "2026-10-06T05:00:00Z"
-source_commit: "54dea11dbe11"
+updated: "2026-10-06T12:27:00Z"
+source_commit: "fee5f591caaf"
 update_event: "user_request"
-context: "task=T-144"
-description: "Exact text and choice defaults, plus opt-in immutable structured results for trusted runtime source."
+context: "bounded schema authoring on the standard-tool contract"
+description: "Exact text, exact choices, and immutable structured results with bounded checked-source consumption."
 ---
 
 # Agent results and output acceptance
@@ -22,11 +22,11 @@ An `agent()` call supports these result contracts:
 - **One exact choice.** `agent(prompt, { choice: [...] })` resolves to one declared string,
   submitted through the same-session `workflow_return` tool.
 
-- **Structured JSON v4.** Reviewed trusted runtime source can opt into `schema`,
-  with one package-owned correction after the initial submission. It resolves to an
+- **Structured JSON v4.** `agent(prompt, { label: "literal", schema: ... })` resolves to an
   immutable JSON value after raw-protocol validation, whole child completion and storage.
-  The existing standard and orchestration-only source-check profiles still refuse these
-  options; the create skills keep their current text/choice grammar.
+  Both source-check profiles admit literal schemas with bounded, schema-proven consumption.
+  Initial submission plus one same-session correction are package-owned; `validate`,
+  `repair` and `outputTransport` are removed and refused before work or replay.
 
 Readable text remains the default. For shared reports or agent-owned product files, assign
 exact destinations in prompts and pass those same files to their consumers. Native runtime
@@ -105,8 +105,9 @@ reinterpreted under the reduced contract.
 | `validate`, `repair`, `outputTransport` | Use schema constraints and ordinary workflow decisions; the runtime owns one correction and one validated tool path.                                                                                              |
 | Fusion `schema`, `validate`             | The judge returns exact text; state the required format in the prompt, or have a later agent write the exact caller-assigned destination in its prompt from the judge's text.                                     |
 
-Both source-check profiles also refuse `schema`, `validate`, `repair` and `outputTransport`: structured output is a
-trusted-runtime capability in this release, outside their existing authoring grammar.
+Both source-check profiles admit the bounded [literal-schema form](source-shape.md#checked-structured-results).
+The removed `validate`, `repair` and `outputTransport` options remain refused in both
+source and runtime; the package owns correction and the standard validated tool path.
 
 ## Choice v3 same-session lifecycle
 
@@ -167,10 +168,46 @@ reports the choice check.
 Older journals stay readable: `schemaValidation.source: "script"` and the `script-rejected`
 cause may appear on records written while `validate` existed.
 
-## Structured results v4 — trusted runtime source
+## Structured results v4
+
+### Checked authoring and TypeScript results
+
+Both `standard` and `orchestration-only` accept a direct options object with distinct,
+explicit static properties, a literal `label`, and a `schema` that is literal data or
+one unshadowed top-level literal `const`. Spreads, shorthand, computed properties,
+dynamic schemas and helper-built declarations are not admitted. The checker uses the
+same `locus-json-subset-v1` dialect as runtime; it does not require closed objects,
+required-only properties, or array `items`.
+
+Await the result before inspecting it. Source may keep unchanged aliases, return the
+whole value, read required declared named fields, compare declared enum/boolean values
+with exact `===`/`!==` identities, and use proven array `length`, `.map()` or `for…of`.
+String values may flow unchanged into prompts, logs and text publication; scalar values
+may interpolate directly in those sinks' templates. Optional/unknown fields, all
+unchecked indexing, schema-result destructuring, transformations and field mutation
+remain rejected. An optional-property guard does not establish presence. Untyped array
+items and unproven mapped/group shapes remain opaque. Map JSON projections must be
+synchronous and contain no pending Promises or functions; deferred branch functions
+are consumed only by the supported `parallel()` composition. Awaiting a mapped array
+does not await its elements. Plain model text stays opaque.
+See [source rules](source-shape.md#checked-structured-results) and the
+[checked examples](dsl.md#agent).
+
+The TypeScript `schema` overload returns `Promise<WorkflowSchemaResult<Schema>>`.
+A schema literal infers deeply readonly fields and arrays, required versus optional
+properties, and primitive enum members. Broad or dynamic schemas fall back to readonly
+JSON rather than a caller-selected asserted result type. Open objects preserve unknown
+JSON fields; arrays without `items` contain readonly JSON values. Runtime normalization
+and validation remain authoritative; TypeScript inference does not widen the checked
+JavaScript grammar or turn a model claim into verified evidence.
+
+### Trusted runtime schema inputs
+
+Reviewed trusted runtime JavaScript may assemble schema constraints from authoritative
+caller data. The checked grammar instead requires a complete literal schema or one
+literal top-level schema constant; it does not evaluate nested declaration expressions:
 
 ```js
-// Reviewed trusted Node workflow; neither source-check profile admits this yet.
 const allowedIds = ["record-17", "record-23"];
 const record = await agent("Return one authoritative record id from the supplied evidence.", {
   label: "record",
@@ -288,7 +325,11 @@ are unproven. Callable coverage follows direct source functions and their local 
 operations and a named standard instance-method subset. Arbitrary member callbacks,
 function parameters used as callees, call-returned callees and unproven callback arguments
 are unavailable for replay. Mutations, spreads and opaque agent option objects are also
-unproven in this subset. Source-owned object callbacks need a declaration on their actual
+unproven in this subset. Visible default arrow entries and direct `const { agent } = dsl`
+bindings share the supported entry coverage. A `.map()` receiver proven to be an awaited
+structured array, including a required nested array or unchanged alias, can retain its
+source-owned callback closure. This does not prove generalized numeric-loop replay:
+loop updates remain conservatively unproven, even when the source checker accepts the loop. Source-owned object callbacks need a declaration on their actual
 receiver. This can
 refuse replay for otherwise valid trusted JavaScript; it does not restrict fresh execution
 or establish a sandbox or a full JavaScript dependency proof. Current validation

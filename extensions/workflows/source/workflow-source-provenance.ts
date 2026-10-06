@@ -1,20 +1,20 @@
 /**
- * source/workflow-source-provenance.ts — where each value in a workflow source
- * came from.
- *
- * A standard workflow may hold a literal the author wrote, an answer a model
- * produced, a list the runtime owns, or a path the host resolved, and almost
- * every permitted-use rule turns on which of those a name holds. This module
- * answers that one question: it walks declarations, callback parameters, loop
- * items and bounded carries until the classification stops changing, and
- * returns the resulting binding model.
- *
- * It decides nothing about what a classified value may then be used for. The
- * diagnostics it does raise are the ones that make a classification impossible
- * — an unclassifiable callback parameter, a destructured opaque value, two
- * bindings claiming one name — never a judgement about a use.
+ * Source value ownership: classify declarations, callback parameters, loop items and
+ * bounded carries until facts converge. Use rules live in the diagnostic owners;
+ * this owner reports only unclassifiable/destructured values and ambiguous bindings.
  */
 import type { SgNode } from "@ast-grep/napi";
+import { standardExpressionProvenance, standardProjectionFacts } from "./workflow-source-provenance-query.js";
+export {
+  standardExpressionProvenance,
+  standardDslCallProvenance,
+  containsOpaqueValue,
+  containsNonAuthorKnownValue,
+  containsOpaqueIndexValue,
+  isInsideLiteralShadow,
+} from "./workflow-source-provenance-query.js";
+import type { WorkflowJSONSchema } from "../runtime/structured-results/schema.js";
+import { structuredArrayItem } from "./workflow-source-structured.js";
 import {
   staticObjectKey,
   staticStringValue,
@@ -25,9 +25,7 @@ import type { WorkflowSourceDiagnosticSink } from "./workflow-source-diagnostics
 import {
   boundStandardNames,
   callCallee,
-  containsStandardEdgeCall,
   directStandardDslCall,
-  isBoundaryInputDefaultExpression,
   standardCallArguments,
   standardCollectionBindings,
   standardFunctionParameterNodes,
@@ -47,38 +45,28 @@ type StandardValueKind =
   | "runtime-control"
   | "runtime-status"
   | "runtime-value"
+  | "structured-value"
+  | "structured-promise"
   | "unclassified-dsl-value"
   | "void-value";
 
 export interface StandardValueProvenance {
   kind: StandardValueKind;
   sourceMethod?: StandardDslMethod;
+  schema?: WorkflowJSONSchema;
+  /** Await settles only the root Promise, never pending/callable graph contents. */
+  pending?: true;
+  pendingContents?: true;
+  callable?: true;
+  callableContents?: true;
+  /** A map of direct, safe branch functions may be consumed by owned parallel(). */
+  branchList?: true;
+  structuredMap?: true;
 }
 
-type StandardDslReturnCategory =
-  "agent-dependent" | "opaque-list" | "opaque-value" | "runtime-status" | "runtime-value" | "void-value";
-
-const STANDARD_DSL_RETURN_CATEGORIES = {
-  agent: "agent-dependent",
-  awaitOperator: "void-value",
-  consumeTextArtifact: "opaque-value",
-  continuationArtifacts: "opaque-list",
-  invokeWorkflow: "runtime-status",
-  items: "opaque-list",
-  log: "void-value",
-  now: "runtime-value",
-  parallel: "opaque-list",
-  phase: "void-value",
-  pipeline: "opaque-list",
-  projectRoot: "runtime-value",
-  promptFile: "opaque-value",
-  publishArtifact: "runtime-value",
-  publishPrimaryArtifact: "runtime-value",
-  random: "runtime-value",
-  workflow: "opaque-value",
-  workspace: "opaque-value",
-  workspaceDir: "runtime-value",
-} as const satisfies Record<StandardDslMethod, StandardDslReturnCategory>;
+export type StandardProvenanceMap = ReadonlyMap<string, StandardValueProvenance> & {
+  readonly structuredCalls?: ReadonlyMap<number, WorkflowJSONSchema>;
+};
 
 export interface StandardLiteralShadow {
   name: string;
@@ -88,7 +76,7 @@ export interface StandardLiteralShadow {
 export interface StandardBindingModel {
   collections: StandardCollectionBindings;
   literalShadows: StandardLiteralShadow[];
-  provenance: Map<string, StandardValueProvenance>;
+  provenance: StandardProvenanceMap;
   carryAssignments: ReadonlySet<number>;
 }
 
@@ -97,11 +85,12 @@ export function standardBindingModel(
   runEntry: SgNode | undefined,
   dslBindings: ReadonlySet<string>,
   errors: WorkflowSourceDiagnosticSink,
+  structuredCalls: ReadonlyMap<number, WorkflowJSONSchema> = new Map(),
 ): StandardBindingModel {
   const collections = standardCollectionBindings(root, runEntry, dslBindings);
   if (runEntry === undefined)
     return { collections, literalShadows: [], provenance: new Map(), carryAssignments: new Set() };
-  const values = standardValueProvenance(root, runEntry, dslBindings, collections, errors);
+  const values = standardValueProvenance(root, runEntry, dslBindings, collections, errors, structuredCalls);
   return { collections, ...values };
 }
 
@@ -111,8 +100,9 @@ function standardValueProvenance(
   dslBindings: ReadonlySet<string>,
   collections: StandardCollectionBindings,
   errors: WorkflowSourceDiagnosticSink,
+  structuredCalls: ReadonlyMap<number, WorkflowJSONSchema>,
 ): Pick<StandardBindingModel, "literalShadows" | "provenance" | "carryAssignments"> {
-  const provenance = new Map<string, StandardValueProvenance>();
+  const provenance = Object.assign(new Map<string, StandardValueProvenance>(), { structuredCalls });
   const owners = new Map<string, number>();
   const duplicateNames = new Set<string>();
   const reserve = (name: string, value: StandardValueProvenance, ownerId: number): void => {
@@ -147,30 +137,54 @@ function standardValueProvenance(
     }
   }
 
-  classifyStandardCallbackParameters(root, runEntry, provenance, dslBindings, reserve, errors);
+  classifyStandardCallbackParameters(root, runEntry, provenance, dslBindings, reserve, errors, true);
 
   collectStandardDeclarationProvenance(root, provenance, dslBindings, errors, reserve);
   const carryAssignments = collectStandardBoundedCarry(root, runEntry, provenance, dslBindings, errors, reserve);
   // A literal initializer must never wash away the provenance of a later carried answer.
   // Revisit aliases after tainting carry bindings; no model text becomes author-known.
   const declarationCount = root.findAll({ rule: { kind: "variable_declarator" } }).length;
-  for (let pass = 0; pass < declarationCount; pass += 1) {
+  const bindingPasses = Math.max(
+    1,
+    declarationCount +
+      ["for_in_statement", "arrow_function", "function_expression"].reduce(
+        (count, kind) => count + root.findAll({ rule: { kind } }).length,
+        0,
+      ),
+  );
+  for (let pass = 0; pass < bindingPasses; pass += 1) {
     const before = JSON.stringify([...provenance]);
     for (const loop of runEntry.findAll({ rule: { kind: "for_in_statement" } })) {
       const list = standardExpressionProvenance(loop.field("right") ?? undefined, provenance, dslBindings);
-      if (list?.kind !== "opaque-list" && list?.kind !== "known-collection") continue;
+      const itemSchema =
+        list?.kind === "structured-value" && list.schema?.type === "array"
+          ? structuredArrayItem(list.schema)
+          : undefined;
+      const structuredList = list?.kind === "structured-value" && list.schema?.type === "array";
+      if (!structuredList && list?.kind !== "opaque-list" && list?.kind !== "known-collection") continue;
       const left = loop.field("left") ?? undefined;
       if (left?.kind() !== "identifier" || !["const", "let"].includes(loop.field("kind")?.text() ?? "")) {
         errors.add("standard profile binds each opaque loop item to one unchanged identifier", left ?? loop);
       }
       for (const name of standardLoopBindingNames(left)) {
-        reserve(name, { kind: list.kind === "opaque-list" ? "opaque-value" : "known-value" }, left?.id() ?? loop.id());
+        reserve(
+          name,
+          itemSchema !== undefined
+            ? { kind: "structured-value", schema: itemSchema }
+            : {
+                kind: list?.kind === "opaque-list" || structuredList ? "opaque-value" : "known-value",
+                ...standardProjectionFacts([list], true),
+              },
+          left?.id() ?? loop.id(),
+        );
       }
     }
     collectStandardDeclarationProvenance(root, provenance, dslBindings, errors, reserve);
-    classifyStandardCallbackParameters(root, runEntry, provenance, dslBindings, reserve, errors);
+    classifyStandardCallbackParameters(root, runEntry, provenance, dslBindings, reserve, errors, true);
     if (JSON.stringify([...provenance]) === before) break;
   }
+  // Diagnose unresolved map receivers only after loop and callback facts converge.
+  classifyStandardCallbackParameters(root, runEntry, provenance, dslBindings, reserve, errors);
   if (duplicateNames.size > 0) {
     errors.add("standard profile gives every semantic or runtime-owned value binding one unique name", runEntry);
   }
@@ -191,7 +205,7 @@ function standardValueProvenance(
 
 function collectStandardDeclarationProvenance(
   root: SgNode,
-  provenance: Map<string, StandardValueProvenance>,
+  provenance: StandardProvenanceMap,
   dslBindings: ReadonlySet<string>,
   errors: WorkflowSourceDiagnosticSink,
   reserve: (name: string, value: StandardValueProvenance, ownerId: number) => void,
@@ -219,10 +233,11 @@ function collectStandardDeclarationProvenance(
 function classifyStandardCallbackParameters(
   root: SgNode,
   runEntry: SgNode,
-  provenance: Map<string, StandardValueProvenance>,
+  provenance: StandardProvenanceMap,
   dslBindings: ReadonlySet<string>,
   reserve: (name: string, value: StandardValueProvenance, ownerId: number) => void,
   errors: WorkflowSourceDiagnosticSink,
+  deferUnresolved = false,
 ): void {
   const callbacks = [
     ...root.findAll({ rule: { kind: "arrow_function" } }),
@@ -243,16 +258,34 @@ function classifyStandardCallbackParameters(
 
     if (callee?.kind() === "member_expression" && callee.field("property")?.text() === "map") {
       const receiver = standardExpressionProvenance(callee.field("object") ?? undefined, provenance, dslBindings);
+      if (receiver?.kind === "structured-value" && receiver.schema?.type === "array") {
+        const item = structuredArrayItem(receiver.schema);
+        const values: StandardValueProvenance[] = [
+          item === undefined ? { kind: "opaque-value" } : { kind: "structured-value", schema: item },
+          { kind: "runtime-control" },
+          receiver,
+        ];
+        parameters.forEach((parameter, index) => {
+          if (parameter.kind() !== "identifier" || values[index] === undefined)
+            errors.add("standard profile keeps each structured map parameter as one visible identifier", parameter);
+          else reserve(parameter.text(), values[index]!, parameter.id());
+        });
+        continue;
+      }
       if (receiver?.kind !== "opaque-list" && receiver?.kind !== "known-collection") {
+        if (receiver === undefined && deferUnresolved) continue;
         errors.add("standard profile classifies every value-bearing callback parameter", callback);
         continue;
       }
-      const parameterKinds: StandardValueKind[] = [
-        receiver.kind === "opaque-list" ? "map-item" : "known-value",
-        "runtime-control",
-        receiver.kind,
+      const parameterValues: StandardValueProvenance[] = [
+        {
+          kind: receiver.kind === "opaque-list" ? "map-item" : "known-value",
+          ...standardProjectionFacts([receiver], true),
+        },
+        { kind: "runtime-control" },
+        receiver,
       ];
-      classifyKnownStandardCallbackParameters(parameters, parameterKinds, reserve, errors, "map");
+      classifyKnownStandardCallbackParameters(parameters, parameterValues, reserve, errors, "map");
       continue;
     }
 
@@ -263,7 +296,7 @@ function classifyStandardCallbackParameters(
     if (method === "pipeline" && callbackArgumentIndex > 0) {
       classifyKnownStandardCallbackParameters(
         parameters,
-        ["opaque-value", "runtime-control"],
+        [{ kind: "opaque-value" }, { kind: "runtime-control" }],
         reserve,
         errors,
         "pipeline stage",
@@ -277,22 +310,22 @@ function classifyStandardCallbackParameters(
 
 function classifyKnownStandardCallbackParameters(
   parameters: readonly SgNode[],
-  kinds: readonly StandardValueKind[],
+  values: readonly StandardValueProvenance[],
   reserve: (name: string, value: StandardValueProvenance, ownerId: number) => void,
   errors: WorkflowSourceDiagnosticSink,
   owner: string,
 ): void {
-  if (parameters.length > kinds.length) {
+  if (parameters.length > values.length) {
     errors.add(
       `standard profile permits only documented ${owner} callback parameters`,
-      parameters[kinds.length] ?? parameters.at(-1),
+      parameters[values.length] ?? parameters.at(-1),
     );
   }
   parameters.forEach((parameter, index) => {
-    const kind = kinds[index];
-    if (kind === undefined) return;
+    const value = values[index];
+    if (value === undefined) return;
     if (parameter.kind() !== "identifier") {
-      const names = kind === "known-value" ? simpleAuthorRecordBindings(parameter) : undefined;
+      const names = value.kind === "known-value" ? simpleAuthorRecordBindings(parameter) : undefined;
       if (names !== undefined) {
         for (const name of names) reserve(name, { kind: "known-value" }, parameter.id());
         return;
@@ -300,7 +333,7 @@ function classifyKnownStandardCallbackParameters(
       errors.add(`standard profile keeps each ${owner} callback parameter as one visible identifier`, parameter);
       return;
     }
-    reserve(parameter.text(), { kind }, parameter.id());
+    reserve(parameter.text(), value, parameter.id());
   });
 }
 
@@ -330,7 +363,7 @@ function simpleAuthorRecordBindings(pattern: SgNode): string[] | undefined {
 function collectStandardBoundedCarry(
   root: SgNode,
   runEntry: SgNode,
-  provenance: Map<string, StandardValueProvenance>,
+  provenance: StandardProvenanceMap,
   dslBindings: ReadonlySet<string>,
   errors: WorkflowSourceDiagnosticSink,
   reserve: (name: string, value: StandardValueProvenance, ownerId: number) => void,
@@ -338,7 +371,7 @@ function collectStandardBoundedCarry(
   const accepted = new Set<number>();
   const declarations = root.findAll({ rule: { kind: "variable_declarator" } });
   const writes = root.findAll({ rule: { kind: "assignment_expression" } });
-  const carriedKinds = new Map<string, StandardValueKind>();
+  const carriedValues = new Map<string, StandardValueProvenance>();
   for (const assignment of writes) {
     const target = assignment.field("left");
     const right = unwrapStandardValue(assignment.field("right") ?? undefined);
@@ -381,14 +414,14 @@ function collectStandardBoundedCarry(
       !(callee !== undefined && directStandardDslCall(callee, dslBindings) === "agent")
     )
       continue;
-    const value = standardExpressionProvenance(right, provenance, dslBindings);
+    const value = standardExpressionProvenance(assignment.field("right") ?? undefined, provenance, dslBindings);
     if (value === undefined) continue;
     if (listSeed ? value?.kind !== "opaque-list" : value?.kind !== "opaque-value" && value?.kind !== "runtime-control")
       continue;
-    const priorKind = carriedKinds.get(target.text());
-    if (priorKind !== undefined && priorKind !== value.kind) {
+    const prior = carriedValues.get(target.text());
+    if (prior !== undefined && prior.kind !== value.kind) {
       errors.add("standard bounded carry does not mix opaque text with runtime control", assignment);
-      reserve(target.text(), { kind: "opaque-value" }, declaration.id());
+      reserve(target.text(), { kind: "opaque-value", ...standardProjectionFacts([prior, value]) }, declaration.id());
       continue;
     }
     // Only the original lexical binding may own this name; callbacks/shadowing cannot launder it.
@@ -396,8 +429,10 @@ function collectStandardBoundedCarry(
       .findAll({ rule: { kind: "arrow_function" } })
       .some((callback) => boundStandardNames(standardFunctionParameters(callback)).includes(target.text()));
     if (shadowed) continue;
-    carriedKinds.set(target.text(), value.kind);
-    reserve(target.text(), value, declaration.id());
+    const { branchList: _branchList, ...carried } = value;
+    const joined = { ...carried, ...standardProjectionFacts([prior, value]) };
+    carriedValues.set(target.text(), joined);
+    reserve(target.text(), joined, declaration.id());
     accepted.add(assignment.id());
   }
   return accepted;
@@ -457,215 +492,4 @@ function isCanonicalBoundedCarryLoop(loop: SgNode): boolean {
           write.id() !== increment.id() && (write.field("left") ?? write.field("argument"))?.text() === name.text(),
       ),
   );
-}
-
-export function standardExpressionProvenance(
-  node: SgNode | undefined,
-  provenance: ReadonlyMap<string, StandardValueProvenance>,
-  dslBindings: ReadonlySet<string>,
-  literalShadows: readonly StandardLiteralShadow[] = [],
-): StandardValueProvenance | undefined {
-  const value = unwrapStandardValue(node);
-  if (value === undefined) return undefined;
-  if (value.kind() === "identifier" || value.kind() === "shorthand_property_identifier") {
-    if (isInsideLiteralShadow(value, literalShadows)) return undefined;
-    return provenance.get(value.text());
-  }
-  if (value.kind() === "ternary_expression" && isBoundaryInputDefaultExpression(value)) {
-    return { kind: "opaque-value" };
-  }
-  if (value.kind() === "array") {
-    return standardCompositeContainsRuntimeValue(value, provenance, dslBindings, literalShadows)
-      ? { kind: "opaque-list" }
-      : { kind: "known-collection" };
-  }
-  if (value.kind() === "object") {
-    return standardCompositeContainsRuntimeValue(value, provenance, dslBindings, literalShadows)
-      ? { kind: "opaque-value" }
-      : { kind: "known-value" };
-  }
-  if (value.kind() === "member_expression" || value.kind() === "subscript_expression") {
-    const owner = standardExpressionProvenance(
-      value.field("object") ?? undefined,
-      provenance,
-      dslBindings,
-      literalShadows,
-    );
-    if (
-      owner?.kind === "runtime-status" &&
-      value.kind() === "member_expression" &&
-      value.field("property")?.text() === "status"
-    ) {
-      return { kind: "runtime-control" };
-    }
-    if (owner?.kind === "known-value") return { kind: "known-value" };
-    if (owner?.kind === "known-collection" && value.kind() === "subscript_expression") return { kind: "known-value" };
-    if (owner?.kind !== "opaque-list") return undefined;
-    if (value.kind() === "member_expression" && value.field("property")?.text() === "length") {
-      return { kind: "runtime-control" };
-    }
-    return { kind: "opaque-value" };
-  }
-  if (value.kind() !== "call_expression") return undefined;
-  const callee = unwrapStandardParentheses(callCallee(value));
-  if (callee === undefined) return undefined;
-  const method = directStandardDslCall(callee, dslBindings);
-  if (method !== undefined) return standardDslCallProvenance(method, value);
-  if (callee.kind() === "member_expression" && callee.field("property")?.text() === "map") {
-    const receiver = standardExpressionProvenance(
-      callee.field("object") ?? undefined,
-      provenance,
-      dslBindings,
-      literalShadows,
-    );
-    if (receiver?.kind === "known-collection") {
-      const callback = standardCallArguments(value)[0];
-      // A literal inventory cannot launder answers captured or produced by a mapping callback.
-      if (
-        callback !== undefined &&
-        (containsNonAuthorKnownValue(callback, provenance, dslBindings, literalShadows) ||
-          containsStandardEdgeCall(callback))
-      )
-        return { kind: "opaque-list" };
-      return { kind: "known-collection" };
-    }
-    if (receiver?.kind === "opaque-list") return { kind: "opaque-list" };
-  }
-  return undefined;
-}
-
-export function standardDslCallProvenance(method: StandardDslMethod, call: SgNode): StandardValueProvenance {
-  const category: StandardDslReturnCategory | undefined = STANDARD_DSL_RETURN_CATEGORIES[method];
-  if (category === undefined) return { kind: "unclassified-dsl-value", sourceMethod: method };
-  if (category !== "agent-dependent") return { kind: category, sourceMethod: method };
-  const optionKeys = new Set(
-    standardCallArguments(call)[1]
-      ?.children()
-      .filter((child) => child.kind() === "pair")
-      .map((pair) => staticObjectKey(pair.field("key"))) ?? [],
-  );
-  if (optionKeys.has("choice")) return { kind: "runtime-control", sourceMethod: method };
-  return { kind: "opaque-value", sourceMethod: method };
-}
-
-function standardCompositeContainsRuntimeValue(
-  composite: SgNode,
-  provenance: ReadonlyMap<string, StandardValueProvenance>,
-  dslBindings: ReadonlySet<string>,
-  literalShadows: readonly StandardLiteralShadow[],
-): boolean {
-  return standardCompositeValueExpressions(composite).some((expression) => {
-    const value = standardExpressionProvenance(expression, provenance, dslBindings, literalShadows);
-    return value !== undefined && value.kind !== "known-collection" && value.kind !== "known-value";
-  });
-}
-
-function standardCompositeValueExpressions(composite: SgNode): SgNode[] {
-  const values: SgNode[] = [];
-  for (const child of composite.children()) {
-    if (child.kind() === "pair") {
-      const value = child.field("value");
-      if (value !== null) values.push(value);
-      continue;
-    }
-    if (child.kind() === "shorthand_property_identifier") {
-      values.push(child);
-      continue;
-    }
-    if (child.kind() === "spread_element") {
-      const value = child.children().find((item) => !["...", "comment"].includes(String(item.kind())));
-      if (value !== undefined) values.push(value);
-      continue;
-    }
-    if (composite.kind() === "array" && !["[", "]", ",", "comment"].includes(String(child.kind()))) {
-      values.push(child);
-    }
-  }
-  return values;
-}
-
-export function containsOpaqueValue(
-  node: SgNode,
-  provenance: ReadonlyMap<string, StandardValueProvenance>,
-  dslBindings: ReadonlySet<string>,
-  literalShadows: readonly StandardLiteralShadow[] = [],
-): boolean {
-  const candidates = [
-    node,
-    ...[
-      "call_expression",
-      "identifier",
-      "member_expression",
-      "shorthand_property_identifier",
-      "subscript_expression",
-    ].flatMap((kind) => node.findAll({ rule: { kind } })),
-  ];
-  return candidates.some((candidate) => {
-    const value = standardExpressionProvenance(candidate, provenance, dslBindings, literalShadows);
-    return (
-      value?.kind === "opaque-value" ||
-      value?.kind === "map-item" ||
-      value?.kind === "runtime-value" ||
-      value?.kind === "void-value" ||
-      value?.kind === "unclassified-dsl-value"
-    );
-  });
-}
-
-export function containsNonAuthorKnownValue(
-  node: SgNode | undefined,
-  provenance: ReadonlyMap<string, StandardValueProvenance>,
-  dslBindings: ReadonlySet<string>,
-  literalShadows: readonly StandardLiteralShadow[],
-): boolean {
-  if (node === undefined) return false;
-  const candidates = [
-    node,
-    ...[
-      "array",
-      "call_expression",
-      "identifier",
-      "member_expression",
-      "object",
-      "shorthand_property_identifier",
-      "subscript_expression",
-    ].flatMap((kind) => node.findAll({ rule: { kind } })),
-  ];
-  return candidates.some((candidate) => {
-    const value = standardExpressionProvenance(candidate, provenance, dslBindings, literalShadows);
-    return value !== undefined && value.kind !== "known-collection" && value.kind !== "known-value";
-  });
-}
-
-export function containsOpaqueIndexValue(
-  node: SgNode | undefined,
-  provenance: ReadonlyMap<string, StandardValueProvenance>,
-  dslBindings: ReadonlySet<string>,
-  literalShadows: readonly StandardLiteralShadow[],
-): boolean {
-  if (node === undefined) return false;
-  const candidates = [
-    node,
-    ...[
-      "call_expression",
-      "identifier",
-      "member_expression",
-      "shorthand_property_identifier",
-      "subscript_expression",
-    ].flatMap((kind) => node.findAll({ rule: { kind } })),
-  ];
-  return candidates.some((candidate) => {
-    const value = standardExpressionProvenance(candidate, provenance, dslBindings, literalShadows);
-    return (
-      value !== undefined &&
-      value.kind !== "known-collection" &&
-      value.kind !== "known-value" &&
-      value.kind !== "runtime-control"
-    );
-  });
-}
-
-export function isInsideLiteralShadow(identifier: SgNode, shadows: readonly StandardLiteralShadow[]): boolean {
-  const ancestorIds = new Set(identifier.ancestors().map((ancestor) => ancestor.id()));
-  return shadows.some((shadow) => shadow.name === identifier.text() && ancestorIds.has(shadow.scopeId));
 }

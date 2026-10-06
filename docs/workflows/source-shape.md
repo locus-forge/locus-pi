@@ -2,11 +2,11 @@
 title: Workflow source contract
 type: guide
 status: active
-updated: "2026-10-02T22:53:28Z"
-source_commit: "0d098c9e06d1"
+updated: "2026-10-06T12:58:00Z"
+source_commit: "fee5f591caaf"
 update_event: "user_request"
-context: "changes=L files=29"
-description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
+context: "bounded schema authoring on the standard-tool contract"
+description: "Bounded checked JavaScript grammar, value provenance and structured-result consumption."
 ---
 
 # Workflow source contract
@@ -15,7 +15,7 @@ description: "Teach ordinary and detailed workflow authoring with shared Pi cont
 
 Read this contract before authoring workflow source. The [DSL reference](dsl.md#dsl-surface-v0) describes callable methods, signatures, and examples; this page defines which source forms `workflow_check_source` accepts. New workflows use the [create guide](create.md) and the packaged skill's [short author-facing rules](../../skills/locus-pi-workflow-create/references/source-boundary.md).
 
-Three boundaries apply: trusted runtime JavaScript, the `standard` compatibility grammar, and the stricter `mode: "orchestration-only"` grammar used by the create skill. A runtime method is not automatically permitted by either checker: `fusion()` is runtime-only and `runWorkspaceDir()` is removed. The result option `schema` is available only in reviewed trusted runtime source and is refused by both checkers. `validate`, `repair` and `outputTransport` are removed runtime options and are refused before work. The [availability table](dsl.md#dsl-surface-v0) distinguishes every method. Omitting the tool's mode selects standard compatibility checking; it does not restore removed options or grant arbitrary runtime JavaScript access.
+Three boundaries apply: trusted runtime JavaScript, the `standard` compatibility grammar, and the stricter `mode: "orchestration-only"` grammar used by the create skill. A runtime method is not automatically permitted by either checker: `fusion()` is runtime-only and `runWorkspaceDir()` is removed. Both checkers admit the bounded literal `schema` form described below; `validate`, `repair` and `outputTransport` are removed and refused. The [availability table](dsl.md#dsl-surface-v0) distinguishes every method. Omitting the tool's mode selects standard compatibility checking; it does not restore removed options or grant arbitrary runtime JavaScript access.
 
 The rules below own source restrictions and diagnostics. Passing them does not prove the workflow's prompts, decisions, side effects, or final result satisfy its goal; design review and execution evidence remain necessary.
 
@@ -49,17 +49,20 @@ failure behavior. Workflow code neither parses an answer nor implements format r
 Both checker modes validate a literal `choiceFallback` against a statically
 visible literal `choice` array before execution. The fallback must satisfy the
 runtime choice contract and be one of the declared choices. Dynamic values,
-option spreads and shorthand declarations remain runtime-validated; the checker
-does not evaluate expressions or resolve constants.
+option spreads and shorthand declarations for choice remain runtime-validated; this
+choice check does not evaluate expressions or resolve constants. Structured calls
+have the stricter literal declaration rules below.
 
-Within both checked authoring profiles, an agent returns opaque text or an exact choice. When a stage discovers
-work at runtime, the agent writes the units to a exact caller-assigned file and returns
-readable text; a later agent reads that file. When the caller already knows the units,
+Within both checked authoring profiles, an agent returns opaque text, an exact choice,
+or a schema-proven immutable JSON result. Discovered work may use a proven structured
+array, or the agent can write units to an exact caller-assigned file and return readable
+text for a later agent that reads that file. When the caller already knows the units,
 pass them through `items()` and hand each string unchanged to visible `parallel()` or
 `pipeline()` workers. A queue that changes as work lands stays in its file and is
 processed by a bounded `for` loop whose passes are routed by exact `choice`.
-`handoffs`, `output` and `returnVia` remain removed. Both profiles also refuse runtime-only
-`schema`, `validate`, `repair` and `outputTransport`; see [structured results v4](agent-results.md#structured-results-v4--trusted-runtime-source).
+`handoffs`, `output` and `returnVia` remain removed. A declared literal schema can instead
+expose bounded fields or arrays to source; see [checked structured results](#checked-structured-results).
+Both profiles still refuse `validate`, `repair` and `outputTransport`.
 
 The remaining standard orchestration primitives are:
 
@@ -83,8 +86,9 @@ in prompts. `outputDir()`, `publishPrimaryFile()` and the source-file overload
 of `publishPrimaryArtifact` are also removed and rejected by both check modes when statically visible. Literal root/child `meta.outputDir` fails before import. Trusted entry-only code can materialize metadata during import; the loaded module is then checked before its entry or any agent runs. The runtime does not create a run-local
 `workspace/` directory.
 
-Standard generated source uses only exact text and `choice` answers. Raw `schema`
-and `validate` remain outside both source-check grammars; trusted runtime support does not admit them here.
+Choose exact text for narrative, `choice` for a single routing token, and literal `schema`
+only when source needs its proven JSON shape. Schema acceptance is not semantic verification;
+required reviewers and external-action authorization remain unchanged.
 
 Standard generated source omits `maxToolCalls` and `timeoutMs` unless the operator
 requests a per-attempt control and the approved Design records why. The
@@ -195,6 +199,7 @@ These are all rules enforced for `meta.profile: "standard"`:
   | Classification     | DSL calls                                                                                   |
   | ------------------ | ------------------------------------------------------------------------------------------- |
   | Runtime control    | `agent({ choice })` exact identity only                                                     |
+  | Structured JSON    | awaited `agent({ schema })`; only schema-proven operations below                            |
   | Opaque list        | `continuationArtifacts`, `items`, `parallel`, `pipeline`                                    |
   | Saved-child status | `invokeWorkflow`; only its exact `status` identity is control                               |
   | Opaque value       | ordinary/model `agent`, `consumeTextArtifact`, `promptFile`, `workflow`, `workspace`        |
@@ -202,7 +207,8 @@ These are all rules enforced for `meta.profile: "standard"`:
   | Void               | `awaitOperator`, `log`, `phase`                                                             |
 
   Adding an allowed method without a return category fails closed. Only runtime
-  choice, list identity/length, and saved-child status are control primitives.
+  choice, list identity/length, saved-child status, and proven structured enum/boolean
+  comparisons are control primitives.
   Opaque and runtime/host values may be forwarded whole through documented
   prompt, log, publication, scheduling, and return sinks, but may not be
   inspected, branched on, indexed, transformed, or embedded in `Error`.
@@ -224,7 +230,8 @@ These are all rules enforced for `meta.profile: "standard"`:
   semantic input, never another DSL object.
 - Every value read by standard source resolves to a declared lexical/literal
   binding or the approved `Error` language root. Ambient host values and hidden
-  environment input are unavailable. The implicit function `arguments` object
+  environment input are unavailable. Lexical identifier spellings cannot contain Unicode
+  escapes; escaped string/property literals remain supported. The implicit function `arguments` object
   is rejected; run and callback values use explicit named parameters.
 - The only extra collection calls are a visible `.map(callback)` over an array
   or a source-ordered binding derived from an array or collection-producing DSL
@@ -255,7 +262,8 @@ These are all rules enforced for `meta.profile: "standard"`:
   flow only unchanged into the matching `invokeWorkflow()` `key`/`keys` fields.
 - No helper function declaration, function-valued variable, object method,
   class, object/variable function wrapper, hidden edge callback, computed object
-  key, `schema`/`validate` object key, regex, or `try/catch` is allowed. Inline
+  key, unrecognized `schema`/`validate` object key, regex, or `try/catch` is allowed.
+  `schema` is admitted only in a recognized structured agent declaration or its literal schema data. Inline
   callbacks containing agent edges remain visible only under `parallel`,
   `pipeline`, or `workflow` calls.
 - Assignments, augmented assignments, and updates are rejected except for the
@@ -309,11 +317,11 @@ alternative branches therefore receives their whole reports through a carry
 assigned inside a bounded loop.
 
 Author-known literal records may use named properties, including in visible
-`.map()` callbacks, and flat object destructuring of those records. Model output,
+`.map()` callbacks, and flat object destructuring of those records. Plain model output,
 caller semantic items and any composite containing them remain opaque. A map
-that captures opaque values does not produce trusted author records. No helper
-function, arbitrary object mutation, raw `schema` or `validate` becomes standard
-through this allowance.
+that captures opaque values does not produce trusted author records. Schema-proven
+results use the separate bounded rules below. No helper function, arbitrary object
+mutation, dynamic schema or custom `validate` becomes standard through this allowance.
 
 Every `agent()` call declares a literal `label`, and no two callsites in one file
 share one. Replay addresses a completed call by its `phase`, `label`, and
@@ -321,17 +329,71 @@ occurrence, plus runtime-owned keyed group identity when supplied. A missing or
 duplicate label fails the strict source check. An optional `title` is only a
 human-readable description and never replaces stable identity.
 
+### Checked structured results
+
+Both source-check modes admit `agent(prompt, { label: "literal", schema: ... })`.
+The options must be a direct object with distinct explicit static properties: no
+spreads, shorthand, computed keys, duplicate keys or aliased option objects. `schema`
+is either literal data or one unshadowed top-level literal `const` bound to one identifier,
+never a destructuring pattern, alias chain, imported value, callback, helper call or computed expression. Schema objects
+and arrays also contain only explicit literal data. The checker never executes source
+to discover a schema. `choice`, `choiceFallback` and `result: "report"` cannot combine
+with `schema`; `validate`, `repair` and `outputTransport` remain forbidden in both modes.
+Decoded schema property names such as `outputDir` are data; same-named workflow options
+remain refused.
+
+The same runtime `locus-json-subset-v1` normalization applies. Optional properties,
+open objects and arrays without `items` are valid declarations. Those runtime
+allowances do not prove that a particular field or item shape can be read by source.
+
+- Await a structured result before consuming its shape. A pending Promise may be
+  bound or returned whole, but no property read or implicit Promise consumption is allowed
+- Keep unchanged aliases or return the complete JSON result. A wrapper or mapped/group
+  composite whose shape is not proven remains opaque rather than gaining inferred fields
+- Read only named properties declared in `properties` and present in `required` at
+  each level. Unknown/open-object keys and optional properties stay unreadable, even
+  after an optional-property guard; no general flow-sensitive narrowing is provided
+- Compare a declared primitive enum member or boolean with an exact allowed literal
+  using `===` or `!==`. Schema shape is not evidence that the model's assertion is true
+- Use a proven array's `length`, visible `.map()` or `for…of`. A declared `items`
+  schema supplies item shape; otherwise each item stays opaque. All unchecked indexing,
+  including a literal index and an index below `minItems`, is refused
+- Map JSON values synchronously. Async callbacks or callbacks returning pending Promises,
+  including through arrays, objects or aliases, are refused; `await rows.map(async ...)`
+  does not settle array elements. Function projections may feed the existing owned
+  `parallel(rows.map(row => () => agent(...)))` composition but cannot be returned as
+  JSON or wrapped in projected records/arrays. Only directly visible branch functions
+  qualify; conditional/short-circuit selections do not prove a branch list. Possible
+  pending/function contents survive aliases, containers and projections. Existing
+  inline-edge rules still apply
+- Forward a proven string unchanged into an `agent()` prompt, `log()`, or text
+  publication. Interpolate scalar JSON fields directly into those sinks' templates.
+  Objects/arrays cannot become text through implicit rendering or `JSON.stringify`
+- Do not destructure structured results, mutate their fields, transform them with
+  arbitrary methods or helpers, or launder their provenance through aliases
+
+Both a visible default function and default arrow entry may receive DSL bindings;
+`const { agent } = dsl` follows the same direct-binding rules. This is not permission
+for arbitrary helper aliases. The [DSL examples](dsl.md#agent) are checked in both modes.
+
+Source acceptance and replay coverage remain separate. Structured array `.map()`
+closures can be covered when their source, schema and awaited receiver are proven.
+Generalized numeric-loop replay remains conservatively unproven; an accepted bounded
+source loop does not by itself promise structured replay. The existing full source/schema/input
+identity and v3 observer receipt checks still apply; see [structured replay](agent-results.md#structured-results-v4).
+
 ### Output acceptance is not semantic continuation
 
-Standard authoring routes with `agent({ choice })`, described in
-[output acceptance](agent-results.md). It is carried by the workflow-only
-`workflow_return` tool, which checks one exact declared string within the same child
+Standard authoring routes with `agent({ choice })` or a proven structured enum/boolean,
+described in [output acceptance](agent-results.md). Both use the workflow-only
+`workflow_return` tool, which checks the declared choice or schema within the same child
 session. The tool does not certify the truth of a decision. The runtime adds no size
 policy of its own; the reason is stated once in
 [the principle](agent-results.md#the-principle). Ordinary text and adaptive
 fresh-worker rounds retain separate contracts. The standard source grammar does not
-parse model prose, and it refuses raw `schema`/`validate` and the removed `handoffs`,
-`output`, `repair` and `returnVia` options by name. Review the [pattern index](../../skills/locus-pi-workflow-create/references/INDEX.md)
+parse model prose. It admits only the literal-schema declaration and bounded consumption
+above, still refusing `validate`, `repair`, `outputTransport` and the removed `handoffs`,
+`output` and `returnVia` options by name. Review the [pattern index](../../skills/locus-pi-workflow-create/references/INDEX.md)
 before selecting adaptive slices, fixed, refinement, decomposition or human-gated execution.
 
 The owner contract separately forbids mandatory acknowledgement protocols whose

@@ -154,7 +154,7 @@ function standardLexicalOwner(node: SgNode, root: SgNode): SgNode {
   );
 }
 
-export function standardDslBindings(runEntry: SgNode | undefined): Set<string> {
+export function standardEntryDslBindings(runEntry: SgNode | undefined): Set<string> {
   const bindings = new Set<string>();
   if (runEntry === undefined) return bindings;
   const parameters = standardFunctionParameters(runEntry);
@@ -163,6 +163,12 @@ export function standardDslBindings(runEntry: SgNode | undefined): Set<string> {
     bindings.add("dsl");
   }
   if (firstParameter?.kind() === "object_pattern") addStandardDslBindings(bindings, firstParameter);
+  return bindings;
+}
+
+export function standardDslBindings(runEntry: SgNode | undefined): Set<string> {
+  const bindings = standardEntryDslBindings(runEntry);
+  if (runEntry === undefined) return bindings;
   for (const declaration of runEntry.findAll({ rule: { kind: "variable_declarator" } })) {
     if (
       !bindings.has("dsl") ||
@@ -175,7 +181,7 @@ export function standardDslBindings(runEntry: SgNode | undefined): Set<string> {
   return bindings;
 }
 
-function addStandardDslBindings(bindings: Set<string>, pattern: SgNode): void {
+export function addStandardDslBindings(bindings: Set<string>, pattern: SgNode): void {
   for (const child of pattern.children()) {
     if (child.kind() === "shorthand_property_identifier_pattern" && STANDARD_DSL_METHODS.has(child.text())) {
       bindings.add(child.text());

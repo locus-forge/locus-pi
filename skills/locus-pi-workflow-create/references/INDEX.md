@@ -1,8 +1,8 @@
 ---
-updated: "2026-10-02T22:53:28Z"
-source_commit: "0d098c9e06d1"
+updated: "2026-10-06T12:27:00Z"
+source_commit: "fee5f591caaf"
 update_event: "user_request"
-context: "changes=L files=29"
+context: "bounded schema authoring on the standard-tool contract"
 description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
@@ -50,7 +50,7 @@ is a way to obtain a graph, not semantic continuation. Candidate search, council
 and fixed fan-out can use known stages; no universal judge is injected.
 
 [Structured results](structured-results.md) explains whole text, reviewer-owned
-choices and exact caller-assigned files. Read it before introducing a separate arbiter
+choices, bounded literal-schema JSON consumption and exact caller-assigned files. Read it before introducing a separate arbiter
 or decision translator. It refines a graph's handoffs rather than adding a form.
 [Authoring styles](authoring-styles.md) separates graph choice, brief detail,
 advisory size and executor routing. Large fan-out monitoring belongs to

@@ -148,7 +148,7 @@ import {
   normalizeTimeoutMs,
   type WorkflowAgentAnyOptions,
   type WorkflowAgentStructuredOptions,
-  type WorkflowJSONValue,
+  type WorkflowJSONSchema,
   type WorkflowAgentChoiceOptions,
   type WorkflowAgentOptions,
   type WorkflowAgentPreflight,
@@ -157,6 +157,7 @@ import {
   type WorkflowAgentResult,
   type WorkflowAgentRunner,
 } from "./workflow-agent-contract.js";
+import type { WorkflowReadonlyJSONValue, WorkflowSchemaResult } from "./structured-results/types.js";
 export {
   SchemaValidationError,
   WORKFLOW_SHAPED_TRANSPORT_REFUSAL,
@@ -167,6 +168,7 @@ export {
 } from "./workflow-agent-contract.js";
 export type {
   WorkflowAgentStructuredOptions,
+  WorkflowJSONSchema,
   WorkflowJSONValue,
   WorkflowAgentChoiceOptions,
   WorkflowAgentOptions,
@@ -177,6 +179,7 @@ export type {
   WorkflowAgentResult,
   WorkflowAgentRunner,
 } from "./workflow-agent-contract.js";
+export type { WorkflowReadonlyJSONValue, WorkflowSchemaResult } from "./structured-results/types.js";
 
 // Result declaration and receipt acceptance belong to workflow-agent-output.ts;
 // logical identity and physical retries belong to workflow-agent-call.ts.
@@ -235,7 +238,10 @@ export type {
 } from "./workflow-fusion.js";
 
 export interface WorkflowDsl {
-  agent(prompt: string, opts: WorkflowAgentStructuredOptions): Promise<WorkflowJSONValue>;
+  agent<const Schema extends WorkflowJSONSchema>(
+    prompt: string,
+    opts: WorkflowAgentStructuredOptions & { schema: Schema },
+  ): Promise<WorkflowSchemaResult<Schema>>;
   /** Observe an exact answer or an eligible terminal failure as opaque host-rendered text. */
   agent(prompt: string, opts: WorkflowAgentReportOptions): Promise<string>;
   /** Run one child agent under a small runtime-owned exact-choice contract. */
@@ -624,10 +630,13 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
   /**
    * Exact full text by default; exact choice v3 or immutable JSON v4 when declared.
    * The output owner validates declarations and accepts committed session receipts.
-   * Structured v4 is available to reviewed trusted runtime source; source-check
-   * profiles retain their existing grammar.
+   * Source-check profiles prove a bounded static schema/dataflow subset; runtime
+   * validation remains authoritative for every declaration.
    */
-  function agentDsl(prompt: string, opts: WorkflowAgentStructuredOptions): Promise<WorkflowJSONValue>;
+  function agentDsl<const Schema extends WorkflowJSONSchema>(
+    prompt: string,
+    opts: WorkflowAgentStructuredOptions & { schema: Schema },
+  ): Promise<WorkflowSchemaResult<Schema>>;
   function agentDsl<const Choices extends readonly [string, string, ...string[]]>(
     prompt: string,
     opts: WorkflowAgentChoiceOptions<Choices>,
@@ -635,9 +644,9 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
   function agentDsl(prompt: string, opts: WorkflowAgentChoiceOptions): Promise<string>;
   function agentDsl(prompt: string, opts: WorkflowAgentReportOptions): Promise<string>;
   function agentDsl(prompt: string, opts?: WorkflowAgentOptions): Promise<string>;
-  async function agentDsl(prompt: string, opts?: WorkflowAgentAnyOptions): Promise<string | WorkflowJSONValue> {
+  async function agentDsl(prompt: string, opts?: WorkflowAgentAnyOptions): Promise<string | WorkflowReadonlyJSONValue> {
     // Declaration dispatch, every refusal it fires, and the whole choice acceptance belong
-    // to `workflow-agent-output.ts`. This root only routes the two modes it names, so the
+    // to `workflow-agent-output.ts`. This root only routes the declared result modes, so the
     // plain call keeps returning the child's exact full text through the logical call.
     const mode = resultMode.dispatchWorkflowAgentShape(opts);
     if (mode === "structured") return resultMode.runStructuredAgent(prompt, opts as WorkflowAgentStructuredOptions);

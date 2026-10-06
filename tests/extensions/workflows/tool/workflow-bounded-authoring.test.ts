@@ -215,7 +215,6 @@ describe("standard bounded carry and author-owned records; requires native ast-g
   });
   const UNSUPPORTED_OPTION_SOURCES: Record<string, string> = {
     handoffs: "handoffs: { maxItems: 3 }",
-    schema: 'schema: { type: "array" }',
     validate: "validate: []",
     output: 'output: { type: "string" }',
     outputTransport: 'outputTransport: "native"',
@@ -225,7 +224,9 @@ describe("standard bounded carry and author-owned records; requires native ast-g
     schemaMaxLength: "schemaMaxLength: 4000",
   };
   it("covers exactly the option set the source grammars refuse", () => {
-    expect(Object.keys(UNSUPPORTED_OPTION_SOURCES).sort()).toEqual([...REMOVED_AGENT_OPTION_NAMES].sort());
+    expect(Object.keys(UNSUPPORTED_OPTION_SOURCES).sort()).toEqual(
+      REMOVED_AGENT_OPTION_NAMES.filter((key) => key !== "schema").sort(),
+    );
   });
   it.each(
     Object.entries(UNSUPPORTED_OPTION_SOURCES).flatMap(([key, option]) => [
@@ -236,13 +237,7 @@ describe("standard bounded carry and author-owned records; requires native ast-g
     const messages = check(wrap(`return dsl.agent(input, { label: "discover", ${option} });`))
       .filter((item) => item.severity === "error")
       .map((item) => item.message);
-    expect(messages).toContainEqual(
-      expect.stringContaining(
-        key === "schema"
-          ? `agent ${key} is runtime-only and outside this authoring grammar`
-          : `agent ${key} was removed`,
-      ),
-    );
+    expect(messages).toContainEqual(expect.stringContaining(`agent ${key} was removed`));
   });
   it("still refuses raw schema outside an agent declaration", () => {
     expect(

@@ -113,6 +113,16 @@ describe("extension layer checker negative rules", () => {
     );
     await expectRule(root, "rule 6 (feature-internal facade)");
   });
+  it.each([
+    "source/workflow-source-structured",
+    "source/workflow-source-structured-rules",
+    "source/workflow-source-provenance-query",
+    "runtime/structured-results/types",
+  ])("rejects a cross-feature import of structured authoring owner %s", async (owner) => {
+    const root = await extensionFixture();
+    await appendFile(path.join(root, CROSS_FEATURE_READER), `\nimport "../workflows/${owner}.js";\n`, "utf8");
+    await expectRule(root, "rule 6 (feature-internal facade)");
+  });
   it("rejects a cross-feature import of source agent-option policy", async () => {
     const root = await extensionFixture();
     await appendFile(

@@ -1,9 +1,9 @@
 ---
-updated: "2026-10-02T17:36:25Z"
-source_commit: "8af5c47f379a"
+updated: "2026-10-06T12:27:00Z"
+source_commit: "fee5f591caaf"
 update_event: "user_request"
-context: "changes=L files=13"
-description: "Give file writers and readers identical exact caller-assigned destinations"
+context: "bounded schema authoring on the standard-tool contract"
+description: "Keep opaque text and schema-proven results within checked workflow source boundaries."
 ---
 
 # Author-facing source boundary
@@ -17,8 +17,11 @@ Keep stable stage option groups together near the top. Keep prompts, calls,
 branches, and handoffs visible at their execution edges. Stage prompts own their
 roles; package agent names are never required.
 
-Use the create skill's consumer rule: narrative stays whole; only a real branch needs a
-`choice`, and a work queue lives in an exact caller-assigned file. The [structured-results guide](structured-results.md) explains the distinction.
+Use the create skill's consumer rule: narrative stays whole; a single branch can use
+`choice`; proven fields/arrays can use a literal `schema`; a revisable work queue lives
+in an exact caller-assigned file. The [structured-results guide](structured-results.md)
+explains the distinction. Structured calls use direct explicit options without the
+spreads used by the plain-text example below.
 Keep chosen bounds with their consuming edge and their reason in the design; the
 [budget policy](../../../docs/workflows/budgets.md#run-budget) owns launch defaults.
 
@@ -61,14 +64,26 @@ export default async function run({ agent, parallel, phase, publishPrimaryArtifa
 }
 ```
 
-The workflow orchestrates but does not interpret or format agent results:
+The workflow orchestrates within the result's declared boundary:
 
-- an extraction agent returns one complete textual finding as exact text;
-  several findings belong in an exact caller-assigned file that later agents read,
-  and source never consumes a list carried in a model answer;
+- an extraction agent may return one complete textual finding, a literal-schema
+  result for bounded source consumption, or findings in an exact caller-assigned file
+  that later agents read; source never parses a list out of plain model text;
 - a composer returns the complete Markdown document;
 - a reviewer returns the complete corrected replacement;
-- the script passes these values unchanged and publishes accepted text exactly.
+- the script passes text unchanged and publishes accepted text exactly; a structured
+  string may also reach a text sink, and scalar fields may interpolate directly into
+  prompt/log/publication templates.
+
+A structured call declares a literal schema or one unshadowed top-level literal `const`
+in direct options with distinct explicit properties. Await before reading required
+named fields, comparing exact enum/boolean identities, or using proven array
+`length`/`.map()`/`for…of`. Optional or unknown fields, unchecked indexes, result
+destructuring, transformations and field mutation remain rejected. Open/optional
+objects and untyped arrays remain valid runtime schemas; source cannot infer their
+missing shape. Mapped composites and group outputs remain opaque when shape is unproven.
+`validate`, `repair` and `outputTransport` stay outside ordinary authoring. See
+[checked structured results](../../../docs/workflows/source-shape.md#checked-structured-results).
 
 Every child receives the full tool surface through `tools: ["*"]`. Standard
 source contains no capability fields or tool lists. Roles choose only
@@ -96,8 +111,8 @@ The caller also owns durability. Write a file needed after temporary-worktree re
 
 Do not generate:
 
-- domain schemas, `validate`, input splitting, JSON/prose parsers, regex gates,
-  coverage checks;
+- dynamic/helper-built schemas, `validate`, `repair`, `outputTransport`, input splitting,
+  JSON/prose parsers, regex gates, coverage checks;
 - Markdown/table/report renderers or handoff formatters;
 - hand-written retry loops, branch-local `try/catch`, custom partial-result or
   failure envelopes;

@@ -28,6 +28,32 @@ const workflowLaunchDefaults =
   "Workflow launch defaults are mode-scoped: every run defaults to `concurrency = 4`; headless Pi `print`/`json` root launches additionally default to `totalAgents = 10_000`, shared across fresh physical child attempts made by the root, saved children and Fusion; `totalAgents` is unbounded in TUI/RPC. Every other undeclared workflow budget axis is unbounded.";
 
 describe("installed workflow documentation ownership", () => {
+  it("advertises bounded checked schema results without widening the standard tool or host contract", () => {
+    const manifest = JSON.parse(read("extensions/workflows/manifest.json")) as { runtimeRequirements: string[] };
+    const contract = manifest.runtimeRequirements.find((requirement) =>
+      requirement.startsWith("standard workflow source"),
+    );
+    expect(contract).toBeDefined();
+    for (const boundary of [
+      "exact text, exact choice and bounded literal-schema JSON",
+      "both standard and orchestration-only source checks",
+      "a direct explicit options object, a literal label, and literal schema data or one unshadowed top-level literal const",
+      "await before reading required declared fields",
+      "optional or unknown fields, unchecked indexing, dynamic schemas and unproven array items remain outside checked consumption",
+      "plain model text stays opaque",
+      "validate, output, repair, outputTransport",
+      "refused by name before any child starts, before the replay lookup",
+      "same workflow_return tool carrying the actual caller schema",
+      "Pi >=1.0.0 and the verified openai-codex raw/admission capabilities",
+      "strict:prefer is requested only for closed/all-required objects, typed arrays and no grapheme length bounds",
+      "local schema/raw-terminal validation remains authoritative",
+      "the package owns two submissions total",
+      "native v5 and removed custom-validation evidence remain readable but cannot replay as current acceptance",
+    ])
+      expect(contract).toContain(boundary);
+    expect(contract).not.toMatch(/two result modes|trusted runtime source additionally supports schema/u);
+  });
+
   it("publishes a reviewed topical inventory reachable from the workflow entry", () => {
     expect(readdirSync(path.join(root, "docs/workflows")).sort()).toEqual(chapters);
     const index = read("docs/workflows/index.md");

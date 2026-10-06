@@ -4,11 +4,11 @@ type: guide
 status: active
 owner: locus-pi maintainers
 tags: [workflows, authoring]
-updated: "2026-10-02T22:53:27Z"
-source_commit: "0d098c9e06d1"
+updated: "2026-10-06T12:27:00Z"
+source_commit: "fee5f591caaf"
 update_event: "user_request"
-context: "changes=L files=29"
-description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
+context: "bounded schema authoring on the standard-tool contract"
+description: "Design, review and build workflow source with checked result contracts."
 ---
 
 # Create a workflow with an agent
@@ -277,10 +277,11 @@ when planning execution. Two practical consequences for authoring:
   sentence naming the failing check". Do not write "keep this under 2000 characters"
   as a stand-in for a limit the runtime no longer has; it buys nothing and costs the
   part of the answer the stage was for.
-- When a real consumer has a limit, state that requirement in the prompt; when it
-  must be checked, have the agent write a exact caller-assigned file and give a separate
-  verifier stage that file. No call option bounds an answer: the removed `output`,
-  `schema` and `maxAnswerChars` options are refused by name before a child starts.
+- When a real consumer has a limit, state that requirement in the prompt. A literal
+  structured `schema` can enforce supported consumer-declared JSON constraints; it adds
+  no package size default. For files or semantic requirements, give a separate verifier
+  the exact caller-assigned file. Removed `output` and `maxAnswerChars` are refused by name
+  before a child starts; see [structured results](agent-results.md#structured-results-v4).
 
 The full statement, including how budgets and unsupported capabilities behave, is in
 [output acceptance](agent-results.md#the-principle).

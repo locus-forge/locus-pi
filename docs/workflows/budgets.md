@@ -2,11 +2,11 @@
 title: Workflow budgets and constraints
 type: guide
 status: active
-updated: "2026-09-22T16:20:57Z"
-source_commit: "54dea11dbe11"
+updated: "2026-10-06T12:27:00Z"
+source_commit: "fee5f591caaf"
 update_event: "user_request"
-context: "changes=XL files=71 task=T-101"
-description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
+context: "bounded schema authoring on the standard-tool contract"
+description: "Execution budgets, package defaults, and bounded workflow controls."
 ---
 
 # Workflow budgets and constraints
@@ -41,7 +41,7 @@ Workflow launch defaults are mode-scoped: every run defaults to `concurrency = 4
 | Workflow `turns`            | Unbounded                                    | `budget.turns` or `agent({ maxTurns })`: cumulative SDK model cycles per physical child, including ordinary work and clarification. The next generation beyond the cap is refused.                                                                                                                       |
 | Transport attempts          | 1 attempt                                    | `agent({ attempts })` is a positive safe integer including the first child. Eligible transport retries start fresh children and consume `totalAgents`; provider errors are not automatically retried.                                                                                                    |
 | Choice-return attempts      | 2 submissions: initial + 1 clarification     | Package-owned and not configurable; `repair` is removed and refused by name. Correction stays in the same child and shares its turns/tools/deadline. The applied allowance is journaled.                                                                                                                 |
-| Output size and item count  | No runtime size ceiling                      | None: an agent returns exact text or one declared choice. State a length requirement in the prompt. `maxAnswerChars`, `maxItemChars`, `schemaMaxLength` and `budget.answerChars` are removed and refused by name. Input, parent context and text artifact content have no package size budget.           |
+| Output size and item count  | No runtime size ceiling                      | None: text, choice or schema-bound JSON. State a length requirement in the prompt. `maxAnswerChars`, `maxItemChars`, `schemaMaxLength` and `budget.answerChars` are removed and refused by name. Input, parent context and text artifact content have no package size budget.                            |
 | Output shape and minima     | Always validated                             | Nonblank answers and exact choice membership remain. `choice` needs at least 2 options; Fusion at least 2 members. These are contract requirements, not spend budgets.                                                                                                                                   |
 | Saved-workflow nesting      | Root plus one saved-child level              | The existing `invokeWorkflow()` depth guard refuses deeper saved composition. `subflow()` is in-run grouping and does not add a saved level. This guard remains a separate structural constraint.                                                                                                        |
 | Direct child delegation     | Leaf children (`depth=0`, `maxDepth=1`)      | `spawn_agent` is removed from child tools; descendants cannot start an independent delegation tree outside shared workflow accounting.                                                                                                                                                                   |

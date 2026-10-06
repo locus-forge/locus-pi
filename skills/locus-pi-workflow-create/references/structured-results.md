@@ -1,14 +1,71 @@
-# Results: exact text, one choice, named files
+# Results: exact text, choices, structured JSON, named files
 
-Within this skill's checked authoring grammar, an agent returns: plain `agent()` text, or one exact
-`choice` member when source must branch. Running commands or writing files does not
-change that. Anything richer — a record, a list of units, a queue, per-field findings —
-goes into a **exact caller-assigned file** that the agent writes and a later agent reads.
-`handoffs`, `output` and `returnVia` remain removed. The checker also refuses
-`schema`, `validate`, `repair` and `outputTransport`. Reviewed trusted runtime source has an opt-in
-[structured v4 contract](../../../docs/workflows/agent-results.md#structured-results-v4--trusted-runtime-source);
-`validate`, `repair` and `outputTransport` are removed runtime options. Historical native v5 evidence remains readable but cannot be replayed as current output. This lesson does not teach schema syntax before its authoring grammar is supported.
-Caller-owned work units come from `dsl.items()`.
+Choose the smallest result contract its consumer needs:
+
+- Plain `agent()` returns exact whole text for narrative and full documents
+- `choice` returns one exact declared string for a single branch
+- A literal `schema` returns immutable JSON when source needs proven fields or arrays
+- Exact caller-assigned files carry shared artifacts and revisable queues that later agents read
+
+Caller-owned work units still come from `dsl.items()`. Running commands or writing files
+does not change a result contract or prove that the requested effects happened.
+`handoffs`, `output` and `returnVia` remain removed. Both source-check profiles admit the
+bounded [structured v4 contract](../../../docs/workflows/agent-results.md#structured-results-v4)
+and refuse the removed `validate`, `repair` and `outputTransport` options. Correction remains package-owned.
+
+## Schema-proven source consumption
+
+Use a direct options object with distinct explicit properties, a literal `label`, and
+`schema` set to literal data or one unshadowed top-level literal `const`. Do not spread
+stage options into a structured call, use shorthand/computed declarations, or build
+schemas with helpers. The runtime dialect stays `locus-json-subset-v1`, including
+optional properties, open objects and arrays without `items`; those shapes do not grant
+source permission to read optional/unknown fields or inspect untyped items.
+
+```js
+export const meta = { name: "review-summary", profile: "standard" };
+const REVIEW_SCHEMA = {
+  type: "object",
+  properties: {
+    decision: { type: "string", enum: ["accept", "revise"] },
+    summary: { type: "string" },
+  },
+  required: ["decision", "summary"],
+  additionalProperties: false,
+};
+export default async function run({ agent, publishPrimaryArtifact }, input) {
+  const review = await agent(`Review the task against its acceptance criteria.\n${input}`, {
+    label: "review",
+    schema: REVIEW_SCHEMA,
+  });
+  if (review.decision === "revise") return agent(review.summary, { label: "explain-corrections" });
+  return publishPrimaryArtifact("review.md", review.summary);
+}
+```
+
+Await before reading. Keep unchanged aliases or return the whole result; read required
+declared named fields; compare enum/boolean identities with `===`/`!==`; use proven
+array `length`, `.map()` or `for…of`. Strings can forward unchanged to prompts, logs and
+publication; scalar fields can interpolate directly in those sinks' templates. Plain
+model text stays opaque. Mapped/group composites stay opaque where shape is unproven.
+Map JSON values synchronously; async callbacks, pending Promises and emitted functions
+are refused. Use the existing direct `parallel(rows.map(row => () => agent(...)))`
+form for deferred branches. Awaiting the mapped array does not await its elements.
+
+Do not destructure results, read optional/unknown fields, use unchecked indexes (even
+literal indexes), mutate fields, parse prose, transform JSON, or introduce helper
+aliases. Optional guards do not establish field presence. The
+[source contract](../../../docs/workflows/source-shape.md#checked-structured-results)
+owns the exact boundary; the [DSL reference](dsl.md#agent) has checked array examples.
+
+V4 uses the existing return tool on verified Pi >=1.0.0 `openai-codex` hosts; version
+alone is insufficient. The tool carries the actual schema; Pi strict preference is used
+only where it preserves that schema. There is no second transport or new permission. Shape validation
+is not proof of truth or permission to skip required review. Source acceptance also does
+not promise replay: exact source/schema/input identity and v3 observer receipts remain
+required, and generalized numeric-loop replay is still conservatively unproven.
+
+## Choices and semantic review
 
 A choice is corrected in that same child session by construction: there is no other
 transport. A value that lists choices without selecting one must not become success.

@@ -1,8 +1,8 @@
 ---
-updated: "2026-10-02T22:53:29Z"
-source_commit: "0d098c9e06d1"
+updated: "2026-10-06T12:27:00Z"
+source_commit: "fee5f591caaf"
 update_event: "user_request"
-context: "changes=L files=29"
+context: "bounded schema authoring on the standard-tool contract"
 description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
@@ -205,10 +205,11 @@ namespace has no root source and never receives a fake one. It then checks:
   same validator is `npm run check:workflow-source -- --mode orchestration-only <exact-path>`.
 - every built source uses only the orchestration-only DSL subset and contains no
   file, path, artifact-consumption, clock, or randomness primitive.
-- no source carries `handoffs`, `schema`, `validate`, `output`, `repair`,
-  `returnVia`, `maxItemChars`, `maxAnswerChars` or `schemaMaxLength` (the runtime
-  refuses each by name before any child starts), and no size or budget number the
-  design did not justify.
+- no source carries removed `handoffs`, `output`, `returnVia`, `maxItemChars`,
+  `maxAnswerChars` or `schemaMaxLength`, or ordinary-source forbidden `validate`,
+  `repair` or `outputTransport`; a `schema` call follows the literal declaration and
+  bounded consumption rules in [source boundary](source-boundary.md), and no size or
+  budget number appears without a consumer requirement or design justification.
 
 Read checker diagnostics as `path:line:column [CODE] message`. Any error fails
 Build. Warning-only output remains a successful check, but Build must report the
