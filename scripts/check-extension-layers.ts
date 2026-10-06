@@ -86,7 +86,16 @@ const SHARED_LAYER_MEMBERS: Record<SharedLayer, readonly string[]> = {
    *  `long-timer` is pure `setTimeout` arithmetic with no host binding at all, and both the
    *  agent host and the workflow runtime arm deadlines through it, so it sits at the lowest
    *  layer either of them can reach. */
-  runtime: ["session-core", "artifacts", "event-bus", "runtime-capabilities", "long-timer"],
+  runtime: [
+    "session-core",
+    "artifacts",
+    "event-bus",
+    "runtime-capabilities",
+    "long-timer",
+    "execution-budget",
+    "execution-scheduler",
+    "execution-state",
+  ],
   model: ["model-settings", "live-model-display", "workflow-model-resolve", "session-tool-transport"],
   "agent-runtime": [
     "agents",

@@ -354,7 +354,8 @@ describe("npm public package boundary", () => {
     // Two authoring lessons share contracts; detailed has one conditional case reference and two new starters.
     // Agent-option policy leaves the checker facade under the same packaged extensions owner.
     // One generated, version-matched DSL reference is co-located with the authoring skills.
-    expect(dryRun.files).toHaveLength(266);
+    // Three shared execution owners replace feature-local accounting and admission.
+    expect(dryRun.files).toHaveLength(269);
     expect(dryRun.files.map((file) => file.path)).not.toContain(
       "extensions/workflows/runtime/location-state/workflow-bound-directory.ts",
     );

@@ -604,12 +604,12 @@ export function createWorkflowFusion(deps: WorkflowFusionDeps): WorkflowFusion {
     // that: before divergence every leg replays or the panel fails; after it, none can.
     const freshSuffix = deps.replay === undefined || deps.replay.counts().divergedAtCall !== undefined;
     // `totalAgents` counts children that START, and a replayed leg starts none — which is
-    // exactly why `spendInvocation("replayed")` charges nothing. Reserving the whole panel
+    // exactly why replayed invocation identities charge nothing. Reserving the whole panel
     // before knowing replay from fresh charged the resume for work the original run had
     // already paid for: a three-member panel read back from the record was refused under
     // `totalAgents: 1`. So the reservation is taken only for a panel that will run fresh;
     // a replayed one reserves nothing, and a leg that turns out to diverge still meets the
-    // same cap at `spendInvocation("fresh")`, through the same named budget stop.
+    // same cap at fresh physical admission, through the same named budget stop.
     //
     // Both legs of that reservation go through the journalling wrapper: running out of
     // declared invocations is a budget stop with a kept result set, not a broken panel,
