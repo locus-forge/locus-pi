@@ -1,3 +1,4 @@
+import { snapshotWorkflowInput, type WorkflowInputFields } from "../runtime/workflow-input.js";
 /**
  * Native workflow schema, approval, command-launcher dispatch and terminal result.
  * Cards own tool-call hierarchy; command widgets and overlays remain in /workflows.
@@ -155,7 +156,13 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
       `before source, while \`Build design: <exact path>\` and \`Build approved design: <exact path>\` remain build-only forms. Create-only stops at checked source; authorized create-and-run hands it to locus-pi-workflow-run for execution and terminal evidence. ` +
       ` Substantive implementation defaults to adaptive slices with owner re-cutting and outcome-led briefs; fixed graphs are explicit alternatives. The contract is skills/locus-pi-workflow-create/SKILL.md → skills/locus-pi-workflow-create/references/source-boundary.md → docs/workflows/index.md.`,
     parameters: WorkflowParams,
-    prepareArguments: (args) => prepareValidatedParams(WorkflowParams, args),
+    prepareArguments: (args) => {
+      const input = typeof args === "object" && args !== null ? snapshotWorkflowInput(args as WorkflowInputFields) : {};
+      return prepareValidatedParams(
+        WorkflowParams,
+        Object.hasOwn(input, "inputValue") ? { ...(args as object), ...input } : args,
+      );
+    },
     approval: "exec",
     formatApprovalDetails: (args) => workflowApprovalDetails(args, approvalProjectRoot),
     renderShell: "self",
@@ -175,6 +182,16 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
           "workflow: outputDir was removed; assign exact file destinations in agent prompts; workspaceDir selects native runtime state only",
           { owner: "workflows" },
         );
+      }
+      try {
+        if (typeof params === "object" && params !== null) {
+          const input = snapshotWorkflowInput(params as WorkflowInputFields);
+          if (Object.hasOwn(input, "inputValue")) params = { ...params, ...input };
+        }
+      } catch (error) {
+        return errorResult(`workflow: ${error instanceof Error ? error.message : String(error)}`, {
+          owner: "workflows",
+        });
       }
       const valid = validateParams(WorkflowParams, params);
       if (!valid.ok) return valid.result;
@@ -211,7 +228,7 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
         return errorResult("workflow: this extension session has already shut down", { owner: "workflows" });
       }
       const transcript = createWorkflowTranscript(ctx, workflowTargetLabel(valid.value), "tool", {
-        ...(valid.value.input !== undefined ? { input: valid.value.input } : {}),
+        ...snapshotWorkflowInput(valid.value as WorkflowInputFields),
       });
       const workflowName = workflowTargetLabel(valid.value);
       const taskTitle = workflowTaskTitle(valid.value.input);
@@ -238,7 +255,7 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
           ...(valid.value.scriptPath !== undefined ? { scriptPath: valid.value.scriptPath } : {}),
           ...(valid.value.script !== undefined ? { script: valid.value.script } : {}),
           ...(targetBinding === undefined ? {} : { targetBinding }),
-          ...(valid.value.input !== undefined ? { input: valid.value.input } : {}),
+          ...snapshotWorkflowInput(valid.value as WorkflowInputFields),
           ...(valid.value.items !== undefined ? { items: valid.value.items } : {}),
           ...(valid.value.workspaceDir !== undefined ? { workspaceDir: valid.value.workspaceDir } : {}),
           ...(valid.value.runName !== undefined ? { runName: valid.value.runName } : {}),

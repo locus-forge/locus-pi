@@ -169,7 +169,7 @@ export function readWorkflowLiteralData(
 /** Ordinary receiver kind from syntax and caller-proven immutable references; never evaluates data. */
 export function staticWorkflowDataKind(
   node: SgNode | null | undefined,
-  resolve: (reference: SgNode) => SgNode | "string" | undefined,
+  resolve: (reference: SgNode) => SgNode | "array" | "string" | undefined,
 ): "array" | "string" | undefined {
   let value = unwrapParentheses(node ?? undefined);
   const seen = new Set<number>();
@@ -179,7 +179,7 @@ export function staticWorkflowDataKind(
     if (["string", "template_string"].includes(String(value.kind()))) return "string";
     if (value.kind() !== "identifier") return undefined;
     const reference = resolve(value);
-    if (reference === "string") return reference;
+    if (reference === "string" || reference === "array") return reference;
     value = unwrapParentheses(reference);
   }
   return undefined;

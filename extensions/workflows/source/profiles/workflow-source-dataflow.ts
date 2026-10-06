@@ -1,3 +1,4 @@
+import { workflowInputNativeKind, workflowTypedInputIssues } from "../workflow-source-structured.js";
 /** Checked synchronous data computations and visible, owned DSL edges over the existing AST. */
 import { Lang, parse, type SgNode } from "@ast-grep/napi";
 import {
@@ -7,7 +8,7 @@ import {
   standardFunctionParameterNodes,
   standardEntryDslBindings,
   addStandardDslBindings,
-  directStandardDslCall,
+  ownedStandardDslCall,
   standardCallArguments,
   callCallee,
   isStandardBindingOccurrence,
@@ -105,6 +106,8 @@ export function dataflowWorkflowSourceDiagnostics(source: string): WorkflowSourc
         .some((n) => n.kind() === "default"),
   );
   const entry = entries[0];
+  for (const node of workflowTypedInputIssues(root, entry))
+    errors.add("typed workflow context requires a closed optional port and a proven presence guard", node);
   const bindings = standardLexicalBindings(root, true);
   const bindingOf = (node: SgNode) => standardBindingOf(node, bindings);
   const byId = new Map(declarations.map((node) => [node.id(), node]));
@@ -162,14 +165,7 @@ export function dataflowWorkflowSourceDiagnostics(source: string): WorkflowSourc
           errors.add("DSL destructuring uses visible method names without aliasing or defaults", member);
     }
   }
-  function dslMethod(call: SgNode): string | undefined {
-    const callee = unwrapParentheses(callCallee(call));
-    if (callee === undefined) return undefined;
-    const owner = callee.kind() === "member_expression" ? callee.field("object") : callee;
-    const binding = owner == null ? undefined : bindingOf(owner);
-    const names = binding && dslVocabulary.get(binding.bindingId);
-    return names === undefined ? undefined : directStandardDslCall(callee, names);
-  }
+  const dslMethod = (call: SgNode) => ownedStandardDslCall(root, call);
   function languageCall(call: SgNode): boolean {
     if (!["call_expression", "new_expression"].includes(String(call.kind()))) return false;
     const callee = unwrapParentheses(
@@ -311,7 +307,7 @@ export function dataflowWorkflowSourceDiagnostics(source: string): WorkflowSourc
           dslVocabulary.has(parameters.id()) &&
           standardFunctionParameterNodes(parameters)[1]?.text() === reference.text()
         )
-          return "string";
+          return workflowInputNativeKind(root, scope!);
         return immutableValue(reference);
       });
       if (type && name && isWorkflowNativeMethod(name, type))

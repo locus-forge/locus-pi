@@ -139,6 +139,12 @@ interface FeatureInternalEntry {
 
 const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
   {
+    module: "extensions/workflows/runtime/workflow-input.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/runtime/workflow-runtime.ts",
+    reason: "Input admission and serialized JSON identity belong to workflows; other features consume the DSL facade.",
+  },
+  {
     module: "extensions/workflows/source/workflow-source-structured.ts",
     owner: "extensions/workflows",
     facade: "extensions/workflows/tool/workflow-source-shape.ts",
@@ -331,6 +337,10 @@ const PURE_MODULE_FORBIDDEN_BUILTINS: ReadonlySet<string> = new Set([
  * reaches it, so no cross-feature facade rule applies.
  */
 const PURE_MODULES: readonly PureModuleEntry[] = [
+  {
+    module: "extensions/workflows/runtime/workflow-input.ts",
+    reason: "Root, inline and saved inputs reuse one JSON/schema mechanism without filesystem or execution policy.",
+  },
   {
     module: "extensions/workflows/runtime/workflow-runtime.ts",
     reason:

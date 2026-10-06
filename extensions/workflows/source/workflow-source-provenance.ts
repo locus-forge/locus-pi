@@ -14,7 +14,11 @@ export {
   isInsideLiteralShadow,
 } from "./workflow-source-provenance-query.js";
 import type { WorkflowJSONSchema } from "../runtime/structured-results/schema.js";
-import { structuredArrayItem } from "./workflow-source-structured.js";
+import {
+  structuredArrayItem,
+  workflowInputBindings,
+  workflowFunctionInputSchema,
+} from "./workflow-source-structured.js";
 import {
   staticObjectKey,
   staticStringValue,
@@ -24,6 +28,7 @@ import {
 import type { WorkflowSourceDiagnosticSink } from "./workflow-source-diagnostics.js";
 import {
   boundStandardNames,
+  simpleAuthorRecordBindings,
   callCallee,
   directStandardDslCall,
   standardCallArguments,
@@ -52,6 +57,7 @@ type StandardValueKind =
 
 export interface StandardValueProvenance {
   kind: StandardValueKind;
+  operatorContext?: true;
   sourceMethod?: StandardDslMethod;
   schema?: WorkflowJSONSchema;
   /** Await settles only the root Promise, never pending/callable graph contents. */
@@ -117,9 +123,16 @@ function standardValueProvenance(
     owners.set(name, ownerId);
     provenance.set(name, value);
   };
-  const parameters = standardFunctionParameterNodes(standardFunctionParameters(runEntry));
-  for (const name of boundStandardNames(parameters[1])) {
-    reserve(name, { kind: "opaque-value" }, parameters[1]?.id() ?? runEntry.id());
+  for (const { name, schema, ownerId, operatorContext } of workflowInputBindings(root, runEntry)) {
+    reserve(
+      name,
+      operatorContext
+        ? { kind: "known-value", operatorContext: true }
+        : schema === undefined
+          ? { kind: "opaque-value" }
+          : { kind: "structured-value", schema },
+      ownerId,
+    );
   }
   for (const [name, ownerId] of collections.owners) {
     reserve(name, { kind: "known-collection" }, ownerId);
@@ -293,6 +306,8 @@ function classifyStandardCallbackParameters(
     const callbackArgumentIndex = ownerArguments.findIndex(
       (argument) => unwrapStandardParentheses(argument)?.id() === callback.id(),
     );
+    if (method === "workflow" && parameters.length <= 2 && workflowFunctionInputSchema(root, callback) !== undefined)
+      continue;
     if (method === "pipeline" && callbackArgumentIndex > 0) {
       classifyKnownStandardCallbackParameters(
         parameters,
@@ -335,29 +350,6 @@ function classifyKnownStandardCallbackParameters(
     }
     reserve(parameter.text(), value, parameter.id());
   });
-}
-
-/** Only flat static record bindings are readable author data, never an output parser. */
-function simpleAuthorRecordBindings(pattern: SgNode): string[] | undefined {
-  if (pattern.kind() !== "object_pattern") return undefined;
-  const names: string[] = [];
-  for (const child of pattern.children()) {
-    if (["{", "}", ",", "comment"].includes(String(child.kind()))) continue;
-    if (child.kind() === "shorthand_property_identifier_pattern") {
-      names.push(child.text());
-      continue;
-    }
-    if (
-      child.kind() === "pair_pattern" &&
-      staticObjectKey(child.field("key")) !== undefined &&
-      child.field("value")?.kind() === "identifier"
-    ) {
-      names.push(child.field("value")!.text());
-      continue;
-    }
-    return undefined;
-  }
-  return names.length > 0 ? names : undefined;
 }
 
 function collectStandardBoundedCarry(

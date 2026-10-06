@@ -1,5 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Value } from "@sinclair/typebox/value";
@@ -12,33 +11,16 @@ import {
 } from "../../../../extensions/workflows/runtime/workflow-runtime.js";
 import workflows from "../../../../extensions/workflows/index.js";
 import { createHarness } from "../../../test-harness.js";
+import {
+  readWorkflowLaunchBinding,
+  workflowLaunchBindingFile,
+} from "../../../../extensions/workflows/runtime/workflow-launch-binding.js";
 
-/** T-120 — workflow semantic input is one optional bounded string. */
+import { cleanupReplayProjects, temporaryProject, writeWorkflow } from "../../../fixtures/workflow-replay-project.js";
 
-const roots: string[] = [];
+/** T-120 — legacy semantic text/items retain their exact contract. */
 
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-});
-
-function temporaryProject(): string {
-  const root = mkdtempSync(path.join(tmpdir(), "workflow-input-"));
-  roots.push(root);
-  const agents = path.join(root, ".agents", "agents");
-  mkdirSync(agents, { recursive: true });
-  writeFileSync(
-    path.join(agents, "default.md"),
-    "---\nname: default\ndescription: Input test agent\nevidence:\n  mode: none\n---\nAnswer briefly.\n",
-    "utf8",
-  );
-  return root;
-}
-
-function writeWorkflow(root: string, name: string, body: string): void {
-  const dir = path.join(root, ".locus-pi", "workflows");
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(path.join(dir, `${name}.workflow.mjs`), body, "utf8");
-}
+afterEach(cleanupReplayProjects);
 
 /** Reports back exactly what the second parameter of runWorkflow() was. */
 const ECHO_INPUT_WORKFLOW = `export const meta = { name: "echo-input", description: "Report the received input shape." };
@@ -94,6 +76,23 @@ function registerTool() {
   workflows(harness.pi);
   return { harness, tool: harness.tools.get("workflow")! };
 }
+
+describe("typed tool intake", () => {
+  it("detaches the raw value before Pi or launch callbacks can observe it", () => {
+    const { tool } = registerTool();
+    const raw = { name: "typed", inputValue: { values: ["original"] } };
+    const prepared = tool.prepareArguments?.(raw);
+    raw.inputValue.values[0] = "changed";
+    expect(prepared).toEqual({ name: "typed", inputValue: { values: ["original"] } });
+    expect(Object.isFrozen((prepared as typeof raw).inputValue.values)).toBe(true);
+  });
+  it("refuses a conflict even when legacy input is explicitly undefined", () => {
+    const { tool } = registerTool();
+    expect(() => tool.prepareArguments?.({ name: "typed", input: undefined, inputValue: null })).toThrow(
+      /mutually exclusive/u,
+    );
+  });
+});
 
 describe("string-only workflow input", () => {
   it.each([undefined, "", "  \n\t  "])(

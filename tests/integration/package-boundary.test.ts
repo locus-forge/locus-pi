@@ -340,8 +340,8 @@ describe("npm public package boundary", () => {
       "schemas/extension-manifest.schema.json",
       "skills/",
     ]);
-    // Current checked-schema dev ships 279 files; two dataflow policy owners add two.
-    expect(dryRun.files).toHaveLength(281);
+    // Dataflow dev ships 281 files; one shared typed-input owner adds one.
+    expect(dryRun.files).toHaveLength(282);
     for (const filename of [
       "extensions/workflows/source/workflow-source-structured.ts",
       "extensions/workflows/source/workflow-source-structured-rules.ts",

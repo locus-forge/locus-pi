@@ -40,6 +40,8 @@ import {
 import { standardBindingModel } from "../source/workflow-source-provenance.js";
 import {
   standardStructuredDeclarations,
+  workflowSourceInputSchema,
+  workflowTypedInputIssues,
   type StandardStructuredDeclarations,
 } from "../source/workflow-source-structured.js";
 import {
@@ -103,7 +105,22 @@ export function standardWorkflowSourceShapeDiagnostics(source: string): Workflow
     return diagnostics.values();
   }
 
+  try {
+    workflowSourceInputSchema(root);
+  } catch (error) {
+    diagnostics.add(
+      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.policy,
+      "error",
+      error instanceof Error ? error.message : String(error),
+      root,
+    );
+    return diagnostics.values();
+  }
   const runEntry = validateStandardTopLevel(root, diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.topLevel, root));
+  for (const node of workflowTypedInputIssues(root, runEntry))
+    diagnostics
+      .sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.policy)
+      .add("typed workflow context requires a closed optional port and a proven presence guard", node);
   validateStandardStatements(runEntry, diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.statement, runEntry ?? root));
   validateStandardDependencies(root, diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.import, root));
   const structured = validateStandardOwnedPolicy(
@@ -471,7 +488,20 @@ function isExactLiteralMetaExport(statement: SgNode, meta: SgNode): boolean {
   const declaration = statement.children().find((child) => child.kind() === "lexical_declaration");
   if (declaration === undefined || !declaration.children().some((child) => child.kind() === "const")) return false;
   const variables = declaration.children().filter((child) => child.kind() === "variable_declarator");
-  return variables.length === 1 && variables[0]?.field("name")?.text() === "meta" && isStaticAuthoringLiteral(meta);
+  return (
+    variables.length === 1 &&
+    variables[0]?.field("name")?.text() === "meta" &&
+    meta
+      .children()
+      .every((node) =>
+        node.kind() === "pair" && staticObjectKey(node.field("key")) === "inputSchema"
+          ? workflowSourceInputSchema(statement.parent()!) !== undefined
+          : ["{", "}", ",", "comment"].includes(String(node.kind())) ||
+            (node.kind() === "pair" &&
+              staticObjectKey(node.field("key")) !== undefined &&
+              isStaticAuthoringLiteral(node.field("value"))),
+      )
+  );
 }
 
 function staticMetaProfile(meta: SgNode): string | undefined {

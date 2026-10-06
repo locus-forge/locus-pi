@@ -1,3 +1,4 @@
+import { snapshotWorkflowInput, type WorkflowInputValue } from "../runtime/workflow-input.js";
 import { errorMessage } from "../../_shared/host/error-text.js";
 import type { ExtensionAPI, ExtensionContext } from "../../_shared/host/pi-api.js";
 import { getProjectRoot, getSessionId } from "../../_shared/host/pi-api.js";
@@ -30,6 +31,8 @@ export interface WorkflowCommandLaunchRequest {
   /** Preserves name/path intent when preflight failed and the runner must persist the canonical failure. */
   targetKind?: ResolvedWorkflowTarget["kind"];
   input?: string;
+  inputValue?: WorkflowInputValue;
+  operatorAnswer?: string;
   workspaceDir?: string;
   /** @deprecated Rejected legacy launch field. */
   runName?: string;
@@ -127,6 +130,8 @@ export function createWorkflowCommandLauncher(options: WorkflowCommandLauncherOp
       ((callbackLease !== undefined && backgroundRuns.isCurrent(callbackLease)) ||
         backgroundRuns.active(sessionLease) !== undefined),
     launch(request) {
+      const inputSnapshot = snapshotWorkflowInput(request);
+      request = { ...request, ...inputSnapshot };
       const lease = currentLease(request.ctx);
       if (lease === undefined) return { status: "stale" };
       if (callbackLease !== undefined && backgroundRuns.isCurrent(callbackLease)) {
@@ -149,7 +154,8 @@ export function createWorkflowCommandLauncher(options: WorkflowCommandLauncherOp
           ctx: request.ctx,
           signal: background.signal,
           ...scriptInput,
-          ...(request.input === undefined ? {} : { input: request.input }),
+          ...snapshotWorkflowInput(request),
+          ...(request.operatorAnswer === undefined ? {} : { operatorAnswer: request.operatorAnswer }),
           ...(request.workspaceDir === undefined ? {} : { workspaceDir: request.workspaceDir }),
           ...(request.runName === undefined ? {} : { runName: request.runName }),
           ...(request.budget === undefined ? {} : { budget: request.budget }),

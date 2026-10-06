@@ -136,6 +136,12 @@ export function standardExpressionProvenance(
       const schema = name === undefined ? undefined : structuredRequiredField(owner.schema, name);
       return schema === undefined ? undefined : { kind: "structured-value", schema };
     }
+    if (
+      owner?.operatorContext &&
+      value.kind() === "member_expression" &&
+      value.field("property")?.text() === "operatorAnswer"
+    )
+      return { kind: "opaque-value" };
     if (owner?.kind === "known-value") return { kind: "known-value" };
     if (owner?.kind === "known-collection" && value.kind() === "subscript_expression") return { kind: "known-value" };
     if (owner?.kind !== "opaque-list") return undefined;

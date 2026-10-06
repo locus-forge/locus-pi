@@ -1,6 +1,7 @@
+import { dataflowWorkflowSourceDiagnostics } from "../../../../extensions/workflows/source/profiles/workflow-source-dataflow.js";
 import { describe, expect, it } from "vitest";
 import { Lang, parse } from "@ast-grep/napi";
-import { standardStructuredDeclarations } from "../../../../extensions/workflows/source/workflow-source-structured.js";
+import { standardStructuredDeclarations, workflowInputBindings } from "../../../../extensions/workflows/source/workflow-source-structured.js";
 import {
   orchestrationOnlyWorkflowSourceShapeDiagnostics,
   standardWorkflowSourceShapeDiagnostics,
@@ -444,4 +445,41 @@ it.each([false, true])("preserves inherited schema literal boundaries in strict=
     expect(messages(wrap(`return agent("x",{label:"x",schema:${literal}});`), strict)).toContain(
       `agent schema ${diagnostic}`,
     );
+});
+
+describe("schema-proven root and inline inputs", () => {
+  it.each(["standard", "orchestration-only", "dataflow-v1"])("retains required JSON fields under %s", (profile) => {
+    const source = `const schema = {type:"object",properties:{text:{type:"string"}},required:["text"],additionalProperties:false};
+export const meta = {profile:${JSON.stringify(profile === "orchestration-only" ? "standard" : profile)},inputSchema:schema};
+export default async function run(dsl,input) { return input.text; }`;
+    expect(
+      profile === "dataflow-v1"
+        ? dataflowWorkflowSourceDiagnostics(source)
+            .filter((item) => item.severity === "error")
+            .map((item) => item.message)
+        : messages(source, profile === "orchestration-only"),
+    ).toEqual([]);
+    expect(assessWorkflowStructuredReplayCoverage(source)).toBe(true);
+  });
+  it("admits the existing inline typed descriptor and its schema-proven field", () => {
+    const source = `export const meta = {profile:"standard"};
+export default async function run(dsl) { return dsl.workflow(async ({},value) => value.text,
+{inputValue:{text:"hello"},inputSchema:{type:"object",properties:{text:{type:"string"}},required:["text"]}}); }`;
+    expect(messages(source)).toEqual([]);
+    expect(assessWorkflowStructuredReplayCoverage(source)).toBe(true);
+  });
+});
+
+describe("inline input schema ownership", () => {
+  it.each(["const local={workflow:()=>null}; return local.workflow", "const workflow=()=>null; return workflow"])("does not seed schemas for local names: %s", (prefix) => {
+    const source=`export default function run(dsl){${prefix}((inner,values)=>values.map(value=>value),{inputValue:[1],inputSchema:{type:"array",items:{type:"number"}}});}`;
+    const root=parse(Lang.JavaScript,source).root();const entry=root.findAll({rule:{kind:"function_declaration"}})[0];
+    expect(workflowInputBindings(root,entry).some(binding=>binding.name==="values")).toBe(false);
+    expect(assessWorkflowStructuredReplayCoverage(source)).toBe(false);
+  });
+  it.each(["dsl.workflow", "workflow"])("retains owned DSL inputs: %s", (callee) => {
+    const source=`export default function run(${callee==="workflow"?"{workflow}":"dsl"}){return ${callee}((dsl,values)=>values.map(value=>value),{inputValue:[1],inputSchema:{type:"array",items:{type:"number"}}});}`;
+    const root=parse(Lang.JavaScript,source).root();const entry=root.findAll({rule:{kind:"function_declaration"}})[0];
+    expect(workflowInputBindings(root,entry).find(binding=>binding.name==="values")?.schema?.type).toBe("array");
+  });
 });

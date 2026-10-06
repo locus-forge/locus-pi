@@ -5,6 +5,8 @@ import { standardBindingModel } from "../../source/workflow-source-provenance.js
 import { validateStructuredMapResults } from "../../source/workflow-source-structured-rules.js";
 import {
   standardStructuredDeclarations,
+  workflowInputBindings,
+  workflowTypedInputIssues,
   structuredArrayItem,
   structuredRequiredField,
 } from "../../source/workflow-source-structured.js";
@@ -79,6 +81,7 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
           ["function_declaration", "function_expression", "arrow_function"].includes(String(child.kind())),
         ),
     );
+  if (entries.some((entry) => workflowTypedInputIssues(root, entry).length > 0)) return false;
   const entryVocabulary = new Map(
     entries.map((fn) => [standardFunctionParameters(fn)?.id(), standardEntryDslBindings(fn)]),
   );
@@ -134,6 +137,7 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
       dslOwners.set(declaration.id(), names);
     }
   }
+  const inputBindings = entries.flatMap((entry) => workflowInputBindings(root, entry));
   const schemas = new Map<number, WorkflowJSONSchema>();
   for (const entry of entries) {
     const declarations = standardStructuredDeclarations(root, entry, { add() {} }).calls;
@@ -171,6 +175,8 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
     if (value.kind() === "identifier") {
       const binding = bindingOf(value);
       if (binding === undefined) return undefined;
+      const input = inputBindings.find((input) => input.name === value.text() && input.ownerId === binding.bindingId);
+      if (input?.schema !== undefined) return input.schema;
       const declaration = declarationById.get(binding.bindingId);
       if (declaration !== undefined)
         return declaration.field("name")?.kind() === "identifier"

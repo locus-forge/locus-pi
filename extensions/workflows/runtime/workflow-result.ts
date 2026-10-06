@@ -1,3 +1,4 @@
+import type { WorkflowTypedInputProjection } from "./workflow-input.js";
 /**
  * Durable workflow result storage and tolerant, read-only historical readback.
  * `workflow-outcome.ts` owns result meaning; this owner writes and validates the
@@ -180,6 +181,7 @@ export interface WorkflowRunResultEnvelope {
   outputPhysicalIdentitySchemaVersion?: 1;
   outputSource?: "declared" | "default";
   outputSourceInvalid?: string;
+  typedInput?: WorkflowTypedInputProjection;
   semanticInputPresent?: boolean;
   semanticInputSha256?: string;
   semanticInputInvalid?: string;
@@ -661,6 +663,9 @@ export function readWorkflowRunResult(
             workspacePhysicalIdentitySchemaVersion === undefined
               ? {}
               : { workspacePhysicalIdentity, workspacePhysicalIdentitySchemaVersion }),
+            ...(record.typedInput === undefined
+              ? {}
+              : { typedInput: record.typedInput as WorkflowTypedInputProjection }),
             ...(semanticInputPresent === undefined || semanticInputSha256 === undefined
               ? {}
               : { semanticInputPresent, semanticInputSha256 }),

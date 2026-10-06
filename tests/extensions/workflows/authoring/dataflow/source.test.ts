@@ -350,3 +350,55 @@ it("inherits numeric/escaped schema literal facts without widening standard refe
   expect(check(escaped).some((row) => row.message.includes("without Unicode escapes"))).toBe(true);
   expect(assessWorkflowStructuredReplayCoverage(escaped)).toBe(false);
 });
+
+describe.each(["standard", "orchestration-only", "dataflow-v1"] as const)("typed optional host context: %s", (mode) => {
+  const typed = (body: string, parameters = "context") =>
+    `export const meta={profile:${JSON.stringify(mode === "orchestration-only" ? "standard" : mode)},inputSchema:{type:"string"}};
+export default async function run({agent}, input, ${parameters}) { ${body} }`;
+  const diagnostics = (value: string) =>
+    checkWorkflowSourceText(value, mode === "standard" ? "compatibility" : mode).filter(
+      (row) => row.severity === "error",
+    );
+  it.each([
+    'if(context !== undefined) return await agent(context.operatorAnswer,{label:"x"}); return input;',
+    'if(context === undefined) return input; return await agent(context.operatorAnswer,{label:"x"});',
+    'if(context === undefined) return input; else return await agent(context.operatorAnswer,{label:"x"});',
+    'if(context !== undefined) {const answer=context.operatorAnswer; return await agent(answer,{label:"x"});} return input;',
+    'return context !== undefined ? context.operatorAnswer : "absent";',
+    'if(context !== undefined) {const context={operatorAnswer:"local"}; return await agent(context.operatorAnswer,{label:"x"});} return input;',
+  ])("proves the exact present arm without treating the answer as author data: %s", (body) => {
+    const value = typed(body);
+    expect(diagnostics(value)).toEqual([]);
+    expect(assessWorkflowStructuredReplayCoverage(value)).toBe(true);
+  });
+  it.each([
+    ['return await agent(context.operatorAnswer,{label:"x"});', "context"],
+    ['if(context === undefined) return await agent(context.operatorAnswer,{label:"x"}); return input;', "context"],
+    ['if(context !== undefined) {return input;} return await agent(context.operatorAnswer,{label:"x"});', "context"],
+    ["if(context !== undefined) return context.unknown; return input;", "context"],
+    ["if(context !== undefined) return {context}; return input;", "context"],
+    ["if(context !== undefined) {const alias=context; return alias;} return input;", "context"],
+    ["if(context !== undefined) {const {operatorAnswer}=context; return operatorAnswer;} return input;", "context"],
+    ['if(context !== undefined) return context["operatorAnswer"]; return input;', "context"],
+    ['const undefined="forged"; if(context !== undefined) return context.operatorAnswer; return input;', "context"],
+    ["return input;", "{operatorAnswer}"],
+    ["return input;", "context, extra"],
+    ["return input;", "context, undefined"],
+    [
+      "try{return input;}catch(undefined){if(context !== undefined)return context.operatorAnswer;return input;}",
+      "context",
+    ],
+    ['if(context !== undefined)context.operatorAnswer="changed";return input;', "context"],
+  ])("refuses unsupported context proof: %s", (body, parameters) => {
+    const value = typed(body, parameters);
+    expect(diagnostics(value).length).toBeGreaterThan(0);
+    expect(assessWorkflowStructuredReplayCoverage(value)).toBe(false);
+  });
+  if (mode !== "dataflow-v1")
+    it.each([
+      'if(context !== undefined && context.operatorAnswer === "deploy") return input; return input;',
+      'if(context !== undefined) {const answer=context.operatorAnswer; if(answer === "deploy") return input;} return input;',
+    ])("preserves ordinary answer opacity in content routing: %s", (body) => {
+      expect(diagnostics(typed(body)).length).toBeGreaterThan(0);
+    });
+});

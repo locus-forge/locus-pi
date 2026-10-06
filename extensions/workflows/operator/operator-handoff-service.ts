@@ -1,3 +1,5 @@
+import { readWorkflowLaunchBinding } from "../runtime/workflow-launch-binding.js";
+import type { WorkflowInputFields } from "../runtime/workflow-input.js";
 import type { ExtensionContext } from "../../_shared/host/pi-api.js";
 import { getProjectRoot, getWorkingDirectory } from "../../_shared/host/pi-api.js";
 import {
@@ -147,6 +149,7 @@ export function createWorkflowOperatorHandoffService(
       const handoff = item.value;
       let target;
       let workspace: WorkflowHandoffWorkspaceReuseBinding;
+      let input: WorkflowInputFields & { operatorAnswer?: string } = { input: answer };
       try {
         const targetInput =
           handoff.target.kind === "scriptPath" ? { scriptPath: handoff.target.ref } : { name: handoff.target.ref };
@@ -171,6 +174,8 @@ export function createWorkflowOperatorHandoffService(
           sourceRunId: handoff.originRunId,
           ...readWorkflowResumeWorkspaceIdentity(getProjectRoot(ctx), handoff.originRunId),
         };
+        const binding = readWorkflowLaunchBinding(getProjectRoot(ctx), handoff.originRunId);
+        if (binding?.typedInput !== undefined) input = { inputValue: binding.typedInput.value, operatorAnswer: answer };
       } catch (error) {
         return { status: "invalid", message: errorMessage(error) };
       }
@@ -188,7 +193,7 @@ export function createWorkflowOperatorHandoffService(
           ctx,
           scriptRef: handoff.target.ref,
           target,
-          input: answer,
+          ...input,
           continuation: workflowContinuationForHandoff(handoff),
           operatorHandoffClaim: claimed.claim,
           operatorHandoffWorkspaceReuse: workspace,

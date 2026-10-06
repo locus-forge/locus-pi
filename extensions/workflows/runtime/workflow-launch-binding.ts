@@ -1,3 +1,5 @@
+import { parseWorkflowTypedInput, workflowTypedInputProjection, type WorkflowTypedInput } from "./workflow-input.js";
+import { canonicalWorkflowJSON } from "./structured-results/schema.js";
 /**
  * Host-owned launch binding for resume, interrupted recovery and handoff admission.
  *
@@ -27,11 +29,13 @@ import {
 import { parseWorkflowPersistedBinding } from "./workflow-persisted-binding.js";
 
 export const WORKFLOW_LAUNCH_BINDING_SCHEMA = "locus-pi.workflow-launch-binding.v3" as const;
+export const WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA = "locus-pi.workflow-launch-binding.v4" as const;
 const WORKFLOW_LAUNCH_BINDING_FILENAME = "launch-binding.json";
 const WORKFLOW_LAUNCH_BINDING_TEMP_FILENAME = "launch-binding.json.tmp";
 
 export interface WorkflowLaunchBinding {
-  schema: typeof WORKFLOW_LAUNCH_BINDING_SCHEMA;
+  schema: typeof WORKFLOW_LAUNCH_BINDING_SCHEMA | typeof WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA;
+  typedInput?: WorkflowTypedInput;
   runId: string;
   /** Exact launch inputs required for conservative interruption recovery. */
   recoveryInputSha256: string;
@@ -77,6 +81,7 @@ export function createWorkflowLaunchBinding(input: {
   workspace: WorkflowWorkspaceDirectory;
   workspaceExplicit: boolean;
   semanticInput: WorkflowLaunchBinding["semanticInput"];
+  typedInput?: WorkflowTypedInput;
 }): WorkflowLaunchBinding {
   const location = ({ absolutePath, relativePath, physicalPath, identity }: WorkflowWorkspaceDirectory) => ({
     absolutePath,
@@ -86,7 +91,7 @@ export function createWorkflowLaunchBinding(input: {
     physicalIdentitySchemaVersion: 1 as const,
   });
   return {
-    schema: WORKFLOW_LAUNCH_BINDING_SCHEMA,
+    schema: input.typedInput === undefined ? WORKFLOW_LAUNCH_BINDING_SCHEMA : WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA,
     runId: input.runId,
     rootLineageId: input.rootLineageId,
     recoveryInputSha256: input.recoveryInputSha256,
@@ -94,6 +99,7 @@ export function createWorkflowLaunchBinding(input: {
     scriptIdentity: input.scriptIdentity,
     workspace: { ...location(input.workspace), explicit: input.workspaceExplicit },
     semanticInput: input.semanticInput,
+    ...(input.typedInput === undefined ? {} : { typedInput: input.typedInput }),
   };
 }
 
@@ -123,7 +129,11 @@ export function writeWorkflowLaunchBinding(runDir: string, binding: WorkflowLaun
   if (workflowRunFileExists(runDir, destination)) {
     throw new Error("Workflow launch binding already exists and is immutable.");
   }
-  writeWorkflowRunFile(runDir, temporary, payload, { durable: true, exclusive: true });
+  writeWorkflowRunFile(runDir, temporary, payload, {
+    durable: true,
+    exclusive: true,
+    ...(binding.typedInput === undefined ? {} : { mode: 0o600 as const }),
+  });
   renameWorkflowRunFile(runDir, temporary, destination);
 }
 
@@ -159,6 +169,7 @@ export function projectWorkflowLaunchBindingOntoResult(
     workspaceDirExplicit: binding.workspace.explicit,
     semanticInputPresent: binding.semanticInput.present,
     semanticInputSha256: binding.semanticInput.sha256,
+    ...(binding.typedInput === undefined ? {} : { typedInput: workflowTypedInputProjection(binding.typedInput) }),
   };
 }
 
@@ -183,7 +194,12 @@ export function workflowLaunchBindingMatchesResult(
     result.outputSource === undefined &&
     result.primaryFile === undefined &&
     result.semanticInputPresent === binding.semanticInput.present &&
-    result.semanticInputSha256 === binding.semanticInput.sha256
+    result.semanticInputSha256 === binding.semanticInput.sha256 &&
+    (binding.typedInput === undefined
+      ? result.typedInput === undefined
+      : result.typedInput !== undefined &&
+        canonicalWorkflowJSON(result.typedInput) ===
+          canonicalWorkflowJSON(workflowTypedInputProjection(binding.typedInput)))
   );
 }
 
@@ -204,8 +220,11 @@ function parseWorkflowLaunchBinding(
       "semanticInput",
       "recoveryInputSha256",
       "rootLineageId",
+      ...(value.schema === WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA ? ["typedInput"] : []),
     ]) ||
-    value.schema !== WORKFLOW_LAUNCH_BINDING_SCHEMA ||
+    ![WORKFLOW_LAUNCH_BINDING_SCHEMA, WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA].includes(
+      value.schema as typeof WORKFLOW_LAUNCH_BINDING_SCHEMA,
+    ) ||
     value.runId !== runId
   ) {
     throw new Error("workflow launch binding schema or run id is invalid");
@@ -237,9 +256,18 @@ function parseWorkflowLaunchBinding(
   }
   if (typeof value.recoveryInputSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(value.recoveryInputSha256))
     throw new Error("workflow recovery input identity is invalid");
+  const typedInput =
+    value.schema === WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA ? parseWorkflowTypedInput(value.typedInput) : undefined;
+  if (typedInput?.operatorContext !== undefined) assertWorkflowRunId(typedInput.operatorContext.originRunId);
+  if (
+    typedInput !== undefined &&
+    (value.semanticInput.present ||
+      value.semanticInput.sha256 !== "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+  )
+    throw new Error("typed input cannot carry legacy text identity");
   assertWorkflowRunId(value.rootLineageId);
   return {
-    schema: WORKFLOW_LAUNCH_BINDING_SCHEMA,
+    schema: typedInput === undefined ? WORKFLOW_LAUNCH_BINDING_SCHEMA : WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA,
     recoveryInputSha256: value.recoveryInputSha256 as string,
     rootLineageId: value.rootLineageId as string,
     runId,
@@ -247,6 +275,7 @@ function parseWorkflowLaunchBinding(
     scriptIdentity: parsed.scriptIdentity as WorkflowScriptIdentity,
     workspace: value.workspace,
     semanticInput: value.semanticInput,
+    ...(typedInput === undefined ? {} : { typedInput }),
   };
 }
 

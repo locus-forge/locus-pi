@@ -1,3 +1,4 @@
+import { snapshotWorkflowInput } from "./runtime/workflow-input.js";
 /**
  * extensions/workflows/index.ts — Extension entrypoint.
  *
@@ -102,7 +103,8 @@ export default function workflows(pi: ExtensionAPI): void {
         if (panel !== undefined) disposePanel(panel);
       };
       const transcript = createWorkflowTranscript(request.ctx, request.scriptRef, "command", {
-        ...(request.input === undefined ? {} : { input: request.input }),
+        ...snapshotWorkflowInput(request),
+        ...(request.operatorAnswer === undefined ? {} : { operatorAnswer: request.operatorAnswer }),
       });
       let startedRun: { runId: string; runDir: string } | undefined;
       return {
