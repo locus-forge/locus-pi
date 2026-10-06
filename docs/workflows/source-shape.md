@@ -15,7 +15,7 @@ description: "Teach ordinary and detailed workflow authoring with shared Pi cont
 
 Read this contract before authoring workflow source. The [DSL reference](dsl.md#dsl-surface-v0) describes callable methods, signatures, and examples; this page defines which source forms `workflow_check_source` accepts. New workflows use the [create guide](create.md) and the packaged skill's [short author-facing rules](../../skills/locus-pi-workflow-create/references/source-boundary.md).
 
-Three boundaries apply: trusted runtime JavaScript, the `standard` compatibility grammar, and the stricter `mode: "orchestration-only"` grammar used by the create skill. A runtime method is not automatically permitted by either checker: `fusion()` is runtime-only and `runWorkspaceDir()` is removed. The result options `schema`/`validate` were removed and are refused by both checkers and the runtime. The [availability table](dsl.md#dsl-surface-v0) distinguishes every method. Omitting the tool's mode selects standard compatibility checking; it does not restore removed options or grant arbitrary runtime JavaScript access.
+Three boundaries apply: trusted runtime JavaScript, the `standard` compatibility grammar, and the stricter `mode: "orchestration-only"` grammar used by the create skill. A runtime method is not automatically permitted by either checker: `fusion()` is runtime-only and `runWorkspaceDir()` is removed. The result option `schema` is available only in reviewed trusted runtime source and is refused by both checkers. `validate`, `repair` and `outputTransport` are removed runtime options and are refused before work. The [availability table](dsl.md#dsl-surface-v0) distinguishes every method. Omitting the tool's mode selects standard compatibility checking; it does not restore removed options or grant arbitrary runtime JavaScript access.
 
 The rules below own source restrictions and diagnostics. Passing them does not prove the workflow's prompts, decisions, side effects, or final result satisfy its goal; design review and execution evidence remain necessary.
 
@@ -52,14 +52,14 @@ runtime choice contract and be one of the declared choices. Dynamic values,
 option spreads and shorthand declarations remain runtime-validated; the checker
 does not evaluate expressions or resolve constants.
 
-An agent never returns a list or JSON for source to consume. When a stage discovers
+Within both checked authoring profiles, an agent returns opaque text or an exact choice. When a stage discovers
 work at runtime, the agent writes the units to a exact caller-assigned file and returns
 readable text; a later agent reads that file. When the caller already knows the units,
 pass them through `items()` and hand each string unchanged to visible `parallel()` or
 `pipeline()` workers. A queue that changes as work lands stays in its file and is
 processed by a bounded `for` loop whose passes are routed by exact `choice`.
-`handoffs`, `schema`, `validate`, `output`, `repair` and `returnVia` were removed and
-are refused by name; see [removed shaped-result options](agent-results.md#removed-shaped-result-options).
+`handoffs`, `output` and `returnVia` remain removed. Both profiles also refuse runtime-only
+`schema`, `validate`, `repair` and `outputTransport`; see [structured results v4](agent-results.md#structured-results-v4--trusted-runtime-source).
 
 The remaining standard orchestration primitives are:
 
@@ -84,7 +84,7 @@ of `publishPrimaryArtifact` are also removed and rejected by both check modes wh
 `workspace/` directory.
 
 Standard generated source uses only exact text and `choice` answers. Raw `schema`
-and `validate` are no longer a compatibility surface: the runtime refuses both by name.
+and `validate` remain outside both source-check grammars; trusted runtime support does not admit them here.
 
 Standard generated source omits `maxToolCalls` and `timeoutMs` unless the operator
 requests a per-attempt control and the approved Design records why. The

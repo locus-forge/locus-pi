@@ -279,7 +279,10 @@ describe("dsl.fusion", () => {
     // latched on every miss, this exact resume replayed the whole fusion tail.
     // Losing that is a deliberate tightening: the tail's answers were produced
     // after the failed node behaved differently.
-    sourceController.recordAgentAttempt({ canonicalRequest: "stage-a" }, { ok: false });
+    sourceController.recordAgentAttempt(
+      sourceController.beginAgentAttempt({ canonicalRequest: "stage-a", replayable: true }),
+      { ok: false },
+    );
     const source = createWorkflowRuntime({
       runId: "fusion-failure-source",
       replay: sourceController,

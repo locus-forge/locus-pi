@@ -345,16 +345,17 @@ describe("npm public package boundary", () => {
       "schemas/extension-manifest.schema.json",
       "skills/",
     ]);
-    // Directory-owned means the dotfiles inside a listed directory ship with it:
-    // `skills/.ignore` rides along under `skills/` and is counted here.
-    // Four location/tool owners were extracted without widening the directory-owned allowlist;
-    // removing the shaped-result schema owner (workflow-schema.ts) took one file out;
-    // the child-task-note owner remains under location-state/; the removed bound-directory owner does not ship.
-    // Four agentic starters and their two guides add six teaching resources.
-    // Two authoring lessons share contracts; detailed has one conditional case reference and two new starters.
-    // Agent-option policy leaves the checker facade under the same packaged extensions owner.
-    // One generated, version-matched DSL reference is co-located with the authoring skills.
-    expect(dryRun.files).toHaveLength(266);
+    // V4 uses two shared admission/contract owners and four cohesive structured-result owners.
+    // The standard tool path removes the bespoke native Responses owner, reusing the v4 controller.
+    expect(dryRun.files).toHaveLength(272);
+    for (const filename of [
+      "extensions/_shared/agent-runtime/output-acceptance/agent-output-contract.ts",
+      "extensions/_shared/agent-runtime/output-acceptance/agent-output-admission.ts",
+      ...["schema", "return", "receipt", "source-coverage"].map(
+        (name) => `extensions/workflows/runtime/structured-results/${name}.ts`,
+      ),
+    ])
+      expect(dryRun.files.map((file) => file.path)).toContain(filename);
     expect(dryRun.files.map((file) => file.path)).not.toContain(
       "extensions/workflows/runtime/location-state/workflow-bound-directory.ts",
     );

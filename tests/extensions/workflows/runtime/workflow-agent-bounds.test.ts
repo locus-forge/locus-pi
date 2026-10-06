@@ -119,7 +119,7 @@ describe("per-call agent bounds", () => {
       (dsl.agent as (prompt: string, opts: unknown) => Promise<unknown>)("summarize", {
         schemaMaxLength: 1,
       }),
-    ).rejects.toThrow(/agent schemaMaxLength was removed.*no longer accepts shaped answers/su);
+    ).rejects.toThrow(/agent schemaMaxLength was removed.*schema string minLength\/maxLength/su);
     expect(requests).toHaveLength(0);
   });
 

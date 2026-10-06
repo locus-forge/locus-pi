@@ -516,12 +516,16 @@ export function workflowJournalLineProblem(value: unknown, expectedRunId: string
     const receipt = value.outputAcceptance;
     if (
       !isRecord(receipt) ||
-      Object.keys(receipt).some((key) => !["source", "attempts", "toolName"].includes(key)) ||
-      receipt.source !== "tool" ||
-      receipt.toolName !== "workflow_return" ||
-      !Number.isInteger(receipt.attempts) ||
+      Object.keys(receipt).some((key) => !["source", "attempts", "toolName", "contractVersion"].includes(key)) ||
+      !(
+        (receipt.source === "tool" &&
+          receipt.toolName === "workflow_return" &&
+          (receipt.contractVersion === undefined || receipt.contractVersion === 4)) ||
+        (receipt.source === "native" && receipt.contractVersion === 5 && !Object.hasOwn(receipt, "toolName"))
+      ) ||
+      !Number.isSafeInteger(receipt.attempts) ||
       (receipt.attempts as number) < 1 ||
-      (receipt.attempts as number) > 3
+      (receipt.contractVersion === undefined && (receipt.attempts as number) > 3)
     )
       return "Field outputAcceptance is invalid.";
   }

@@ -18,7 +18,7 @@ import { it } from "vitest";
 import {
   createWorkflowReturnController,
   normalizeWorkflowReturnContract,
-  type WorkflowReturnContract,
+  type WorkflowChoiceReturnContract,
 } from "../../../../extensions/workflows/runtime/workflow-return.js";
 import {
   createAgentSdkSessionExecutor,
@@ -32,7 +32,7 @@ import { temporaryValue } from "../../../fixtures/scripted-agent-runtime.js";
 interface SessionScenario {
   submissions: Array<Array<unknown>>;
   /** Defaults to the three-member choice contract below. */
-  contract?: WorkflowReturnContract;
+  contract?: WorkflowChoiceReturnContract;
   rejectPrompt?: number;
   providerFailure?: boolean;
   cancelAfterProposal?: boolean;

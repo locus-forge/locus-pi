@@ -14,6 +14,7 @@ import { createWorkflowRuntime } from "../../../../extensions/workflows/runtime/
 import {
   createWorkflowReplayController,
   readWorkflowReplayLog,
+  workflowReplayFile,
 } from "../../../../extensions/workflows/runtime/workflow-replay.js";
 import { readWorkflowRunJournalState } from "../../../../extensions/workflows/runtime/workflow-journal.js";
 import {
@@ -70,6 +71,22 @@ it("new ordinary roots preserve launch-binding projections for ordinary resume a
     assert.equal(recovered.ok, true, recovered.error);
     assert.equal(calls, 1);
     assert.equal(recovered.replay?.replayedCalls, 1);
+    // Legacy completion-order records need this independently verified serial journal.
+    const file = workflowReplayFile(initial.runDir);
+    writeFileSync(
+      file,
+      readWorkflowReplayLog(root, initial.runId)
+        .map((entry) => JSON.stringify({ ...entry, v: 3 }))
+        .join("\n") + "\n",
+    );
+    const recoveredLegacy = await runWorkflowScript({
+      ...options,
+      resumeFromRunId: initial.runId,
+      recoverInterrupted: true,
+    });
+    assert.equal(recoveredLegacy.ok, true, recoveredLegacy.error);
+    assert.equal(recoveredLegacy.replay?.replayedCalls, 1);
+    assert.equal(calls, 1);
     const changed = await runWorkflowScript({
       ...options,
       input: "different goal",

@@ -101,7 +101,7 @@ for (const referenceFile of ["docs/workflows/dsl.md", "skills/locus-pi-workflow-
     });
 
     it.each([
-      ["rejected-schema", "agent schema was removed"],
+      ["rejected-schema", "agent schema is runtime-only"],
       ["rejected-source-publication", "workflowSource overload was removed"],
       ["rejected-fusion", "calls only direct DSL primitives"],
     ])("refuses the documented runtime-only %s example in both authoring modes", (name, reason) => {

@@ -1,3 +1,5 @@
+import { readWorkflowStructuredCoverage } from "./workflow-run-resume.js";
+import { readAgentSdkHostVersion } from "../../_shared/agent-runtime/agent-sdk-host.js";
 /**
  * workflow-runner.ts — Constrained script loader + executor (trusted-script loader).
  *
@@ -884,7 +886,24 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   });
   runtime = createWorkflowRuntime({
     runId,
+    signal: opts.signal,
     agentRunner,
+    structuredReplayHostVersion: readAgentSdkHostVersion,
+    structuredSourceIdentity: {
+      sha256: scriptIdentity.scriptSha256,
+      covered:
+        readWorkflowStructuredCoverage(scriptIdentity) &&
+        replayPlan.record &&
+        scriptIdentity.identityCoverage === "self-contained-static" &&
+        scriptIdentity.builtinImports.length === 0 &&
+        scriptIdentity.unboundDependencies.length === 0,
+      inputSha256: workflowRecoveryInputHash({
+        ...(opts.input === undefined ? {} : { input: opts.input }),
+        items,
+        budget,
+        ...(noOperator === undefined ? {} : { noOperator }),
+      }),
+    },
     preflightAgentRequests,
     journal,
     projectRoot,

@@ -15,6 +15,9 @@ import type { ReadOnlyAgentCustomTool } from "../../_shared/agent-runtime/agent-
  * contract, and `workflow-replay.ts` names that boundary instead of blaming the
  * author's script for a `key-mismatch`.
  */
+export type WorkflowReturnContract =
+  WorkflowChoiceReturnContract | import("./structured-results/schema.js").WorkflowStructuredContract;
+
 export const WORKFLOW_RETURN_CONTRACT_VERSION = 3 as const;
 
 /**
@@ -27,14 +30,14 @@ export const WORKFLOW_RETURN_CONTRACT_VERSION = 3 as const;
  */
 export const DEFAULT_WORKFLOW_RETURN_CLARIFICATIONS = 1;
 
-export interface WorkflowReturnContract {
+export interface WorkflowChoiceReturnContract {
   version: typeof WORKFLOW_RETURN_CONTRACT_VERSION;
   choices: readonly string[];
   /** Submissions this contract accepts, counting the first. Always the package default. */
   maxAttempts: number;
 }
 
-export function normalizeWorkflowReturnContract(input: { choices: readonly string[] }): WorkflowReturnContract {
+export function normalizeWorkflowReturnContract(input: { choices: readonly string[] }): WorkflowChoiceReturnContract {
   const extra = Object.keys(input).filter((key) => key !== "choices");
   if (extra.length > 0)
     throw new Error(`a workflow return contract carries only choices; unsupported field(s): ${extra.join(", ")}`);
@@ -49,12 +52,12 @@ export function normalizeWorkflowReturnContract(input: { choices: readonly strin
 }
 
 /** How many same-session correction turns this contract allows after the first submission. */
-export function workflowReturnClarificationTurns(contract: WorkflowReturnContract): number {
+export function workflowReturnClarificationTurns(contract: WorkflowChoiceReturnContract): number {
   return contract.maxAttempts - 1;
 }
 
 /** Exact membership: one declared string, nothing else — no array, object or free text. */
-export function workflowReturnValueError(value: unknown, contract: WorkflowReturnContract): string | undefined {
+export function workflowReturnValueError(value: unknown, contract: WorkflowChoiceReturnContract): string | undefined {
   if (typeof value !== "string") return `value must be one exact declared string, not ${describeValueType(value)}`;
   if (!contract.choices.includes(value)) return `value must exactly match one of ${JSON.stringify(contract.choices)}`;
   return undefined;
@@ -66,7 +69,7 @@ function describeValueType(value: unknown): string {
   return typeof value === "object" ? "an object" : `a ${typeof value}`;
 }
 
-export function workflowReturnInstructions(contract: WorkflowReturnContract): string {
+export function workflowReturnInstructions(contract: WorkflowChoiceReturnContract): string {
   const clarifications = workflowReturnClarificationTurns(contract);
   return (
     "Return your choice using workflow_return({ value: ... }), not by formatting a final message. " +
@@ -81,7 +84,7 @@ export function workflowReturnInstructions(contract: WorkflowReturnContract): st
 }
 
 /** The accepted proposal becomes authoritative ONLY after the enclosing child completes successfully. */
-export function createWorkflowReturnController(contract: WorkflowReturnContract): {
+export function createWorkflowReturnController(contract: WorkflowChoiceReturnContract): {
   tool: ReadOnlyAgentCustomTool;
   acceptance: AgentResponseAcceptance;
 } {

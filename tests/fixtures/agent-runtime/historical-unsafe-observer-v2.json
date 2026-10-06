@@ -1,0 +1,55 @@
+{
+  "sourceHead": "e5551673674bef2bf732bb97f8b375a5274f3ad5",
+  "scenario": "Synthetic Codex Responses research turn: repeated response.output_item.done for one terminal function_call item; then valid null return",
+  "observedEffects": 2,
+  "receipt": {
+    "allowances": {
+      "assistantTurns": "unbounded",
+      "outputAttempts": 2,
+      "timeoutMs": "unbounded",
+      "toolCalls": "unbounded"
+    },
+    "contract": {
+      "dialect": "locus-json-subset-v1",
+      "maxAttempts": 2,
+      "schema": {
+        "type": "null"
+      },
+      "version": 4
+    },
+    "customValidation": "absent",
+    "inputIdentity": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "observerRevision": "codex-responses-v2",
+    "rawTurns": [
+      {
+        "calls": [],
+        "responseId": "response_1",
+        "terminal": "completed",
+        "workTools": true
+      },
+      {
+        "calls": [
+          {
+            "arguments": "{\"value\":null}",
+            "callId": "call_2_0",
+            "validation": "accepted"
+          }
+        ],
+        "responseId": "response_2",
+        "terminal": "completed",
+        "workTools": false
+      }
+    ],
+    "schemaSha256": "bcde375ebd4cbacf651311181173836b169d5a360c6ac158c6a2cdaf49be3f61",
+    "sourceIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "spent": {
+      "assistantTurns": 2,
+      "elapsedMs": 405,
+      "outputAttempts": 1,
+      "toolCalls": 3
+    },
+    "validation": "accepted",
+    "value": null,
+    "version": 4
+  }
+}
