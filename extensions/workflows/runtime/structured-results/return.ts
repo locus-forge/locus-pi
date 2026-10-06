@@ -1,4 +1,12 @@
-import { verifyWorkflowStructuredReceipt } from "./receipt.js";
+import { NativeWorkflowResponse, sameNativeWorkflowRoute, WORKFLOW_NATIVE_WIRE_REVISION } from "./native-response.js";
+import type { AgentNativeRoute } from "../../../_shared/agent-runtime/output-acceptance/agent-output-contract.js";
+import {
+  verifyWorkflowStructuredReceipt,
+  createWorkflowStructuredReceipt,
+  workflowStructuredSourceIdentities,
+  revalidateWorkflowStructuredValue,
+  type WorkflowStructuredRawTurn,
+} from "./receipt.js";
 import { supportsObservedOutputVersion } from "../../../_shared/agent-runtime/output-acceptance/agent-output-contract.js";
 /** V4 proposal/terminal owner. One instance belongs to one logical call across physical attempts. */
 import type {
@@ -9,10 +17,10 @@ import type {
 } from "../../../_shared/agent-runtime/agent-runner.js";
 import type { ReadOnlyAgentCustomTool } from "../../../_shared/agent-runtime/agent-read-only-policy.js";
 import {
-  canonicalWorkflowJSON,
-  immutableJSON,
   compileWorkflowSchema,
-  runWorkflowValueValidator,
+  workflowStructuredSchemaDigest,
+  decodeWorkflowProposal,
+  validateWorkflowProposal,
   WORKFLOW_RAW_OBSERVER_REVISION,
   type WorkflowJSONValue,
   type WorkflowStructuredContract,
@@ -22,13 +30,6 @@ import {
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
-interface RawTurn {
-  workTools: boolean;
-  responseId: string;
-  terminal?: "completed";
-  calls: Map<string, string>;
-  items: Map<string, { name: string; callId: string }>;
-}
 export interface WorkflowStructuredSourceIdentity {
   sha256: string;
   covered: boolean;
@@ -36,7 +37,7 @@ export interface WorkflowStructuredSourceIdentity {
 }
 export interface WorkflowStructuredCall {
   contract: WorkflowStructuredContract;
-  controller(): { tool: ReadOnlyAgentCustomTool; acceptance: AgentResponseAcceptance };
+  controller(): { tool?: ReadOnlyAgentCustomTool; acceptance: AgentResponseAcceptance };
   configure(limits: {
     maxTurns?: number | undefined;
     maxToolCalls?: number | undefined;
@@ -54,15 +55,13 @@ export function createWorkflowStructuredCall(
   validate?: WorkflowValueValidator,
   identity?: WorkflowStructuredSourceIdentity,
   replayHostVersion?: () => Promise<string | undefined>,
+  replayRoute?: () => Promise<AgentNativeRoute>,
 ): WorkflowStructuredCall {
+  const native = contract.version === 5;
+  const nativeResponse = native ? new NativeWorkflowResponse(contract.schema) : undefined;
   const ledger: AgentExecutionLedger = { toolCalls: 0, admittedToolCalls: 0, assistantTurns: 0, toolNames: new Set() };
-  const sourceIdentity =
-    identity?.covered === true && /^[a-f0-9]{64}$/u.test(identity.sha256) ? identity.sha256 : "unavailable";
-  const inputIdentity =
-    identity?.covered === true && /^[a-f0-9]{64}$/u.test(identity.inputSha256 ?? "")
-      ? identity!.inputSha256!
-      : "unavailable";
-  const turns: RawTurn[] = [];
+  const { sourceIdentity, inputIdentity } = workflowStructuredSourceIdentities(identity);
+  const turns: WorkflowStructuredRawTurn[] = [];
   const hostCalls = new Map<string, string>();
   const calls = new Map<
     string,
@@ -70,17 +69,15 @@ export function createWorkflowStructuredCall(
       raw: string;
       validation: "accepted" | "rejected" | "duplicate";
       error?: string;
-      canonical?: string;
-      value?: WorkflowJSONValue;
     }
   >();
-  let turn: RawTurn | undefined;
+  let turn: WorkflowStructuredRawTurn | undefined;
   let schema: WorkflowSchemaValidator | undefined;
   let schemaSha256 = "";
   let attempts = 0;
   let accepted: { canonical: string; value: WorkflowJSONValue; executed: boolean } | undefined;
   let failed: { reason: string; failureCause: AgentFailureCause } | undefined;
-  let lastError = "workflow_return was not called";
+  let lastError = native ? "Native output was not provided" : "workflow_return was not called";
   let restrict: (() => void) | undefined;
   let limits: { maxTurns?: number | undefined; maxToolCalls?: number | undefined; timeoutMs?: number | undefined } = {};
   let configured = false;
@@ -94,13 +91,8 @@ export function createWorkflowStructuredCall(
   };
   async function initialize(): Promise<void> {
     schema ??= await compileWorkflowSchema(contract);
-    if (schemaSha256 === "") {
-      const digest = await globalThis.crypto.subtle.digest(
-        "SHA-256",
-        new TextEncoder().encode(canonicalWorkflowJSON(contract.schema)),
-      );
-      schemaSha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-    }
+    if (schemaSha256 === "") schemaSha256 = await workflowStructuredSchemaDigest(contract.schema);
+    await nativeResponse?.initialize();
   }
   function finalized(callId: string, name: string, raw: unknown): void {
     if (name !== "workflow_return") {
@@ -124,67 +116,46 @@ export function createWorkflowStructuredCall(
       calls.set(callId, { raw, validation: "rejected", error: failed.reason });
       return;
     }
+    const proposal = propose(raw);
+    calls.set(callId, { raw, ...proposal });
+  }
+  function propose(raw: string) {
     let value: WorkflowJSONValue | undefined;
     let canonical: string | undefined;
     let error: string | undefined;
     try {
-      const parsed = record(JSON.parse(raw));
-      if (parsed === undefined || Object.keys(parsed).length !== 1 || !Object.hasOwn(parsed, "value"))
-        throw new Error("Provide exactly {value: JSONValue}");
-      value = immutableJSON(parsed.value);
-      canonical = canonicalWorkflowJSON(value);
+      ({ value, canonical } = decodeWorkflowProposal(raw));
     } catch (reason) {
-      error = `Invalid raw workflow_return: ${String(reason)}`;
+      error = `Invalid raw ${native ? "native output" : "workflow_return"}: ${String(reason)}`;
     }
     if (accepted !== undefined) {
       if (error !== undefined || canonical !== accepted.canonical)
-        fail("Conflicting workflow_return after an accepted value", "output-contract-conflict");
-      calls.set(callId, {
-        raw,
-        validation: "duplicate",
+        fail("Conflicting output after an accepted value", "output-contract-conflict");
+      return {
+        validation: "duplicate" as const,
         ...(error === undefined ? {} : { error }),
-        ...(canonical === undefined ? {} : { canonical }),
-        ...(value === undefined ? {} : { value }),
-      });
-      return;
+      };
     }
     attempts++;
-    if (attempts > contract.maxAttempts) {
-      fail("Return submission exceeded its allowance", "output-contract-exhausted");
-      return;
+    if (attempts > contract.maxAttempts) fail("Return submission exceeded its allowance", "output-contract-exhausted");
+    if (error === undefined && failed === undefined) {
+      try {
+        error = validateWorkflowProposal(value!, schema!, validate);
+      } catch (reason) {
+        fail(String(reason), "author-validation-error");
+        error = String(reason);
+      }
     }
-    if (error === undefined) {
-      const errors = schema!.errors(value!);
-      if (errors.length > 0)
-        error = errors
-          .slice(0, 20)
-          .map((entry) => entry.slice(0, 500))
-          .join("; ");
-      else
-        try {
-          const errors = runWorkflowValueValidator(value!, validate);
-          if (errors.length > 0)
-            error = errors
-              .slice(0, 20)
-              .map((entry) => entry.slice(0, 500))
-              .join("; ");
-        } catch (reason) {
-          fail(String(reason), "author-validation-error");
-          error = String(reason);
-        }
-    }
-    calls.set(callId, {
-      raw,
-      validation: error === undefined ? "accepted" : "rejected",
-      ...(error === undefined ? {} : { error }),
-      ...(canonical === undefined ? {} : { canonical }),
-      ...(value === undefined ? {} : { value }),
-    });
+    if (failed !== undefined) error ??= failed.reason;
     if (error === undefined) accepted = { canonical: canonical!, value: value!, executed: false };
     else {
       lastError = error;
       exhaust();
     }
+    return {
+      validation: error === undefined ? ("accepted" as const) : ("rejected" as const),
+      ...(error === undefined ? {} : { error }),
+    };
   }
   function bindHostCall(item: Record<string, unknown>): void {
     if (typeof item.id !== "string" || typeof item.call_id !== "string" || item.id === "" || item.call_id === "") {
@@ -197,7 +168,8 @@ export function createWorkflowStructuredCall(
       fail("Ambiguous host call identity", "output-protocol-unknown");
     hostCalls.set(hostId, item.call_id);
   }
-  function providerEvent(event: unknown): void {
+  function providerEvent(event: unknown, model: unknown): void {
+    nativeResponse?.route(model);
     const data = record(event);
     if (data === undefined || turn === undefined) {
       fail("Raw observer event without request", "output-protocol-unknown");
@@ -215,6 +187,8 @@ export function createWorkflowStructuredCall(
     if (typeof type === "string" && (type.startsWith("response.refusal.") || type === "response.output_text.refusal"))
       fail("Provider refused structured output", "output-refused");
     const item = record(data.item);
+    const nativeFailure = nativeResponse?.capture(data, turn.responseId);
+    if (nativeFailure !== undefined) fail(nativeFailure.reason, nativeFailure.failureCause);
     if (
       type === "response.output_item.added" &&
       item?.type === "function_call" &&
@@ -231,13 +205,14 @@ export function createWorkflowStructuredCall(
     if (type === "response.function_call_arguments.done") {
       const identity = typeof data.item_id === "string" ? turn.items.get(data.item_id) : undefined;
       if (identity === undefined) fail("Finalized arguments lack observed call identity", "output-protocol-unknown");
-      else finalized(identity.callId, identity.name, data.arguments);
+      else if (!native) finalized(identity.callId, identity.name, data.arguments);
     }
     if (type === "response.output_item.done" && item?.type === "function_call") {
       bindHostCall(item);
       if (typeof item.call_id !== "string" || typeof item.name !== "string")
         fail("Finalized tool item lacks identity", "output-protocol-unknown");
-      else finalized(item.call_id, item.name, item.arguments);
+      else if (!native) finalized(item.call_id, item.name, item.arguments);
+      else turn.workTools = true;
     }
     if (type === "response.incomplete" || response?.status === "incomplete")
       fail("Provider output incomplete", "output-incomplete");
@@ -256,7 +231,8 @@ export function createWorkflowStructuredCall(
               bindHostCall(item);
               if (typeof item.call_id !== "string" || typeof item.name !== "string")
                 fail("Terminal tool lacks identity", "output-protocol-unknown");
-              else finalized(item.call_id, item.name, item.arguments);
+              else if (!native) finalized(item.call_id, item.name, item.arguments);
+              else turn.workTools = true;
             }
             if (
               item?.type === "message" &&
@@ -265,22 +241,75 @@ export function createWorkflowStructuredCall(
             )
               fail("Provider refused structured output", "output-refused");
           }
+        if (turn.terminal === "completed") return;
         turn.terminal = "completed";
+        if (native) completeNative(output);
       }
     }
   }
+  function completeNative(output: unknown): void {
+    const observed = turn!.native!;
+    if (observed.payload === undefined) fail("Native payload observation unavailable", "output-protocol-unknown");
+    if (failed !== undefined) return;
+    if (turn!.workTools && attempts === 0) {
+      observed.validation = "research";
+      return;
+    }
+    restrict?.();
+    try {
+      const message = turn!.workTools ? undefined : nativeResponse!.final(output);
+      observed.validation = "rejected";
+      if (message === undefined) {
+        attempts++;
+        lastError = turn!.workTools
+          ? "Work tools are forbidden after native submission"
+          : "Native output was not provided";
+        exhaust();
+      } else {
+        observed.output = message;
+        if (propose(message.text).validation === "accepted") observed.validation = "accepted";
+      }
+    } catch (error) {
+      fail(String(error), "output-protocol-unknown");
+    }
+  }
+
   const acceptance: AgentResponseAcceptance = {
     executionLedger: ledger,
-    toolNames: ["workflow_return"],
+    toolNames: native ? [] : ["workflow_return"],
     bindToolRestriction: (callback) => {
       restrict = callback;
     },
     observedReturn: {
+      ...(native
+        ? {
+            native: {
+              route(model: unknown) {
+                nativeResponse!.route(model);
+              },
+              payload(payload: unknown, model: unknown) {
+                if (turn === undefined) throw new Error("output-contract-unavailable: native payload lacks request");
+                try {
+                  const formatted = nativeResponse!.payload(payload, model, attempts > 0);
+                  turn.native!.payload = formatted.observation;
+                  return formatted.value;
+                } catch (error) {
+                  fail(String(error), "output-contract-unavailable");
+                  throw error;
+                }
+              },
+              sessionEvent(event: unknown) {
+                nativeResponse!.sessionEvent(event, turn?.responseId ?? "");
+              },
+            },
+          }
+        : {}),
       observationLost: () => fail("Raw observer replaced or lost after dispatch", "output-protocol-unknown"),
       initialize,
       beforeRequest(context) {
         const model = record(record(context)?.model);
-        if (model?.provider !== "openai-codex" || model.api !== "openai-codex-responses")
+        if (native) nativeResponse!.route(model);
+        else if (model?.provider !== "openai-codex" || model.api !== "openai-codex-responses")
           fail("Structured route changed or unavailable", "output-contract-unavailable");
         if (turn !== undefined && turn.terminal === undefined)
           fail("Prior raw terminal observation unavailable", "output-protocol-unknown");
@@ -294,7 +323,13 @@ export function createWorkflowStructuredCall(
         if (ledger.deadline !== undefined && Date.now() >= ledger.deadline)
           throw new Error("Cumulative structured call deadline exhausted");
         ledger.assistantTurns++;
-        turn = { workTools: false, responseId: "", calls: new Map(), items: new Map() };
+        turn = {
+          workTools: false,
+          responseId: "",
+          calls: new Map(),
+          items: new Map(),
+          ...(native ? { native: {} } : {}),
+        };
         turns.push(turn);
       },
       providerEvent,
@@ -303,6 +338,7 @@ export function createWorkflowStructuredCall(
         const data = record(context);
         const toolCall = record(data?.toolCall);
         if (
+          !native &&
           toolCall?.name === "workflow_return" &&
           (typeof toolCall.id !== "string" || !calls.has(hostCalls.get(toolCall.id) ?? ""))
         ) {
@@ -311,14 +347,26 @@ export function createWorkflowStructuredCall(
         }
         if (turn?.terminal !== "completed")
           return { block: true, terminate: true, reason: "No completed raw response" };
-        if (attempts > 0 && toolCall?.name !== "workflow_return")
-          return { block: true, terminate: true, reason: "Only workflow_return permitted after submission" };
+        if (attempts > 0 && (native || toolCall?.name !== "workflow_return"))
+          return {
+            block: true,
+            terminate: true,
+            reason: native
+              ? "Work tools are forbidden after native submission"
+              : "Only workflow_return permitted after submission",
+          };
         return undefined;
       },
-      finishTurn() {
+      finishTurn(context) {
+        try {
+          nativeResponse?.finish(context, turn?.responseId ?? "");
+        } catch (error) {
+          fail(String(error), "output-protocol-unknown");
+        }
         if (turn?.terminal !== "completed")
           fail("Raw terminal observation lost or disconnected", "output-protocol-unknown");
         if (
+          !native &&
           turn?.calls.size === 0 &&
           (!turn.workTools || attempts > 0) &&
           failed === undefined &&
@@ -335,9 +383,16 @@ export function createWorkflowStructuredCall(
       },
     },
     inspect() {
+      if (nativeResponse !== undefined) {
+        try {
+          nativeResponse.assertHistory();
+        } catch (error) {
+          fail(String(error), "output-protocol-unknown");
+        }
+      }
       if (accepted !== undefined && ledger.deadline !== undefined && Date.now() >= ledger.deadline)
         fail("Structured logical deadline exhausted", "call-timeout");
-      if (accepted !== undefined && !accepted.executed)
+      if (!native && accepted !== undefined && !accepted.executed)
         fail("Host did not execute the accepted raw return", "output-protocol-unknown");
       if (failed !== undefined) return { status: "failed", ...failed };
       if (turn === undefined || turn.terminal !== "completed")
@@ -349,46 +404,27 @@ export function createWorkflowStructuredCall(
       if (accepted === undefined)
         return {
           status: "retry",
-          prompt: `${lastError}. Correct workflow_return only using existing evidence; do not repeat external effects.`,
+          prompt: `${lastError}. Correct ${native ? "the native {value: JSONValue} answer" : "workflow_return"} only using existing evidence; do not repeat external effects.`,
         };
-      const receipt = immutableJSON({
-        version: 4,
+      const receipt = createWorkflowStructuredReceipt({
         contract,
         schemaSha256,
         sourceIdentity,
         inputIdentity,
-        observerRevision: WORKFLOW_RAW_OBSERVER_REVISION,
         value: accepted.value,
-        allowances: {
-          outputAttempts: contract.maxAttempts,
-          assistantTurns: limits.maxTurns ?? "unbounded",
-          toolCalls: limits.maxToolCalls ?? "unbounded",
-          timeoutMs: limits.timeoutMs ?? "unbounded",
-        },
-        spent: {
-          outputAttempts: attempts,
-          assistantTurns: ledger.assistantTurns,
-          toolCalls: ledger.admittedToolCalls,
-          elapsedMs: Math.max(0, Date.now() - startedAt),
-        },
-        rawTurns: turns.map((turn) => ({
-          responseId: turn.responseId,
-          terminal: turn.terminal!,
-          workTools: turn.workTools,
-          calls: [...turn.calls].map(([callId, args]) => ({
-            callId,
-            arguments: args,
-            validation: calls.get(callId)!.validation,
-          })),
-        })),
-        validation: "accepted",
+        limits,
+        ledger,
+        attempts,
+        callValidation: (callId) => calls.get(callId)!.validation,
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+        turns,
         customValidation: validate === undefined ? "absent" : "accepted",
-      }) as unknown as AgentStructuredReceipt;
+      });
       return {
         status: "accepted",
         text: accepted.canonical,
         attempts,
-        toolName: "workflow_return",
+        ...(native ? {} : { toolName: "workflow_return" }),
         structuredReceipt: receipt,
       };
     },
@@ -418,7 +454,7 @@ export function createWorkflowStructuredCall(
     contract,
     sourceIdentity,
     inputIdentity,
-    controller: () => ({ tool, acceptance }),
+    controller: () => ({ ...(native ? {} : { tool }), acceptance }),
     configure(value) {
       if (!configured) {
         configured = true;
@@ -442,21 +478,22 @@ export function createWorkflowStructuredCall(
         customValidation: validate === undefined ? "absent" : "accepted",
       });
       if (replayHostVersion === undefined || !supportsObservedOutputVersion(await replayHostVersion()))
-        throw new Error("output-contract-unavailable: v4 replay requires a verified Pi >=1.0.0 host");
+        throw new Error(`output-contract-unavailable: v${contract.version} replay requires a verified Pi >=1.0.0 host`);
       await initialize();
-      try {
-        const value = immutableJSON(receipt.value);
+      if (native) {
+        if (replayRoute === undefined) throw new Error("replay-contract-failure: fresh native route unavailable");
+        const current = await replayRoute();
         if (
-          receipt.schemaSha256 !== schemaSha256 ||
-          text !== canonicalWorkflowJSON(value) ||
-          schema!.errors(value).length !== 0 ||
-          runWorkflowValueValidator(value, validate).length !== 0
+          receipt.version !== 5 ||
+          receipt.rawTurns.some(
+            (turn) =>
+              !sameNativeWorkflowRoute(current, turn.payload.route) ||
+              turn.payload.wireSchemaSha256 !== nativeResponse!.wireSchemaSha256,
+          )
         )
-          throw new Error("structured value failed revalidation");
-        return value;
-      } catch (error) {
-        throw new Error(`replay-contract-failure: ${String(error)}`);
+          throw new Error("replay-contract-failure: native route or wire schema changed");
       }
+      return revalidateWorkflowStructuredValue(receipt, text, schemaSha256, schema!, validate);
     },
   };
 }

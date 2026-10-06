@@ -293,6 +293,7 @@ export interface WorkflowAgentOptions {
   workspaceHandle?: string;
   /** A choice selects WorkflowAgentChoiceOptions instead of the exact-text overload. */
   schema?: never;
+  outputTransport?: never;
   validate?: never;
   repair?: never;
   choice?: never;
@@ -317,10 +318,14 @@ export interface WorkflowAgentReportOptions extends Omit<WorkflowAgentOptions, "
   result: "report";
 }
 
-export interface WorkflowAgentStructuredOptions extends Omit<WorkflowAgentOptions, "schema" | "validate" | "repair"> {
+export interface WorkflowAgentStructuredOptions extends Omit<
+  WorkflowAgentOptions,
+  "schema" | "validate" | "repair" | "outputTransport"
+> {
   schema: WorkflowJSONSchema;
   validate?: WorkflowValueValidator;
   repair?: { maxAttempts: number };
+  outputTransport?: "native";
 }
 export type WorkflowAgentAnyOptions =
   WorkflowAgentOptions | WorkflowAgentReportOptions | WorkflowAgentChoiceOptions | WorkflowAgentStructuredOptions;

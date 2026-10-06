@@ -327,6 +327,7 @@ export type WorkflowSavedChildRunner = (input: WorkflowSavedChildInvocation) => 
 export interface WorkflowRuntimeOptions {
   runId: string;
   agentRunner: WorkflowAgentRunner;
+  structuredReplayRoute?: import("./workflow-agent-output.js").WorkflowAgentOutputDeps["structuredReplayRoute"];
   structuredReplayHostVersion?: () => Promise<string | undefined>;
   structuredSourceIdentity?: import("./structured-results/return.js").WorkflowStructuredSourceIdentity;
   args?: string;
@@ -582,6 +583,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
   // choice has a single definition that cannot reach back into the DSL it decides for.
   const resultMode = createWorkflowAgentOutput({
     runId,
+    ...(options.structuredReplayRoute === undefined ? {} : { structuredReplayRoute: options.structuredReplayRoute }),
     ...(options.structuredReplayHostVersion === undefined
       ? {}
       : { structuredReplayHostVersion: options.structuredReplayHostVersion }),

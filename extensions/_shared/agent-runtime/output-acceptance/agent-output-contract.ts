@@ -21,7 +21,7 @@ export interface AgentResponseAcceptance {
         status: "accepted";
         text: string;
         attempts: number;
-        toolName: string;
+        toolName?: string;
         structuredReceipt?: AgentStructuredReceipt;
       }
     | { status: "retry"; prompt: string }
@@ -37,6 +37,11 @@ export interface AgentExecutionLedger {
 }
 /** The caller understands provider data; the shared host only chains lifecycle hooks. */
 export interface AgentObservedReturn {
+  readonly native?: {
+    route(model: unknown): void;
+    payload(payload: unknown, model: unknown): unknown;
+    sessionEvent(event: unknown): void;
+  };
   observationLost(): void;
   initialize(): Promise<void>;
   beforeRequest(context: unknown): void;
@@ -44,8 +49,7 @@ export interface AgentObservedReturn {
   beforeTool(context: unknown): { block?: boolean; reason?: string; terminate?: boolean } | undefined;
   finishTurn(context: unknown): { action: "end" } | undefined;
 }
-export interface AgentStructuredReceipt {
-  version: 4;
+interface AgentStructuredReceiptBase {
   contract: unknown;
   schemaSha256: string;
   sourceIdentity: string | "unavailable";
@@ -59,20 +63,68 @@ export interface AgentStructuredReceipt {
     timeoutMs: number | "unbounded";
   };
   spent: { outputAttempts: number; assistantTurns: number; toolCalls: number; elapsedMs: number };
-  rawTurns: readonly {
-    responseId: string;
-    terminal: "completed";
-    workTools: boolean;
-    calls: readonly { callId: string; arguments: string; validation: "accepted" | "rejected" | "duplicate" }[];
-  }[];
   validation: "accepted";
   customValidation: "accepted" | "absent";
 }
 
-export interface AgentOutputAcceptance {
-  source: "tool";
-  contractVersion?: 4;
-  attempts: number;
-  toolName: string;
-  structuredReceipt?: AgentStructuredReceipt;
+export interface AgentNativeRoute {
+  provider: "openai";
+  api: "openai-responses";
+  baseUrl: string;
+  model: string;
+}
+export interface AgentNativeMessage {
+  messageId: string;
+  text: string;
+  phase?: string | null;
+}
+export interface AgentNativeTurn {
+  responseId: string;
+  terminal: "completed";
+  workTools: boolean;
+  payload: { wireRevision: string; wireSchemaSha256: string; route: AgentNativeRoute };
+  output?: AgentNativeMessage;
+  validation: "research" | "accepted" | "rejected";
+}
+export type AgentStructuredReceipt = AgentStructuredReceiptBase &
+  (
+    | {
+        version: 4;
+        rawTurns: readonly {
+          responseId: string;
+          terminal: "completed";
+          workTools: boolean;
+          calls: readonly { callId: string; arguments: string; validation: "accepted" | "rejected" | "duplicate" }[];
+        }[];
+      }
+    | { version: 5; rawTurns: readonly AgentNativeTurn[] }
+  );
+export type AgentOutputAcceptance =
+  | {
+      source: "tool";
+      contractVersion?: 4;
+      attempts: number;
+      toolName: string;
+      structuredReceipt?: AgentStructuredReceipt;
+    }
+  | { source: "native"; contractVersion: 5; attempts: number; structuredReceipt?: AgentStructuredReceipt };
+
+/** Truthful public receipt projection at the SDK boundary; native evidence has no tool identity. */
+export function agentOutputAcceptance(
+  accepted: Extract<ReturnType<AgentResponseAcceptance["inspect"]>, { status: "accepted" }>,
+): AgentOutputAcceptance {
+  if (accepted.structuredReceipt?.version === 5)
+    return {
+      source: "native",
+      contractVersion: 5,
+      attempts: accepted.attempts,
+      structuredReceipt: accepted.structuredReceipt,
+    };
+  if (accepted.toolName === undefined) throw new Error("Accepted tool output has no tool identity");
+  return {
+    source: "tool",
+    attempts: accepted.attempts,
+    toolName: accepted.toolName,
+    ...(accepted.structuredReceipt === undefined ? {} : { structuredReceipt: accepted.structuredReceipt }),
+  };
 }

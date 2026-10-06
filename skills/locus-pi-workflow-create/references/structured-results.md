@@ -5,9 +5,9 @@ Within this skill's checked authoring grammar, an agent returns: plain `agent()`
 change that. Anything richer — a record, a list of units, a queue, per-field findings —
 goes into a **exact caller-assigned file** that the agent writes and a later agent reads.
 `handoffs`, `output` and `returnVia` remain removed. The checker also refuses
-`schema`, `validate` and `repair`. Reviewed trusted runtime source has an opt-in
+`schema`, `validate`, `repair` and `outputTransport`. Reviewed trusted runtime source has an opt-in
 [structured v4 contract](../../../docs/workflows/agent-results.md#structured-results-v4--trusted-runtime-source);
-this lesson does not teach that syntax before its authoring grammar is supported.
+explicit native transport is described in the [v5 runtime contract](../../../docs/workflows/agent-results.md#native-structured-results-v5--trusted-runtime-source). This lesson does not teach that syntax before its authoring grammar is supported.
 Caller-owned work units come from `dsl.items()`.
 
 A choice is corrected in that same child session by construction: there is no other

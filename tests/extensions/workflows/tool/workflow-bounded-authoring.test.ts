@@ -218,6 +218,7 @@ describe("standard bounded carry and author-owned records; requires native ast-g
     schema: 'schema: { type: "array" }',
     validate: "validate: []",
     output: 'output: { type: "string" }',
+    outputTransport: 'outputTransport: "native"',
     repair: "repair: { maxAttempts: 2 }",
     returnVia: 'returnVia: "tool"',
     maxAnswerChars: "maxAnswerChars: 4000",
@@ -237,7 +238,7 @@ describe("standard bounded carry and author-owned records; requires native ast-g
       .map((item) => item.message);
     expect(messages).toContainEqual(
       expect.stringContaining(
-        ["schema", "validate", "repair"].includes(key)
+        ["schema", "validate", "repair", "outputTransport"].includes(key)
           ? `agent ${key} is runtime-only and outside this authoring grammar`
           : `agent ${key} was removed`,
       ),

@@ -86,12 +86,13 @@ export const REMOVED_AGENT_OPTION_NAMES: readonly string[] = Object.freeze([
   "schema",
   "validate",
   "repair",
+  "outputTransport",
 ]);
 
 export function assertNoRemovedAgentOptions(opts: unknown, scope = "agent"): void {
   if (typeof opts !== "object" || opts === null || Array.isArray(opts)) return;
   if (scope !== "agent")
-    for (const key of ["schema", "validate", "repair"])
+    for (const key of ["schema", "validate", "repair", "outputTransport"])
       if (Object.hasOwn(opts, key)) throw new Error(`${scope}: agent ${key} was removed from Fusion limits`);
   for (const [key, message] of Object.entries(REMOVED_AGENT_OPTIONS)) {
     if (Object.hasOwn(opts, key)) throw new Error(scope === "agent" ? message : `${scope}: ${message}`);
@@ -136,6 +137,9 @@ export function normalizeAgentChoiceFallback(value: unknown, choices: readonly s
  *  root already owns; none of them is an SDK session. */
 export interface WorkflowAgentOutputDeps {
   readonly runId: string;
+  readonly structuredReplayRoute?: (
+    opts: WorkflowAgentStructuredOptions,
+  ) => Promise<import("../../_shared/agent-runtime/output-acceptance/agent-output-contract.js").AgentNativeRoute>;
   readonly structuredReplayHostVersion?: () => Promise<string | undefined>;
   readonly structuredSourceIdentity?: WorkflowStructuredSourceIdentity;
   readonly now: () => string;
@@ -175,6 +179,8 @@ export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): Workfl
    */
   function dispatchWorkflowAgentShape(opts: WorkflowAgentAnyOptions | undefined): "plain" | "choice" | "structured" {
     assertNoRemovedAgentOptions(opts);
+    if (opts !== undefined && Object.hasOwn(opts, "outputTransport") && opts.outputTransport !== "native")
+      throw new Error("agent outputTransport must be native when declared");
     if (opts !== undefined && Object.hasOwn(opts, "schema")) {
       for (const key of ["choice", "choiceFallback", "result"] as const)
         if (Object.hasOwn(opts, key)) throw new Error(`agent schema cannot be combined with ${key}`);
@@ -183,7 +189,7 @@ export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): Workfl
       return "structured";
     }
     if (opts !== undefined)
-      for (const key of ["validate", "repair"] as const)
+      for (const key of ["validate", "repair", "outputTransport"] as const)
         if (Object.hasOwn(opts, key)) throw new Error(`agent ${key} requires schema`);
     if (opts?.result !== undefined) {
       if (opts.result !== "report") throw new Error("agent result must be report when supplied");
@@ -299,12 +305,17 @@ export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): Workfl
   }
 
   async function runStructuredAgent(prompt: string, opts: WorkflowAgentStructuredOptions): Promise<WorkflowJSONValue> {
-    const contract = normalizeWorkflowStructuredContract(opts.schema, opts.repair);
+    const canonicalContract = normalizeWorkflowStructuredContract(opts.schema, opts.repair);
+    const contract =
+      opts.outputTransport === "native"
+        ? Object.freeze({ ...canonicalContract, version: 5 as const, outputTransport: "native" as const })
+        : canonicalContract;
     const call = createWorkflowStructuredCall(
       contract,
       opts.validate,
       deps.structuredSourceIdentity,
       deps.structuredReplayHostVersion,
+      deps.structuredReplayRoute === undefined ? undefined : () => deps.structuredReplayRoute!(opts),
     );
     const outcome = await runAgentAttempt(prompt, {
       ...opts,
@@ -312,7 +323,7 @@ export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): Workfl
       [WORKFLOW_STRUCTURED_CALL]: call,
     });
     if (outcome.outputAcceptance?.structuredReceipt === undefined)
-      throw new Error("output-contract-unavailable: no committed v4 receipt");
+      throw new Error("output-contract-unavailable: no committed structured receipt");
     return immutableJSON(outcome.outputAcceptance.structuredReceipt.value);
   }
   return { dispatchWorkflowAgentShape, runChoiceAgent, runStructuredAgent };

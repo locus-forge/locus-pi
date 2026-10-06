@@ -314,8 +314,8 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
     // return sites. The two paths that return before this helper are the two
     // that must NOT latch: replay is switched off, and the latch already holds.
     const miss = (reason: WorkflowReplayMissReason): WorkflowReplayAgentLookup => {
-      if (call.returnContractVersion === 4)
-        throw new Error(`replay-contract-failure: v4 prefix unavailable (${reason})`);
+      if (call.returnContractVersion === 4 || call.returnContractVersion === 5)
+        throw new Error(`replay-contract-failure: v${call.returnContractVersion} prefix unavailable (${reason})`);
       if (this.#requireRecordedPrefix && ordinal < this.#recordedAgents.length)
         throw new Error(`Interrupted recovery refused prefix divergence at call ${ordinal}: ${reason}`);
       this.#freshCalls += 1;
@@ -331,7 +331,8 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
       return { replayed: false, reason: "no-record" };
     }
     if (this.#diverged) {
-      if (call.returnContractVersion === 4) throw new Error("replay-contract-failure: v4 prefix diverged");
+      if (call.returnContractVersion === 4 || call.returnContractVersion === 5)
+        throw new Error(`replay-contract-failure: v${call.returnContractVersion} prefix diverged`);
       this.#freshCalls += 1;
       return { replayed: false, reason: "diverged" };
     }

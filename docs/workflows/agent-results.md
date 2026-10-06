@@ -104,7 +104,7 @@ reinterpreted under the reduced contract.
 | `maxAnswerChars`, `schemaMaxLength` | Both are refused by name; state a length requirement in the prompt.                                                                                                                                               |
 | Fusion `schema`, `validate`         | The judge returns exact text; state the required format in the prompt, or have a later agent write the exact caller-assigned destination in its prompt from the judge's text.                                     |
 
-Both source-check profiles also refuse `schema`, `validate` and `repair`: v4 is a
+Both source-check profiles also refuse `schema`, `validate`, `repair` and `outputTransport`: structured output is a
 trusted-runtime capability in this release, outside their existing authoring grammar.
 
 ## Choice v3 same-session lifecycle
@@ -285,6 +285,91 @@ outside this contract.
 The existing child/result and replay stores retain the immutable receipt. The operational
 `agent_end.outputAcceptance` is only `{source:"tool", toolName:"workflow_return", attempts,
 contractVersion:4}`; raw arguments and full receipts are not copied into each journal event.
+
+## Native structured results v5 — trusted runtime source
+
+Trusted source can explicitly add `outputTransport: "native"` to the same
+`schema`/`validate`/`repair` call. Omitting the selector retains v4, including its
+canonical request and receipt bytes. Any other selector, or a selector without a
+schema, refuses before child work. Choice, fallback and report cannot combine with it.
+Both authoring checkers continue to refuse this runtime-only syntax.
+
+```js
+const result = await agent("Return an authoritative id from the supplied evidence", {
+  schema: {
+    type: "object",
+    properties: { id: { type: "string" } },
+    required: ["id"],
+    additionalProperties: false,
+  },
+  validate: (value) => (allowedIds.includes(value.id) ? [] : ["Use an authoritative id"]),
+  outputTransport: "native",
+});
+```
+
+**Route and wire.** This slice admits Pi >=1.0.0 with actual writable payload/raw,
+pre-dispatch admission, active-tool readback/restriction and cancellation hooks.
+The compatibility policy is the existing public `openai` / `openai-responses` route
+at `https://api.openai.com/v1`, with IDs `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-luna`.
+Unknown IDs, snapshots, fine-tuned models, other APIs and proxies refuse. These are
+synthetic compatibility tests, not live qualification or an entitlement claim.
+The caller's model, host-managed authentication and permissions are unchanged;
+authentication remains unverified. Provider denial is terminal with no fallback.
+
+The inherited payload hook runs first. The runtime detaches JSON data before checking
+the effective payload; accessors and executable serialization hooks cannot change
+the dispatched model or format after validation. Undefined object fields use ordinary
+JSON transport omission. The runtime then observes the effective
+non-secret route and applies strict `text.format` named `locus_workflow_result`.
+Conflicting format, model, stream or route changes refuse. Input, work tools,
+verbosity and unrelated fields remain intact. Every supported canonical root uses
+one closed required wrapper, exactly `{value: canonicalValue}`; no return tool is
+registered. `$schema` metadata is removed only from the wire projection.
+
+**Exact supported subset.** Native requires every object to be closed and require
+all declared properties, and every array to have items. Non-null scalar/object/array
+roots, matching primitive enums, numeric and array bounds retain their canonical
+semantics. Root or nested null, incompatible/null enums, optional/open objects,
+untyped arrays and string grapheme length bounds refuse before model work; they
+are not rewritten into nullable fields or a different length rule. The provider's
+schema limits include the wrapper: 5000 total properties, ten nesting levels,
+120000 property/enum characters, 1000 enum entries, and 15000 characters in a
+single string enum exceeding 250 entries. Exceeding a limit refuses rather than
+truncates. See the [official supported-schema limits](https://developers.openai.com/api/docs/guides/structured-outputs#supported-schemas).
+There is no new global answer-size limit.
+
+**Finalization and correction.** Matching raw created/completed response identity
+and one completed assistant message with one complete output-text part are required.
+Explicit `final_answer`, absent phase and null phase qualify. Commentary or unknown
+phase terminates as `output-protocol-unknown` without correction; partials, readable
+last text or a subset of several messages cannot authorize data. Raw phase is
+preserved before session JSONL persistence and in the next correction input.
+After inherited finish hooks, the live message, context history and returned messages
+must still match that raw text and phase; a conflict terminates without relabeling.
+Research work turns consume the existing turn/tool/time axes without spending an
+output slot. The first native output restricts active tools to empty; correction
+uses `tool_choice: "none"`. Unexpected correction calls have no effects and spend a
+slot, as does a missing output. The shared schema-first synchronous custom validator,
+immutable value, default two output attempts, same child feedback and cumulative
+budgets remain unchanged. A valid last slot succeeds without another generation;
+author errors, refusal, incomplete/error/disconnect, cancellation or lost evidence
+are terminal. Whole child completion and successful storage still establish authority.
+
+**Receipts and replay.** Native uses distinct v5 provenance: raw response/message,
+text and original phase, payload-observed wire revision/schema digest and non-secret
+route, plus existing source/input/schema/validation and allowance/spent evidence.
+Zero real tool calls are valid; no tool name or fictional return call is present.
+The journal carries only `{source:"native", contractVersion:5, attempts}`.
+Replay revalidates committed data and freshly resolves the existing current
+selected/registry model and role mapping before any child, credential or network
+work. It compares established provider/id/API/base facts to the recorded
+payload-observed route, catching inherited model changes and same-role remapping.
+Unknown, opaque custom routing or mismatches refuse without a paid fresh suffix.
+This read-only comparison is not fresh post-auth endpoint or credential attestation:
+Pi exposes no public secret-free accessor for that stronger claim. Host-managed auth
+remains unverified. V4 receipts stay strict and neither version upgrades to the other.
+Custom embedders need the current route port in addition to the v4 identity/version
+ports. Source coverage, storage, retry and restart limitations remain the v4 contract.
 
 ## Command completed, answer rejected
 

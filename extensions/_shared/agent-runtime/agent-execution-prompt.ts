@@ -114,7 +114,7 @@ export function assembleParentContext(
 
 export function formatAgentKickoffPrompt(
   capsule: AgentExecutionPromptCapsule,
-  responseMode: "text" | "tool" = "text",
+  responseMode: "text" | "tool" | "native" = "text",
 ): string {
   const lines = [
     "Run the requested sub-agent task in this child session.",
@@ -126,7 +126,12 @@ export function formatAgentKickoffPrompt(
     lines.push("", "Parent-provided context (explicit, read-only):", capsule.parentContext);
   }
   lines.push("");
-  if (responseMode === "tool") {
+  if (responseMode === "native") {
+    lines.push(
+      "Do the work, then submit the final answer using the native JSON schema supplied by the runtime.",
+      "Your exact final structured response is the result.",
+    );
+  } else if (responseMode === "tool") {
     lines.push(
       "Do the work, then submit the result through the return tool specified in the prompt capsule. Your final message is not the result.",
       "Finish normally after the return tool accepts the value.",

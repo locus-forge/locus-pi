@@ -1,3 +1,4 @@
+import { nativeWorkflowRoute, nativeWorkflowReplayRoute } from "./structured-results/native-response.js";
 /**
  * workflow-agent-bridge.ts — Adapter: agent() -> Pi task/createAgentSession path.
  *
@@ -178,6 +179,32 @@ export function createWorkflowAgentPreflight(options: WorkflowAgentBridgeOptions
   };
 }
 
+/** Fresh selected/registry route only. Host-managed auth remains unverified and is never resolved here. */
+export function createWorkflowStructuredReplayRoute(options: WorkflowAgentBridgeOptions) {
+  return async (opts: Pick<WorkflowAgentRequest, "agent" | "model" | "modelRole" | "requireModelRole">) => {
+    const agentName = opts.agent?.trim();
+    const discovered = agentName === undefined ? undefined : discoverAgentDefinitions(getProjectRoot(options.ctx));
+    const agent = discovered?.definitions.find((candidate) => candidate.name === agentName);
+    if (agentName !== undefined && agent === undefined)
+      throw new Error("replay-contract-failure: unknown current agent profile");
+    const tier = await resolveWorkflowTier({
+      req: {
+        ...opts,
+        ...(agentName === undefined ? {} : { agent: agentName }),
+        prompt: "Native replay route readback",
+      },
+      agent,
+      modelRoles: await loadModelRolesState(),
+      resolveModelFn: options.resolveModel ?? createWorkflowModelResolver(options.ctx),
+    });
+    if (tier.kind === "refused") throw new Error(`replay-contract-failure: ${tier.message}`);
+    return nativeWorkflowReplayRoute(
+      tier.kind === "resolved" ? tier.model : options.ctx.model,
+      options.ctx.modelRegistry,
+    );
+  };
+}
+
 /** Builds the WorkflowAgentRunner the runtime depends on. */
 export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): WorkflowAgentRunner {
   const { pi, ctx, signal, resolveModel } = options;
@@ -314,6 +341,21 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
         workspaceMode,
         ...(req.label !== undefined ? { label: req.label } : {}),
       };
+    }
+    if (req.returnContract?.version === 5) {
+      try {
+        nativeWorkflowRoute(tier.kind === "resolved" ? tier.model : ctx.model);
+      } catch (error) {
+        return {
+          ok: false,
+          status: "failed",
+          failureCause: "output-contract-unavailable",
+          summary: String(error),
+          diagnostics: [String(error)],
+          ...resultIdentity,
+          workspaceMode,
+        };
+      }
     }
     const modelRoleResolution = tier.roleResolution;
     const liveModel = resolveLiveModelDisplay({
@@ -459,12 +501,12 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
     const returnController =
       req.returnContract === undefined
         ? undefined
-        : req.returnContract.version === 4
+        : req.returnContract.version === 4 || req.returnContract.version === 5
           ? req.structuredCall?.controller()
           : createWorkflowReturnController(req.returnContract);
     const customTools = [
       ...(askTool === undefined ? [] : [askTool]),
-      ...(returnController === undefined ? [] : [returnController.tool]),
+      ...(returnController?.tool === undefined ? [] : [returnController.tool]),
     ];
     const requestInput = {
       ...(maxTurns === undefined ? {} : { maxTurns }),

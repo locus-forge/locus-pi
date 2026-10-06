@@ -266,7 +266,7 @@ export function createWorkflowAgentAttempt(
       req.returnContract !== undefined &&
       finalResult.ok &&
       finalResult.status === "completed" &&
-      finalResult.outputAcceptance?.source !== "tool"
+      finalResult.outputAcceptance?.source !== (req.returnContract.version === 5 ? "native" : "tool")
     ) {
       finalResult = {
         ...finalResult,
@@ -390,10 +390,16 @@ export function createWorkflowAgentAttempt(
         ? {}
         : {
             outputAcceptance: {
-              source: finalResult.outputAcceptance.source,
               attempts: finalResult.outputAcceptance.attempts,
-              toolName: finalResult.outputAcceptance.toolName,
-              ...(finalResult.outputAcceptance.structuredReceipt === undefined ? {} : { contractVersion: 4 as const }),
+              ...(finalResult.outputAcceptance.source === "native"
+                ? { source: "native" as const, contractVersion: 5 as const }
+                : {
+                    source: "tool" as const,
+                    toolName: finalResult.outputAcceptance.toolName,
+                    ...(finalResult.outputAcceptance.structuredReceipt === undefined
+                      ? {}
+                      : { contractVersion: 4 as const }),
+                  }),
             },
           }),
       permissionMode: finalResult.permissionMode ?? permissionMode,

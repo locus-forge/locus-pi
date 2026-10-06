@@ -395,9 +395,10 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
         if (lookup.structuredReceipt === undefined) throw new Error("replay-contract-failure: v4 receipt missing");
         await req.structuredCall.replay(lookup.structuredReceipt, lookup.text);
         replayedAcceptance = {
-          source: "tool",
+          ...(lookup.structuredReceipt.version === 5
+            ? { source: "native" as const, contractVersion: 5 as const }
+            : { source: "tool" as const, toolName: "workflow_return" }),
           attempts: lookup.structuredReceipt.spent.outputAttempts,
-          toolName: "workflow_return",
           structuredReceipt: lookup.structuredReceipt,
         };
       }
@@ -478,7 +479,7 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
             failed.result,
             req.structuredCall === undefined
               ? undefined
-              : `Transport cannot carry structured v4: ${failed.result.summary}`,
+              : `Transport cannot carry structured v${req.structuredCall.contract.version}: ${failed.result.summary}`,
           )
         : new WorkflowAgentExecutionError(failed.result);
     } finally {

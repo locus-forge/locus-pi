@@ -5,17 +5,18 @@ export type WorkflowJSONSchema = Readonly<Record<string, unknown>>;
 export const WORKFLOW_SCHEMA_DIALECT = "locus-json-subset-v1" as const;
 export const WORKFLOW_RAW_OBSERVER_REVISION = "codex-responses-v1" as const;
 
-export interface WorkflowStructuredContract {
-  version: 4;
+interface WorkflowStructuredContractBase {
   choices?: never;
   dialect: typeof WORKFLOW_SCHEMA_DIALECT;
   schema: WorkflowJSONSchema;
   maxAttempts: number;
 }
+export type WorkflowStructuredContract = WorkflowStructuredContractBase &
+  ({ version: 4; outputTransport?: never } | { version: 5; outputTransport: "native" });
 export type WorkflowValueValidator = (value: WorkflowJSONValue) => string[];
 
-/** JSON cloning also rejects undefined, cycles, non-finite numbers and sparse arrays. */
-export function immutableJSON(value: unknown): WorkflowJSONValue {
+/** JSON data cloning. Only transport payloads may omit undefined object fields, as JSON serialization does. */
+export function immutableJSON(value: unknown, options?: { omitUndefinedObjectFields: true }): WorkflowJSONValue {
   const ancestors = new Set<object>();
   function copy(input: unknown): WorkflowJSONValue {
     if (input === null || typeof input === "string" || typeof input === "boolean") return input;
@@ -39,10 +40,12 @@ export function immutableJSON(value: unknown): WorkflowJSONValue {
         throw new Error("Expected a JSON object");
       const entries = Object.keys(input)
         .sort()
-        .map((key) => {
+        .flatMap((key) => {
           const property = Object.getOwnPropertyDescriptor(input, key)!;
           if (!("value" in property)) throw new Error("Expected JSON data properties");
-          return [key, copy(property.value)] as const;
+          return options?.omitUndefinedObjectFields && property.value === undefined
+            ? []
+            : [[key, copy(property.value)] as const];
         });
       return Object.freeze(Object.fromEntries(entries));
     } finally {
@@ -227,4 +230,42 @@ export function runWorkflowValueValidator(value: WorkflowJSONValue, validate?: W
   } catch (error) {
     throw new Error(`author-validation-error: ${String(error)}`);
   }
+}
+
+/** Common raw envelope and immutable canonical candidate for both real evidence transports. */
+export function decodeWorkflowProposal(raw: string): { value: WorkflowJSONValue; canonical: string } {
+  const parsed = JSON.parse(raw) as unknown;
+  if (
+    parsed === null ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed) ||
+    Object.keys(parsed).length !== 1 ||
+    !Object.hasOwn(parsed, "value")
+  )
+    throw new Error("Provide exactly {value: JSONValue}");
+  const value = immutableJSON((parsed as { value: unknown }).value);
+  return { value, canonical: canonicalWorkflowJSON(value) };
+}
+export function validateWorkflowProposal(
+  value: WorkflowJSONValue,
+  schema: WorkflowSchemaValidator,
+  validate?: WorkflowValueValidator,
+): string | undefined {
+  const schemaErrors = schema.errors(value);
+  const errors = schemaErrors.length > 0 ? schemaErrors : runWorkflowValueValidator(value, validate);
+  return errors.length === 0
+    ? undefined
+    : errors
+        .slice(0, 20)
+        .map((error) => error.slice(0, 500))
+        .join("; ");
+}
+
+/** Persisted protocol content identity, never an in-memory freshness check. */
+export async function workflowStructuredSchemaDigest(schema: WorkflowJSONSchema): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(canonicalWorkflowJSON(schema)),
+  );
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
