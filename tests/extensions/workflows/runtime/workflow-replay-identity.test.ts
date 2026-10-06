@@ -1,6 +1,8 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { expect, it } from "vitest";
+import fsPromises from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
+import { expect, it, vi } from "vitest";
 import { createWorkflowRuntime } from "../../../../extensions/workflows/runtime/workflow-runtime.js";
 import {
   createWorkflowReplayController,
@@ -11,6 +13,12 @@ import {
   type WorkflowReplayAgentEntry,
 } from "../../../../extensions/workflows/runtime/workflow-replay.js";
 import { completed, tempRun, temporary } from "../../../fixtures/scripted-agent-runtime.js";
+import {
+  cleanupReplayProjects,
+  temporaryProject,
+  writeWorkflow,
+  runWorkflow,
+} from "../../../fixtures/workflow-replay-project.js";
 
 it.each([false, true].flatMap((keyed) => [false, true].map((labelled) => ({ keyed, labelled }))))(
   "preserves admission identity across reverse completion (keyed=$keyed labelled=$labelled)",
@@ -346,3 +354,104 @@ it("allows fresh suffix work after a completely accepted strict prefix", async (
     expect(replay.beginAgentAttempt(call)).toEqual({ replayed: false, reason: "diverged" });
     expect(replay.counts()).toMatchObject({ replayedCalls: 1, freshCalls: 2, divergedAtCall: 1 });
   }));
+
+it.each([false, true])(
+  "keeps mapped replay identity when config reads finish out of order (%s)",
+  async (reorderReads) => {
+    const root = temporaryProject();
+    writeWorkflow(
+      root,
+      "mapped-replay",
+      `export const meta = { name: "mapped-replay", description: "three mapped calls from one callsite" };
+export default async function runWorkflow(dsl) {
+  const values = ["one", "two", "three"];
+  const answers = await dsl.parallel(values.map((value) => () =>
+    dsl.agent("classify " + value, { label: "classify-candidate", phase: "classify" })
+  ));
+  return { summary: answers.join(" | ") };
+}
+`,
+    );
+
+    let releaseFirst!: () => void;
+    let releaseThird!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const thirdGate = new Promise<void>((resolve) => {
+      releaseThird = resolve;
+    });
+    const configPath = path.join(root, ".pi-user", "model-roles", "config.json");
+    const originalReadFile = fsPromises.readFile;
+    let configReads = 0;
+    const readFile = vi.spyOn(fsPromises, "readFile").mockImplementation(async (...args) => {
+      if (reorderReads && String(args[0]) === configPath) {
+        const ordinal = ++configReads;
+        if (ordinal === 1) await firstGate;
+        if (ordinal === 3) await thirdGate;
+      }
+      return originalReadFile(...args);
+    });
+    syncBuiltinESMExports();
+    try {
+      const first = await runWorkflow(root, "mapped-replay", {
+        answer: (prompt) => {
+          if (prompt === "classify two") releaseFirst();
+          if (prompt === "classify one") releaseThird();
+          return `answer(${prompt})`;
+        },
+      });
+      expect(first.ok).toBe(true);
+      const prompts = ["classify one", "classify two", "classify three"];
+      // Executor arrival follows asynchronous model-role reads, not logical admission.
+      expect([...first.executedPrompts].sort()).toEqual([...prompts].sort());
+      if (reorderReads) {
+        expect(configReads).toBe(3);
+        expect(first.executedPrompts).toEqual(["classify two", "classify one", "classify three"]);
+      }
+      expect(first.result).toEqual({ summary: prompts.map((prompt) => `answer(${prompt})`).join(" | ") });
+      expect(
+        first.journal
+          .filter((line) => line.kind === "agent_queued")
+          .map(({ callId, slotKey }) => ({ callId, slotKey })),
+      ).toEqual(
+        prompts.map((_, seq) => ({
+          callId: `call-${String(seq + 1).padStart(4, "0")}`,
+          slotKey: `classify\u001fclassify-candidate\u001eparallel-1\u001f${seq}`,
+        })),
+      );
+      // New recordings carry admission seq even when physical rows settle out of order.
+      const rows = readWorkflowReplayLog(root, first.runId).filter((entry) => entry.kind === "agent");
+      expect(rows.map((entry) => entry.v)).toEqual(prompts.map(() => WORKFLOW_REPLAY_SCHEMA_VERSION));
+      expect(
+        rows
+          .sort((left, right) => left.seq - right.seq)
+          .map(({ seq, node, ok, ...entry }) => ({
+            seq,
+            node,
+            ok,
+            text: "text" in entry ? entry.text : undefined,
+          })),
+      ).toEqual(
+        prompts.map((prompt, seq) => ({
+          seq,
+          node: JSON.stringify(["classify", "classify-candidate", seq]),
+          ok: true,
+          text: `answer(${prompt})`,
+        })),
+      );
+
+      const resumed = await runWorkflow(root, "mapped-replay", { resumeFromRunId: first.runId });
+      expect(resumed.ok).toBe(true);
+      expect(resumed.executedPrompts).toEqual([]);
+      expect(resumed.result).toEqual(first.result);
+      expect(resumed.replay).toMatchObject({ replayed: true, replayedCalls: 3, freshCalls: 0 });
+    } finally {
+      releaseFirst();
+      releaseThird();
+      readFile.mockRestore();
+      syncBuiltinESMExports();
+      cleanupReplayProjects();
+    }
+  },
+);

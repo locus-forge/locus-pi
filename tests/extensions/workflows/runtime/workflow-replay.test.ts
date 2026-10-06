@@ -173,42 +173,6 @@ describe("workflow --resume replays recorded agent calls", () => {
     expect(chained).toHaveLength(3);
   });
 
-  it("keeps mapped live occurrences out of the base replay node identity", async () => {
-    const root = temporaryProject();
-    writeWorkflow(
-      root,
-      "mapped-replay",
-      `export const meta = { name: "mapped-replay", description: "three mapped calls from one callsite" };
-export default async function runWorkflow(dsl) {
-  const values = ["one", "two", "three"];
-  const answers = await dsl.parallel(values.map((value) => () =>
-    dsl.agent("classify " + value, { label: "classify-candidate", phase: "classify" })
-  ));
-  return { summary: answers.join(" | ") };
-}
-`,
-    );
-
-    const first = await runWorkflow(root, "mapped-replay");
-    expect(first.ok).toBe(true);
-    expect(first.executedPrompts).toEqual(["classify one", "classify two", "classify three"]);
-    expect(
-      readWorkflowReplayLog(root, first.runId)
-        .filter((entry) => entry.kind === "agent")
-        .map((entry) => (entry as { node?: string }).node),
-    ).toEqual([
-      nodeName("classify-candidate", 0, "classify"),
-      nodeName("classify-candidate", 1, "classify"),
-      nodeName("classify-candidate", 2, "classify"),
-    ]);
-
-    const resumed = await runWorkflow(root, "mapped-replay", { resumeFromRunId: first.runId });
-    expect(resumed.ok).toBe(true);
-    expect(resumed.executedPrompts).toEqual([]);
-    expect(resumed.result).toEqual(first.result);
-    expect(resumed.replay).toMatchObject({ replayed: true, replayedCalls: 3, freshCalls: 0 });
-  });
-
   it("refuses a resumed source that declares a removed shaped option before the child and the record", async () => {
     const root = temporaryProject();
     writeWorkflow(root, "counted", COUNTED_WORKFLOW);
