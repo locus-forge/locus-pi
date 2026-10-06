@@ -228,7 +228,12 @@ not a missing proposal. Identical accepted duplicates are idempotent; different 
 fail `output-contract-conflict`. Schema, candidates and receipts are detached and frozen.
 
 A completed tool proposal remains provisional until the whole child and required
-storage finish. Protocol refusal before or after a proposal is `output-refused`;
+storage finish. The nonempty response identity and complete terminal tool set must agree
+with observed item IDs, call IDs, names and finalized raw arguments. Missing, additional,
+renamed or changed terminal evidence cannot commit a value. A mixed return/work-tool batch
+is one rejected submission: no sibling tool executes, in either order, and only the
+remaining correction allowance is available. Research in earlier turns is unaffected. Repeated executable item-added/done frames
+fail before tool dispatch; exact argument-finalization duplicates remain safe. Protocol refusal before or after a proposal is `output-refused`;
 incomplete is `output-incomplete`; provider errors remain failures; lost terminal/raw
 observation is `output-protocol-unknown`. None is inferred from English narrative or
 converted into a success. A failed store has no authoritative structured receipt.
@@ -261,7 +266,7 @@ No new global turn/tool/time defaults or durable restart clock is introduced; om
 axes remain unbounded. A new explicit run receives a new ledger and preserves earlier evidence.
 
 **Replay.** Only a committed v4 receipt replays: exact contract/dialect/schema digest,
-observer revision, full source and caller-input identities, applied allowances, spent
+observer revision (`codex-responses-v2`), full source and caller-input identities, applied allowances, spent
 counters, completed raw turn/call provenance, and schema/custom validation outcome must
 agree. Changed validator/closure source or caller inputs refuses reuse. Uncovered
 external callbacks/imports or non-replayable source cannot resume v4. The runner uses
@@ -277,7 +282,9 @@ refuse replay for otherwise valid trusted JavaScript; it does not restrict fresh
 or establish a sandbox or a full JavaScript dependency proof. Current validation
 runs again on immutable replayed data; mismatch or author errors are
 `replay-contract-failure`, without correction or a new model. Missing/uncommitted receipts,
-unknown effects or incomplete ledgers fail closed. V2/v3 records are never upgraded.
+unknown effects or incomplete ledgers fail closed. Earlier `codex-responses-v1` receipts
+remain readable but cannot be reused, because they do not prove exact terminal membership.
+V2/v3 records are never upgraded.
 A custom runtime embedder must supply verified source/input identities and a current host
 version reader for v4 replay. Warm sessions and durable elapsed time across restarts are
 outside this contract.
@@ -346,6 +353,10 @@ last text or a subset of several messages cannot authorize data. Raw phase is
 preserved before session JSONL persistence and in the next correction input.
 After inherited finish hooks, the live message, context history and returned messages
 must still match that raw text and phase; a conflict terminates without relabeling.
+Research work calls must appear exactly once in the completed terminal set, matching
+observed unique item/call IDs, names and finalized arguments, before any tool executes.
+Repeated work-item added/done frames fail because the SDK can dispatch them again;
+matching argument-finalization and exact terminal duplicates remain idempotent.
 Research work turns consume the existing turn/tool/time axes without spending an
 output slot. The first native output restricts active tools to empty; correction
 uses `tool_choice: "none"`. Unexpected correction calls have no effects and spend a
@@ -358,6 +369,9 @@ are terminal. Whole child completion and successful storage still establish auth
 **Receipts and replay.** Native uses distinct v5 provenance: raw response/message,
 text and original phase, payload-observed wire revision/schema digest and non-secret
 route, plus existing source/input/schema/validation and allowance/spent evidence.
+Native raw evidence uses observer revision `openai-responses-native-v2`; its wire
+revision remains `openai-responses-native-v1`. Earlier native observer-v1 receipts
+remain readable but cannot replay because exact research-tool membership was not proven.
 Zero real tool calls are valid; no tool name or fictional return call is present.
 The journal carries only `{source:"native", contractVersion:5, attempts}`.
 Replay revalidates committed data and freshly resolves the existing current

@@ -128,3 +128,29 @@ export function agentOutputAcceptance(
     ...(accepted.structuredReceipt === undefined ? {} : { structuredReceipt: accepted.structuredReceipt }),
   };
 }
+
+/** Custom tool completion is a host turn port, independent of command/permission policy. */
+export interface ReadOnlyAgentToolResult {
+  content: Array<{ type: "text"; text: string }>;
+  details?: Record<string, unknown>;
+  isError?: boolean;
+  /** Stop the current Pi tool turn; supported structured hosts also fence generation. */
+  terminate?: boolean;
+}
+
+/** Exact identity comparison for the native message contract; absent phase remains distinct from null. */
+export const sameAgentNativeMessage = (left: AgentNativeMessage, right: AgentNativeMessage): boolean =>
+  left.messageId === right.messageId &&
+  left.text === right.text &&
+  Object.hasOwn(left, "phase") === Object.hasOwn(right, "phase") &&
+  left.phase === right.phase;
+
+/** Scalar equality for the established route contract, without qualification or secret inspection. */
+export function sameAgentNativeRoute(left: AgentNativeRoute, right: AgentNativeRoute): boolean {
+  return (
+    left.provider === right.provider &&
+    left.api === right.api &&
+    left.baseUrl === right.baseUrl &&
+    left.model === right.model
+  );
+}

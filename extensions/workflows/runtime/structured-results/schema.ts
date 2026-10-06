@@ -3,7 +3,8 @@ export type WorkflowJSONValue =
   null | boolean | number | string | WorkflowJSONValue[] | { [key: string]: WorkflowJSONValue };
 export type WorkflowJSONSchema = Readonly<Record<string, unknown>>;
 export const WORKFLOW_SCHEMA_DIALECT = "locus-json-subset-v1" as const;
-export const WORKFLOW_RAW_OBSERVER_REVISION = "codex-responses-v1" as const;
+export const WORKFLOW_RAW_OBSERVER_REVISION = "codex-responses-v2" as const;
+export const WORKFLOW_NATIVE_OBSERVER_REVISION = "openai-responses-native-v2" as const;
 
 interface WorkflowStructuredContractBase {
   choices?: never;

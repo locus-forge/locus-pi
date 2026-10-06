@@ -55,6 +55,21 @@ async function resume(
 }
 
 describe("v5 replay with fresh existing current model resolution", () => {
+  it("keeps wire v1 while refusing earlier weak native observer receipts before child work", async () => {
+    const first = await structuredSdk(options, [nativeTurn()]);
+    const records = structuredClone(first.replayRecord);
+    const entry = records[0]!;
+    if (entry.kind !== "agent" || !entry.ok || entry.structuredReceipt?.version !== 5)
+      throw new Error("missing native fixture receipt");
+    expect(entry.structuredReceipt.observerRevision).toBe("openai-responses-native-v2");
+    expect(entry.structuredReceipt.rawTurns[0]!.payload.wireRevision).toBe("openai-responses-native-v1");
+    expect((await resume(records)).value).toBe("known");
+    entry.structuredReceipt.observerRevision = "openai-responses-native-v1";
+    const result = await resume(records);
+    expect(result.error).toMatchObject({ message: expect.stringContaining("replay-contract-failure") });
+    expect(result.child).toBe(0);
+  });
+
   it("uses the execution identity for a whitespace-padded current named profile", async () => {
     const root = mkdtempSync(path.join(tmpdir(), "native-named-route-"));
     const harness = createHarness(root);

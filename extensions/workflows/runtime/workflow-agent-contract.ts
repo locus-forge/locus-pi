@@ -1,5 +1,10 @@
-import type { WorkflowJSONSchema, WorkflowJSONValue, WorkflowValueValidator } from "./structured-results/schema.js";
-import type { WorkflowStructuredCall } from "./structured-results/return.js";
+import type {
+  WorkflowJSONSchema,
+  WorkflowJSONValue,
+  WorkflowValueValidator,
+  WorkflowStructuredContract,
+} from "./structured-results/schema.js";
+import type { ReadOnlyAgentCustomTool } from "../../_shared/agent-runtime/agent-read-only-policy.js";
 /**
  * workflow-agent-contract.ts — the shared agent-call contract: what a workflow asks a
  * child for (`WorkflowAgentRequest`), what a child hands back (`WorkflowAgentResult`),
@@ -18,7 +23,11 @@ import type { WorkflowStructuredCall } from "./structured-results/return.js";
  * that rule 7 of `scripts/check-extension-layers.ts` proves transitively.
  */
 
-import type { AgentOutputAcceptance } from "../../_shared/agent-runtime/agent-runner.js";
+import type {
+  AgentOutputAcceptance,
+  AgentResponseAcceptance,
+  AgentStructuredReceipt,
+} from "../../_shared/agent-runtime/agent-runner.js";
 import type { EvidenceEvaluation } from "../../_shared/agent-runtime/agent-evidence-evaluator.js";
 import type { PermissionMode } from "../../_shared/agent-runtime/agents.js";
 // Read as a VALUE so a thrown cause is validated against the one closed list rather than a
@@ -584,4 +593,24 @@ export function workflowAgentDisplayName(req: WorkflowAgentRequest): string {
   return (req.executionMode ?? (req.agent === undefined ? "bare" : "named")) === "named"
     ? (req.agent ?? "named-agent")
     : "sub-agent";
+}
+
+export interface WorkflowStructuredSourceIdentity {
+  sha256: string;
+  covered: boolean;
+  inputSha256?: string;
+}
+export interface WorkflowStructuredCall {
+  contract: WorkflowStructuredContract;
+  controller(): { tool?: ReadOnlyAgentCustomTool; acceptance: AgentResponseAcceptance };
+  configure(limits: {
+    maxTurns?: number | undefined;
+    maxToolCalls?: number | undefined;
+    timeoutMs?: number | undefined;
+  }): void;
+  canRetry(): boolean;
+  remainingTimeout(): number | undefined;
+  replay(receipt: AgentStructuredReceipt, text: string): Promise<WorkflowJSONValue>;
+  sourceIdentity: string | "unavailable";
+  inputIdentity: string | "unavailable";
 }

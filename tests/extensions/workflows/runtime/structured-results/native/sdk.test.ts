@@ -383,3 +383,84 @@ it.each(["beforeToolCall", "finishTurn", "prepareRequest"])(
     expect(result.counters.generations).toBe(1);
   },
 );
+
+describe("native research terminal membership", () => {
+  it.each(["matching", "omitted", "duplicate"])("requires exact %s work set before effects", async (kind) => {
+    const research: any[] = JSON.parse(JSON.stringify(rawTurn(["{}"], "completed", [], ["fixture_work"])));
+    if (kind === "omitted") research.at(-1).response.output = [];
+    if (kind === "duplicate") research.at(-1).response.output.push({ ...research.at(-1).response.output[0] });
+    const result = await structuredSdk(options, [research, nativeTurn()]);
+    if (kind === "matching") {
+      expect(result.error).toBeUndefined();
+      expect(result.value).toBe("known");
+      expect(result.counters).toMatchObject({ generations: 2, tools: 1, effects: 1 });
+    } else {
+      expect(cause(result)).toBe("output-protocol-unknown");
+      expect(result.value).toBeUndefined();
+      expect(result.acceptance).toBeUndefined();
+      expect(result.counters).toMatchObject({ generations: 1, tools: 0, effects: 0 });
+    }
+  });
+});
+
+it("rejects new native work evidence after the terminal set before any sibling executes", async () => {
+  const research: any[] = JSON.parse(JSON.stringify(rawTurn(["{}"], "completed", [], ["fixture_work"])));
+  const item = { type: "function_call", id: "late_item", call_id: "late_call", name: "fixture_work", arguments: "{}" };
+  research.push(
+    { type: "response.output_item.added", output_index: 1, item: { ...item, arguments: "" } },
+    { type: "response.function_call_arguments.done", output_index: 1, item_id: item.id, arguments: item.arguments },
+    { type: "response.output_item.done", output_index: 1, item },
+  );
+  const result = await structuredSdk(options, [research, nativeTurn()]);
+  expect(cause(result)).toBe("output-protocol-unknown");
+  expect(result.value).toBeUndefined();
+  expect(result.acceptance).toBeUndefined();
+  expect(result.counters).toMatchObject({ generations: 1, tools: 0, effects: 0 });
+});
+
+it("rejects two native work items sharing one call identity before either executes", async () => {
+  const events: any[] = JSON.parse(
+    JSON.stringify(rawTurn(["{}", "{}"], "completed", [], ["fixture_work", "fixture_work"])),
+  );
+  const firstId = events[1].item.call_id;
+  const secondId = events[4].item.call_id;
+  for (const event of events) {
+    if (event.item?.call_id === secondId) event.item.call_id = firstId;
+    for (const item of event.response?.output ?? []) if (item.call_id === secondId) item.call_id = firstId;
+  }
+  const result = await structuredSdk(options, [events, nativeTurn()]);
+  expect(cause(result)).toBe("output-protocol-unknown");
+  expect(result.acceptance).toBeUndefined();
+  expect(result.counters).toMatchObject({ generations: 1, tools: 0, effects: 0 });
+});
+
+it.each([
+  "added-before-terminal",
+  "done-before-terminal",
+  "added-after-terminal",
+  "done-after-terminal",
+  "arguments-after-terminal",
+  "terminal-duplicate",
+])("honors actual SDK dispatch causality for %s", async (kind) => {
+  const research: any[] = JSON.parse(JSON.stringify(rawTurn(["{}"], "completed", [], ["fixture_work"])));
+  const repeats = kind.startsWith("added")
+    ? JSON.parse(JSON.stringify(research.slice(1, 4)))
+    : kind.startsWith("done")
+      ? [JSON.parse(JSON.stringify(research[3]))]
+      : kind.startsWith("arguments")
+        ? [JSON.parse(JSON.stringify(research[2]))]
+        : [JSON.parse(JSON.stringify(research.at(-1)))];
+  if (kind.endsWith("before-terminal")) research.splice(4, 0, ...repeats);
+  else research.push(...repeats);
+  const result = await structuredSdk(options, [research, nativeTurn()]);
+  const harmless = kind === "arguments-after-terminal" || kind === "terminal-duplicate";
+  if (harmless) {
+    expect(result.error).toBeUndefined();
+    expect(result.value).toBe("known");
+    expect(result.counters).toMatchObject({ generations: 2, tools: 1, effects: 1 });
+  } else {
+    expect(cause(result)).toBe("output-protocol-unknown");
+    expect(result.acceptance).toBeUndefined();
+    expect(result.counters).toMatchObject({ generations: 1, tools: 0, effects: 0 });
+  }
+});

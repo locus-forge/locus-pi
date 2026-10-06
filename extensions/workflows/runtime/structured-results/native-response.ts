@@ -31,14 +31,8 @@ export function nativeWorkflowRoute(model: unknown): AgentNativeRoute {
     model: id,
   });
 }
-export function sameNativeWorkflowRoute(left: AgentNativeRoute, right: AgentNativeRoute): boolean {
-  return (
-    left.provider === right.provider &&
-    left.api === right.api &&
-    left.baseUrl === right.baseUrl &&
-    left.model === right.model
-  );
-}
+import { sameAgentNativeRoute as sameNativeWorkflowRoute } from "../../../_shared/agent-runtime/output-acceptance/agent-output-contract.js";
+export { sameAgentNativeRoute as sameNativeWorkflowRoute } from "../../../_shared/agent-runtime/output-acceptance/agent-output-contract.js";
 
 /** Qualify fresh non-secret registry visibility without resolving host-managed authentication. */
 export function nativeWorkflowReplayRoute(model: unknown, registry: unknown): AgentNativeRoute {
@@ -248,11 +242,8 @@ export function formatNativeWorkflowPayload(
   return { payload: immutableJSON(projected), route };
 }
 
-export const sameNativeWorkflowMessage = (left: AgentNativeMessage, right: AgentNativeMessage): boolean =>
-  left.messageId === right.messageId &&
-  left.text === right.text &&
-  Object.hasOwn(left, "phase") === Object.hasOwn(right, "phase") &&
-  left.phase === right.phase;
+import { sameAgentNativeMessage as sameNativeWorkflowMessage } from "../../../_shared/agent-runtime/output-acceptance/agent-output-contract.js";
+export { sameAgentNativeMessage as sameNativeWorkflowMessage } from "../../../_shared/agent-runtime/output-acceptance/agent-output-contract.js";
 
 /** Owns raw Responses identity/phase and its SDK projection, never candidate validation or quotas. */
 export class NativeWorkflowResponse {
@@ -262,7 +253,10 @@ export class NativeWorkflowResponse {
   readonly added = new Map<string, { responseId: string; phase?: unknown }>();
   readonly completedText = new Map<string, string>();
   readonly preserved = new Set<string>();
-  readonly workCalls = new Map<string, { responseId: string; callId: string; name: string; arguments?: string }>();
+  readonly workCalls = new Map<
+    string,
+    { responseId: string; callId: string; name: string; arguments?: string; done?: boolean }
+  >();
   readonly terminals = new Map<string, string>();
   routeSnapshot: AgentNativeRoute | undefined;
   wireSchemaSha256 = "";
@@ -330,9 +324,14 @@ export class NativeWorkflowResponse {
         )
           throw new Error("Native work item lacks identity");
         const prior = this.workCalls.get(item.id);
+        if (this.terminals.has(responseId)) throw new Error("Native work item frame appeared after terminal");
         if (
-          prior !== undefined &&
-          (prior.responseId !== responseId || prior.callId !== item.call_id || prior.name !== item.name)
+          (prior !== undefined &&
+            (event.type === "response.output_item.added" ||
+              prior.responseId !== responseId ||
+              prior.callId !== item.call_id ||
+              prior.name !== item.name)) ||
+          [...this.workCalls].some(([id, call]) => id !== item.id && call.callId === item.call_id)
         )
           throw new Error("Native work item identity changed");
         if (event.type === "response.output_item.added")
@@ -340,11 +339,13 @@ export class NativeWorkflowResponse {
         else {
           if (
             prior === undefined ||
+            prior.done === true ||
             typeof item.arguments !== "string" ||
             (prior.arguments !== undefined && prior.arguments !== item.arguments)
           )
             throw new Error("Native work arguments changed or lack added item");
           prior.arguments = item.arguments;
+          prior.done = true;
         }
       }
       if (event.type === "response.function_call_arguments.done") {
@@ -365,12 +366,14 @@ export class NativeWorkflowResponse {
         const serialized = canonicalWorkflowJSON(response.output);
         if (this.terminals.has(responseId) && this.terminals.get(responseId) !== serialized)
           throw new Error("Conflicting duplicate native terminal output");
+        const seen = new Set<string>();
         for (const entry of response.output) {
           const terminal = record(entry);
           if (terminal?.type === "function_call") {
             const call = typeof terminal.id === "string" ? this.workCalls.get(terminal.id) : undefined;
             if (
               call === undefined ||
+              seen.has(terminal.id as string) ||
               call.responseId !== responseId ||
               call.arguments === undefined ||
               call.callId !== terminal.call_id ||
@@ -378,8 +381,11 @@ export class NativeWorkflowResponse {
               call.arguments !== terminal.arguments
             )
               throw new Error("Native terminal work call lacks matching finalized evidence");
+            seen.add(terminal.id as string);
           }
         }
+        if ([...this.workCalls].some(([id, call]) => call.responseId === responseId && !seen.has(id)))
+          throw new Error("Native terminal omitted observed work evidence");
         this.terminals.set(responseId, serialized);
       }
       if (item?.type === "message") {

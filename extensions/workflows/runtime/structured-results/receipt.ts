@@ -1,6 +1,10 @@
 import { WORKFLOW_NATIVE_WIRE_REVISION, nativeWorkflowRoute } from "./native-response.js";
 /** Immutable structured replay provenance, identities and cumulative ledger validation. */
-import type { AgentStructuredReceipt, AgentExecutionLedger } from "../../../_shared/agent-runtime/agent-runner.js";
+import type {
+  AgentStructuredReceipt,
+  AgentExecutionLedger,
+  AgentFailureCause,
+} from "../../../_shared/agent-runtime/agent-runner.js";
 import {
   immutableJSON,
   decodeWorkflowProposal,
@@ -9,6 +13,7 @@ import {
   type WorkflowValueValidator,
   canonicalWorkflowJSON,
   WORKFLOW_RAW_OBSERVER_REVISION,
+  WORKFLOW_NATIVE_OBSERVER_REVISION,
   type WorkflowStructuredContract,
   type WorkflowJSONValue,
 } from "./schema.js";
@@ -110,7 +115,10 @@ export function verifyWorkflowStructuredReceipt(
           !Array.isArray(turn.calls)
         )
           throw new Error("Invalid raw terminal provenance");
+        if (proposal !== undefined) throw new Error("Raw generation followed accepted output");
         responses.add(turn.responseId);
+        const mixed = turn.workTools && turn.calls.length > 0;
+        if (mixed) counted++;
         if (turn.calls.length === 0 && (!turn.workTools || counted > 0)) counted++;
         for (const call of turn.calls) {
           if (
@@ -121,8 +129,9 @@ export function verifyWorkflowStructuredReceipt(
           )
             throw new Error("Invalid raw call identity");
           ids.add(call.callId);
+          if (mixed && call.validation !== "rejected") throw new Error("Mixed batch cannot supply accepted output");
           if (call.validation === "rejected" && proposal === undefined) {
-            counted++;
+            if (!mixed) counted++;
             continue;
           }
           const raw = JSON.parse(call.arguments) as unknown;
@@ -155,7 +164,7 @@ export function verifyWorkflowStructuredReceipt(
     receipt.sourceIdentity !== sourceIdentity ||
     canonicalWorkflowJSON(receipt.contract) !== canonicalWorkflowJSON(contract) ||
     receipt.observerRevision !==
-      (contract.version === 5 ? WORKFLOW_NATIVE_WIRE_REVISION : WORKFLOW_RAW_OBSERVER_REVISION)
+      (contract.version === 5 ? WORKFLOW_NATIVE_OBSERVER_REVISION : WORKFLOW_RAW_OBSERVER_REVISION)
   )
     throw new Error("replay-contract-failure: structured receipt/source identity mismatch");
   return receipt;
@@ -170,7 +179,8 @@ export interface WorkflowStructuredRawTurn {
   responseId: string;
   terminal?: "completed";
   calls: Map<string, string>;
-  items: Map<string, { name: string; callId: string }>;
+  items: Map<string, WorkflowRawToolIdentity>;
+  rejectedBatch?: string;
   native?: {
     payload?: AgentNativeTurn["payload"];
     output?: AgentNativeMessage;
@@ -198,7 +208,7 @@ export function createWorkflowStructuredReceipt(input: {
     schemaSha256: input.schemaSha256,
     sourceIdentity: input.sourceIdentity,
     inputIdentity: input.inputIdentity,
-    observerRevision: input.contract.version === 5 ? WORKFLOW_NATIVE_WIRE_REVISION : WORKFLOW_RAW_OBSERVER_REVISION,
+    observerRevision: input.contract.version === 5 ? WORKFLOW_NATIVE_OBSERVER_REVISION : WORKFLOW_RAW_OBSERVER_REVISION,
     value: input.value,
     allowances: {
       outputAttempts: input.contract.maxAttempts,
@@ -271,4 +281,88 @@ export function revalidateWorkflowStructuredValue(
   } catch (error) {
     throw new Error(`replay-contract-failure: ${String(error)}`);
   }
+}
+
+export interface WorkflowRawToolIdentity {
+  name: string;
+  callId: string;
+  arguments?: string;
+  done?: boolean;
+}
+/** Pure finalized-item proof; the controller applies the returned evidence to its current turn. */
+export function verifyWorkflowRawToolItem(
+  item: Record<string, unknown>,
+  turn: WorkflowStructuredRawTurn,
+  turns: readonly WorkflowStructuredRawTurn[],
+  finalItem: boolean,
+):
+  | { identity: WorkflowRawToolIdentity; evidence: { arguments: string; done?: boolean } }
+  | { reason: string; failureCause: AgentFailureCause } {
+  const identity = typeof item.id === "string" ? turn.items.get(item.id) : undefined;
+  if (
+    identity === undefined ||
+    identity.name !== item.name ||
+    identity.callId !== item.call_id ||
+    typeof item.arguments !== "string"
+  )
+    return {
+      reason: "Finalized tool lacks matching observed identity/arguments",
+      failureCause: "output-protocol-unknown",
+    };
+  if (
+    turns.some((prior) =>
+      [...prior.items].some(([id, call]) => call.callId === identity.callId && (prior !== turn || id !== item.id)),
+    )
+  )
+    return { reason: "Call identity reused across raw responses", failureCause: "output-protocol-unknown" };
+  if (finalItem && identity.done)
+    return { reason: "Repeated raw tool item finalization", failureCause: "output-protocol-unknown" };
+  if (identity.arguments !== undefined && identity.arguments !== item.arguments)
+    return { reason: "Conflicting finalized tool arguments", failureCause: "output-contract-conflict" };
+  return { identity, evidence: { arguments: item.arguments, ...(finalItem ? { done: true } : {}) } };
+}
+export function workflowRawRefusal(output: unknown): boolean {
+  return (
+    Array.isArray(output) &&
+    output.some(
+      (item) =>
+        item?.type === "message" &&
+        Array.isArray(item.content) &&
+        item.content.some(
+          (part: unknown) => part !== null && typeof part === "object" && "type" in part && part.type === "refusal",
+        ),
+    )
+  );
+}
+
+/** A terminal frame confirms exactly the finalized tool items already observed. */
+export function verifyWorkflowRawTerminal(
+  output: unknown,
+  observed: ReadonlyMap<string, WorkflowRawToolIdentity>,
+): { reason: string; failureCause: AgentFailureCause } | undefined {
+  const unknown = (reason: string) => ({ reason, failureCause: "output-protocol-unknown" as const });
+  if (!Array.isArray(output)) return unknown("Raw terminal output unavailable");
+  if (workflowRawRefusal(output))
+    return { reason: "Provider refused structured output", failureCause: "output-refused" };
+  const seen = new Set<string>();
+  for (const entry of output) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry))
+      return unknown("Malformed raw terminal output item");
+    const item = entry as Record<string, unknown>;
+    if (item.type === "function_call") {
+      const identity = typeof item.id === "string" ? observed.get(item.id) : undefined;
+      if (
+        identity === undefined ||
+        seen.has(item.id as string) ||
+        identity.name !== item.name ||
+        identity.callId !== item.call_id ||
+        identity.arguments === undefined ||
+        identity.arguments !== item.arguments
+      )
+        return unknown("Terminal tool does not match finalized raw evidence");
+      seen.add(item.id as string);
+    }
+  }
+  if (seen.size !== observed.size) return unknown("Terminal output omitted observed tool evidence");
+  return undefined;
 }

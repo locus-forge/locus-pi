@@ -1,7 +1,10 @@
-import { NativeWorkflowResponse, sameNativeWorkflowRoute, WORKFLOW_NATIVE_WIRE_REVISION } from "./native-response.js";
+import { NativeWorkflowResponse, sameNativeWorkflowRoute } from "./native-response.js";
 import type { AgentNativeRoute } from "../../../_shared/agent-runtime/output-acceptance/agent-output-contract.js";
 import {
   verifyWorkflowStructuredReceipt,
+  verifyWorkflowRawTerminal,
+  verifyWorkflowRawToolItem,
+  workflowRawRefusal,
   createWorkflowStructuredReceipt,
   workflowStructuredSourceIdentities,
   revalidateWorkflowStructuredValue,
@@ -12,7 +15,6 @@ import { supportsObservedOutputVersion } from "../../../_shared/agent-runtime/ou
 import type {
   AgentResponseAcceptance,
   AgentExecutionLedger,
-  AgentStructuredReceipt,
   AgentFailureCause,
 } from "../../../_shared/agent-runtime/agent-runner.js";
 import type { ReadOnlyAgentCustomTool } from "../../../_shared/agent-runtime/agent-read-only-policy.js";
@@ -30,25 +32,8 @@ import {
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
-export interface WorkflowStructuredSourceIdentity {
-  sha256: string;
-  covered: boolean;
-  inputSha256?: string;
-}
-export interface WorkflowStructuredCall {
-  contract: WorkflowStructuredContract;
-  controller(): { tool?: ReadOnlyAgentCustomTool; acceptance: AgentResponseAcceptance };
-  configure(limits: {
-    maxTurns?: number | undefined;
-    maxToolCalls?: number | undefined;
-    timeoutMs?: number | undefined;
-  }): void;
-  canRetry(): boolean;
-  remainingTimeout(): number | undefined;
-  replay(receipt: AgentStructuredReceipt, text: string): Promise<WorkflowJSONValue>;
-  sourceIdentity: string | "unavailable";
-  inputIdentity: string | "unavailable";
-}
+import type { WorkflowStructuredCall, WorkflowStructuredSourceIdentity } from "../workflow-agent-contract.js";
+export type { WorkflowStructuredCall, WorkflowStructuredSourceIdentity } from "../workflow-agent-contract.js";
 
 export function createWorkflowStructuredCall(
   contract: WorkflowStructuredContract,
@@ -63,14 +48,7 @@ export function createWorkflowStructuredCall(
   const { sourceIdentity, inputIdentity } = workflowStructuredSourceIdentities(identity);
   const turns: WorkflowStructuredRawTurn[] = [];
   const hostCalls = new Map<string, string>();
-  const calls = new Map<
-    string,
-    {
-      raw: string;
-      validation: "accepted" | "rejected" | "duplicate";
-      error?: string;
-    }
-  >();
+  const calls = new Map<string, { raw: string } & ReturnType<typeof propose>>();
   let turn: WorkflowStructuredRawTurn | undefined;
   let schema: WorkflowSchemaValidator | undefined;
   let schemaSha256 = "";
@@ -157,6 +135,35 @@ export function createWorkflowStructuredCall(
       ...(error === undefined ? {} : { error }),
     };
   }
+  function finalizedItem(item: Record<string, unknown>, finalItem = false): void {
+    const proof = verifyWorkflowRawToolItem(item, turn!, turns, finalItem);
+    if ("failureCause" in proof) fail(proof.reason, proof.failureCause);
+    else {
+      Object.assign(proof.identity, proof.evidence);
+      if (proof.identity.name !== "workflow_return") turn!.workTools = true;
+    }
+  }
+  function reconcileTerminal(output: unknown): void {
+    if (turn === undefined) return;
+    const mismatch = verifyWorkflowRawTerminal(output, turn.items);
+    if (mismatch !== undefined) fail(mismatch.reason, mismatch.failureCause);
+    if (failed !== undefined || turn.terminal === "completed") return;
+    const returns = [...turn.items.values()].filter((item) => item.name === "workflow_return");
+    if (turn.workTools && returns.length > 0) {
+      // Classify the whole batch before validating any return or dispatching siblings.
+      restrict?.();
+      turn.rejectedBatch = "workflow_return must be the only tool in its submission batch";
+      attempts++;
+      for (const item of returns) {
+        turn.calls.set(item.callId, item.arguments!);
+        calls.set(item.callId, { raw: item.arguments!, validation: "rejected", error: turn.rejectedBatch });
+      }
+      lastError = turn.rejectedBatch;
+      exhaust();
+    } else {
+      for (const item of returns) finalized(item.callId, item.name, item.arguments);
+    }
+  }
   function bindHostCall(item: Record<string, unknown>): void {
     if (typeof item.id !== "string" || typeof item.call_id !== "string" || item.id === "" || item.call_id === "") {
       fail("Raw tool item identity unavailable", "output-protocol-unknown");
@@ -178,7 +185,12 @@ export function createWorkflowStructuredCall(
     const type = data.type;
     const response = record(data.response);
     if (type === "response.created") {
-      if (typeof response?.id !== "string" || response.id === "" || turn.responseId !== "") {
+      if (
+        typeof response?.id !== "string" ||
+        response.id === "" ||
+        turn.responseId !== "" ||
+        turns.some((prior) => prior !== turn && prior.responseId === response.id)
+      ) {
         fail("Ambiguous raw response identity", "output-protocol-unknown");
         return;
       }
@@ -197,21 +209,18 @@ export function createWorkflowStructuredCall(
       typeof item.name === "string"
     ) {
       const prior = turn.items.get(item.id);
-      if (prior !== undefined && (prior.callId !== item.call_id || prior.name !== item.name))
-        fail("Raw tool item identity changed", "output-protocol-unknown");
-      turn.items.set(item.id, { name: item.name, callId: item.call_id });
+      if (prior !== undefined) fail("Repeated raw tool item added", "output-protocol-unknown");
+      if (prior === undefined) turn.items.set(item.id, { name: item.name, callId: item.call_id });
       bindHostCall(item);
     }
     if (type === "response.function_call_arguments.done") {
       const identity = typeof data.item_id === "string" ? turn.items.get(data.item_id) : undefined;
       if (identity === undefined) fail("Finalized arguments lack observed call identity", "output-protocol-unknown");
-      else if (!native) finalized(identity.callId, identity.name, data.arguments);
+      else if (!native)
+        finalizedItem({ id: data.item_id, name: identity.name, call_id: identity.callId, arguments: data.arguments });
     }
     if (type === "response.output_item.done" && item?.type === "function_call") {
-      bindHostCall(item);
-      if (typeof item.call_id !== "string" || typeof item.name !== "string")
-        fail("Finalized tool item lacks identity", "output-protocol-unknown");
-      else if (!native) finalized(item.call_id, item.name, item.arguments);
+      if (!native) finalizedItem(item, true);
       else turn.workTools = true;
     }
     if (type === "response.incomplete" || response?.status === "incomplete")
@@ -219,28 +228,12 @@ export function createWorkflowStructuredCall(
     if (type === "response.failed" || type === "error" || response?.status === "failed")
       fail("Provider raw error", "provider-error");
     if (type === "response.completed" || type === "response.done" || type === "response.incomplete") {
-      if (response?.id !== turn.responseId || response?.status !== "completed") {
+      if (turn.responseId === "" || response?.id !== turn.responseId || response?.status !== "completed") {
         if (failed === undefined) fail("Unknown raw terminal response", "output-protocol-unknown");
       } else {
         const output = response.output;
-        if (!Array.isArray(output)) fail("Raw terminal output unavailable", "output-protocol-unknown");
-        else
-          for (const entry of output) {
-            const item = record(entry);
-            if (item?.type === "function_call") {
-              bindHostCall(item);
-              if (typeof item.call_id !== "string" || typeof item.name !== "string")
-                fail("Terminal tool lacks identity", "output-protocol-unknown");
-              else if (!native) finalized(item.call_id, item.name, item.arguments);
-              else turn.workTools = true;
-            }
-            if (
-              item?.type === "message" &&
-              Array.isArray(item.content) &&
-              item.content.some((part) => record(part)?.type === "refusal")
-            )
-              fail("Provider refused structured output", "output-refused");
-          }
+        if (!native) reconcileTerminal(output);
+        else if (workflowRawRefusal(output)) fail("Provider refused structured output", "output-refused");
         if (turn.terminal === "completed") return;
         turn.terminal = "completed";
         if (native) completeNative(output);
@@ -335,6 +328,7 @@ export function createWorkflowStructuredCall(
       providerEvent,
       beforeTool(context) {
         if (failed !== undefined) return { block: true, terminate: true, reason: failed.reason };
+        if (turn?.rejectedBatch !== undefined) return { block: true, terminate: true, reason: turn.rejectedBatch };
         const data = record(context);
         const toolCall = record(data?.toolCall);
         if (
@@ -438,13 +432,18 @@ export function createWorkflowStructuredCall(
       const proposal = calls.get(hostCalls.get(callId) ?? "");
       const reason = signal.aborted ? "Cancelled; no output committed" : (failed?.reason ?? proposal?.error);
       if (proposal === undefined || reason !== undefined)
-        return { content: [{ type: "text", text: reason ?? "Raw return observation unavailable" }], isError: true };
+        return {
+          content: [{ type: "text", text: reason ?? "Raw return observation unavailable" }],
+          isError: true,
+          terminate: true,
+        };
       if (accepted !== undefined) accepted.executed = true;
       return {
+        terminate: true,
         content: [
           {
             type: "text",
-            text: "Value accepted provisionally. Finish normally; whole child completion and storage are required.",
+            text: "Value accepted provisionally; whole child completion and storage are required.",
           },
         ],
       };
