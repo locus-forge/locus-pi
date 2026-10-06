@@ -5,6 +5,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { WorkflowAgentResult } from "../../../../../extensions/workflows/runtime/workflow-runtime.js";
 import { runStarter } from "./starter-fixture.js";
 import { orchestrationOnlyWorkflowSourceShapeDiagnostics } from "../../../../../extensions/workflows/tool/workflow-source-shape.js";
+import { checkWorkflowSourceText } from "../../../../../extensions/workflows/tool/workflow-source-check-tool.js";
+import { staticWorkflowMeta } from "../../../../../extensions/workflows/catalog/workflow-meta.js";
 
 const base = "extensions/workflows/references/examples/starters";
 const starters = [
@@ -19,8 +21,12 @@ const originalWork = "First complete handoff\n  required evidence: missing\narti
 const correctedWork = "Corrected complete handoff\n  verified: required check\nartifact: changed-source.ts\n";
 
 function checkSource(source: string, label: string): void {
+  const diagnostics =
+    staticWorkflowMeta(source).profile === "dataflow-v1"
+      ? checkWorkflowSourceText(source, "dataflow-v1")
+      : orchestrationOnlyWorkflowSourceShapeDiagnostics(source);
   expect(
-    orchestrationOnlyWorkflowSourceShapeDiagnostics(source).filter((diagnostic) => diagnostic.severity === "error"),
+    diagnostics.filter((diagnostic) => diagnostic.severity === "error"),
     label,
   ).toEqual([]);
   execFileSync(process.execPath, ["--input-type=module", "--check"], { input: source });
@@ -32,7 +38,7 @@ beforeAll(() => {
 });
 
 describe("small agentic starters with real runtime and scripted children", () => {
-  it("checks complete current authoring snippets with Node and the actual orchestration-only checker", () => {
+  it("checks complete current authoring snippets with Node and their explicitly matching source modes", () => {
     const references = "skills/locus-pi-workflow-create/references";
     const documents = [
       "docs/workflows/create.md",

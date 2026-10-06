@@ -88,3 +88,99 @@ export function escapedWorkflowIdentifiers(root: SgNode): SgNode[] {
     .flatMap((kind) => root.findAll({ rule: { kind } }))
     .filter((node) => node.text().includes("\\"));
 }
+
+/** The containing use outside redundant parentheses; arguments and receiver roles stay distinct. */
+export function parentOutsideParentheses(node: SgNode): SgNode | undefined {
+  let parent = node.parent();
+  while (parent?.kind() === "parenthesized_expression") parent = parent.parent();
+  return parent ?? undefined;
+}
+
+/** Ordinary array/string callable property fact; use-role and uncertainty policy belong to callers. */
+export function isWorkflowNativeMethod(name: string, kind?: "array" | "string"): boolean {
+  return (
+    (kind !== "string" && typeof Object([])[name] === "function") ||
+    (kind !== "array" && typeof Object("")[name] === "function")
+  );
+}
+
+/** A decoder for literal JavaScript data, deliberately not a constant evaluator. */
+export function readWorkflowLiteralData(
+  input: SgNode | null | undefined,
+  resolve?: (node: SgNode) => SgNode | undefined,
+  seen = new Set<number>(),
+): unknown {
+  const node = unwrapParentheses(input ?? undefined);
+  if (node === undefined) throw new Error("requires literal JSON data");
+  if (node.kind() === "identifier" && resolve !== undefined) {
+    if (seen.has(node.id())) throw new Error("cyclic literal reference");
+    return readWorkflowLiteralData(resolve(node), resolve, new Set([...seen, node.id()]));
+  }
+  const string = staticStringValue(node);
+  if (string !== undefined) return string;
+  if (node.kind() === "true") return true;
+  if (node.kind() === "false") return false;
+  if (node.kind() === "null") return null;
+  if (node.kind() === "unary_expression") {
+    const operator = node.field("operator")?.text();
+    const argument = unwrapParentheses(node.field("argument") ?? undefined);
+    if (!["+", "-"].includes(operator ?? "") || argument?.kind() !== "number")
+      throw new Error("requires literal finite JSON numbers");
+    const value = readWorkflowLiteralData(argument, resolve, seen);
+    if (typeof value !== "number") throw new Error("requires literal finite JSON numbers");
+    return operator === "-" ? -value : value;
+  }
+  if (node.kind() === "number") {
+    const value = Number(node.text().replaceAll("_", ""));
+    if (!Number.isFinite(value)) throw new Error("requires literal finite JSON numbers");
+    return value;
+  }
+  if (node.kind() === "array") {
+    const result: unknown[] = [];
+    let awaiting = true;
+    for (const child of node.children()) {
+      if (["[", "]", "comment"].includes(String(child.kind()))) continue;
+      if (child.kind() === ",") {
+        if (awaiting) throw new Error("requires dense literal arrays");
+        awaiting = true;
+      } else {
+        result.push(readWorkflowLiteralData(child, resolve, seen));
+        awaiting = false;
+      }
+    }
+    return result;
+  }
+  if (node.kind() === "object") {
+    const entries: [string, unknown][] = [];
+    const keys = new Set<string>();
+    for (const child of node.children()) {
+      if (["{", "}", ",", "comment"].includes(String(child.kind()))) continue;
+      const key = child.kind() === "pair" ? staticObjectKey(child.field("key")) : undefined;
+      if (key === undefined || key === "__proto__" || keys.has(key))
+        throw new Error("requires distinct literal data properties; no __proto__, spreads, methods or computed keys");
+      keys.add(key);
+      entries.push([key, readWorkflowLiteralData(child.field("value"), resolve, seen)]);
+    }
+    return Object.fromEntries(entries);
+  }
+  throw new Error("requires literal JSON data; dynamic expressions are runtime-only");
+}
+
+/** Ordinary receiver kind from syntax and caller-proven immutable references; never evaluates data. */
+export function staticWorkflowDataKind(
+  node: SgNode | null | undefined,
+  resolve: (reference: SgNode) => SgNode | "string" | undefined,
+): "array" | "string" | undefined {
+  let value = unwrapParentheses(node ?? undefined);
+  const seen = new Set<number>();
+  while (value !== undefined && !seen.has(value.id())) {
+    seen.add(value.id());
+    if (value.kind() === "array") return "array";
+    if (["string", "template_string"].includes(String(value.kind()))) return "string";
+    if (value.kind() !== "identifier") return undefined;
+    const reference = resolve(value);
+    if (reference === "string") return reference;
+    value = unwrapParentheses(reference);
+  }
+  return undefined;
+}

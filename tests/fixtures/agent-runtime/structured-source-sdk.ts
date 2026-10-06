@@ -15,6 +15,7 @@ export async function withStructuredSourceSdk<T>(
     root: string;
     sourcePath: string;
     counters: Awaited<ReturnType<typeof createStructuredSdkExecutor>>["counters"];
+    payloads: Awaited<ReturnType<typeof createStructuredSdkExecutor>>["payloads"];
     run(options?: {
       source?: string;
       input?: string;
@@ -29,11 +30,12 @@ export async function withStructuredSourceSdk<T>(
   try {
     mkdirSync(path.dirname(sourcePath), { recursive: true });
     writeFileSync(sourcePath, source);
-    const { counters, createExecutor } = await createStructuredSdkExecutor(root, scripted);
+    const { counters, createExecutor, payloads } = await createStructuredSdkExecutor(root, scripted);
     return await work({
       root,
       sourcePath,
       counters,
+      payloads,
       async run(options = {}) {
         if (options.source !== undefined) writeFileSync(sourcePath, options.source);
         const harness = createHarness(root, { sessionId: "structured-source-host" });

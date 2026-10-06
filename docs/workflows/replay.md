@@ -2,11 +2,11 @@
 title: Replay recorded workflow calls
 type: guide
 status: active
-updated: "2026-09-22T17:02:17Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=46"
-description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
+updated: "2026-10-06T14:26:20Z"
+source_commit: "35b4a1294375"
+update_event: "review_refresh"
+context: "changes=XL files=34 task=T-147"
+description: "Explain complete source binding and bounded callable coverage for dataflow replay"
 ---
 
 # Replay recorded workflow calls
@@ -79,7 +79,15 @@ real changes the world the later recorded answers came from.
 
 ### Continuing a repaired workflow
 
-Changed source bytes do not end a resume. Repairing the stopped workflow in the
+Checked `dataflow-v1` source has a stricter fence: any complete source-byte change
+refuses resume before import or workflow effects, including comments, helpers and
+profile removal/downgrade. Both current and independently verified recorded
+snapshots are checked. Valid fresh source with unproven callable coverage also
+refuses resume; it never substitutes fresh child work. Unchanged source still
+requires current input/route and valid committed receipts. See the
+[dataflow source contract](source-shape.md#checked-dataflow-v1).
+
+For legacy source, changed source bytes do not end a resume. Repairing the stopped workflow in the
 same file and continuing under the original run id is the supported path: the
 completed nodes return their recorded answers, and the repaired node and its tail
 run fresh. Once the bytes differ, the node name becomes mandatory — a call the

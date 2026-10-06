@@ -182,8 +182,10 @@ describe("readable workflow authoring references", () => {
     }
   });
 
-  it("checks canonical AUTHORING fragments and both complete teaching modules", () => {
-    const authoring = javascriptDocSnippets("docs/workflows/source-shape.md");
+  it("checks canonical standard AUTHORING fragments and both complete teaching modules", () => {
+    const authoring = javascriptDocSnippets("docs/workflows/source-shape.md").filter(
+      (snippet) => staticWorkflowMeta(snippet).profile !== "dataflow-v1",
+    );
     const lessons = ["locus-pi-workflow-create", "locus-pi-workflow-create-detailed"];
     expect(authoring).toHaveLength(2);
     for (const lesson of lessons) {

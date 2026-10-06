@@ -1,3 +1,4 @@
+import { assertDataflowWorkflowSource } from "../source/profiles/workflow-source-dataflow.js";
 import { readWorkflowStructuredCoverage } from "./workflow-run-resume.js";
 import { readAgentSdkHostVersion } from "../../_shared/agent-runtime/agent-sdk-host.js";
 /**
@@ -149,6 +150,7 @@ export interface WorkflowScriptModule {
   meta?: {
     name?: string;
     description?: string;
+    profile?: import("../catalog/workflow-meta.js").WorkflowAuthoringProfile;
     identityCoverage?: "self-contained-static" | "entry-only";
   };
 }
@@ -238,6 +240,9 @@ export async function loadWorkflowScript(
     const subject = executionSource === "snapshot" ? "snapshot" : "source";
     throw new Error(`Workflow script ${subject} hash mismatch: expected ${expectedSha256}, got ${actualSha256}`);
   }
+  const dataflow = assertDataflowWorkflowSource(scriptBytes.toString("utf8"));
+  if (dataflow && (expectedSha256 === undefined || executionSource !== "snapshot"))
+    throw new Error("dataflow-v1 loading requires an independently hashed retained snapshot");
   const scriptUrl = pathToFileURL(scriptPath);
   scriptUrl.searchParams.set("sha256", actualSha256);
   if (cacheScope !== undefined) scriptUrl.searchParams.set("run", cacheScope);
@@ -261,6 +266,10 @@ export async function loadWorkflowScript(
       "Workflow meta.outputDir was removed: assign exact file destinations in agent prompts; execution cwd and native workspace remain separate",
     );
   }
+  if (!dataflow && mod.meta?.profile === "dataflow-v1")
+    throw new Error(
+      "dataflow-v1 requires checked static profile admission; dynamic metadata cannot opt in during import",
+    );
   return mod;
 }
 

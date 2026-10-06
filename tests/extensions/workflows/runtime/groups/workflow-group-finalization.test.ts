@@ -20,21 +20,27 @@ function deferred() {
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 describe("group drain precedes runner finalization", () => {
-  it.each(["cap", "cancel"] as const)(
-    "holds result and workspace lease until the delayed sibling settles (%s)",
-    async (stop) => {
+  it.each([
+    { stop: "cap", profile: "legacy" },
+    { stop: "cancel", profile: "legacy" },
+    { stop: "cap", profile: "dataflow-v1" },
+    { stop: "cancel", profile: "dataflow-v1" },
+  ] as const)(
+    "holds result and workspace lease until the delayed sibling settles ($stop/$profile)",
+    async ({ stop, profile }) => {
       const root = project();
       const held = deferred(),
         started = deferred(),
         stopped = deferred();
       const controller = new AbortController();
-      const name = `drain-${stop}`;
+      const name = `drain-${stop}-${profile}`;
       writeWorkflow(
         root,
         name,
-        `export default (dsl) => dsl.parallel([
-      () => dsl.agent("held"),
-      () => dsl.agent("other"),
+        `export const meta={profile:${JSON.stringify(profile)}};
+export default (dsl) => dsl.parallel([
+      () => dsl.agent("held",{label:"held"}),
+      () => dsl.agent("other",{label:"other"}),
       () => { dsl.log("late branch"); return "late"; },
     ]);\n`,
       );
@@ -100,7 +106,7 @@ describe("group drain precedes runner finalization", () => {
         const lastAgentEnd = events.map((line) => line.kind).lastIndexOf("agent_end");
         expect(lastAgentEnd).toBeGreaterThanOrEqual(0);
         expect(events.findIndex((line) => line.kind === "group_end")).toBeGreaterThan(lastAgentEnd);
-        expect(calls).toEqual(stop === "cap" ? ["held"] : ["held", "other"]);
+        expect(calls.slice().sort()).toEqual(stop === "cap" ? ["held"] : ["held", "other"]);
       } finally {
         rmSync(root, { recursive: true, force: true });
       }

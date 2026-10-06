@@ -1,3 +1,4 @@
+import { workflowSourceDeclaresDataflow } from "../../source/profiles/workflow-source-profile.js";
 import type { SgNode } from "@ast-grep/napi";
 import type { WorkflowJSONSchema } from "./schema.js";
 import { standardBindingModel } from "../../source/workflow-source-provenance.js";
@@ -9,6 +10,9 @@ import {
 } from "../../source/workflow-source-structured.js";
 import {
   standardLexicalBindings,
+  boundStandardNames,
+  standardBindingOf,
+  unwrapStandardValue,
   isStandardBindingOccurrence,
   standardEntryDslBindings,
   standardDslBindings,
@@ -24,6 +28,8 @@ import {
   staticObjectKey,
   staticStringValue,
   unwrapParentheses,
+  parentOutsideParentheses,
+  isWorkflowNativeMethod,
 } from "../../source/workflow-source-literals.js";
 
 /** V4-only callable subset over the existing AST; unknown dependencies refuse replay, not fresh execution. */
@@ -40,7 +46,8 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
     ].some((kind) => root.findAll({ rule: { kind } }).length > 0)
   )
     return false;
-  const bindings = standardLexicalBindings(root);
+  const dataflow = workflowSourceDeclaresDataflow(root.text());
+  const bindings = standardLexicalBindings(root, dataflow);
   const intrinsics = new Map([
     ["Array", ["from", "isArray"]],
     ["Boolean", []],
@@ -59,15 +66,9 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
     ...root.findAll({ rule: { kind: "function_declaration" } }),
   ];
   const declarationById = new Map(declarations.map((node) => [node.id(), node]));
-  const bindingOf = (node: SgNode) => {
-    const ancestors = node.ancestors().map((ancestor) => ancestor.id());
-    const visible = bindings
-      .filter((binding) => binding.name === node.text() && ancestors.includes(binding.scopeId))
-      .sort((left, right) => ancestors.indexOf(left.scopeId) - ancestors.indexOf(right.scopeId));
-    return visible.length > 0 && visible.filter((binding) => binding.scopeId === visible[0]!.scopeId).length === 1
-      ? visible[0]
-      : undefined;
-  };
+  const bindingOf = (node: SgNode) => standardBindingOf(node, bindings);
+  const unbound = (node: SgNode) =>
+    dataflow ? bindingOf(node) === undefined : !bindings.some((binding) => binding.name === node.text());
   const entries = root
     .children()
     .filter((node) => node.kind() === "export_statement" && /^export\s+default\b/u.test(node.text()))
@@ -82,6 +83,37 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
     entries.map((fn) => [standardFunctionParameters(fn)?.id(), standardEntryDslBindings(fn)]),
   );
   const dslOwners = new Map(entryVocabulary);
+  if (dataflow) {
+    for (const call of [...root.findAll({ rule: { kind: "call_expression" } }), ...declarations].sort(
+      (a, b) => a.range().start.index - b.range().start.index,
+    )) {
+      if (call.kind() === "variable_declarator") {
+        const value = call.field("value");
+        if (
+          value?.text() === "dsl" &&
+          call.field("name")?.kind() === "object_pattern" &&
+          dslOwners.get(bindingOf(value)?.bindingId)?.has("dsl")
+        )
+          dslOwners.set(
+            call.id(),
+            new Set(boundStandardNames(call.field("name")!).filter((name) => STANDARD_DSL_METHODS.has(name))),
+          );
+        continue;
+      }
+      const callee = unwrapParentheses(callCallee(call));
+      const receiver = callee?.kind() === "member_expression" ? callee.field("object") : callee;
+      const vocabulary = receiver == null ? undefined : dslOwners.get(bindingOf(receiver)?.bindingId);
+      const method = callee?.kind() === "member_expression" ? callee.field("property")?.text() : callee?.text();
+      const callback = standardCallArguments(call)[0];
+      if (
+        method === "workflow" &&
+        vocabulary?.has(receiver!.text()) &&
+        callback !== undefined &&
+        ["arrow_function", "function_expression"].includes(String(callback.kind()))
+      )
+        dslOwners.set(standardFunctionParameters(callback)?.id(), standardEntryDslBindings(callback));
+    }
+  }
   const isDsl = (node: SgNode): boolean => {
     const binding = bindingOf(node);
     return binding !== undefined && dslOwners.get(binding.bindingId)?.has(node.text()) === true;
@@ -227,7 +259,7 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
     "sort",
   ]);
   function localValue(node: SgNode, seen: Set<number>): SgNode | undefined {
-    const expression = unwrapParentheses(node);
+    const expression = dataflow ? unwrapStandardValue(node) : unwrapParentheses(node);
     if (
       expression === undefined ||
       !["identifier", "shorthand_property_identifier"].includes(String(expression.kind()))
@@ -259,18 +291,43 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
     if (node === undefined || seen.has(node.id())) return false;
     seen.add(node.id());
     const value = localValue(node, new Set());
+    const binding = bindingOf(node);
+    if (dataflow && binding !== undefined && !declarationById.has(binding.bindingId) && !isDsl(node)) return true;
+    if (
+      dataflow &&
+      value !== undefined &&
+      ["array", "object", "string", "number", "true", "false", "null"].includes(String(value.kind()))
+    )
+      return true;
     if (value?.kind() === "member_expression" || value?.kind() === "subscript_expression")
       return inputData(value.field("object") ?? undefined, seen);
     if (value?.kind() === "call_expression") {
       const callee = unwrapParentheses(callCallee(value));
       const object = callee?.field("object");
       const property = callee?.field("property")?.text();
-      if (object?.text() === "JSON" && property === "parse" && !bindings.some((binding) => binding.name === "JSON"))
-        return true;
+      if (dataflow && callee !== undefined) {
+        if (callee.kind() === "identifier") {
+          const declaration = declarationById.get(bindingOf(callee)?.bindingId ?? -1);
+          if (
+            declaration?.kind() === "function_declaration" ||
+            declaration?.field("value")?.kind() === "arrow_function"
+          )
+            return true;
+          if (isDsl(callee) && ["agent", "parallel", "pipeline", "items"].includes(callee.text())) return true;
+        }
+        if (
+          object !== null &&
+          object !== undefined &&
+          property !== undefined &&
+          instanceMethods.has(property) &&
+          inputData(object, seen)
+        )
+          return true;
+      }
+      if (object?.text() === "JSON" && property === "parse" && unbound(object)) return true;
       if (callee?.kind() === "identifier" && callee.text() === "items" && isDsl(callee)) return true;
       if (object?.text() === "dsl" && property === "items" && isDsl(object)) return true;
     }
-    const binding = bindingOf(node);
     return binding !== undefined && node.text() === "input" && entryVocabulary.has(binding.bindingId);
   }
   function callable(node: SgNode | undefined, seen = new Set<number>()): boolean {
@@ -280,8 +337,7 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
       return true;
     if (["identifier", "shorthand_property_identifier"].includes(String(expression.kind()))) {
       if (isDsl(expression)) return true;
-      if (!bindings.some((binding) => binding.name === expression.text()) && intrinsics.has(expression.text()))
-        return true;
+      if (unbound(expression) && intrinsics.has(expression.text())) return true;
       const value = localValue(expression, seen);
       return (
         value !== undefined &&
@@ -292,7 +348,7 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
     const receiver = unwrapParentheses(expression.field("object") ?? undefined);
     const name = expression.field("property")?.text();
     if (receiver === undefined || name === undefined) return false;
-    if (receiver.kind() === "identifier" && !bindings.some((binding) => binding.name === receiver.text()))
+    if (receiver.kind() === "identifier" && unbound(receiver))
       return intrinsics.get(receiver.text())?.includes(name) === true;
     if (receiver.kind() === "identifier" && receiver.text() === "dsl" && isDsl(receiver)) {
       return STANDARD_DSL_METHODS.has(name);
@@ -336,7 +392,7 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
           member === "items" &&
           producer?.field("object") != null &&
           isDsl(producer.field("object")!));
-      if (!native && !dsl) return false;
+      if (!native && !dsl && !(dataflow && inputData(receiver))) return false;
     }
     if (value?.kind() === "new_expression") return false;
     if (value === undefined || value.kind() === "member_expression" || value.kind() === "subscript_expression") {
@@ -370,6 +426,22 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
       if (list?.kind() !== "array" && list?.kind() !== "call_expression") return false;
     }
   }
+  if (dataflow)
+    for (const kind of ["member_expression", "subscript_expression"])
+      for (const member of root.findAll({ rule: { kind } })) {
+        const parent = parentOutsideParentheses(member);
+        if (parent?.kind() === "call_expression" && unwrapParentheses(callCallee(parent))?.id() === member.id())
+          continue;
+        const name = staticObjectKey(member.field("property")) ?? staticStringValue(member.field("index"));
+        if (name === undefined || !isWorkflowNativeMethod(name)) continue;
+        const receiver = member.field("object");
+        const value = receiver == null ? undefined : localValue(receiver, new Set());
+        if (
+          value?.kind() !== "object" ||
+          !value.children().some((pair) => pair.kind() === "pair" && staticObjectKey(pair.field("key")) === name)
+        )
+          return false;
+      }
   for (const pair of root.findAll({ rule: { kind: "pair" } }))
     if (
       optionObjects.has(pair.parent()?.id() ?? -1) &&
@@ -393,21 +465,22 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
     return false;
   for (const kind of ["identifier", "shorthand_property_identifier"])
     for (const node of root.findAll({ rule: { kind } })) {
-      if (isStandardBindingOccurrence(node)) continue;
+      if (isStandardBindingOccurrence(node, dataflow)) continue;
       const name = node.text();
       const scopes = new Set(node.ancestors().map((ancestor) => ancestor.id()));
       if (bindings.some((binding) => binding.name === name && scopes.has(binding.scopeId))) continue;
       if (name === "undefined") continue;
       const methods = intrinsics.get(name);
       if (methods === undefined) return false;
-      const parent = node.parent();
+      const parent = dataflow ? parentOutsideParentheses(node) : node.parent();
       if (parent?.kind() === "member_expression") {
         if (parent.field("object")?.id() !== node.id() || !methods.includes(parent.field("property")?.text() ?? ""))
           return false;
       } else if (
         parent?.kind() === "new_expression"
           ? parent.field("constructor")?.id() !== node.id()
-          : parent?.kind() !== "call_expression" || parent.children()[0]?.id() !== node.id()
+          : parent?.kind() !== "call_expression" ||
+            (dataflow ? unwrapParentheses(callCallee(parent))?.id() : parent.children()[0]?.id()) !== node.id()
       )
         return false;
     }

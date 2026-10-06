@@ -163,6 +163,20 @@ const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
     reason: "schema-derived readonly outputs are exported through the public WorkflowDsl type owner.",
   },
   {
+    module: "extensions/workflows/source/profiles/workflow-source-dataflow.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/tool/workflow-source-check-tool.ts",
+    reason:
+      "Dataflow source policy is internal to workflow authoring and runtime admission; other features use source diagnostics.",
+  },
+  {
+    module: "extensions/workflows/source/profiles/workflow-source-profile.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/catalog/workflow-meta.ts",
+    reason:
+      "Full-source profile/module and shared phase/label policy belongs to workflows; catalog consumers use its public metadata projection.",
+  },
+  {
     module: "extensions/workflows/runtime/structured-results/source-coverage.ts",
     owner: "extensions/workflows",
     facade: "extensions/workflows/runtime/workflow-script-identity.ts",

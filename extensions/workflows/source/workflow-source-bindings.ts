@@ -66,18 +66,14 @@ export interface StandardLexicalBinding {
   scopeId: number;
 }
 
-interface StandardPhaseDslBindings {
-  dsl: readonly StandardLexicalBinding[];
-  phase: readonly StandardLexicalBinding[];
-}
-
 export interface StandardCollectionBindings {
   names: Set<string>;
   ownerIds: Set<number>;
   owners: Map<string, number>;
 }
 
-export function standardLexicalBindings(root: SgNode): StandardLexicalBinding[] {
+/** Catch parameters are opt-in facts; legacy consumers retain their original vocabulary. */
+export function standardLexicalBindings(root: SgNode, includeCatchParameters = false): StandardLexicalBinding[] {
   const bindings: StandardLexicalBinding[] = [];
   const add = (
     names: readonly string[],
@@ -125,7 +121,24 @@ export function standardLexicalBindings(root: SgNode): StandardLexicalBinding[] 
       loop.field("left")?.range().end.index ?? loop.range().start.index,
     );
   }
+  for (const clause of includeCatchParameters ? root.findAll({ rule: { kind: "catch_clause" } }) : []) {
+    const parameter = clause.field("parameter") ?? undefined;
+    add(boundStandardNames(parameter), clause, parameter?.id() ?? clause.id());
+  }
   return bindings;
+}
+
+/** Nearest lexical declaration, including TDZ shadowing; ambiguity never falls through outward. */
+export function standardBindingOf(
+  node: SgNode,
+  bindings: readonly StandardLexicalBinding[],
+): StandardLexicalBinding | undefined {
+  const scopes = node.ancestors().map((ancestor) => ancestor.id());
+  for (const scopeId of scopes) {
+    const local = bindings.filter((binding) => binding.name === node.text() && binding.scopeId === scopeId);
+    if (local.length > 0) return local.length === 1 ? local[0] : undefined;
+  }
+  return undefined;
 }
 
 function standardLexicalOwner(node: SgNode, root: SgNode): SgNode {
@@ -206,87 +219,6 @@ export function directStandardDslCall(callee: SgNode, bindings: ReadonlySet<stri
   return property !== undefined && STANDARD_DSL_METHODS.has(property) ? (property as StandardDslMethod) : undefined;
 }
 
-export function standardPhaseDslBindings(
-  runEntry: SgNode,
-  lexicalBindings: readonly StandardLexicalBinding[],
-): StandardPhaseDslBindings {
-  const parameters = standardFunctionParameters(runEntry);
-  const firstParameter = standardFunctionParameterNodes(parameters)[0];
-  const parameterBindings = new Set<string>();
-  if (firstParameter?.kind() === "object_pattern") addStandardDslBindings(parameterBindings, firstParameter);
-
-  const trustedDeclaratorIds = new Set<number>();
-  const runBody = runEntry.children().find((child) => child.kind() === "statement_block");
-  for (const declaration of runEntry.findAll({ rule: { kind: "variable_declarator" } })) {
-    const ownerBlock = declaration.ancestors().find((ancestor) => ancestor.kind() === "statement_block");
-    const pattern = declaration.field("name");
-    if (
-      ownerBlock?.id() !== runBody?.id() ||
-      declaration.field("value")?.text() !== "dsl" ||
-      pattern?.kind() !== "object_pattern"
-    ) {
-      continue;
-    }
-    const bindings = new Set<string>();
-    addStandardDslBindings(bindings, pattern);
-    if (bindings.has("phase")) trustedDeclaratorIds.add(declaration.id());
-  }
-
-  return {
-    dsl:
-      firstParameter?.kind() === "identifier" && firstParameter.text() === "dsl"
-        ? lexicalBindings.filter(
-            (binding) => binding.name === "dsl" && binding.bindingId === (parameters?.id() ?? firstParameter.id()),
-          )
-        : [],
-    phase: lexicalBindings.filter(
-      (binding) =>
-        binding.name === "phase" &&
-        ((parameterBindings.has("phase") && binding.bindingId === parameters?.id()) ||
-          trustedDeclaratorIds.has(binding.bindingId)),
-    ),
-  };
-}
-
-export function isTrustedStandardPhaseCall(
-  call: SgNode,
-  callee: SgNode,
-  lexicalBindings: readonly StandardLexicalBinding[],
-  bindings: StandardPhaseDslBindings,
-): boolean {
-  if (callee.kind() === "identifier" && callee.text() === "phase") {
-    return hasOnlyActiveTrustedBinding(call, "phase", lexicalBindings, bindings.phase);
-  }
-  return (
-    callee.kind() === "member_expression" &&
-    callee.field("object")?.text() === "dsl" &&
-    callee.field("property")?.text() === "phase" &&
-    hasOnlyActiveTrustedBinding(call, "dsl", lexicalBindings, bindings.dsl)
-  );
-}
-
-function hasOnlyActiveTrustedBinding(
-  node: SgNode,
-  name: string,
-  lexicalBindings: readonly StandardLexicalBinding[],
-  trustedBindings: readonly StandardLexicalBinding[],
-): boolean {
-  const ancestorIds = new Set(node.ancestors().map((ancestor) => ancestor.id()));
-  const nodeIndex = node.range().start.index;
-  const visible = lexicalBindings.filter(
-    (binding) => binding.name === name && ancestorIds.has(binding.scopeId) && nodeIndex >= binding.shadowIndex,
-  );
-  const activeTrustedIds = new Set(
-    trustedBindings
-      .filter(
-        (binding) =>
-          ancestorIds.has(binding.scopeId) && nodeIndex >= binding.shadowIndex && nodeIndex >= binding.activationIndex,
-      )
-      .map((binding) => binding.bindingId),
-  );
-  return activeTrustedIds.size > 0 && visible.every((binding) => activeTrustedIds.has(binding.bindingId));
-}
-
 export function standardCollectionBindings(
   root: SgNode,
   runEntry: SgNode | undefined,
@@ -315,7 +247,7 @@ export function standardCollectionBindings(
   for (const declaration of declarations) {
     const name = declaration.field("name");
     if (name?.kind() !== "identifier" || names.has(name.text())) continue;
-    if (isStandardCollectionExpression(declaration.field("value") ?? undefined, names, dslBindings)) {
+    if (isKnownCollectionReceiver(declaration.field("value") ?? undefined, names, dslBindings)) {
       names.add(name.text());
       ownerIds.add(declaration.id());
       owners.set(name.text(), declaration.id());
@@ -381,7 +313,12 @@ export function standardCallArguments(call: SgNode): SgNode[] {
   );
 }
 
-export function isStandardBindingOccurrence(identifier: SgNode): boolean {
+export function isStandardBindingOccurrence(identifier: SgNode, includeCatchParameters = false): boolean {
+  for (const clause of includeCatchParameters
+    ? identifier.ancestors().filter((node) => node.kind() === "catch_clause")
+    : []) {
+    if (nodeWithinStandardNode(identifier, clause.field("parameter") ?? undefined)) return true;
+  }
   for (const declaration of identifier.ancestors().filter((ancestor) => ancestor.kind() === "variable_declarator")) {
     if (nodeWithinStandardNode(identifier, declaration.field("name") ?? undefined)) return true;
   }
@@ -405,7 +342,7 @@ export function nodeWithinStandardNode(node: SgNode, container: SgNode | undefin
   );
 }
 
-function isStandardCollectionExpression(
+export function isKnownCollectionReceiver(
   node: SgNode | undefined,
   bindings: ReadonlySet<string>,
   dslBindings: ReadonlySet<string>,
@@ -423,16 +360,6 @@ function isStandardCollectionExpression(
     callee.field("property")?.text() === "map" &&
     isKnownCollectionReceiver(callee.field("object") ?? undefined, bindings, dslBindings)
   );
-}
-
-export function isKnownCollectionReceiver(
-  node: SgNode | undefined,
-  bindings: ReadonlySet<string>,
-  dslBindings: ReadonlySet<string>,
-): boolean {
-  const value = unwrapStandardValue(node);
-  if (value?.kind() === "identifier") return bindings.has(value.text());
-  return value?.kind() === "array" || isStandardCollectionExpression(value, bindings, dslBindings);
 }
 
 export function unwrapStandardValue(node: SgNode | undefined): SgNode | undefined {
