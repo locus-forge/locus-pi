@@ -453,6 +453,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
         : { maxTotalAgentInvocations: options.maxTotalAgentInvocations }),
       ...(options.runtimeMs === undefined ? {} : { runtimeMs: options.runtimeMs }),
       ...(options.nowMs === undefined ? {} : { nowMs: options.nowMs }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
 
   let totalFusionCalls = 0;

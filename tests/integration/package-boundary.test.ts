@@ -345,15 +345,15 @@ describe("npm public package boundary", () => {
       "schemas/extension-manifest.schema.json",
       "skills/",
     ]);
-    // V4 uses two shared admission/contract owners and four cohesive structured-result owners.
-    // The standard tool path removes the bespoke native Responses owner, reusing the v4 controller.
-    expect(dryRun.files).toHaveLength(272);
+    // Two shared admission owners, four structured-result owners, and three execution owners ship.
+    expect(dryRun.files).toHaveLength(275);
     for (const filename of [
       "extensions/_shared/agent-runtime/output-acceptance/agent-output-contract.ts",
       "extensions/_shared/agent-runtime/output-acceptance/agent-output-admission.ts",
       ...["schema", "return", "receipt", "source-coverage"].map(
         (name) => `extensions/workflows/runtime/structured-results/${name}.ts`,
       ),
+      ...["budget", "scheduler", "state"].map((name) => `extensions/_shared/runtime/execution-${name}.ts`),
     ])
       expect(dryRun.files.map((file) => file.path)).toContain(filename);
     expect(dryRun.files.map((file) => file.path)).not.toContain(

@@ -44,6 +44,26 @@ describe("extension layer checker negative rules", () => {
     await expectRule(root, "rule 1 (no upward import)");
   });
 
+  it("keeps shared execution ownership below workflow feature policy", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, "extensions/_shared/runtime/execution-state.ts"),
+      '\nimport "../../workflows/runtime/workflow-budget.js";\n',
+      "utf8",
+    );
+    await expectRule(root, "rule 1 (no upward import)");
+  });
+
+  it("keeps shared execution ownership host-agnostic through the DSL closure", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, "extensions/_shared/runtime/execution-scheduler.ts"),
+      '\nimport { readFileSync } from "node:fs";\nvoid readFileSync;\n',
+      "utf8",
+    );
+    await expectRule(root, "rule 7 (pure modules)");
+  });
+
   it("rejects a shared module importing a higher layer", async () => {
     const root = await extensionFixture();
     await appendFile(

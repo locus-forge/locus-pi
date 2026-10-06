@@ -69,6 +69,12 @@ action may already have started. Workflow budget stops retain the named
 retains its `host-turn-timeout` failure and evidence. Neither is a verdict that earlier
 answers were wrong. Root and saved children use one physical-attempt counter, and
 Fusion reservations use that same allowance. A fully replayed panel consumes none.
+Physical attempt identities are allocated before queueing, while the fresh-child charge
+happens only after concurrency admission and the final cancellation/deadline check.
+A cancelled or expired queued attempt retains its terminal evidence and consumes no
+fresh-child allowance; a child that actually starts consumes one even if it fails.
+The shared execution owner is an internal prerequisite for deeper delegation. The
+published direct-spawn and saved-child depth guards remain in force.
 
 **Compatibility.** Readers preserve historical budget values, including `unbounded`,
 and still read results that predate the budget field. Reading an old result never
@@ -86,7 +92,8 @@ reported tokens and gate-owned peak concurrency. `agent_queued` is demand;
 and tools have no durable measured totals and print as `not recorded`, never `0`.
 
 **Source owners.** [Budget resolution](../../extensions/workflows/runtime/workflow-budget.ts),
-[root launch](../../extensions/workflows/runtime/workflow-runner.ts), [shared enforcement](../../extensions/workflows/runtime/workflow-execution-state.ts),
+[root launch](../../extensions/workflows/runtime/workflow-runner.ts), [workflow enforcement policy](../../extensions/workflows/runtime/workflow-execution-state.ts),
+[shared execution owner](../../extensions/_shared/runtime/execution-state.ts),
 [standalone tasks](../../extensions/agents/run/run-launcher.ts), [SDK child execution](../../extensions/_shared/agent-runtime/agent-sdk-host.ts),
 [return clarification](../../extensions/workflows/runtime/workflow-return.ts) and [saved composition](../../extensions/workflows/runtime/workflow-saved-child.ts).
 

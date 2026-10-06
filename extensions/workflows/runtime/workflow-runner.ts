@@ -638,6 +638,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
         // here is unbounded in the shared state — no counter, no clock — which is
         // the same thing the run header prints as `unbounded`.
         sharedExecution: createWorkflowSharedExecutionState({
+          signal: opts.signal,
           maxConcurrentAgents: budget.concurrency,
           ...(budget.totalAgents === undefined ? {} : { maxTotalAgentInvocations: budget.totalAgents }),
           ...(budget.runtimeMs === undefined ? {} : { runtimeMs: budget.runtimeMs }),
