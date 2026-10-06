@@ -201,17 +201,22 @@ export function createWorkflowStructuredCall(
     const item = record(data.item);
     const nativeFailure = nativeResponse?.capture(data, turn.responseId);
     if (nativeFailure !== undefined) fail(nativeFailure.reason, nativeFailure.failureCause);
-    if (
-      type === "response.output_item.added" &&
-      item?.type === "function_call" &&
-      typeof item.id === "string" &&
-      typeof item.call_id === "string" &&
-      typeof item.name === "string"
-    ) {
-      const prior = turn.items.get(item.id);
-      if (prior !== undefined) fail("Repeated raw tool item added", "output-protocol-unknown");
-      if (prior === undefined) turn.items.set(item.id, { name: item.name, callId: item.call_id });
-      bindHostCall(item);
+    if (type === "response.output_item.added" && item?.type === "function_call") {
+      if (
+        typeof item.id !== "string" ||
+        item.id === "" ||
+        typeof item.call_id !== "string" ||
+        item.call_id === "" ||
+        typeof item.name !== "string" ||
+        item.name === ""
+      )
+        fail("Raw executable tool identity unavailable", "output-protocol-unknown");
+      else {
+        const prior = turn.items.get(item.id);
+        if (prior !== undefined) fail("Repeated raw tool item added", "output-protocol-unknown");
+        if (prior === undefined) turn.items.set(item.id, { name: item.name, callId: item.call_id });
+        bindHostCall(item);
+      }
     }
     if (type === "response.function_call_arguments.done") {
       const identity = typeof data.item_id === "string" ? turn.items.get(data.item_id) : undefined;

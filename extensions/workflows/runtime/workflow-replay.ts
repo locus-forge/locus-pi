@@ -1,42 +1,19 @@
 import type { AgentStructuredReceipt } from "../../_shared/agent-runtime/agent-runner.js";
 import { immutableJSON } from "./structured-results/schema.js";
 /**
- * workflow-replay.ts — recorded-call store for `--resume`.
+ * Recorded-call store for --resume: payloads, request hashes, admission receipts,
+ * value cursors and one strict-prefix divergence latch. The journal retains only
+ * replay markers; this sidecar keeps full answers out of bounded live/status views.
  *
- * A resumed run does not re-spawn a child whose exact request already ran: it
- * returns the recorded answer. This module owns the whole mechanism — the
- * `replay.ndjson` record inside the existing run directory, the call key, the
- * read cursors, and the ONE latch that makes replay a strict prefix.
+ * Replay-log v4 allocates agent identity before awaited work and settles it once,
+ * independent of completion order or transport retries. Normal v3 reuse is unproven;
+ * only separately verified, non-overlapping serial crash recovery may reuse it.
+ * Missing, ambiguous or changed positions stop prefix reuse. Ordinary callers can
+ * run fresh after a miss; structured-return v4/v5 and confirmed recovery fail closed
+ * instead of repeating effects. No lookup invents an answer or upgrades old evidence.
  *
- * Two invariants shape everything here:
- *
- *   1. FAIL CLOSED. An entry that cannot be resolved — missing, keyed for a
- *      different request, named for a different node, recorded as a failure, or
- *      positioned after a divergence — is reported as a MISS, and the caller
- *      runs the real child. No branch of this module can invent an answer.
- *   2. STRICT PREFIX. ANY miss sets `#diverged`, and every later lookup misses
- *      too, including lookups whose own key would have matched. The rule is one
- *      rule for every miss reason because a fresh call CHANGES THE WORLD: the
- *      next recorded answer was produced after this call behaved differently,
- *      so reusing it would be a silent lie about what the run observed. The two
- *      exceptions latch nothing because there is nothing to latch: replay is
- *      switched off entirely, or the latch is already set.
- *
- * Repairing the source between two runs is expected, not a defect: the runner
- * reports `sourceScriptChanged` instead of refusing, and the recorded node name
- * becomes the readable identity of the completed prefix. It is not the safety
- * boundary — the canonical request key already carries `phase` and `label`, so
- * a call whose key matches on an unbroken prefix cannot carry a different name.
- * Safety rests on that strict prefix plus the unique-literal-label rule the
- * strict source checker enforces for generated workflows.
- *
- * Why a sidecar instead of `journal.ndjson`: the journal deliberately records no
- * prompt and no child text (see `WorkflowJournalLine`). Putting them there would
- * push unbounded model output into `/workflows status`, the bounded transcript
- * digest, and the live panel. The journal keeps the `replayed` MARKER; this file
- * keeps the payload, in the same run directory beside `result.json`.
- *
- * Filesystem surface only — the pure runtime talks to `WorkflowReplayController`.
+ * Request identity and, for repaired source, named node identity must still match.
+ * Filesystem access stays here; the pure runtime receives WorkflowReplayController.
  */
 
 import { createHash } from "node:crypto";
@@ -50,17 +27,9 @@ import {
 } from "./workflow-run-layout.js";
 
 export const WORKFLOW_REPLAY_FILE = "replay.ndjson";
-/**
- * v3: explicit `bare | named` execution identity entered the canonical request,
- * so old package-role records are readable but never resumed as clean children.
- *
- * The bump is what makes the migration honest rather than merely safe. Leaving the
- * version at 1 is equally fail-closed — a changed key diverges and the call
- * re-executes — but the operator would be told `key-mismatch`, which everywhere else
- * means "your script changed". Dropping v1 lines instead makes the log read as empty
- * and the refusal reason becomes `no-recorded-calls`, which is true.
- */
-export const WORKFLOW_REPLAY_SCHEMA_VERSION = 3 as const;
+/** v4 allocates agent seq at admission, not completion. v3 remains readable evidence. */
+export const WORKFLOW_REPLAY_SCHEMA_VERSION = 4 as const;
+type WorkflowReplaySchemaVersion = 3 | typeof WORKFLOW_REPLAY_SCHEMA_VERSION;
 
 /** Recorded nondeterministic value kinds, one cursor each. */
 export type WorkflowReplayValueKind = "clock" | "random";
@@ -76,30 +45,23 @@ export type WorkflowReplayRefusalReason =
 /** Why this run wrote no replay record a later resume could use. */
 export type WorkflowReplayNotRecordedReason = "identity-coverage-unproven" | "replay-unsafe-script";
 
-/**
- * Readable identity of one agent call: `[phase, label, occurrence]`, absent when
- * the author gave the call no label. The field is optional and the schema
- * version stays 3 on purpose — a record written before this field existed still
- * replays byte-identical bytes exactly as it did, and only a repaired source
- * makes the missing name matter.
- */
+/** Agent seq is admission order in v4; historical v3 seq was completion order. */
 export type WorkflowReplayEntry =
   | {
-      v: typeof WORKFLOW_REPLAY_SCHEMA_VERSION;
+      v: WorkflowReplaySchemaVersion;
       seq: number;
       kind: "agent";
       node?: string;
       key: string;
-      /** Return-contract version of a choice (formerly any shaped) call; absent for a
-       *  plain-text call and for every record written before contract v2 existed. See
-       *  WORKFLOW_RETURN_CONTRACT_V1. */
+      /** Return-contract version of choice/structured calls, separate from log v.
+       *  Absent for plain text and old records predating contract v2. */
       rcv?: number;
       ok: true;
       text: string;
       structuredReceipt?: AgentStructuredReceipt;
     }
   | {
-      v: typeof WORKFLOW_REPLAY_SCHEMA_VERSION;
+      v: WorkflowReplaySchemaVersion;
       seq: number;
       kind: "agent";
       node?: string;
@@ -107,24 +69,12 @@ export type WorkflowReplayEntry =
       rcv?: number;
       ok: false;
     }
-  | { v: typeof WORKFLOW_REPLAY_SCHEMA_VERSION; seq: number; kind: WorkflowReplayValueKind; value: number };
+  | { v: WorkflowReplaySchemaVersion; seq: number; kind: WorkflowReplayValueKind; value: number };
 
-/**
- * The return-contract version a record written before `rcv` existed used.
- *
- * v1 stated a default answer ceiling, a derived canonical-JSON allowance and a bounded
- * clarification budget; v2 stated none of them; v3 carries only one exact declared choice.
- * That text is part of the prompt and therefore of the request key, so EVERY recorded call
- * under an older contract diverges under the current one — which is correct and must stay
- * correct: recomputing an old key would claim the old child answered a contract it was
- * never shown. A call whose source still declares a removed shaped option never reaches
- * this lookup at all: declaration dispatch refuses it first, so an old shaped receipt is
- * kept as evidence and never reinterpreted.
- *
- * What would NOT be correct is reporting it as `key-mismatch`, which everywhere else means
- * "your script changed" and would send an operator looking for an edit that does not exist.
- * A record is therefore still fully readable, and the miss is named for what happened.
- */
+/** Implicit return-contract version of records predating rcv. These versions are
+ * separate from the replay-log schema: v1 had legacy answer/clarification bounds,
+ * v2 removed those bounds, v3 is exact choice, and v4 requires a structured receipt.
+ * A named contract mismatch never upgrades an old answer to a new acceptance. */
 export const WORKFLOW_RETURN_CONTRACT_V1 = 1 as const;
 
 export type WorkflowReplayAgentEntry = Extract<WorkflowReplayEntry, { kind: "agent" }>;
@@ -132,6 +82,8 @@ export type WorkflowReplayAgentEntry = Extract<WorkflowReplayEntry, { kind: "age
 /** Why one agent attempt was not served from the record. Never a silent miss. */
 export type WorkflowReplayMissReason =
   | "no-record"
+  | "invocation-identity-unproven"
+  | "recorded-sequence-invalid"
   | "unnamed-node"
   | "node-mismatch"
   | "return-contract-changed"
@@ -202,9 +154,9 @@ export interface WorkflowReplayController {
    * use the answer.
    */
   beginAgentAttempt(call: WorkflowReplayAgentCall & { replayable: boolean }): WorkflowReplayAgentLookup;
-  /** Record this run's own outcome for the attempt just begun. */
+  /** Settle the exact admission receipt once, preserving structured evidence. */
   recordAgentAttempt(
-    call: WorkflowReplayAgentCall,
+    receipt: WorkflowReplayAgentLookup,
     outcome: { ok: true; text: string; structuredReceipt?: AgentStructuredReceipt } | { ok: false },
   ): void;
   /** Replay a recorded value, or produce and record a fresh one. */
@@ -216,7 +168,12 @@ export function workflowReplayFile(runDir: string): string {
   return path.join(workflowRunRuntimeDir(runDir), WORKFLOW_REPLAY_FILE);
 }
 
-/** Skip partial/malformed legacy rows; a missing v4 committed prefix refuses resume. */
+/**
+ * Read one run's recorded calls. Best-effort in the same sense as the journal
+ * reader: damaged rows reduce the proven prefix rather than throwing. A malformed
+ * row with a readable kind/seq poisons that ordinal and its suffix; otherwise no
+ * later physical row is trusted. The controller preserves every remaining seq gap.
+ */
 export function readWorkflowReplayLog(projectRoot: string, runId: string): WorkflowReplayEntry[] {
   let raw: string;
   try {
@@ -226,6 +183,7 @@ export function readWorkflowReplayLog(projectRoot: string, runId: string): Workf
     return [];
   }
   const entries: WorkflowReplayEntry[] = [];
+  const invalidFrom = new Map<WorkflowReplayEntry["kind"], number>();
   for (const row of raw.split("\n")) {
     const trimmed = row.trim();
     if (trimmed === "") continue;
@@ -233,16 +191,31 @@ export function readWorkflowReplayLog(projectRoot: string, runId: string): Workf
     try {
       parsed = JSON.parse(trimmed);
     } catch {
-      continue;
+      break;
     }
     const entry = parseReplayEntry(parsed);
     if (entry !== undefined) entries.push(entry);
+    else {
+      if (typeof parsed !== "object" || parsed === null) break;
+      const row = parsed as Record<string, unknown>;
+      // Old unsupported schemas are not reinterpreted, including their sequences.
+      if (row.v !== 3 && row.v !== WORKFLOW_REPLAY_SCHEMA_VERSION) continue;
+      if (
+        (row.kind !== "agent" && row.kind !== "clock" && row.kind !== "random") ||
+        typeof row.seq !== "number" ||
+        !Number.isSafeInteger(row.seq) ||
+        row.seq < 0
+      )
+        break;
+      invalidFrom.set(row.kind, Math.min(invalidFrom.get(row.kind) ?? Infinity, row.seq));
+    }
   }
-  return entries;
+  return entries.filter((entry) => entry.seq < (invalidFrom.get(entry.kind) ?? Infinity));
 }
 
 export interface CreateWorkflowReplayControllerOptions {
-  /** Crash recovery must not duplicate an already-confirmed prefix on mismatch. */
+  /** Only for a journal-verified, non-overlapping serial prefix (including v3).
+   *  Crash recovery must not duplicate that confirmed prefix on mismatch. */
   requireRecordedPrefix?: boolean;
   /** Run directory of the run being executed now; its record is written here. */
   runDir: string;
@@ -266,16 +239,17 @@ export function createWorkflowReplayController(
 class FileBackedWorkflowReplayController implements WorkflowReplayController {
   readonly #runDir: string;
   readonly #recordPath: string;
-  readonly #recordedAgents: readonly WorkflowReplayAgentEntry[];
-  readonly #recordedValues: ReadonlyMap<WorkflowReplayValueKind, readonly number[]>;
+  readonly #recordedAgents: ReadonlyMap<number, WorkflowReplayAgentEntry | undefined>;
+  readonly #recordedValues = new Map<WorkflowReplayValueKind, Map<number, number | undefined>>();
+  readonly #admissions = new WeakMap<WorkflowReplayAgentLookup, { seq: number; call: WorkflowReplayAgentCall }>();
+  readonly #recordedAgentExtent: number;
   readonly #replayEnabled: boolean;
   readonly #sourceScriptChanged: boolean;
   readonly #requireRecordedPrefix: boolean;
   #readCursor = 0;
-  #writeCursor = 0;
   readonly #valueCursors = new Map<WorkflowReplayValueKind, number>();
-  readonly #valueWriteCursors = new Map<WorkflowReplayValueKind, number>();
   #diverged = false;
+  #strictRefusal: string | undefined;
   #divergedAtCall: number | undefined;
   #divergedAtNode: string | undefined;
   #replayedCalls = 0;
@@ -286,7 +260,7 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
     this.#runDir = options.runDir;
     this.#recordPath = workflowReplayFile(options.runDir);
     const recorded = (options.recorded ?? []).map((entry) => {
-      if (entry.kind !== "agent" || entry.rcv !== 4) return entry;
+      if (entry.kind !== "agent" || (entry.rcv !== 4 && entry.rcv !== 5)) return entry;
       try {
         return immutableJSON(entry) as unknown as WorkflowReplayEntry;
       } catch (error) {
@@ -296,34 +270,39 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
     this.#replayEnabled = options.recorded !== undefined;
     this.#sourceScriptChanged = options.sourceScriptChanged === true;
     this.#requireRecordedPrefix = options.requireRecordedPrefix === true;
-    this.#recordedAgents = recorded.filter((entry): entry is WorkflowReplayAgentEntry => entry.kind === "agent");
-    const values = new Map<WorkflowReplayValueKind, number[]>();
+    const agents = new Map<number, WorkflowReplayAgentEntry | undefined>();
+    let extent = 0;
     for (const entry of recorded) {
-      if (entry.kind === "agent") continue;
-      const bucket = values.get(entry.kind);
-      if (bucket === undefined) values.set(entry.kind, [entry.value]);
-      else bucket.push(entry.value);
+      if (entry.kind === "agent") {
+        // Never compact a missing slot or choose a winner for a duplicate identity.
+        agents.set(entry.seq, agents.has(entry.seq) ? undefined : entry);
+        extent = Math.max(extent, entry.seq + 1);
+      } else {
+        const bucket = this.#recordedValues.get(entry.kind) ?? new Map<number, number | undefined>();
+        bucket.set(entry.seq, bucket.has(entry.seq) ? undefined : entry.value);
+        this.#recordedValues.set(entry.kind, bucket);
+      }
     }
-    this.#recordedValues = values;
+    this.#recordedAgents = agents;
+    this.#recordedAgentExtent = extent;
   }
 
   beginAgentAttempt(call: WorkflowReplayAgentCall & { replayable: boolean }): WorkflowReplayAgentLookup {
     const ordinal = this.#readCursor;
     this.#readCursor += 1;
-    // Every miss below latches, so the latch is set here once rather than at six
-    // return sites. The two paths that return before this helper are the two
-    // that must NOT latch: replay is switched off, and the latch already holds.
+    const receipt = Object.freeze(this.#lookupAgent(call, ordinal));
+    this.#admissions.set(receipt, { seq: ordinal, call: { ...call } });
+    return receipt;
+  }
+
+  #lookupAgent(call: WorkflowReplayAgentCall & { replayable: boolean }, ordinal: number): WorkflowReplayAgentLookup {
+    if (this.#strictRefusal !== undefined) throw new Error(this.#strictRefusal);
     const miss = (reason: WorkflowReplayMissReason): WorkflowReplayAgentLookup => {
+      this.#refusePrefix(ordinal, call.node, reason);
       if (call.returnContractVersion === 4 || call.returnContractVersion === 5)
         throw new Error(`replay-contract-failure: v${call.returnContractVersion} prefix unavailable (${reason})`);
-      if (this.#requireRecordedPrefix && ordinal < this.#recordedAgents.length)
-        throw new Error(`Interrupted recovery refused prefix divergence at call ${ordinal}: ${reason}`);
+      if (this.#strictRefusal !== undefined) throw new Error(this.#strictRefusal);
       this.#freshCalls += 1;
-      if (!this.#diverged) {
-        this.#diverged = true;
-        this.#divergedAtCall = ordinal;
-        this.#divergedAtNode = call.node;
-      }
       return { replayed: false, reason };
     };
     if (!this.#replayEnabled) {
@@ -337,11 +316,15 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
       return { replayed: false, reason: "diverged" };
     }
 
-    const entry = this.#recordedAgents[ordinal];
-    if (entry === undefined) return miss("no-record");
-    // Name before key, and only when the bytes moved. On unchanged bytes the
-    // position is still a legitimate name, so a record written before this field
-    // existed keeps replaying exactly as it did.
+    const entry = this.#recordedAgents.get(ordinal);
+    if (entry === undefined)
+      return miss(ordinal < this.#recordedAgentExtent ? "recorded-sequence-invalid" : "no-record");
+    // Only interrupted recovery has independently confirmed non-overlapping serial
+    // execution against its journal. Normal resume cannot infer launch order from v3.
+    if (entry.v !== WORKFLOW_REPLAY_SCHEMA_VERSION && !this.#requireRecordedPrefix)
+      return miss("invocation-identity-unproven");
+    // Name before key when the source changed. On unchanged bytes the admission
+    // ordinal remains authoritative, even for an unlabelled call.
     if (this.#sourceScriptChanged) {
       if (entry.node === undefined || call.node === undefined) return miss("unnamed-node");
       if (entry.node !== call.node) return miss("node-mismatch");
@@ -366,11 +349,17 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
   }
 
   recordAgentAttempt(
-    call: WorkflowReplayAgentCall,
+    receipt: WorkflowReplayAgentLookup,
     outcome: { ok: true; text: string; structuredReceipt?: AgentStructuredReceipt } | { ok: false },
   ): void {
-    const seq = this.#writeCursor;
-    this.#writeCursor += 1;
+    const admission = this.#admissions.get(receipt);
+    if (admission === undefined) throw new Error("Replay receipt is foreign or already settled");
+    this.#admissions.delete(receipt);
+    const { seq, call } = admission;
+    if (receipt.replayed && !outcome.ok) {
+      this.#replayedCalls -= 1;
+      this.#refusePrefix(seq, call.node, "recorded-failure");
+    }
     const key = hashCanonicalRequest(call.canonicalRequest);
     const node = call.node === undefined ? {} : { node: call.node };
     const rcv = call.returnContractVersion === undefined ? {} : { rcv: call.returnContractVersion };
@@ -391,23 +380,17 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
     );
   }
 
-  // TODO(iteration-2026-07-21): value entries have no integrity key. An agent
-  // entry fails closed on a request-hash mismatch; a `clock`/`random` entry is
-  // matched by per-kind array POSITION only, and `readWorkflowReplayLog` skips
-  // malformed lines silently — so one truncated value line shifts every later
-  // `dsl.now()`/`dsl.random()` by one and replays a WRONG value with no
-  // divergence signal. The recorded `seq` is parsed and then never used; keying
-  // or ordinal-checking against it is the obvious fix. Deferred: deterministic
-  // replay is out of scope this iteration (MVP = one working chain of agents).
-  // See `.locus/reviews/2026-07-21-workflow-dsl/reconciliation-1.md` (A5, S3).
   resolveValue(kind: WorkflowReplayValueKind, produce: () => number): number {
+    if (this.#strictRefusal !== undefined) throw new Error(this.#strictRefusal);
     const ordinal = this.#valueCursors.get(kind) ?? 0;
     this.#valueCursors.set(kind, ordinal + 1);
-    const recorded = this.#replayEnabled && !this.#diverged ? this.#recordedValues.get(kind)?.[ordinal] : undefined;
+    const recorded = this.#replayEnabled && !this.#diverged ? this.#recordedValues.get(kind)?.get(ordinal) : undefined;
+    if (this.#replayEnabled && !this.#diverged && recorded === undefined) {
+      this.#refusePrefix(this.#readCursor, undefined, "recorded-sequence-invalid");
+      if (this.#strictRefusal !== undefined) throw new Error(this.#strictRefusal);
+    }
     const value = recorded ?? produce();
-    const seq = this.#valueWriteCursors.get(kind) ?? 0;
-    this.#valueWriteCursors.set(kind, seq + 1);
-    this.#append({ v: WORKFLOW_REPLAY_SCHEMA_VERSION, seq, kind, value });
+    this.#append({ v: WORKFLOW_REPLAY_SCHEMA_VERSION, seq: ordinal, kind, value });
     return value;
   }
 
@@ -418,6 +401,17 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
       ...(this.#divergedAtCall !== undefined ? { divergedAtCall: this.#divergedAtCall } : {}),
       ...(this.#divergedAtNode !== undefined ? { divergedAtNode: this.#divergedAtNode } : {}),
     };
+  }
+
+  /** Every known refusal closes reuse before throwing or returning to trusted callers. */
+  #refusePrefix(ordinal: number, node: string | undefined, reason: WorkflowReplayMissReason): void {
+    this.#diverged = true;
+    if (this.#divergedAtCall === undefined || ordinal < this.#divergedAtCall) {
+      this.#divergedAtCall = ordinal;
+      this.#divergedAtNode = node;
+    }
+    if (this.#requireRecordedPrefix && ordinal < this.#recordedAgentExtent)
+      this.#strictRefusal ??= `Interrupted recovery refused prefix divergence at call ${ordinal}: ${reason}`;
   }
 
   #append(entry: WorkflowReplayEntry): void {
@@ -446,8 +440,8 @@ export function hashCanonicalRequest(canonicalRequest: string): string {
 function parseReplayEntry(value: unknown): WorkflowReplayEntry | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
-  if (record.v !== WORKFLOW_REPLAY_SCHEMA_VERSION) return undefined;
-  if (typeof record.seq !== "number" || !Number.isInteger(record.seq) || record.seq < 0) return undefined;
+  if (record.v !== 3 && record.v !== WORKFLOW_REPLAY_SCHEMA_VERSION) return undefined;
+  if (typeof record.seq !== "number" || !Number.isSafeInteger(record.seq) || record.seq < 0) return undefined;
   if (record.kind === "agent") {
     if (typeof record.key !== "string" || !/^[a-f0-9]{64}$/u.test(record.key)) return undefined;
     // Optional, but not lax: a `node` of the wrong type is a malformed line, and
@@ -464,7 +458,7 @@ function parseReplayEntry(value: unknown): WorkflowReplayEntry | undefined {
     if (record.ok === true) {
       return typeof record.text === "string"
         ? {
-            v: WORKFLOW_REPLAY_SCHEMA_VERSION,
+            v: record.v,
             seq: record.seq,
             kind: "agent",
             ...node,
@@ -480,7 +474,7 @@ function parseReplayEntry(value: unknown): WorkflowReplayEntry | undefined {
     }
     if (record.ok === false) {
       return {
-        v: WORKFLOW_REPLAY_SCHEMA_VERSION,
+        v: record.v,
         seq: record.seq,
         kind: "agent",
         ...node,
@@ -493,5 +487,5 @@ function parseReplayEntry(value: unknown): WorkflowReplayEntry | undefined {
   }
   if (record.kind !== "clock" && record.kind !== "random") return undefined;
   if (typeof record.value !== "number" || !Number.isFinite(record.value)) return undefined;
-  return { v: WORKFLOW_REPLAY_SCHEMA_VERSION, seq: record.seq, kind: record.kind, value: record.value };
+  return { v: record.v, seq: record.seq, kind: record.kind, value: record.value };
 }
