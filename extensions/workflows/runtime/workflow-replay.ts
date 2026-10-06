@@ -193,7 +193,12 @@ export function readWorkflowReplayLog(projectRoot: string, runId: string): Workf
     } catch {
       break;
     }
-    const entry = parseReplayEntry(parsed);
+    let entry: WorkflowReplayEntry | undefined;
+    try {
+      entry = parseReplayEntry(parsed);
+    } catch {
+      entry = undefined;
+    }
     if (entry !== undefined) entries.push(entry);
     else {
       if (typeof parsed !== "object" || parsed === null) break;
@@ -260,7 +265,8 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
     this.#runDir = options.runDir;
     this.#recordPath = workflowReplayFile(options.runDir);
     const recorded = (options.recorded ?? []).map((entry) => {
-      if (entry.kind !== "agent" || (entry.rcv !== 4 && entry.rcv !== 5)) return entry;
+      if (entry.kind !== "agent") return entry;
+      if (entry.rcv !== 4 && entry.rcv !== 5 && (!entry.ok || entry.structuredReceipt === undefined)) return entry;
       try {
         return immutableJSON(entry) as unknown as WorkflowReplayEntry;
       } catch (error) {
@@ -296,10 +302,11 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
   }
 
   #lookupAgent(call: WorkflowReplayAgentCall & { replayable: boolean }, ordinal: number): WorkflowReplayAgentLookup {
+    const structured = call.returnContractVersion === 4 || call.returnContractVersion === 5;
     if (this.#strictRefusal !== undefined) throw new Error(this.#strictRefusal);
     const miss = (reason: WorkflowReplayMissReason): WorkflowReplayAgentLookup => {
       this.#refusePrefix(ordinal, call.node, reason);
-      if (call.returnContractVersion === 4 || call.returnContractVersion === 5)
+      if (structured)
         throw new Error(`replay-contract-failure: v${call.returnContractVersion} prefix unavailable (${reason})`);
       if (this.#strictRefusal !== undefined) throw new Error(this.#strictRefusal);
       this.#freshCalls += 1;
@@ -310,8 +317,7 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
       return { replayed: false, reason: "no-record" };
     }
     if (this.#diverged) {
-      if (call.returnContractVersion === 4 || call.returnContractVersion === 5)
-        throw new Error(`replay-contract-failure: v${call.returnContractVersion} prefix diverged`);
+      if (structured) throw new Error(`replay-contract-failure: v${call.returnContractVersion} prefix diverged`);
       this.#freshCalls += 1;
       return { replayed: false, reason: "diverged" };
     }
@@ -329,6 +335,7 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
       if (entry.node === undefined || call.node === undefined) return miss("unnamed-node");
       if (entry.node !== call.node) return miss("node-mismatch");
     }
+    if (structured && entry.rcv !== call.returnContractVersion) return miss("return-contract-changed");
     if (entry.key !== hashCanonicalRequest(call.canonicalRequest)) {
       // A choice whose record predates the current contract (no `rcv`, or an older one)
       // cannot match by construction. Name that boundary rather than blaming the script.

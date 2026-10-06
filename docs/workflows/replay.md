@@ -54,8 +54,10 @@ see [the two retry loops](outcomes.md#the-two-retries-and-which-failure-each-one
 
 Structured calls also revalidate their committed receipt, full source and caller
 input; native calls check the current route. Replay-log v4 is separate from tool
-return-contract v4 and native return-contract v5. Missing or unproven structured
-evidence refuses before child work, including historical log-v3 identity misses.
+return-contract v4 and native return-contract v5. Structured intake detaches the
+recorded evidence; its declared return-contract version must match the call.
+Missing or unproven structured evidence refuses before child work, including
+historical log-v3 identity misses.
 If revalidation fails and the workflow catches it, subsequent prefix reuse still
 stops: ordinary suffix calls run fresh and structured suffix calls refuse. Calls
 already admitted concurrently retain their own settlement; this does not roll

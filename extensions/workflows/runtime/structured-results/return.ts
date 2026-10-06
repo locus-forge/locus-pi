@@ -164,15 +164,25 @@ export function createWorkflowStructuredCall(
       for (const item of returns) finalized(item.callId, item.name, item.arguments);
     }
   }
-  function bindHostCall(item: Record<string, unknown>): void {
-    if (typeof item.id !== "string" || typeof item.call_id !== "string" || item.id === "" || item.call_id === "") {
-      fail("Raw tool item identity unavailable", "output-protocol-unknown");
+  function observeAddedTool(item: Record<string, unknown>): void {
+    if (
+      typeof item.id !== "string" ||
+      item.id === "" ||
+      typeof item.call_id !== "string" ||
+      item.call_id === "" ||
+      typeof item.name !== "string" ||
+      item.name === ""
+    ) {
+      fail("Raw executable tool identity unavailable", "output-protocol-unknown");
       return;
     }
-    // Pi Codex Responses v1 constructs this exact host id; never split or infer it from prose.
+    // Pi's exact host id and the raw call id must each identify one executable item.
     const hostId = `${item.call_id}|${item.id}`;
-    if (hostCalls.has(hostId) && hostCalls.get(hostId) !== item.call_id)
-      fail("Ambiguous host call identity", "output-protocol-unknown");
+    if (turn!.items.has(item.id) || hostCalls.has(hostId) || [...hostCalls.values()].includes(item.call_id)) {
+      fail("Repeated or ambiguous executable tool identity", "output-protocol-unknown");
+      return;
+    }
+    turn!.items.set(item.id, { name: item.name, callId: item.call_id });
     hostCalls.set(hostId, item.call_id);
   }
   function providerEvent(event: unknown, model: unknown): void {
@@ -201,23 +211,7 @@ export function createWorkflowStructuredCall(
     const item = record(data.item);
     const nativeFailure = nativeResponse?.capture(data, turn.responseId);
     if (nativeFailure !== undefined) fail(nativeFailure.reason, nativeFailure.failureCause);
-    if (type === "response.output_item.added" && item?.type === "function_call") {
-      if (
-        typeof item.id !== "string" ||
-        item.id === "" ||
-        typeof item.call_id !== "string" ||
-        item.call_id === "" ||
-        typeof item.name !== "string" ||
-        item.name === ""
-      )
-        fail("Raw executable tool identity unavailable", "output-protocol-unknown");
-      else {
-        const prior = turn.items.get(item.id);
-        if (prior !== undefined) fail("Repeated raw tool item added", "output-protocol-unknown");
-        if (prior === undefined) turn.items.set(item.id, { name: item.name, callId: item.call_id });
-        bindHostCall(item);
-      }
-    }
+    if (type === "response.output_item.added" && item?.type === "function_call") observeAddedTool(item);
     if (type === "response.function_call_arguments.done") {
       const identity = typeof data.item_id === "string" ? turn.items.get(data.item_id) : undefined;
       if (identity === undefined) fail("Finalized arguments lack observed call identity", "output-protocol-unknown");

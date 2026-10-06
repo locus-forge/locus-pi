@@ -151,28 +151,44 @@ describe.each(["tool", "native"] as const)("structured %s admission and group se
       }),
   );
 
-  it("snapshots caller-owned structured records before asynchronous replay", async () =>
-    temporary(async (root) => {
-      const records = structuredClone(seeds[0]!.replayRecord);
-      const replay = createWorkflowReplayController({ runDir: tempRun(root, "snapshot"), recorded: records });
-      const entry = records[0]!;
-      if (entry.kind !== "agent" || !entry.ok || entry.structuredReceipt === undefined) throw new Error("Missing seed");
-      entry.structuredReceipt.value = "TAMPERED";
-      const runtime = createWorkflowRuntime({
-        runId: "snapshot",
-        ...replayDependencies,
-        replaySourceRunId: "source",
-        replay,
-        agentRunner: async () => {
-          throw new Error("Replay cannot dispatch a child");
-        },
-      });
-      expect(await runtime.dsl.agent("Return authoritative data", options)).toBe("FIRST");
-      expect(readWorkflowReplayLog(root, "snapshot")[0]).toMatchObject({
-        ok: true,
-        structuredReceipt: { value: "FIRST" },
-      });
-    }));
+  it.each(["intact", "missing", "mismatched"])(
+    "protects structured intake with %s contract metadata",
+    async (metadata) =>
+      temporary(async (root) => {
+        const records = structuredClone(seeds[0]!.replayRecord);
+        const entry = records[0]!;
+        if (entry.kind !== "agent" || !entry.ok || entry.structuredReceipt === undefined)
+          throw new Error("Missing seed");
+        if (metadata === "missing") delete entry.rcv;
+        if (metadata === "mismatched") entry.rcv = 3;
+        const replay = createWorkflowReplayController({ runDir: tempRun(root, "snapshot"), recorded: records });
+        entry.text = '"TAMPERED"';
+        entry.structuredReceipt.value = "TAMPERED";
+        if (entry.structuredReceipt.version === 5)
+          entry.structuredReceipt.rawTurns[0]!.output!.text = '{"value":"TAMPERED"}';
+        else entry.structuredReceipt.rawTurns[0]!.calls[0]!.arguments = '{"value":"TAMPERED"}';
+        const runtime = createWorkflowRuntime({
+          runId: "snapshot",
+          ...replayDependencies,
+          replaySourceRunId: "source",
+          replay,
+          agentRunner: async () => {
+            throw new Error("Replay cannot dispatch a child");
+          },
+        });
+        const call = runtime.dsl.agent("Return authoritative data", options);
+        if (metadata === "intact") {
+          expect(await call).toBe("FIRST");
+          expect(readWorkflowReplayLog(root, "snapshot")[0]).toMatchObject({
+            ok: true,
+            structuredReceipt: { value: "FIRST" },
+          });
+        } else {
+          await expect(call).rejects.toThrow("replay-contract-failure");
+          expect(replay.counts()).toMatchObject({ replayedCalls: 0, freshCalls: 0, divergedAtCall: 0 });
+        }
+      }),
+  );
 
   it.each(["missing", "domain", "legacy-log"] as const)(
     "closes later reuse after a caught %s refusal",

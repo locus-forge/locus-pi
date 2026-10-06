@@ -235,6 +235,52 @@ describe("group stop-dispatch and settlement", () => {
     expect(runtime.getJournal().at(-1)).toMatchObject({ kind: "group_end", status: "failed" });
   });
 
+  it("preserves an in-flight pipeline cancellation reason after draining started siblings", async () => {
+    const held = deferred();
+    const controller = new AbortController();
+    const reason = new Error("cancelled inside stage");
+    const started: number[] = [];
+    let laterStage = false;
+    const runtime = createWorkflowRuntime({
+      runId: "cancel-thrown-stage",
+      signal: controller.signal,
+      maxConcurrentAgents: 2,
+      agentRunner: async (request) => completed(request, "done"),
+    });
+    const run = observe(
+      runtime.dsl.pipeline(
+        [0, 1, 2],
+        async (item) => {
+          started.push(Number(item));
+          if (item === 0) {
+            await held.promise;
+            return item;
+          }
+          controller.abort(reason);
+          await Promise.resolve();
+          throw controller.signal.reason;
+        },
+        async () => {
+          laterStage = true;
+        },
+      ),
+    );
+    try {
+      await tick();
+      expect(started).toEqual([0, 1]);
+      expect(run.state.settled).toBe(false);
+      expect(runtime.getJournal().some((line) => line.kind === "group_end")).toBe(false);
+      expect(laterStage).toBe(false);
+    } finally {
+      held.resolve();
+      await run.done;
+    }
+    expect(run.state.error).toBe(reason);
+    expect(started).toEqual([0, 1]);
+    expect(laterStage).toBe(false);
+    expect(runtime.getJournal().at(-1)).toMatchObject({ kind: "group_end", status: "failed" });
+  });
+
   it("refuses pre-cancelled dispatch and stages after an in-flight cancellation", async () => {
     const controller = new AbortController();
     let stages = 0;

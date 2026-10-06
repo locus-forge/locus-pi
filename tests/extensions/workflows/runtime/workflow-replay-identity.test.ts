@@ -95,6 +95,18 @@ it.each([
   { name: "missing middle", rows: [record(0), record(2)], prefix: 1 },
   { name: "malformed first", rows: [{ ...record(0), text: null }, record(1)], prefix: 0 },
   { name: "malformed middle", rows: [record(0), { ...record(1), node: 1 }, record(2)], prefix: 1 },
+  {
+    name: "nonfinite structured middle",
+    rows: [
+      record(0),
+      JSON.stringify({ ...record(1), rcv: 4, structuredReceipt: { value: "NONFINITE" } }).replace(
+        '"NONFINITE"',
+        "1e999",
+      ),
+      record(2),
+    ],
+    prefix: 1,
+  },
   { name: "partial middle", rows: [record(0), '{"v":4,"seq":1', record(2)], prefix: 1 },
   { name: "duplicate first", rows: [record(0), record(0, "other"), record(1)], prefix: 0 },
   { name: "duplicate middle", rows: [record(0), record(1), record(1, "other")], prefix: 1 },

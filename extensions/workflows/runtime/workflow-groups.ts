@@ -374,7 +374,8 @@ export function createWorkflowGroupExecution(deps: WorkflowGroupExecutionDeps): 
             }
             acc = next;
           } catch (err) {
-            if (isRunLevelWorkflowFailure(err) || err instanceof CapturedWorkflowBranchFailure) throw err;
+            if (deps.signal?.aborted || isRunLevelWorkflowFailure(err) || err instanceof CapturedWorkflowBranchFailure)
+              throw err;
             throw new CapturedWorkflowBranchFailure(undefined, {
               index: itemIndex,
               stageIndex: si,
