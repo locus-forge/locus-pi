@@ -392,7 +392,8 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
       const replayedText = lookup?.replayed === true ? lookup.text : undefined;
       let replayedAcceptance: import("../../_shared/agent-runtime/agent-runner.js").AgentOutputAcceptance | undefined;
       if (req.structuredCall !== undefined && lookup?.replayed === true) {
-        if (lookup.structuredReceipt === undefined) throw new Error("replay-contract-failure: v4 receipt missing");
+        if (lookup.structuredReceipt === undefined)
+          throw new Error(`replay-contract-failure: v${req.structuredCall.contract.version} receipt missing`);
         await req.structuredCall.replay(lookup.structuredReceipt, lookup.text);
         replayedAcceptance = {
           ...(lookup.structuredReceipt.version === 5

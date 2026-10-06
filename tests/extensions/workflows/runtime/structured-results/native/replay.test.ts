@@ -107,6 +107,14 @@ describe("v5 replay with fresh existing current model resolution", () => {
     expect(replay).toEqual({ value: "known", child: 0 });
     expect(auth).toBe(0);
   });
+  it("names the native contract when a committed replay record lacks its receipt", async () => {
+    const first = await structuredSdk(options, [nativeTurn()]);
+    const records = structuredClone(first.replayRecord);
+    delete (records[0] as any).structuredReceipt;
+    const result = await resume(records);
+    expect(result.error).toMatchObject({ message: "replay-contract-failure: v5 receipt missing" });
+    expect(result.child).toBe(0);
+  });
   it.each([
     { ...model, id: "gpt-6-luna" },
     { ...model, id: "unknown-snapshot" },
