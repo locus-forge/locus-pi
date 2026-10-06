@@ -71,9 +71,18 @@ Use `error.slots` as the unambiguous in-memory view. A fulfilled `null` is
 convenience view: thrown positions appear as `null`, while directly returned
 failure records stay inspectable in their failed position.
 
-`WorkflowInvocationCapError` is the deliberate exception to group capture. It
-remains a separate hard run-level failure rather than becoming partial branch
-evidence.
+`WorkflowInvocationCapError` and `WorkflowRunDeadlineError` remain hard run-level
+failures instead of partial branch evidence. Once observed, they stop queued
+branch and pipeline-stage dispatch throughout the active nested group tree.
+Host cancellation also stops new group work. Every started branch still settles
+before `group_end`, the group rejection, the run result, or workspace lease
+release. Hard errors remain unwrapped; host cancellation retains the runner's
+cancelled disposition. Runtime deadlines do not add a second mechanism for
+aborting an active child.
+
+Ordinary branch failures keep their existing full-barrier behavior, including
+queued independent siblings. Their error journal records retain each branch's
+own phase, even after an await or inside nested groups.
 
 If the script does not catch this typed error, `runWorkflowScript` persists a
 JSON-safe `WorkflowGroupFailureEnvelope` as `result`. It contains counts, slot

@@ -884,6 +884,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   });
   runtime = createWorkflowRuntime({
     runId,
+    signal: opts.signal,
     agentRunner,
     preflightAgentRequests,
     journal,
