@@ -98,3 +98,12 @@ describe("conservative v4 closure coverage, separate from legacy source grammar"
     expect(assessWorkflowStructuredReplayCoverage(source)).toBe(false);
   });
 });
+
+it.each([
+  'export default async function run(dsl){const {evil:agent}=dsl;if(false){const {agent}=dsl;}return agent("x",{label:"x",schema:{type:"string"}});}',
+  'export default async function run(dsl){const {evil:log}=dsl;if(false){const {log}=dsl;}log("x");return dsl.agent("x",{label:"x",schema:{type:"string"}});}',
+  'export default async function run(dsl,agent){if(false){const {agent}=dsl;}return agent("x",{label:"x",schema:{type:"string"}});}',
+  'export default async function run(dsl){const {agent:alias}=dsl;return alias("x",{label:"x",schema:{type:"string"}});}',
+])("does not borrow DSL identity from another declaration or parameter: %s", (source) => {
+  expect(assessWorkflowStructuredReplayCoverage(source)).toBe(false);
+});

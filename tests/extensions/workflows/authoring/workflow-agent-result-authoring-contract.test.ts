@@ -1,12 +1,14 @@
 /**
  * The agent-result boundary as public authoring guidance teaches it: an agent answers
- * with exact text or one declared choice, several findings or a work queue live in a
- * named workspace file later agents read, and removed shaped-result options appear
- * only as removals or refusals. These cases own that teaching, not the runtime refusal.
+ * with exact text, one choice, or explicitly schema-bound JSON. Plain text stays opaque;
+ * file-backed work queues and removed-option refusals keep their contracts. These cases
+ * own that teaching, not runtime validation or source admission.
  */
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { standardWorkflowSourceShapeErrors } from "../../../../extensions/workflows/tool/workflow-source-shape.js";
 
 const root = process.cwd();
 
@@ -158,6 +160,37 @@ function sentences(text: string): string[] {
     .filter(Boolean);
 }
 
+/** Only a checked agent call's own prompt receives the declared-schema exemption. */
+function withoutSchemaBoundPrompts(code: string): string {
+  const workflow = /\bexport\s+default\b/u.test(code)
+    ? code
+    : `export const meta = { name: "prompt-contract", profile: "standard" };
+export default async function run({ agent }, input) { ${code} }`;
+  if (standardWorkflowSourceShapeErrors(workflow).length > 0) return code;
+  const file = ts.createSourceFile("example.mjs", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const ranges: Array<[number, number]> = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ["agent", "dsl.agent"].includes(node.expression.getText(file))) {
+      const [prompt, options] = node.arguments;
+      if (
+        prompt &&
+        options &&
+        ts.isObjectLiteralExpression(options) &&
+        options.properties.some(
+          (property) =>
+            ts.isPropertyAssignment(property) && property.name.getText(file).replace(/["']/gu, "") === "schema",
+        )
+      )
+        ranges.push([prompt.getStart(file), prompt.end]);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  for (const [start, end] of ranges.sort((left, right) => right[0] - left[0]))
+    code = `${code.slice(0, start)}""${code.slice(end)}`;
+  return code;
+}
+
 function stringLiterals(code: string): string[] {
   return [...code.matchAll(/`((?:[^`\\]|\\.)*)`|"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'/gu)].map(
     (match) => match[1] ?? match[2] ?? match[3] ?? "",
@@ -178,7 +211,7 @@ function instructionText(markdown: string): { prose: string[]; prompts: string[]
     if (marker && fence === undefined) fence = { info: marker[1] ?? "", lines: [] };
     else if (marker && fence !== undefined) {
       const body = fence.lines.join("\n");
-      if (/^(?:js|javascript|mjs)$/u.test(fence.info)) prompts.push(...stringLiterals(body));
+      if (/^(?:js|javascript|mjs)$/u.test(fence.info)) prompts.push(...stringLiterals(withoutSchemaBoundPrompts(body)));
       else if (/^(?:text|markdown|md)$/u.test(fence.info)) prompts.push(body);
       prose.push("");
       fence = undefined;
@@ -188,13 +221,27 @@ function instructionText(markdown: string): { prose: string[]; prompts: string[]
   return { prose, prompts };
 }
 
-/** Sentences of `markdown` that ask for, or rely on, a model-returned collection. */
+/** A schema qualification belongs to this proposition, never an unrelated earlier clause. */
+function schemaBound(sentence: string, match: RegExpExecArray): boolean {
+  const before = sentence.slice(0, match.index).split(COORDINATED_CLAUSE).at(-1) ?? "";
+  const after = sentence.slice(match.index + match[0].length).split(COORDINATED_CLAUSE)[0] ?? "";
+  return /\bschema-(?:bound|proven)\b|\b(?:with|through|using)\s+(?:an?\s+)?literal\s+`?schema\b/iu.test(
+    `${before}${match[0]}${after}`,
+  );
+}
+
+/** Sentences that ask for or rely on an unqualified model-returned collection. */
 function modelCollectionReturns(markdown: string): string[] {
   const { prose, prompts } = instructionText(markdown);
-  const violating = (text: string, rules: typeof collectionReturnRules) =>
+  const violating = (text: string, rules: typeof collectionReturnRules, allowSchemaQualification = false) =>
     sentences(text).filter((sentence) =>
       rules.some(({ pattern }) =>
-        [...sentence.matchAll(pattern)].some((match) => !refused(sentence, match) && !historical(sentence, match)),
+        [...sentence.matchAll(pattern)].some(
+          (match) =>
+            !refused(sentence, match) &&
+            !historical(sentence, match) &&
+            !(allowSchemaQualification && schemaBound(sentence, match)),
+        ),
       ),
     );
   return [
@@ -202,13 +249,15 @@ function modelCollectionReturns(markdown: string): string[] {
       violating(
         text,
         collectionReturnRules.filter((row) => row.prose),
+        true,
       ),
     ),
     ...prompts.flatMap((text) => violating(text, collectionReturnRules)),
   ];
 }
 
-const js = (prompt: string) => ["```js", `const answer = await agent(${JSON.stringify(prompt)});`, "```"].join("\n");
+const codeExample = (...lines: string[]) => ["```js", ...lines, "```"].join("\n");
+const js = (prompt: string) => codeExample(`const answer = await agent(${JSON.stringify(prompt)});`);
 
 /** Each case is one sentence; `true` means the contract rejects it. */
 const resultContractCases: ReadonlyArray<[string, boolean]> = [
@@ -253,6 +302,67 @@ const resultContractCases: ReadonlyArray<[string, boolean]> = [
   [js("Return the findings as a JSON array."), true],
   [js("Reply with a list of risks."), true],
   [["```text", "Create a workflow whose reviewer returns a list of risks.", "```"].join("\n"), true],
+  // Schema-bound JSON is explicit; a nearby schema mention does not excuse plain text.
+  ["A schema-bound agent returns JSON.", false],
+  ["With a literal schema, the agent returns JSON.", false],
+  ["The agent returns JSON through a literal schema.", false],
+  ["A schema is documented, but the agent returns JSON.", true],
+  ["A schema-bound agent returns JSON, but a plain agent returns JSON.", true],
+  ["The agent returns JSON without a schema.", true],
+  [codeExample('const value = await agent("Return JSON.", { label: "record", schema: { type: "object" } });'), false],
+  [
+    codeExample(
+      'const value = await agent("Return JSON.", { label: "record", schema: { type: "object" } });',
+      'const text = await agent("Return JSON.", { label: "plain" });',
+    ),
+    true,
+  ],
+  [
+    codeExample('const value = await agent("Return JSON.", { label: "record", schema: { type: "unsupported" } });'),
+    true,
+  ],
+  [
+    codeExample(
+      'const value = await agent("Return JSON.", { label: "record", schema: { type: "object" }, validate: () => [] });',
+    ),
+    true,
+  ],
+  [js("Return JSON through a literal schema."), true],
+  [
+    codeExample(
+      'const value = await agent("Return JSON.", { label: "record", schema: { type: "object" }, repair: { maxAttempts: 2 } });',
+    ),
+    true,
+  ],
+  [
+    codeExample(
+      'const value = await agent("Return JSON.", { label: "record", schema: { type: "object" }, outputTransport: "tool" });',
+    ),
+    true,
+  ],
+  [codeExample('const value = await agent("Return JSON.", { label: "record", schema: makeSchema() });'), true],
+  [
+    codeExample(
+      'const value = await agent("Return JSON.", { label: "record", schema: { type: "string" } });',
+      "return JSON.parse(value);",
+    ),
+    true,
+  ],
+  [
+    codeExample(
+      'export const meta = { name: "schema-example", profile: "standard" };',
+      'const RESULT_SCHEMA = { type: "object" };',
+      'export default async function run({ agent }) { return agent("Return JSON.", { label: "record", schema: RESULT_SCHEMA }); }',
+    ),
+    false,
+  ],
+  [
+    codeExample(
+      'export const meta = { name: "schema-example", profile: "standard" };',
+      'export default async function run(dsl) { return dsl.agent("Return JSON.", { label: "record", schema: { type: "object" } }); }',
+    ),
+    false,
+  ],
   // Local refusals.
   ["An agent never returns a list.", false],
   ["An agent never returns a list or JSON for source to consume.", false],
@@ -293,9 +403,9 @@ describe("agent result authoring contract", () => {
     expect(modelCollectionReturns(text)).toHaveLength(rejected ? 1 : 0);
   });
 
-  it("asks no agent, in the canonical prose it reads, for a list, JSON or objects source consumes", () => {
-    // Source consumes one exact text answer or a runtime-owned choice. Several findings or
-    // a work queue live in a named workspace file that later agents read.
+  it("requires an explicit schema contract for model-returned collections source consumes", () => {
+    // Plain text remains opaque; only declared schema shape admits bounded source consumption.
+    // A revisable work queue can still live in a named file later agents read.
     expect(activeAuthoringGuides).toEqual(
       expect.arrayContaining([
         "skills/locus-pi-workflow-create/references/source-boundary.md",
@@ -306,9 +416,10 @@ describe("agent result authoring contract", () => {
       expect(modelCollectionReturns(source(relativePath)), relativePath).toEqual([]);
 
     const boundary = source("skills/locus-pi-workflow-create/references/source-boundary.md").replace(/\s+/gu, " ");
-    expect(boundary).toContain("an extraction agent returns one complete textual finding as exact text");
-    expect(boundary).toContain("several findings belong in an exact caller-assigned file");
-    expect(boundary).toContain("source never consumes a list carried in a model answer");
+    expect(boundary).toContain("a literal-schema result for bounded source consumption");
+    expect(boundary).toContain("findings in an exact caller-assigned file");
+    expect(boundary).toContain("source never parses a list out of plain model text");
+    expect(boundary).toContain("`validate`, `repair` and `outputTransport` stay outside ordinary authoring");
 
     // The task guide names the queue files the checked-in workflow actually writes and reads.
     const task = source("examples/workflows/task/README.md").replace(/\s+/gu, " ");
@@ -322,9 +433,9 @@ describe("agent result authoring contract", () => {
     expect(task).toContain("The workflow script never reads the queue file");
   });
 
-  it("names removed agent options in workflow-create guidance only as removals or refusals", () => {
+  it("keeps removed options and trusted-runtime-only hooks outside generated source guidance", () => {
     // A generated workflow copies what these guides recommend. Each sentence that names a
-    // removed option, or a bound that only existed inside one, must say it is removed or
+    // removed option must say it is removed or
     // refused; a list item inherits that label from a lead-in such as "Do not generate:".
     const guides = [
       "docs/workflows/create.md",
@@ -337,8 +448,10 @@ describe("agent result authoring contract", () => {
     ];
     // The generated full DSL reference also documents runtime-only Fusion options; its API coverage has its own suite.
     const removedMention =
-      /`(?:handoffs|schema|validate|output|repair|returnVia|maxAnswerChars|schemaMaxLength|maxItemChars|maxLength|maxItems)(?![-\w])[^`]*`|\b(?:raw|advanced)\s+(?:schema|validate)\b/iu;
+      /`(?:handoffs|output|returnVia|maxAnswerChars|schemaMaxLength|maxItemChars)(?![-\w])[^`]*`/iu;
+    const runtimeOnlyMention = /`(?:validate|repair|outputTransport)(?![-\w])[^`]*`/iu;
     const removalLabel = /\b(?:removed|refuse[sd]?|refusal|do not|never|no source carries)\b/iu;
+    const runtimeOnlyLabel = /\b(?:outside|forbidden|trusted-runtime-only|runtime.only)\b/iu;
     for (const relativePath of guides) {
       const blocks = source(relativePath)
         .replace(/```[\s\S]*?```/gu, "")
@@ -348,6 +461,8 @@ describe("agent result authoring contract", () => {
         const inherited = /^\s*-/u.test(block) && /:\s*$/u.test(leadIn) && removalLabel.test(leadIn);
         for (const sentence of block.split(/(?<=[.;!?])\s+(?=[A-Z`(-])|\n(?=\s*-)/u)) {
           if (removedMention.test(sentence) && !inherited) expect(sentence, relativePath).toMatch(removalLabel);
+          if (runtimeOnlyMention.test(sentence) && !inherited && !removalLabel.test(sentence))
+            expect(sentence, relativePath).toMatch(runtimeOnlyLabel);
         }
       });
     }

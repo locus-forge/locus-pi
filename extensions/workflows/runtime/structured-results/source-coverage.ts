@@ -1,17 +1,34 @@
 import type { SgNode } from "@ast-grep/napi";
+import type { WorkflowJSONSchema } from "./schema.js";
+import { standardBindingModel } from "../../source/workflow-source-provenance.js";
+import { validateStructuredMapResults } from "../../source/workflow-source-structured-rules.js";
+import {
+  standardStructuredDeclarations,
+  structuredArrayItem,
+  structuredRequiredField,
+} from "../../source/workflow-source-structured.js";
 import {
   standardLexicalBindings,
   isStandardBindingOccurrence,
+  standardEntryDslBindings,
   standardDslBindings,
+  addStandardDslBindings,
   STANDARD_DSL_METHODS,
   standardFunctionParameters,
+  standardFunctionParameterNodes,
   standardCallArguments,
   callCallee,
 } from "../../source/workflow-source-bindings.js";
-import { staticObjectKey, staticStringValue, unwrapParentheses } from "../../source/workflow-source-literals.js";
+import {
+  escapedWorkflowIdentifiers,
+  staticObjectKey,
+  staticStringValue,
+  unwrapParentheses,
+} from "../../source/workflow-source-literals.js";
 
 /** V4-only callable subset over the existing AST; unknown dependencies refuse replay, not fresh execution. */
 export function assessStructuredReplayClosure(root: SgNode): boolean {
+  if (escapedWorkflowIdentifiers(root).length > 0) return false;
   // Mutation/spread can replace a proven declaration with an unowned callable.
   if (
     [
@@ -52,13 +69,122 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
       : undefined;
   };
   const entries = root
-    .findAll({ rule: { kind: "function_declaration" } })
-    .filter((fn) => fn.parent()?.kind() === "export_statement" && /^export\s+default\b/u.test(fn.parent()!.text()));
-  const entryVocabulary = new Map(entries.map((fn) => [standardFunctionParameters(fn)?.id(), standardDslBindings(fn)]));
+    .children()
+    .filter((node) => node.kind() === "export_statement" && /^export\s+default\b/u.test(node.text()))
+    .flatMap((node) =>
+      node
+        .children()
+        .filter((child) =>
+          ["function_declaration", "function_expression", "arrow_function"].includes(String(child.kind())),
+        ),
+    );
+  const entryVocabulary = new Map(
+    entries.map((fn) => [standardFunctionParameters(fn)?.id(), standardEntryDslBindings(fn)]),
+  );
+  const dslOwners = new Map(entryVocabulary);
   const isDsl = (node: SgNode): boolean => {
     const binding = bindingOf(node);
-    return binding !== undefined && entryVocabulary.get(binding.bindingId)?.has(node.text()) === true;
+    return binding !== undefined && dslOwners.get(binding.bindingId)?.has(node.text()) === true;
   };
+  for (const entry of entries) {
+    const body = entry.children().find((node) => node.kind() === "statement_block");
+    for (const declaration of declarations) {
+      const value = declaration.field("value");
+      if (
+        declaration.parent()?.parent()?.id() !== body?.id() ||
+        declaration.field("name")?.kind() !== "object_pattern" ||
+        value?.text() !== "dsl" ||
+        !isDsl(value)
+      )
+        continue;
+      const names = new Set<string>();
+      addStandardDslBindings(names, declaration.field("name")!);
+      dslOwners.set(declaration.id(), names);
+    }
+  }
+  const schemas = new Map<number, WorkflowJSONSchema>();
+  for (const entry of entries) {
+    const declarations = standardStructuredDeclarations(root, entry, { add() {} }).calls;
+    for (const [id, schema] of declarations) schemas.set(id, schema);
+    const dsl = standardDslBindings(entry);
+    const model = standardBindingModel(root, entry, dsl, { add() {} }, declarations);
+    let unsafeProjection = false;
+    validateStructuredMapResults(root, dsl, model, {
+      add() {
+        unsafeProjection = true;
+      },
+    });
+    if (unsafeProjection) return false;
+  }
+  const loopById = new Map(root.findAll({ rule: { kind: "for_in_statement" } }).map((node) => [node.id(), node]));
+  const callbackByParameters = new Map(
+    ["arrow_function", "function_expression"]
+      .flatMap((kind) => root.findAll({ rule: { kind } }))
+      .map((node) => [standardFunctionParameters(node)?.id(), node]),
+  );
+  function structuredShape(
+    node: SgNode | undefined,
+    resolved = false,
+    seen = new Set<number>(),
+  ): WorkflowJSONSchema | undefined {
+    const value = unwrapParentheses(node);
+    if (value === undefined || seen.has(value.id())) return undefined;
+    seen.add(value.id());
+    if (value.kind() === "await_expression")
+      return structuredShape(
+        value.children().find((child) => !["await", "comment"].includes(String(child.kind()))),
+        true,
+        seen,
+      );
+    if (value.kind() === "identifier") {
+      const binding = bindingOf(value);
+      if (binding === undefined) return undefined;
+      const declaration = declarationById.get(binding.bindingId);
+      if (declaration !== undefined)
+        return declaration.field("name")?.kind() === "identifier"
+          ? structuredShape(declaration.field("value") ?? undefined, resolved, seen)
+          : undefined;
+      const loop = loopById.get(binding.bindingId);
+      if (loop?.field("left")?.kind() === "identifier" && loop.children().some((child) => child.text() === "of")) {
+        const owner = structuredShape(loop.field("right") ?? undefined, false, seen);
+        return owner === undefined ? undefined : structuredArrayItem(owner);
+      }
+      const callback = callbackByParameters.get(binding.bindingId);
+      const index = standardFunctionParameterNodes(
+        callback === undefined ? undefined : standardFunctionParameters(callback),
+      ).findIndex((parameter) => parameter.kind() === "identifier" && parameter.text() === value.text());
+      const call = callback
+        ?.ancestors()
+        .find(
+          (node) =>
+            node.kind() === "call_expression" &&
+            unwrapParentheses(standardCallArguments(node)[0])?.id() === callback.id(),
+        );
+      const callee = call === undefined ? undefined : unwrapParentheses(callCallee(call));
+      if (callee?.kind() !== "member_expression" || callee.field("property")?.text() !== "map") return undefined;
+      const owner = structuredShape(callee.field("object") ?? undefined, false, seen);
+      return owner?.type !== "array"
+        ? undefined
+        : index === 0
+          ? structuredArrayItem(owner)
+          : index === 2
+            ? owner
+            : undefined;
+    }
+    if (value.kind() === "member_expression") {
+      const owner = structuredShape(value.field("object") ?? undefined, false, seen);
+      const name = value.field("property")?.text();
+      return owner !== undefined && name !== undefined ? structuredRequiredField(owner, name) : undefined;
+    }
+    if (!resolved || value.kind() !== "call_expression") return undefined;
+    const callee = unwrapParentheses(callCallee(value));
+    const root = callee?.kind() === "member_expression" ? callee.field("object") : callee;
+    const agent =
+      callee?.kind() === "member_expression"
+        ? root?.text() === "dsl" && callee.field("property")?.text() === "agent"
+        : callee?.text() === "agent";
+    return agent && root !== null && root !== undefined && isDsl(root) ? schemas.get(value.id()) : undefined;
+  }
   const instanceMethods = new Set([
     "includes",
     "indexOf",
@@ -171,7 +297,16 @@ export function assessStructuredReplayClosure(root: SgNode): boolean {
     if (receiver.kind() === "identifier" && receiver.text() === "dsl" && isDsl(receiver)) {
       return STANDARD_DSL_METHODS.has(name);
     }
+    const structured = structuredShape(receiver);
+    if (structured !== undefined) return structured.type === "array" && name === "map";
     const value = localValue(receiver, new Set(seen));
+    // A literal shadow is not the array it hid; primitives have no built-in map.
+    if (
+      name === "map" &&
+      value !== undefined &&
+      ["string", "template_string", "number", "true", "false", "null"].includes(String(value.kind()))
+    )
+      return false;
     if (value?.kind() === "object") {
       const own = value
         .children()

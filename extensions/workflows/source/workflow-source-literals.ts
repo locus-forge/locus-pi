@@ -38,7 +38,8 @@ export function staticStringValue(node: SgNode | null | undefined): string | und
   if (node == null || (node.kind() !== "string" && node.kind() !== "template_string")) return undefined;
   let value = "";
   for (const child of node.children()) {
-    if (child.kind() === "string_fragment") value += child.text();
+    if (child.kind() === "string_fragment")
+      value += node.kind() === "template_string" ? child.text().replace(/\r\n?/gu, "\n") : child.text();
     else if (child.kind() === "escape_sequence") value += decodeEscapeSequence(child.text());
     else if (child.kind() === "template_substitution") return undefined;
   }
@@ -49,7 +50,11 @@ export function staticStringValue(node: SgNode | null | undefined): string | und
 export function staticObjectKey(node: SgNode | null | undefined): string | undefined {
   if (node == null || node.kind() === "computed_property_name") return undefined;
   if (node.kind() === "string") return staticStringValue(node);
-  return node.text();
+  if (node.kind() === "number") {
+    const value = Number(node.text().replaceAll("_", ""));
+    return Number.isFinite(value) ? String(value) : undefined;
+  }
+  return node.text().replace(/\\u(?:\{[0-9a-f]+\}|[0-9a-f]{4})/giu, decodeEscapeSequence);
 }
 
 /** The expression inside any depth of redundant parentheses. */
@@ -73,6 +78,13 @@ function decodeEscapeSequence(value: string): string {
   if (unicode !== undefined) return String.fromCharCode(Number.parseInt(unicode, 16));
   const hex = /^x([0-9a-f]{2})$/iu.exec(body)?.[1];
   if (hex !== undefined) return String.fromCharCode(Number.parseInt(hex, 16));
-  if (body === "\n" || body === "\r\n") return "";
+  if (["\n", "\r", "\r\n", "\u2028", "\u2029"].includes(body)) return "";
   return body;
+}
+
+/** Binding identity is intentionally lexical; escaped spellings need a separate normalization proof. */
+export function escapedWorkflowIdentifiers(root: SgNode): SgNode[] {
+  return ["identifier", "shorthand_property_identifier", "shorthand_property_identifier_pattern"]
+    .flatMap((kind) => root.findAll({ rule: { kind } }))
+    .filter((node) => node.text().includes("\\"));
 }

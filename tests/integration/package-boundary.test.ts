@@ -46,12 +46,7 @@ function recursiveTypeScriptFiles(directory: string): string[] {
     return entry.isFile() && entry.name.endsWith(".ts") ? [absolute] : [];
   });
 }
-/**
- * The Package registry is the examples directory itself, so this list is not the
- * registry — it is the reviewed snapshot of what that directory currently holds.
- * A file added or removed there fails here on purpose: adding a Package workflow
- * is cheap, but it is still a public-surface change somebody has to look at.
- */
+/** Reviewed snapshot of the directory-owned Package registry; additions/removals require public-surface review. */
 const EXPECTED_PACKAGE_WORKFLOW_NAMES = [
   "live-smoke",
   "task/draft",
@@ -345,12 +340,15 @@ describe("npm public package boundary", () => {
       "schemas/extension-manifest.schema.json",
       "skills/",
     ]);
-    // Two shared admission owners, four structured-result owners, and three execution owners ship.
-    expect(dryRun.files).toHaveLength(275);
+    // The standard-tool/execution base ships 275 files; source proof and readonly types add four owned modules.
+    expect(dryRun.files).toHaveLength(279);
     for (const filename of [
+      "extensions/workflows/source/workflow-source-structured.ts",
+      "extensions/workflows/source/workflow-source-structured-rules.ts",
+      "extensions/workflows/source/workflow-source-provenance-query.ts",
       "extensions/_shared/agent-runtime/output-acceptance/agent-output-contract.ts",
       "extensions/_shared/agent-runtime/output-acceptance/agent-output-admission.ts",
-      ...["schema", "return", "receipt", "source-coverage"].map(
+      ...["schema", "return", "receipt", "source-coverage", "types"].map(
         (name) => `extensions/workflows/runtime/structured-results/${name}.ts`,
       ),
       ...["budget", "scheduler", "state"].map((name) => `extensions/_shared/runtime/execution-${name}.ts`),

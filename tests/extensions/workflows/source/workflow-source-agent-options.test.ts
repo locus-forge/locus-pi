@@ -10,22 +10,16 @@ export default async function run(dsl) {
 }
 
 describe("static agent choice declarations", () => {
-  it.each(["schema", "validate", "repair", "outputTransport"])(
-    "names unavailable %s without opening either checker grammar",
-    (option) => {
-      for (const mode of ["compatibility", "orchestration-only"] as const)
-        expect(checkWorkflowSourceText(source(`{ label: "result", ${option}: {} }`), mode)).toContainEqual(
-          expect.objectContaining({
-            code: "WF_POLICY",
-            severity: "error",
-            message:
-              option === "schema"
-                ? `agent ${option} is runtime-only and outside this authoring grammar`
-                : expect.stringContaining(`agent ${option} was removed`),
-          }),
-        );
-    },
-  );
+  it.each(["validate", "repair", "outputTransport"])("names removed %s without restoring an author API", (option) => {
+    for (const mode of ["compatibility", "orchestration-only"] as const)
+      expect(checkWorkflowSourceText(source(`{ label: "result", ${option}: {} }`), mode)).toContainEqual(
+        expect.objectContaining({
+          code: "WF_POLICY",
+          severity: "error",
+          message: expect.stringContaining(`agent ${option} was removed`),
+        }),
+      );
+  });
   it.each(["compatibility", "orchestration-only"] as const)("rejects an undeclared fallback in %s mode", (mode) => {
     const diagnostics = checkWorkflowSourceText(
       source(

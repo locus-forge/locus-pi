@@ -2,23 +2,14 @@
  * tool/workflow-source-shape.ts — the strict authoring checker for a published
  * `.workflow.mjs` source, and the order its checks run in.
  *
- * This is the runtime boundary, not only an authoring aid: the workflow tool,
- * the `check:workflow-source` gate and interrupted-run recovery all decide what
- * to do with a source by what this module returns. It parses once, reads the
- * lexical facts, classifies provenance, applies the permitted-use rules, and
- * publishes one deduplicated, ordered diagnostic list.
- *
- * The module surface checks stay here because they are the profile itself —
- * what the top level may hold, which statements the run body permits, that the
- * source imports nothing, that policy is not hidden in a helper, that every
- * identifier has a declared root, and that literal `phase()` calls agree with
- * `meta.phases`. The facts they read live in `source/workflow-source-*.ts`; no
- * module under `source/` imports this one back.
+ * Ordered diagnostics serve the workflow tool, repository gate and recovery.
+ * Lexical/provenance facts live under `source/`, without importing this facade.
  */
 import { Lang, parse, type SgNode } from "@ast-grep/napi";
 import { validateStandardAgentOptions } from "../source/workflow-source-agent-options.js";
 import {
   exportedMetaObject,
+  escapedWorkflowIdentifiers,
   staticObjectKey,
   staticStringValue,
   /** Named for the standard grammar this checker validates; the unwrapping itself is lexical. */
@@ -45,6 +36,10 @@ import {
   standardPhaseDslBindings,
 } from "../source/workflow-source-bindings.js";
 import { standardBindingModel } from "../source/workflow-source-provenance.js";
+import {
+  standardStructuredDeclarations,
+  type StandardStructuredDeclarations,
+} from "../source/workflow-source-structured.js";
 import {
   validateStandardCalls,
   validateStandardExpressions,
@@ -109,7 +104,7 @@ export function standardWorkflowSourceShapeDiagnostics(source: string): Workflow
   const runEntry = validateStandardTopLevel(root, diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.topLevel, root));
   validateStandardStatements(runEntry, diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.statement, runEntry ?? root));
   validateStandardDependencies(root, diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.import, root));
-  validateStandardOwnedPolicy(
+  const structured = validateStandardOwnedPolicy(
     root,
     runEntry,
     diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.policy, runEntry ?? root),
@@ -125,6 +120,7 @@ export function standardWorkflowSourceShapeDiagnostics(source: string): Workflow
     runEntry,
     dslBindings,
     diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.binding, runEntry ?? root),
+    structured.calls,
   );
   const protectedBindings = new Set([...dslBindings, ...bindingModel.collections.names, "Error"]);
   validateStandardExpressions(
@@ -392,8 +388,9 @@ function validateStandardOwnedPolicy(
   root: SgNode,
   runEntry: SgNode | undefined,
   errors: WorkflowSourceDiagnosticSink,
-): void {
+): StandardStructuredDeclarations {
   validateStandardAgentOptions(root, runEntry, errors);
+  const structured = standardStructuredDeclarations(root, runEntry, errors);
   const dslBindings = standardDslBindings(runEntry);
   for (const statement of root.findAll({ rule: { kind: "try_statement" } })) {
     errors.add("standard profile owns no try/catch recovery", statement);
@@ -402,6 +399,7 @@ function validateStandardOwnedPolicy(
     errors.add("standard profile owns no class helpers", declaration);
   }
   for (const pair of root.findAll({ rule: { kind: "pair" } })) {
+    if (structured.schemaNodes.has(pair.id())) continue;
     const key = staticObjectKey(pair.field("key"));
     if (key === "schema" || key === "validate") errors.add(`standard profile owns no raw ${key}`, pair);
     if (key === "outputDir") {
@@ -472,9 +470,12 @@ function validateStandardOwnedPolicy(
       method,
     );
   }
+  return structured;
 }
 
 function validateStandardIdentifierRoots(root: SgNode, errors: WorkflowSourceDiagnosticSink): void {
+  for (const node of escapedWorkflowIdentifiers(root))
+    errors.add("standard profile spells lexical identifiers without Unicode escapes", node);
   const bindings = standardLexicalBindings(root);
   const approvedGlobals = new Set(["Error"]);
   for (const rootValue of [
@@ -658,7 +659,10 @@ function staticMetaProfile(meta: SgNode): string | undefined {
 }
 
 function isStaticAuthoringLiteral(node: SgNode | null | undefined): boolean {
+  node = unwrapStandardParentheses(node ?? undefined);
   if (node == null) return false;
+  if (node.kind() === "unary_expression")
+    return ["+", "-"].includes(node.field("operator")?.text() ?? "") && node.field("argument")?.kind() === "number";
   if (["false", "null", "number", "regex", "string", "true", "undefined"].includes(String(node.kind()))) return true;
   if (node.kind() === "template_string") return staticStringValue(node) !== undefined;
   if (node.kind() !== "array" && node.kind() !== "object") return false;

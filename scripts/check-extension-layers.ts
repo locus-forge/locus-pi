@@ -139,6 +139,30 @@ interface FeatureInternalEntry {
 
 const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
   {
+    module: "extensions/workflows/source/workflow-source-structured.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/tool/workflow-source-shape.ts",
+    reason: "static schema decoding and shape facts are internal source proofs, not an evaluation API.",
+  },
+  {
+    module: "extensions/workflows/source/workflow-source-structured-rules.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/tool/workflow-source-shape.ts",
+    reason: "bounded structured value uses belong to the source-check diagnostic boundary.",
+  },
+  {
+    module: "extensions/workflows/source/workflow-source-provenance-query.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/tool/workflow-source-shape.ts",
+    reason: "binding-model queries are internal facts consumed by source diagnostics.",
+  },
+  {
+    module: "extensions/workflows/runtime/structured-results/types.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/runtime/workflow-runtime.ts",
+    reason: "schema-derived readonly outputs are exported through the public WorkflowDsl type owner.",
+  },
+  {
     module: "extensions/workflows/runtime/structured-results/source-coverage.ts",
     owner: "extensions/workflows",
     facade: "extensions/workflows/runtime/workflow-script-identity.ts",

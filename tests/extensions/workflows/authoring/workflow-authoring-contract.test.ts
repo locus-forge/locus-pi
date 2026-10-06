@@ -134,7 +134,8 @@ describe("readable workflow authoring references", () => {
     ];
     const snippets = documents.flatMap((relativePath) => declaredStandardDocSnippets(relativePath));
     for (const snippet of snippets) {
-      expect(snippet).not.toMatch(/\b(?:tools|readOnly|permissionMode|sandbox|schema|validate)\s*:/u);
+      expect(snippet).not.toMatch(/\b(?:tools|readOnly|permissionMode|sandbox|validate|repair|outputTransport)\s*:/u);
+      if (/\bschema\s*:/u.test(snippet)) expect(standardWorkflowSourceShapeErrors(snippet)).toEqual([]);
       expect(snippet).not.toMatch(/function\s+(?:parse|validate|render|repair|acknowledge)\w*/iu);
     }
   });
@@ -302,7 +303,9 @@ ${authoring[0] ?? ""}
     expect(authoring).toContain("literal `label`");
     expect(authoring).toContain("provenance");
     expect(authoring).toContain("Markdown/table/report renderers");
-    expect(authoring).toContain("raw `schema`");
+    expect(authoring).toContain("### Checked structured results");
+    expect(authoring).toContain("one unshadowed top-level literal `const`");
+    expect(authoring).toContain("`validate`, `repair` and `outputTransport` remain forbidden in both modes");
     expect(dsl).toContain("items()");
     expect(policy).toContain("## Run budget");
     expect(policy).toContain("No additional axis acquires a default without a separate policy decision.");
@@ -417,7 +420,9 @@ ${authoring[0] ?? ""}
     const snippets = javascriptDocSnippets(`${base}/structured-results.md`);
     expect(snippets.length).toBeGreaterThan(0);
     for (const snippet of snippets) {
-      const workflow = standardSource(`export default async function run({ agent, input }) {\n${snippet}\n}`);
+      const workflow = /\bexport\s+default\b/u.test(snippet)
+        ? snippet
+        : standardSource(`export default async function run({ agent }, input) {\n${snippet}\n}`);
       expect(standardWorkflowSourceShapeErrors(workflow)).toEqual([]);
     }
   });

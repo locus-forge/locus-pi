@@ -19,7 +19,10 @@ import {
   createAgentSdkSessionExecutor,
   type SdkAgentSessionLike,
 } from "../../../extensions/_shared/agent-runtime/agent-sdk-host.js";
-import { createWorkflowAgentRunner } from "../../../extensions/workflows/runtime/workflow-agent-bridge.js";
+import {
+  createWorkflowAgentRunner,
+  type WorkflowAgentBridgeOptions,
+} from "../../../extensions/workflows/runtime/workflow-agent-bridge.js";
 import { createWorkflowRuntime } from "../../../extensions/workflows/runtime/workflow-runtime.js";
 import { createWorkflowArtifactStore } from "../../../extensions/workflows/runtime/workflow-artifacts.js";
 import { agentLiveStore } from "../../../extensions/_shared/agent-runtime/agent-live-store.js";
@@ -72,14 +75,12 @@ export function rawTurn(values: string[], terminal = "completed", extra: object[
   ];
 }
 
-export async function structuredSdk(
-  options: WorkflowAgentStructuredOptions | WorkflowAgentAnyOptions,
+/** Shared synthetic transport factory; source-run tests use the real runner/identity owner. */
+export async function createStructuredSdkExecutor(
+  root: string,
   scripted: object[][],
   tweak?: (session: sdk.AgentSession) => void,
-  failEvidence = false,
-  beforeAttempt?: (request: WorkflowAgentRequest) => WorkflowAgentResult | undefined,
 ) {
-  const root = realpathSync(mkdtempSync(path.join(tmpdir(), "locus-structured-sdk-")));
   const counters = {
     physical: 0,
     sessions: 0,
@@ -91,13 +92,6 @@ export async function structuredSdk(
     effects: 0,
     prompts: 0,
   };
-  let acceptance: AgentOutputAcceptance | undefined;
-  let error: unknown;
-  let value: unknown;
-  let replayRecord: ReturnType<typeof readWorkflowReplayLog> = [];
-  const runId = "structured-sdk";
-  const runDir = path.join(root, ".locus-pi", "runs", runId);
-  mkdirSync(runDir, { recursive: true });
   const catalogModel = openaiCodexProvider().getModels()[0]!;
   if (catalogModel === undefined) throw new Error("Actual installed model catalog lacks fixture model");
   const model = { ...catalogModel };
@@ -152,6 +146,84 @@ export async function structuredSdk(
     systemPrompt: "Local synthetic fixture",
   });
   await loader.reload();
+  const createExecutor: NonNullable<WorkflowAgentBridgeOptions["createExecutor"]> = (opts) =>
+    createAgentSdkSessionExecutor({
+      model,
+      ...(opts.live === undefined ? {} : { live: opts.live }),
+      ...(opts.maxToolCalls === undefined ? {} : { maxToolCalls: opts.maxToolCalls }),
+      ...(opts.childTimeoutMs === undefined ? {} : { childTimeoutMs: opts.childTimeoutMs }),
+      ...(opts.reportsDir === undefined ? {} : { reportsDir: opts.reportsDir }),
+      ...(opts.onLiveExecution === undefined ? {} : { onLiveExecution: opts.onLiveExecution }),
+      createSession: async (request) => {
+        counters.sessions++;
+        const workTool: ReadOnlyAgentCustomTool = {
+          name: "fixture_work",
+          label: "Work",
+          description: "Local counter only",
+          parameters: { type: "object", properties: {} },
+          execute: () => {
+            counters.effects++;
+            return { content: [{ type: "text" as const, text: "local evidence" }] };
+          },
+        };
+        const tools = [...(request.customTools ?? []), workTool].map((tool) => ({
+          ...tool,
+          execute: (...args: Parameters<typeof tool.execute>) => {
+            counters.tools++;
+            return tool.execute(...args);
+          },
+        }));
+        const { session } = await sdk.createAgentSession({
+          cwd: root,
+          agentDir: root,
+          modelRuntime: models,
+          model,
+          settingsManager: settings,
+          resourceLoader: loader,
+          sessionManager: sdk.SessionManager.inMemory(root),
+          noTools: "all",
+          tools: tools.map((tool) => tool.name),
+          customTools: tools as unknown as NonNullable<sdk.CreateAgentSessionOptions["customTools"]>,
+        });
+        const priorRaw = session.agent.onProviderStreamEvent;
+        session.agent.onProviderStreamEvent = async (event, model) => {
+          counters.raw++;
+          await priorRaw?.(event, model);
+        };
+        session.agent.prepareRequest = () => {
+          counters.priorPrepare++;
+        };
+        session.agent.finishTurn = () => {
+          counters.priorFinish++;
+        };
+        const prompt = session.prompt.bind(session);
+        session.prompt = async (...args) => {
+          counters.prompts++;
+          await prompt(...args);
+        };
+        tweak?.(session);
+        return { session: session as unknown as SdkAgentSessionLike, hostVersion: sdk.VERSION };
+      },
+    });
+  return { counters, createExecutor, payloads, urls };
+}
+
+export async function structuredSdk(
+  options: WorkflowAgentStructuredOptions | WorkflowAgentAnyOptions,
+  scripted: object[][],
+  tweak?: (session: sdk.AgentSession) => void,
+  failEvidence = false,
+  beforeAttempt?: (request: WorkflowAgentRequest) => WorkflowAgentResult | undefined,
+) {
+  const root = realpathSync(mkdtempSync(path.join(tmpdir(), "locus-structured-sdk-")));
+  const { counters, createExecutor, payloads, urls } = await createStructuredSdkExecutor(root, scripted, tweak);
+  let acceptance: AgentOutputAcceptance | undefined;
+  let error: unknown;
+  let value: unknown;
+  let replayRecord: ReturnType<typeof readWorkflowReplayLog> = [];
+  const runId = "structured-sdk";
+  const runDir = path.join(root, ".locus-pi", "runs", runId);
+  mkdirSync(runDir, { recursive: true });
   const harness = createHarness(root);
   const store = createWorkflowArtifactStore({ projectRoot: root, runId, runDir });
   const bridge = createWorkflowAgentRunner({
@@ -161,65 +233,7 @@ export async function structuredSdk(
     workflowRunId: runId,
     workflowRunDir: runDir,
     evidenceDestinations: (callId) => store.childEvidenceDestinations(callId),
-    createExecutor: (opts) =>
-      createAgentSdkSessionExecutor({
-        model,
-        ...(opts.live === undefined ? {} : { live: opts.live }),
-        ...(opts.maxToolCalls === undefined ? {} : { maxToolCalls: opts.maxToolCalls }),
-        ...(opts.childTimeoutMs === undefined ? {} : { childTimeoutMs: opts.childTimeoutMs }),
-        ...(opts.reportsDir === undefined ? {} : { reportsDir: opts.reportsDir }),
-        ...(opts.onLiveExecution === undefined ? {} : { onLiveExecution: opts.onLiveExecution }),
-        createSession: async (request) => {
-          counters.sessions++;
-          const workTool: ReadOnlyAgentCustomTool = {
-            name: "fixture_work",
-            label: "Work",
-            description: "Local counter only",
-            parameters: { type: "object", properties: {} },
-            execute: () => {
-              counters.effects++;
-              return { content: [{ type: "text" as const, text: "local evidence" }] };
-            },
-          };
-          const tools = [...(request.customTools ?? []), workTool].map((tool) => ({
-            ...tool,
-            execute: (...args: Parameters<typeof tool.execute>) => {
-              counters.tools++;
-              return tool.execute(...args);
-            },
-          }));
-          const { session } = await sdk.createAgentSession({
-            cwd: root,
-            agentDir: root,
-            modelRuntime: models,
-            model,
-            settingsManager: settings,
-            resourceLoader: loader,
-            sessionManager: sdk.SessionManager.inMemory(root),
-            noTools: "all",
-            tools: tools.map((tool) => tool.name),
-            customTools: tools as unknown as NonNullable<sdk.CreateAgentSessionOptions["customTools"]>,
-          });
-          const priorRaw = session.agent.onProviderStreamEvent;
-          session.agent.onProviderStreamEvent = async (event, model) => {
-            counters.raw++;
-            await priorRaw?.(event, model);
-          };
-          session.agent.prepareRequest = () => {
-            counters.priorPrepare++;
-          };
-          session.agent.finishTurn = () => {
-            counters.priorFinish++;
-          };
-          const prompt = session.prompt.bind(session);
-          session.prompt = async (...args) => {
-            counters.prompts++;
-            await prompt(...args);
-          };
-          tweak?.(session);
-          return { session: session as unknown as SdkAgentSessionLike, hostVersion: sdk.VERSION };
-        },
-      }),
+    createExecutor,
   });
   const runtime = createWorkflowRuntime({
     runId,

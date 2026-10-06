@@ -6,7 +6,7 @@ description: Create or repair a Pi workflow through a compact lesson and exact-s
 # Create a reusable Pi workflow
 
 A workflow makes dependencies visible. Scout first if work is unclear.
-This skill owns authoring and the checked-source handoff. Do not use merely to run an existing workflow.
+Owns authoring and checked-source handoff, not running existing workflows.
 Resolve this `SKILL.md` to its physical file before following relative links; the
 [workflow manual](../../docs/workflows/index.md) belongs to that package, never the caller cwd.
 This ordinary entry follows [route selection](../../docs/workflows/create.md#choose-an-authoring-route):
@@ -64,14 +64,15 @@ The [starter guide](../../extensions/workflows/references/examples/starters/READ
 
 ## Calls and handoffs
 
-`agent()` starts a clean child and returns whole text. Give each child the original Task and evidence; parent conversation is absent.
-Keep that Task authoritative; add role-specific duties without duplicating or changing its requirements.
-Use exact `choice` only at a branch.
+Plain `agent()` returns whole text; literal `schema` opts into bounded JSON results.
+Give each child the original Task and evidence; parent conversation is absent.
+Keep the Task authoritative; add role-specific duties without changing its requirements.
+Use `choice` for a branch, literal `schema` for proven fields or arrays.
 Assign exact paths for shared handoffs and Task-required outputs; writers/readers use those same files.
 Delegate internal file layout within an implementation actor's product root, subject to narrower Task boundaries.
 Source exposes control edges; children inspect and act with tools. Never parse prose, JSON or those files in source.
 `phase()`/`log()` show progress; text publication retains optional native evidence. It never saves or attests an agent-owned file.
-For decisions, reports or a translator, read [structured results](references/structured-results.md).
+Read [structured results](references/structured-results.md) for result contracts.
 
 ## Choose stages from dependencies
 

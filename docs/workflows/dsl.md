@@ -2,11 +2,11 @@
 title: Workflow DSL reference
 type: guide
 status: active
-updated: "2026-09-22T17:05:40Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=47"
-description: "Correct handoff contracts and keep operator and Fusion details with their owning guides."
+updated: "2026-10-06T12:27:00Z"
+source_commit: "fee5f591caaf"
+update_event: "user_request"
+context: "bounded schema authoring on the standard-tool contract"
+description: "Public workflow method signatures and bounded checked-source examples."
 ---
 
 # Workflow DSL reference
@@ -51,17 +51,17 @@ Entries describe ordinary runtime behavior; a custom host that omits a required 
 
 ### agent
 
-**Signature:** `agent(prompt: string, options?) -> Promise<string>`; the `choice` overload narrows the result to one exact declared member; trusted runtime `schema` calls return `Promise<WorkflowJSONValue>`. Run a clean child by default, or select a catalog persona with `agent`. Prompt must be nonblank task text; no implicit answer length limit exists. Ordinary success returns the exact non-empty final answer. Execution failures throw `WorkflowAgentExecutionError`; invalid declarations fail before a child starts.
+**Signature:** `agent(prompt: string, options?) -> Promise<string>`; the `choice` overload narrows the result to one exact declared member; `schema` calls return `Promise<WorkflowSchemaResult<Schema>>`, inferred as deeply readonly JSON from literal schemas. Run a clean child by default, or select a catalog persona with `agent`. Prompt must be nonblank task text; no implicit answer length limit exists. Ordinary success returns the exact non-empty final answer. Execution failures throw `WorkflowAgentExecutionError`; invalid declarations fail before a child starts.
 
-| Result mode / options                    | Result and defaults                                                                                  | Availability and important constraints                                                            |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Omit result options                      | Exact final text, `Promise<string>`                                                                  | All three modes; no parsing or truncation                                                         |
-| `choice: ["accept", "revise"]`           | One exact member; a TypeScript readonly tuple infers its member union, dynamic lists return `string` | All three; at least two unique nonblank strings; no option-count or text-length ceiling           |
-| `choiceFallback: "revise"` with `choice` | Declared member after the one same-session correction is exhausted                                   | Must belong to `choice`; never substitutes for transport or host failure                          |
-| `result: "report"`                       | Opaque host-rendered observation, `Promise<string>`                                                  | All three; accepted answer or eligible terminal failure, not semantic approval                    |
-| `schema`                                 | Immutable finite JSON, v4; initial plus one package-owned correction                                 | Trusted runtime only, Pi >=1.0.0 openai-codex with actual capabilities; neither checker admits it |
+| Result mode / options                    | Result and defaults                                                                                                | Availability and important constraints                                                             |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Omit result options                      | Exact final text, `Promise<string>`                                                                                | All three modes; no parsing or truncation                                                          |
+| `choice: ["accept", "revise"]`           | One exact member; a TypeScript readonly tuple infers its member union, dynamic lists return `string`               | All three; at least two unique nonblank strings; no option-count or text-length ceiling            |
+| `choiceFallback: "revise"` with `choice` | Declared member after the one same-session correction is exhausted                                                 | Must belong to `choice`; never substitutes for transport or host failure                           |
+| `result: "report"`                       | Opaque host-rendered observation, `Promise<string>`                                                                | All three; accepted answer or eligible terminal failure, not semantic approval                     |
+| `schema: literalOrTopLevelConst`         | Immutable finite JSON, v4; initial plus one package-owned correction; literal schemas infer deeply readonly values | Both checkers admit bounded schema-proven uses; Pi >=1.0.0 openai-codex with verified capabilities |
 
-A choice call uses `workflow_return` inside the same child session with one package-owned correction turn; exhaustion throws `SchemaValidationError` unless `choiceFallback` applies. A transport without the return-tool capability fails closed. `handoffs`, `output` and `returnVia` remain removed. Both source-check profiles still refuse `schema`, `validate`, `repair` and `outputTransport`; reviewed trusted runtime source can use the [structured v4 contract](agent-results.md#structured-results-v4--trusted-runtime-source). `validate`, `repair` and `outputTransport` are removed runtime options, refused before work or replay. The return tool carries the actual schema and requests Pi strict sampling only where its conversion preserves the declared semantics. Ordinary generated workflows use exact caller-assigned files for richer handoffs and [`items()`](#items) for caller-owned units.
+A choice call uses `workflow_return` inside the same child session with one package-owned correction turn; exhaustion throws `SchemaValidationError` unless `choiceFallback` applies. A transport without the return-tool capability fails closed. `handoffs`, `output` and `returnVia` remain removed. Both source-check profiles admit a literal `schema` or one unshadowed top-level literal schema `const` in direct options with distinct explicit properties. They reject options spreads, shorthand and computed keys on structured calls, and still refuse `validate`, `repair` and `outputTransport`. The [structured v4 contract](agent-results.md#structured-results-v4) preserves the standard return tool carrying the actual schema and Pi strict sampling where conversion preserves its semantics. `validate`, `repair` and `outputTransport` are removed runtime options, refused before work or replay. Use a schema only when source consumes proven fields or arrays; exact caller-assigned files remain useful for richer handoffs, and [`items()`](#items) carries caller-owned units.
 
 **Example — orchestration-only:** a complete module; every agent edge has a distinct literal label. Caller-supplied items go unchanged to each worker, reports stay opaque, and only the exact choice controls the branch.
 
@@ -86,14 +86,92 @@ export default async function run({ agent, items, parallel, publishPrimaryArtifa
 }
 ```
 
-**Example — runtime-only schema, rejected by both source-check modes:** the standard profile is deliberately present to demonstrate that authoring boundary; do not copy it into checked source.
+**Example — literal schema, admitted by both source-check modes:** await a structured boolean before comparing its exact identity. This uses the same v4 tool route as the following record/array examples.
 
-<!-- dsl-example: rejected-schema -->
+<!-- dsl-example: structured-literal -->
+
+```js
+export const meta = { name: "classify-task", profile: "standard" };
+export default async ({ agent }, input) => {
+  const needsReview = await agent(`Does this task require review?\n${input}`, {
+    label: "classify",
+    schema: { type: "boolean" },
+  });
+  if (needsReview === true) return agent(input, { label: "review" });
+  return "No review requested";
+};
+```
+
+**Example — required fields from a top-level schema:** strings forward unchanged, and scalar fields interpolate directly into text sinks. Schema acceptance establishes shape, not the truth of the reviewer's finding.
+
+<!-- dsl-example: structured-record -->
+
+```js
+export const meta = { name: "review-record", profile: "standard" };
+const REVIEW_SCHEMA = {
+  type: "object",
+  properties: {
+    decision: { type: "string", enum: ["accept", "revise"] },
+    summary: { type: "string" },
+    count: { type: "integer", minimum: 0 },
+  },
+  required: ["decision", "summary", "count"],
+  additionalProperties: false,
+};
+export default async function run(dsl, input) {
+  const { agent, log, publishPrimaryArtifact } = dsl;
+  const review = await agent(`Review this task and return the requested record.\n${input}`, {
+    label: "review-record",
+    schema: REVIEW_SCHEMA,
+  });
+  log(`Reported findings: ${review.count}`);
+  if (review.decision === "revise") return agent(review.summary, { label: "explain-corrections" });
+  return publishPrimaryArtifact("review.md", review.summary);
+}
+```
+
+**Example — structured array scheduling:** the item schema proves each required `summary`. The resulting worker reports remain opaque. Do not index the array or assume a group result has the same schema.
+
+<!-- dsl-example: structured-array -->
+
+```js
+export const meta = { name: "review-findings", profile: "standard" };
+const FINDINGS_SCHEMA = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: { summary: { type: "string" } },
+    required: ["summary"],
+    additionalProperties: false,
+  },
+};
+export default async function run({ agent, parallel, log }, input) {
+  const findings = await agent(`Identify findings for independent review.\n${input}`, {
+    label: "findings",
+    schema: FINDINGS_SCHEMA,
+  });
+  log(`Findings to review: ${findings.length}`);
+  return parallel(findings.map((finding) => () => agent(finding.summary, { label: "review-finding" })));
+}
+```
+
+An awaited structured result may also be returned whole or kept through an unchanged alias.
+Only required named fields are readable; optional guards do not prove presence.
+All unchecked indexes, result destructuring, field mutation and arbitrary transformations
+remain rejected. Array `items` is optional in the runtime dialect, but an untyped item
+stays opaque. Map JSON values synchronously: Promise/function projections are refused,
+and `await` on the mapped array does not settle its elements. The example above passes
+branch functions directly to `parallel()`, which owns their execution and settlement.
+See the [source boundary](source-shape.md#checked-structured-results).
+
+**Example — removed validation callback, rejected by both source-check modes:** express constraints in the schema or domain decisions in workflow source; the runtime also refuses `validate`.
+
+<!-- dsl-example: rejected-structured-validator -->
 
 ```js expect-error
-export const meta = { name: "schema-compatibility", profile: "standard" };
+export const meta = { name: "validated-result", profile: "standard" };
 export default async function run({ agent }, input) {
-  return agent(input, { label: "classify", schema: { type: "boolean" } });
+  return agent(input, { label: "classify", schema: { type: "boolean" }, validate: () => [] });
 }
 ```
 
@@ -386,7 +464,7 @@ const answers = await dsl.parallel(
 );
 ```
 
-This is the existing `parallel` primitive, not a new `parallel.map`. `pipeline` retains its existing per-item stage semantics. Discovered model values are opaque and cannot be destructured like author-owned records; the standard source checker owns that distinction.
+This is the existing `parallel` primitive, not a new `parallel.map`. `pipeline` retains its existing per-item stage semantics. Plain model text and unproven composites are opaque and cannot be destructured like author-owned records. Structured results permit only their schema-proven operations and also cannot be destructured; the standard source checker owns that distinction.
 
 ## Queue, phases and inspection
 
