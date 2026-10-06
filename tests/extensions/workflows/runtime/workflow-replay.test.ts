@@ -616,7 +616,7 @@ export default async function runWorkflow(dsl) {
     const sourceRunId = "20260812-020202-a001";
     const source = createWorkflowReplayController({ runDir: ensureWorkflowRunDir(root, sourceRunId) });
     source.recordAgentAttempt(
-      { node: nodeName("recorded"), canonicalRequest: "recorded-request" },
+      source.beginAgentAttempt({ node: nodeName("recorded"), canonicalRequest: "recorded-request", replayable: true }),
       {
         ok: true,
         text: "recorded answer",
@@ -639,9 +639,17 @@ export default async function runWorkflow(dsl) {
     const root = temporaryProject();
     const sourceRunId = "20260812-010101-f001";
     const source = createWorkflowReplayController({ runDir: ensureWorkflowRunDir(root, sourceRunId) });
-    source.recordAgentAttempt({ canonicalRequest: "call-0" }, { ok: true, text: "recorded answer" });
-    source.recordAgentAttempt({ canonicalRequest: "call-1" }, { ok: false });
-    source.recordAgentAttempt({ canonicalRequest: "call-2" }, { ok: true, text: "later answer" });
+    source.recordAgentAttempt(source.beginAgentAttempt({ ...{ canonicalRequest: "call-0" }, replayable: true }), {
+      ok: true,
+      text: "recorded answer",
+    });
+    source.recordAgentAttempt(source.beginAgentAttempt({ ...{ canonicalRequest: "call-1" }, replayable: true }), {
+      ok: false,
+    });
+    source.recordAgentAttempt(source.beginAgentAttempt({ ...{ canonicalRequest: "call-2" }, replayable: true }), {
+      ok: true,
+      text: "later answer",
+    });
 
     const resumed = createWorkflowReplayController({
       runDir: ensureWorkflowRunDir(root, "20260812-010101-f002"),
@@ -671,9 +679,18 @@ export default async function runWorkflow(dsl) {
     const root = temporaryProject();
     const sourceRunId = "20260812-030303-s001";
     const source = createWorkflowReplayController({ runDir: ensureWorkflowRunDir(root, sourceRunId) });
-    source.recordAgentAttempt({ canonicalRequest: "call-0" }, { ok: true, text: "first answer" });
-    source.recordAgentAttempt({ canonicalRequest: "call-1" }, { ok: true, text: "worktree answer" });
-    source.recordAgentAttempt({ canonicalRequest: "call-2" }, { ok: true, text: "later answer" });
+    source.recordAgentAttempt(source.beginAgentAttempt({ ...{ canonicalRequest: "call-0" }, replayable: true }), {
+      ok: true,
+      text: "first answer",
+    });
+    source.recordAgentAttempt(source.beginAgentAttempt({ ...{ canonicalRequest: "call-1" }, replayable: true }), {
+      ok: true,
+      text: "worktree answer",
+    });
+    source.recordAgentAttempt(source.beginAgentAttempt({ ...{ canonicalRequest: "call-2" }, replayable: true }), {
+      ok: true,
+      text: "later answer",
+    });
 
     const resumed = createWorkflowReplayController({
       runDir: ensureWorkflowRunDir(root, "20260812-030303-s002"),

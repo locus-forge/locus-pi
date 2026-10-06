@@ -34,7 +34,11 @@ the last stage of a long pipeline no longer pays for the earlier stages.
 
 ### What is compared
 
-The key is the call's ordinal position plus its canonical resolved request.
+The key is the call's admission ordinal plus its canonical resolved request.
+The runtime allocates one receipt before the first await and carries it through
+transport retries and settlement. New version-4 replay records keep that ordinal
+in `seq`, even when parallel children finish in reverse order. Reading uses the
+stored ordinal, never the line's position in the file.
 It includes the prompt, catalog `agent`, `maxToolCalls`, `timeoutMs`, `maxTurns`,
 declared model and role selectors, `label`, `phase`, workspace and execution
 identity, mapped item identity, and the `ask` declaration. A call that may block
@@ -70,16 +74,18 @@ completed nodes return their recorded answers, and the repaired node and its tai
 run fresh. Once the bytes differ, the node name becomes mandatory — a call the
 author never labeled cannot be located in a program that changed under it.
 
-| Miss                      | Meaning                                                               |
-| ------------------------- | --------------------------------------------------------------------- |
-| `no-record`               | the record has no entry at this position                              |
-| `unnamed-node`            | source changed and either the entry or the current call has no name   |
-| `node-mismatch`           | source changed and the names differ                                   |
-| `return-contract-changed` | the recorded choice-return contract predates the current version      |
-| `key-mismatch`            | the resolved request differs from the recorded one                    |
-| `recorded-failure`        | the recorded call failed; a failure is never served back as an answer |
-| `side-effecting-call`     | the call writes to a worktree, so its record cannot stand in for it   |
-| `diverged`                | the latch is already set by one of the above                          |
+| Miss                           | Meaning                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------ |
+| `invocation-identity-unproven` | a legacy v3 record has completion order but no proven admission identity |
+| `recorded-sequence-invalid`    | a recorded ordinal is duplicated or missing before later calls           |
+| `no-record`                    | the record has no entry at this position                                 |
+| `unnamed-node`                 | source changed and either the entry or the current call has no name      |
+| `node-mismatch`                | source changed and the names differ                                      |
+| `return-contract-changed`      | the recorded choice-return contract predates the current version         |
+| `key-mismatch`                 | the resolved request differs from the recorded one                       |
+| `recorded-failure`             | the recorded call failed; a failure is never served back as an answer    |
+| `side-effecting-call`          | the call writes to a worktree, so its record cannot stand in for it      |
+| `diverged`                     | the latch is already set by one of the above                             |
 
 A `fusion()` group standing after the divergence point runs as an ordinary fresh
 panel: the latch guarantees no later call can be served from the record, so every
@@ -207,13 +213,23 @@ A replayed call reports **no** token usage, so the run budget shown by
   fabricated and every surface marks it `replayed` — but if an early stage's
   answer must reflect your edit, change that stage's prompt or resume from
   further back.
-- **Parallel calls can miss the cache.** Replay matches recorded calls by
-  position as well as request. Concurrent calls can be recorded in a different
-  order from the next attempt's lookups, even with two branches. A mismatch
-  makes that call and the remaining calls fresh; it does not reuse a different
-  agent's answer. Check the new run's replay counts rather than assuming an
-  unchanged parallel workflow will reuse its results. Sequential pipelines have
-  a stable call order.
+- **Parallel completion order does not change identity.** Version-4 records use
+  admission order. Identical parallel requests retain their own answers even when
+  the second child finishes first. Different admission order or changed business
+  keys still ends reuse at the first differing request.
+- **Legacy v3 records stay readable, but normal resume runs fresh.** Their `seq`
+  described completion order, which cannot prove which identical parallel call
+  produced an answer. They are never silently sorted into an invented launch
+  order; the journal names `invocation-identity-unproven`. Only explicit
+  interrupted recovery can reuse a legacy prefix after its existing journal
+  checks prove fully confirmed, labelled, non-overlapping serial execution.
+- **Damaged logs never compact ordinals.** Missing or duplicate agent, clock and
+  random positions end reuse at the first unproven position. A malformed row with
+  a readable position invalidates that position and its suffix; an unreadable row
+  stops the reader before later physical rows. The proven prefix can still replay.
+  A missing clock/random value is produced fresh and ends subsequent reuse too.
+  An append failure likewise leaves a gap; it cannot shift a later answer into
+  the failed call's place. Historical files are never rewritten.
 - **Resume is not Pi session continuation.** The child session is not resumed;
   only the workflow-level answer is reused.
 - **A recorded failure is not replayed.** It keeps its ordinal so the prefix

@@ -252,13 +252,8 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
    * replay envelope — opened once and closed once, whatever the physical executor below had
    * to do to get an answer.
    *
-   * The replay record is POSITIONAL (`workflow-replay.ts` advances a read cursor per
-   * `beginAgentAttempt` and latches divergence on any miss), and a transport retry
-   * re-sends the identical prompt. So a discarded attempt recorded at its own ordinal would
-   * write two entries with the same key at consecutive positions; on resume the first
-   * re-executes, succeeds, and every later call reads an ordinal off by one — a key
-   * mismatch, the one-way divergence latch, and the recorded suffix discarded and re-run
-   * live. One script-level call, one ordinal, is the invariant the record already assumes.
+   * One admission receipt spans all transport retries and settles once. Recording
+   * discarded attempts separately would shift every subsequent replay ordinal.
    *
    * `checkSchema` is supplied only by the choice path; it runs on the final child text
    * BEFORE agent_end is emitted so the journal records whether the choice was checked.
@@ -408,8 +403,22 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
             "The recorded answer stays readable, but it answered a different contract, so replay stops here and this call runs fresh.",
         });
       }
+      if (
+        lookup?.replayed === false &&
+        (lookup.reason === "invocation-identity-unproven" || lookup.reason === "recorded-sequence-invalid")
+      ) {
+        emit({
+          ts: nowFn(),
+          runId,
+          kind: "log",
+          source: "runtime",
+          message:
+            `[workflow:replay] ${req.label ?? workflowAgentDisplayName(req)}: ${lookup.reason}; ` +
+            "recorded invocation order is not proven. Replay stops here and this call runs fresh.",
+        });
+      }
       if (opts?.[FUSION_REPLAY_REQUIRED] === true && lookup?.replayed !== true) {
-        replay?.recordAgentAttempt(replayCall, { ok: false });
+        replay?.recordAgentAttempt(lookup!, { ok: false });
         throw new Error(
           `fusion resume cannot mix recorded and fresh agent calls; replay missed with ${lookup?.reason ?? "no replay controller"}`,
         );
@@ -435,13 +444,13 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
           // A THROWN failure carries no classified cause, so it is never retried. Record it so
           // the recorded sequence keeps the same ordinals as the live one: a later resume then
           // replays the prefix and re-runs the call that failed, which is the point of resuming.
-          replay?.recordAgentAttempt(replayCall, { ok: false });
+          replay?.recordAgentAttempt(lookup!, { ok: false });
           throw err;
         }
         if (physical.ok) {
           // This run writes its OWN complete record, replayed entries included, so a
           // resume of a resume still has an unbroken prefix to work from.
-          replay?.recordAgentAttempt(replayCall, { ok: true, text: physical.text });
+          replay?.recordAgentAttempt(lookup!, { ok: true, text: physical.text });
           return opts?.result === "report"
             ? { ...physical.outcome, text: renderAgentReport(req, physical.text) }
             : physical.outcome;
@@ -459,7 +468,7 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
           message: `[workflow:retry] ${workflowAgentDisplayName(req)}${req.label === undefined ? "" : ` (${req.label})`}: transport attempt ${attempt} of ${attempts} failed with ${workflowAgentFailureCause(physical.result)}; re-running the identical request`,
         });
       }
-      replay?.recordAgentAttempt(replayCall, { ok: false });
+      replay?.recordAgentAttempt(lookup!, { ok: false });
       const failed = lastFailure!;
       if (opts?.result === "report" && !failed.replayed && isReportableAgentFailure(failed.result)) {
         emit({
