@@ -55,6 +55,27 @@ describe("installed workflow documentation ownership", () => {
       expect(existsSync(path.join(root, file)), file).toBe(false);
   });
 
+  it("owns read-only limits in the trust guide and links agent readers to them", () => {
+    const trust = read("docs/workflows/trust.md").replace(/\s+/gu, " ");
+    for (const limit of [
+      "no general security sandbox",
+      "read-only intent, not a technical guarantee",
+      "call fields are ignored and do not independently narrow permissions",
+      "Standalone named read-only",
+      "not a complete filesystem or command-execution security guarantee",
+      "External CLI adapters",
+      "Fusion tool-free",
+      "requires active-tool readback before prompting",
+      "option admission is incomplete",
+      "Pi native approval policy owns",
+    ])
+      expect(trust).toContain(limit);
+    expect(trust).not.toContain(
+      "rejects mutation, output-file, external-diff, textconv, pager, signature, and config options",
+    );
+    expect(read("extensions/agents/README.md")).toContain("../../docs/workflows/trust.md#approval--trust-discipline");
+  });
+
   it("routes machine-visible contract prose to the same public owners", () => {
     expect(read("extensions/workflows/tool/workflow-tool.ts")).toContain("docs/workflows/index.md");
     for (const file of ["docs/workflows/budgets.md", "extensions/workflows/manifest.json"])
