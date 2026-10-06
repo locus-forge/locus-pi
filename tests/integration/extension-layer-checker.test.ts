@@ -15,6 +15,14 @@ afterEach(async () => {
 });
 
 describe("extension layer checker negative rules", () => {
+  it.each(["source/profiles/workflow-source-dataflow", "source/profiles/workflow-source-profile"])(
+    "rejects cross-feature imports of %s",
+    async (owner) => {
+      const root = await extensionFixture();
+      await appendFile(path.join(root, CROSS_FEATURE_READER), `\nimport "../workflows/${owner}.js";\n`, "utf8");
+      await expectRule(root, "rule 6 (feature-internal facade)");
+    },
+  );
   it.each(["agent-output-admission", "agent-output-contract"])(
     "rejects feature imports from nested output owner %s",
     async (name) => {

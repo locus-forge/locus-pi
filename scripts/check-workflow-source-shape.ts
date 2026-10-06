@@ -1,3 +1,4 @@
+import { workflowSourceDeclaresDataflow } from "../extensions/workflows/source/profiles/workflow-source-profile.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -9,10 +10,10 @@ import { packagedWorkflowNames, packagedWorkflowPath } from "../extensions/workf
 interface SourceShapeTarget {
   label: string;
   path: string;
-  requireStandard: boolean;
+  explicitPath: boolean;
 }
 
-type SourceMode = "compatibility" | "orchestration-only";
+type SourceMode = "compatibility" | "orchestration-only" | "dataflow-v1";
 
 const { values, positionals: requestedPaths } = parseArgs({
   args: process.argv.slice(2),
@@ -21,8 +22,8 @@ const { values, positionals: requestedPaths } = parseArgs({
   options: { mode: { type: "string" } },
 });
 const requestedMode = values.mode ?? "compatibility";
-if (requestedMode !== "compatibility" && requestedMode !== "orchestration-only") {
-  console.error('Workflow source mode must be "compatibility" or "orchestration-only".');
+if (requestedMode !== "compatibility" && requestedMode !== "orchestration-only" && requestedMode !== "dataflow-v1") {
+  console.error('Workflow source mode must be "compatibility" or "orchestration-only", or "dataflow-v1".');
   process.exit(1);
 }
 const mode: SourceMode = requestedMode;
@@ -31,12 +32,12 @@ const targets: SourceShapeTarget[] =
     ? requestedPaths.map((requestedPath) => ({
         label: requestedPath,
         path: path.resolve(process.cwd(), requestedPath),
-        requireStandard: true,
+        explicitPath: true,
       }))
     : packagedWorkflowNames().map((name) => ({
         label: `Package workflow ${name}`,
         path: packagedWorkflowPath(name),
-        requireStandard: false,
+        explicitPath: false,
       }));
 
 let failed = false;
@@ -52,20 +53,28 @@ for (const target of targets) {
     continue;
   }
 
-  const profile = staticWorkflowMeta(source).profile;
-  if (profile !== "standard") {
-    if (target.requireStandard) {
+  const profile = workflowSourceDeclaresDataflow(source) ? "dataflow-v1" : staticWorkflowMeta(source).profile;
+  if (profile !== "standard" && profile !== "dataflow-v1") {
+    if (target.explicitPath) {
       failed = true;
-      console.error(`${target.label}: expected literal meta.profile \"standard\", found ${profile}`);
+      console.error(
+        `${target.label}: expected literal meta.profile ${mode === "dataflow-v1" ? "dataflow-v1" : "standard"}, found ${profile}`,
+      );
     }
     continue;
   }
 
   checked += 1;
-  const diagnostics = checkWorkflowSourceText(source, mode);
+  const selectedMode = !target.explicitPath && profile === "dataflow-v1" ? "dataflow-v1" : mode;
+  const diagnostics = checkWorkflowSourceText(source, selectedMode);
   const errors = diagnostics.filter((diagnostic) => diagnostic.severity === "error");
   const warnings = diagnostics.filter((diagnostic) => diagnostic.severity === "warning");
-  const shapeLabel = mode === "orchestration-only" ? "orchestration-only workflow source" : "standard source";
+  const shapeLabel =
+    selectedMode === "dataflow-v1"
+      ? "dataflow-v1 workflow source"
+      : selectedMode === "orchestration-only"
+        ? "orchestration-only workflow source"
+        : "standard source";
   if (errors.length === 0) {
     const warningSuffix = warnings.length === 0 ? "" : ` with ${warnings.length} warning(s)`;
     console.log(`${target.label}: ${shapeLabel} shape passed${warningSuffix}`);

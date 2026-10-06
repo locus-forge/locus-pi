@@ -31,7 +31,7 @@ never infers ownership from a path or replaces a real directory or foreign
 symlink. See
 [`skills/README.md`](../../skills/README.md).
 
-Both checked authoring profiles admit bounded literal-schema [immutable structured results v4](../../docs/workflows/agent-results.md#structured-results-v4) on the actual verified Pi >=1.0.0 `openai-codex` route. `validate`, `repair` and `outputTransport` remain removed; the return tool carries the actual schema and requests Pi strict preference only where semantics are preserved. Host permissions are unchanged.
+Both checked authoring profiles admit bounded literal-schema [immutable structured results v4](../../docs/workflows/agent-results.md#structured-results-v4) on the actual verified Pi >=1.0.0 `openai-codex` route. `validate`, `repair` and `outputTransport` remain removed; the return tool carries the actual schema and requests Pi strict preference only where semantics are preserved. The checked [dataflow-v1 profile](../../docs/workflows/source-shape.md#checked-dataflow-v1) adds bounded synchronous data helpers and visible owned keyed graphs with full-source resume identity. Historical v5 evidence remains readable but cannot replay as current output. Host permissions are unchanged.
 
 The `workflow` tool is the structured execution surface for agents. It supports fields that cannot always be represented safely by slash-command text, including caller `items` and approved continuations.
 

@@ -422,3 +422,26 @@ describe("composed proven arrays keep source and replay facts aligned", () => {
     expect(assessWorkflowStructuredReplayCoverage(source)).toBe(false);
   });
 });
+
+// Sharing lexical decoding must preserve the existing profile's literal capability and diagnostics.
+it.each([false, true])("preserves inherited schema literal boundaries in strict=%s", (strict) => {
+  const keys =
+    '{type:"object",properties:{constructor:{type:"string"},prototype:{type:"string"}},required:["constructor","prototype"]}';
+  expect(messages(wrap(`return agent("x",{label:"x",schema:${keys}});`), strict)).toEqual([]);
+  for (const [literal, diagnostic] of [
+    ['{type:"number",minimum:1e999}', "requires literal finite JSON numbers"],
+    ['{type:"number",minimum:!1}', "requires literal finite JSON numbers"],
+    ['{type:"string",enum:[,"a"]}', "requires dense literal arrays"],
+    [
+      '{type:"string",type:"number"}',
+      "requires distinct literal data properties; no __proto__, spreads, methods or computed keys",
+    ],
+    [
+      '{type:"object",properties:{["x"]:{type:"string"}}}',
+      "requires distinct literal data properties; no __proto__, spreads, methods or computed keys",
+    ],
+  ])
+    expect(messages(wrap(`return agent("x",{label:"x",schema:${literal}});`), strict)).toContain(
+      `agent schema ${diagnostic}`,
+    );
+});

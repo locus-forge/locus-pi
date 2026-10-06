@@ -2,11 +2,11 @@
 title: Workflow DSL reference
 type: guide
 status: active
-updated: "2026-10-06T12:27:00Z"
-source_commit: "fee5f591caaf"
-update_event: "user_request"
-context: "bounded schema authoring on the standard-tool contract"
-description: "Public workflow method signatures and bounded checked-source examples."
+updated: "2026-10-06T14:26:19Z"
+source_commit: "35b4a1294375"
+update_event: "review_refresh"
+context: "changes=XL files=34 task=T-147"
+description: "Document dataflow declarations while retaining current readonly schema ports"
 ---
 
 <!-- Generated from docs/workflows/dsl.md by npm run build:catalogs; do not edit. -->
@@ -47,6 +47,12 @@ A workflow receives `dsl` and optional exact text `input` in its default async f
 | [`random`](#random)                                 | Yes           | Yes                        | No                                              |
 | [`runWorkspaceDir`](#runworkspacedir)               | Always throws | No                         | No                                              |
 
+The explicit `dataflow-v1` profile/mode uses the orchestration-only method column
+and admits checked data transformations and static v4 declarations. It also
+requires owned awaiting, checked helper captures and complete source-byte identity
+on resume. Read the [dataflow contract and exact examples](../../../docs/workflows/source-shape.md#checked-dataflow-v1).
+Omitting the checker mode keeps standard compatibility behavior.
+
 Entries describe ordinary runtime behavior; a custom host that omits a required artifact store, resource loader, workspace manager, child runner, or operator callback fails with a named “not configured” error. Static checking proves source shape, not semantic correctness or successful execution.
 
 ## Agent calls
@@ -63,7 +69,7 @@ Entries describe ordinary runtime behavior; a custom host that omits a required 
 | `result: "report"`                       | Opaque host-rendered observation, `Promise<string>`                                                                | All three; accepted answer or eligible terminal failure, not semantic approval                     |
 | `schema: literalOrTopLevelConst`         | Immutable finite JSON, v4; initial plus one package-owned correction; literal schemas infer deeply readonly values | Both checkers admit bounded schema-proven uses; Pi >=1.0.0 openai-codex with verified capabilities |
 
-A choice call uses `workflow_return` inside the same child session with one package-owned correction turn; exhaustion throws `SchemaValidationError` unless `choiceFallback` applies. A transport without the return-tool capability fails closed. `handoffs`, `output` and `returnVia` remain removed. Both source-check profiles admit a literal `schema` or one unshadowed top-level literal schema `const` in direct options with distinct explicit properties. They reject options spreads, shorthand and computed keys on structured calls, and still refuse `validate`, `repair` and `outputTransport`. The [structured v4 contract](../../../docs/workflows/agent-results.md#structured-results-v4) preserves the standard return tool carrying the actual schema and Pi strict sampling where conversion preserves its semantics. `validate`, `repair` and `outputTransport` are removed runtime options, refused before work or replay. Use a schema only when source consumes proven fields or arrays; exact caller-assigned files remain useful for richer handoffs, and [`items()`](#items) carries caller-owned units.
+A choice call uses `workflow_return` inside the same child session with one package-owned correction turn; exhaustion throws `SchemaValidationError` unless `choiceFallback` applies. A transport without the return-tool capability fails closed. `handoffs`, `output` and `returnVia` remain removed. Standard compatibility and orchestration-only admit a literal `schema` or one unshadowed top-level literal schema `const` in direct options with distinct explicit properties. They reject options spreads, shorthand and computed keys on structured calls, and still refuse `validate`, `repair` and `outputTransport`. The [structured v4 contract](../../../docs/workflows/agent-results.md#structured-results-v4) preserves the standard return tool carrying the actual schema and Pi strict sampling where conversion preserves its semantics. `validate`, `repair` and `outputTransport` are removed runtime options, refused before work or replay. Use a schema only when source consumes proven fields or arrays; exact caller-assigned files remain useful for richer handoffs, and [`items()`](#items) carries caller-owned units.
 
 **Example — orchestration-only:** a complete module; every agent edge has a distinct literal label. Caller-supplied items go unchanged to each worker, reports stay opaque, and only the exact choice controls the branch.
 
@@ -204,7 +210,7 @@ Output fields and their combinations are covered above. Additional call options:
 
 `strategy` defaults to `"replicate"`; `"roles"` requires a nonblank `lens` per member. `context` defaults to `{ mode: "prompt-only" }`; `{ mode: "provided", text }` passes explicit nonblank context. Optional `output` is an instruction for the judge only, defaulting to a direct answer in the question's format. `memberLimits` and `judgeLimits` accept `timeoutMs`, `maxTurns`, and `attempts` (1 by default), not answer length caps. Judge label defaults to `"judge"`. See [Fusion](../../../docs/workflows/fusion.md) for complete isolation and evidence behavior.
 
-**Example — runtime API, rejected by both source-check modes:** configure these three role names in the host before executing; this profile intentionally demonstrates the checker boundary.
+**Example — runtime API, rejected by standard and orchestration-only modes:** configure these three role names in the host before executing; this profile intentionally demonstrates the checker boundary.
 
 <!-- dsl-example: rejected-fusion -->
 
@@ -266,7 +272,7 @@ export default async function run({ fusion }, input) {
 
 Both text methods retain optional native evidence and support verified text continuation. They neither save an agent-owned file nor attest its existence. A requested report, intermediate handoff or generated source is written by its assigned agent through ordinary file tools at the exact destination in the prompt. The next consumer opens that same file.
 
-The former `{ workflowSource: relativePath }` overload is removed. Both source-check modes reject it; runtime use fails with migration guidance. Do not reconstruct source from an answer or copy an old runtime projection as a substitute.
+The former `{ workflowSource: relativePath }` overload is removed. All source-check modes reject it; runtime use fails with migration guidance. Do not reconstruct source from an answer or copy an old runtime projection as a substitute.
 
 **Example — removed source-file publication, rejected by both grammars:**
 
@@ -281,7 +287,7 @@ export default function run({ publishPrimaryArtifact }) {
 
 ### publishPrimaryFile
 
-**Signature:** `publishPrimaryFile(path: string) -> never`. **Removed:** a narrow trap always throws. Both source-check modes reject direct and destructured use. **Migration example:** prompt the writer with `Write /project/reports/review.md`, then have the reader open that exact file. Assign the exact destination in the writer's prompt; the reader verifies the file before using it. Native completion is not a generic file-existence, size or digest guarantee.
+**Signature:** `publishPrimaryFile(path: string) -> never`. **Removed:** a narrow trap always throws. All source-check modes reject direct and destructured use. **Migration example:** prompt the writer with `Write /project/reports/review.md`, then have the reader open that exact file. Assign the exact destination in the writer's prompt; the reader verifies the file before using it. Native completion is not a generic file-existence, size or digest guarantee.
 
 ### consumeTextArtifact
 
@@ -329,7 +335,7 @@ export default async function run({ continuationArtifacts, parallel, agent }) {
 
 ### outputDir
 
-**Signature:** `outputDir() -> never`. **Removed:** a narrow trap always throws. Both source-check modes reject direct and destructured use, and root/child `meta.outputDir` is refused before agent work. Literal metadata is checked before import; dynamically materialized trusted metadata is rejected on module load before its entry runs. **Migration example:** `Write /project/reports/result.md` in the agent prompt. Placement never changes cwd, tool resolution, loaded context or worktree selection.
+**Signature:** `outputDir() -> never`. **Removed:** a narrow trap always throws. All source-check modes reject direct and destructured use, and root/child `meta.outputDir` is refused before agent work. Literal metadata is checked before import; dynamically materialized trusted metadata is rejected on module load before its entry runs. **Migration example:** `Write /project/reports/result.md` in the agent prompt. Placement never changes cwd, tool resolution, loaded context or worktree selection.
 
 ### projectRoot
 

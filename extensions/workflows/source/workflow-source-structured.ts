@@ -8,7 +8,7 @@ import {
   standardDslBindings,
   standardLexicalBindings,
 } from "./workflow-source-bindings.js";
-import { staticObjectKey, staticStringValue, unwrapParentheses } from "./workflow-source-literals.js";
+import { readWorkflowLiteralData, staticObjectKey, unwrapParentheses } from "./workflow-source-literals.js";
 import type { WorkflowSourceDiagnosticSink } from "./workflow-source-diagnostics.js";
 
 export interface StandardStructuredDeclarations {
@@ -82,60 +82,13 @@ export function standardStructuredDeclarations(
   return { calls, schemaNodes };
 }
 
-/** A decoder for literal JavaScript data, deliberately not a constant evaluator. */
+/** Preserve schema-specific diagnostics; standard callers pass no reference resolver. */
 function readStructuredLiteral(input: SgNode | undefined): unknown {
-  const node = unwrapParentheses(input);
-  if (node === undefined) throw new Error("agent schema requires literal JSON data");
-  const string = staticStringValue(node);
-  if (string !== undefined) return string;
-  if (node.kind() === "true") return true;
-  if (node.kind() === "false") return false;
-  if (node.kind() === "null") return null;
-  if (node.kind() === "unary_expression") {
-    const operator = node.field("operator")?.text();
-    const argument = unwrapParentheses(node.field("argument") ?? undefined);
-    if (!["+", "-"].includes(operator ?? "") || argument?.kind() !== "number")
-      throw new Error("agent schema requires literal finite JSON numbers");
-    const value = readStructuredLiteral(argument);
-    if (typeof value !== "number") throw new Error("agent schema requires literal finite JSON numbers");
-    return operator === "-" ? -value : value;
+  try {
+    return readWorkflowLiteralData(input);
+  } catch (error) {
+    throw new Error(`agent schema ${error instanceof Error ? error.message : String(error)}`);
   }
-  if (node.kind() === "number") {
-    const value = Number(node.text().replaceAll("_", ""));
-    if (!Number.isFinite(value)) throw new Error("agent schema requires literal finite JSON numbers");
-    return value;
-  }
-  if (node.kind() === "array") {
-    const result: unknown[] = [];
-    let awaiting = true;
-    for (const child of node.children()) {
-      if (["[", "]", "comment"].includes(String(child.kind()))) continue;
-      if (child.kind() === ",") {
-        if (awaiting) throw new Error("agent schema requires dense literal arrays");
-        awaiting = true;
-      } else {
-        result.push(readStructuredLiteral(child));
-        awaiting = false;
-      }
-    }
-    return result;
-  }
-  if (node.kind() === "object") {
-    const entries: [string, unknown][] = [];
-    const keys = new Set<string>();
-    for (const child of node.children()) {
-      if (["{", "}", ",", "comment"].includes(String(child.kind()))) continue;
-      const key = child.kind() === "pair" ? staticObjectKey(child.field("key")) : undefined;
-      if (key === undefined || key === "__proto__" || keys.has(key))
-        throw new Error(
-          "agent schema requires distinct literal data properties; no __proto__, spreads, methods or computed keys",
-        );
-      keys.add(key);
-      entries.push([key, readStructuredLiteral(child.field("value") ?? undefined)]);
-    }
-    return Object.fromEntries(entries);
-  }
-  throw new Error("agent schema requires literal JSON data; dynamic expressions are runtime-only");
 }
 
 export function structuredRequiredField(schema: WorkflowJSONSchema, name: string): WorkflowJSONSchema | undefined {

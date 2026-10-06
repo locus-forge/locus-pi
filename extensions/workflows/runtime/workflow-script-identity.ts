@@ -1,3 +1,4 @@
+import { assertDataflowWorkflowSource } from "../source/profiles/workflow-source-dataflow.js";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -344,6 +345,7 @@ export function assessWorkflowStructuredReplayCoverage(source: string): boolean 
 
 export function createWorkflowScriptSnapshot(sourcePath: string, runDir: string): WorkflowScriptIdentity {
   const sourceBytes = readFileSync(sourcePath);
+  assertDataflowWorkflowSource(sourceBytes.toString("utf8"));
   const assessment = assessWorkflowSourceIdentity(sourceBytes.toString("utf8"));
   const scriptSha256 = sha256WorkflowBytes(sourceBytes);
   const snapshotPath = path.join(runDir, `script-${scriptSha256}.workflow.mjs`);

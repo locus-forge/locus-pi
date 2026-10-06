@@ -36,7 +36,7 @@ export interface WorkflowStaticMeta {
   phases: WorkflowMetaPhase[];
 }
 
-export type WorkflowAuthoringProfile = "standard" | "legacy" | "integration" | "unclassified";
+export type WorkflowAuthoringProfile = "standard" | "dataflow-v1" | "legacy" | "integration" | "unclassified";
 
 /**
  * Read only a bounded prefix and accept metadata from the top-level literal
@@ -116,7 +116,12 @@ export function staticWorkflowMeta(source: string): {
       const declaredProfile = staticStringValue(
         pairs.find((pair) => staticObjectKey(pair.field("key")) === "profile")?.field("value"),
       );
-      if (declaredProfile === "standard" || declaredProfile === "legacy" || declaredProfile === "integration") {
+      if (
+        declaredProfile === "standard" ||
+        declaredProfile === "dataflow-v1" ||
+        declaredProfile === "legacy" ||
+        declaredProfile === "integration"
+      ) {
         profile = declaredProfile;
       }
       if (phases.length === 0) {
@@ -231,4 +236,13 @@ function compactCatalogText(value: string): string {
   const candidate = value.slice(0, DESCRIPTION_MAX_CHARS - 1);
   const boundary = candidate.lastIndexOf(" ");
   return `${(boundary > DESCRIPTION_MAX_CHARS / 2 ? candidate.slice(0, boundary) : candidate).trimEnd()}…`;
+}
+
+/** Readable interpretation of the same tolerant catalog profile enum. */
+export function workflowAuthoringProfileExplanation(profile: WorkflowAuthoringProfile): string {
+  if (profile === "dataflow-v1") return "dataflow-v1 (checked data computations and visible owned DSL edges)";
+  if (profile === "standard") return "standard (compact public source shape; not a runtime mode)";
+  if (profile === "integration") return "integration (integration-test source shape; not a runtime mode)";
+  if (profile === "legacy") return "legacy (compatibility source shape; not a runtime mode)";
+  return "unclassified (no recognized source-shape contract)";
 }

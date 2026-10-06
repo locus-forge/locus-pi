@@ -44,6 +44,27 @@ describe("workflow_check_source", () => {
     },
   );
 
+  it("exposes explicit matched dataflow mode and its exact bytes through the native tool", async () => {
+    const root = temporaryRoot();
+    const file = path.join(root, "dataflow.workflow.mjs");
+    writeFileSync(
+      file,
+      'export const meta={profile:"dataflow-v1"}; function format(value){return value.trim();} export default function run({log},input){log(format(input));return "ok";}',
+    );
+    const harness = createHarness(root);
+    workflows(harness.pi);
+    const accepted = await runTool(harness, "workflow_check_source", {
+      path: "dataflow.workflow.mjs",
+      mode: "dataflow-v1",
+    });
+    expect(accepted.isError).not.toBe(true);
+    expect(accepted.details?.diagnostics).toEqual([]);
+    const legacy = await runTool(harness, "workflow_check_source", { path: "dataflow.workflow.mjs" });
+    expect(legacy.isError).toBe(true);
+    expect(legacy.details?.diagnostics).toContainEqual(expect.objectContaining({ code: "WF_META_PROFILE" }));
+    expect(harness.sentMessages).toEqual([]);
+  });
+
   it("checks only the assigned source and exposes current byte identity without old-folder fallback", async () => {
     const root = temporaryRoot();
     mkdirSync(path.join(root, "old-workspace", "outputs"), { recursive: true });

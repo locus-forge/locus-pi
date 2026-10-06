@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir, cp, symlink } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -47,6 +47,36 @@ describe("check-workflow-source-shape CLI", () => {
     expect(accepted.stdout).toContain("orchestration-only workflow source shape passed");
   });
 
+  it("matches explicit dataflow mode and checks packaged opt-ins without skipping ambiguous profiles", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "workflow-dataflow-cli-"));
+    roots.push(root);
+    await mkdir(path.join(root, "scripts"));
+    await cp(
+      path.join(projectRoot, "scripts/check-workflow-source-shape.ts"),
+      path.join(root, "scripts/check-workflow-source-shape.ts"),
+    );
+    await cp(path.join(projectRoot, "extensions"), path.join(root, "extensions"), { recursive: true });
+    await symlink(path.join(projectRoot, "node_modules"), path.join(root, "node_modules"), "dir");
+    const workflows = path.join(root, "examples/workflows/dataflow");
+    await mkdir(workflows, { recursive: true });
+    const file = path.join(workflows, "dataflow.workflow.mjs");
+    const valid =
+      'export const meta={profile:"dataflow-v1"}; function format(value){return value.trim();} export default function run({log},input){log(format(input)); return "ok";}';
+    await writeFile(file, valid);
+    const explicit = await runScript(root, ["--mode", "dataflow-v1", file], root);
+    expect(explicit.code).toBe(0);
+    expect(explicit.stdout).toContain("dataflow-v1 workflow source shape passed");
+    expect((await runScript(root, [file], root)).code).toBe(1);
+    const packaged = await runScript(root, [], root);
+    expect(packaged.code, packaged.stderr).toBe(0);
+    expect(packaged.stdout).toContain("Package workflow dataflow: dataflow-v1 workflow source shape passed");
+    await writeFile(file, valid.replace('profile:"dataflow-v1"', 'profile:"legacy",profile:"dataflow-v1"'));
+    const ambiguous = await runScript(root, [], root);
+    expect(ambiguous.code).toBe(1);
+    expect(ambiguous.stderr).toContain("[WF_META_PROFILE]");
+    expect(ambiguous.stderr).not.toContain("No standard workflow source was checked");
+  });
+
   it("rejects an unknown mode before checking source", async () => {
     const result = await runScript(projectRoot, ["--mode", "strict", "missing.workflow.mjs"]);
     expect(result.code).toBe(1);
@@ -61,9 +91,9 @@ interface ScriptResult {
   stderr: string;
 }
 
-async function runScript(cwd: string, args: string[]): Promise<ScriptResult> {
+async function runScript(cwd: string, args: string[], scriptRoot = projectRoot): Promise<ScriptResult> {
   const tsx = createRequire(import.meta.url).resolve("tsx");
-  const script = path.join(projectRoot, "scripts", "check-workflow-source-shape.ts");
+  const script = path.join(scriptRoot, "scripts", "check-workflow-source-shape.ts");
   try {
     const { stdout, stderr } = await execFileAsync(
       process.execPath,

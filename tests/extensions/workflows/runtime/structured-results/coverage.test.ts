@@ -4,6 +4,16 @@ const workflow = (declaration: string, callback: string) => `${declaration}
 export default async function run({agent, input, items}) { const check = ${callback}; await agent('inspect', {schema:{type:'string'}}); return check(input); }`;
 describe("conservative v4 closure coverage, separate from legacy source grammar", () => {
   it.each([
+    ["catch(error){return [error.message];}", false],
+    ['catch(error){return ["invalid"];}', false],
+    ['catch(value){return ["invalid"];}', true],
+    ['catch{return ["invalid"];}', true],
+  ])("keeps current legacy catch proof separate from dataflow: %s", (caught, covered) => {
+    const legacy = `function read(value){try {return JSON.parse(value);} ${caught}} export default function run({log},input){return read(input);}`;
+    expect(assessWorkflowStructuredReplayCoverage(legacy)).toBe(covered);
+    expect(assessWorkflowStructuredReplayCoverage('export const meta={profile:"dataflow-v1"};' + legacy)).toBe(true);
+  });
+  it.each([
     workflow("", 'value => value === input ? [] : ["Wrong input id"]'),
     workflow("", 'value => items().includes(value) ? [] : ["Wrong input id"]'),
     workflow("", 'value => Number.isInteger(value) ? [] : ["Not integral"]'),

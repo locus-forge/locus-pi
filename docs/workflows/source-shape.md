@@ -2,11 +2,11 @@
 title: Workflow source contract
 type: guide
 status: active
-updated: "2026-10-06T12:58:00Z"
-source_commit: "fee5f591caaf"
-update_event: "user_request"
-context: "bounded schema authoring on the standard-tool contract"
-description: "Bounded checked JavaScript grammar, value provenance and structured-result consumption."
+updated: "2026-10-06T14:26:19Z"
+source_commit: "35b4a1294375"
+update_event: "review_refresh"
+context: "changes=XL files=34 task=T-147"
+description: "Teach checked helper graphs and full-source replay identity over current schema authoring"
 ---
 
 # Workflow source contract
@@ -15,7 +15,7 @@ description: "Bounded checked JavaScript grammar, value provenance and structure
 
 Read this contract before authoring workflow source. The [DSL reference](dsl.md#dsl-surface-v0) describes callable methods, signatures, and examples; this page defines which source forms `workflow_check_source` accepts. New workflows use the [create guide](create.md) and the packaged skill's [short author-facing rules](../../skills/locus-pi-workflow-create/references/source-boundary.md).
 
-Three boundaries apply: trusted runtime JavaScript, the `standard` compatibility grammar, and the stricter `mode: "orchestration-only"` grammar used by the create skill. A runtime method is not automatically permitted by either checker: `fusion()` is runtime-only and `runWorkspaceDir()` is removed. Both checkers admit the bounded literal `schema` form described below; `validate`, `repair` and `outputTransport` are removed and refused. The [availability table](dsl.md#dsl-surface-v0) distinguishes every method. Omitting the tool's mode selects standard compatibility checking; it does not restore removed options or grant arbitrary runtime JavaScript access.
+Four boundaries apply: trusted runtime JavaScript, the `standard` compatibility grammar, and the stricter `mode: "orchestration-only"` grammar used by the create skill, and the explicit `dataflow-v1` profile/mode described below. A runtime method is not automatically permitted by either checker: `fusion()` is runtime-only and `runWorkspaceDir()` is removed. Both checkers admit the bounded literal `schema` form described below; `validate`, `repair` and `outputTransport` are removed and refused. The [availability table](dsl.md#dsl-surface-v0) distinguishes every method. Omitting the tool's mode selects standard compatibility checking; it does not restore removed options or grant arbitrary runtime JavaScript access.
 
 The rules below own source restrictions and diagnostics. Passing them does not prove the workflow's prompts, decisions, side effects, or final result satisfy its goal; design review and execution evidence remain necessary.
 
@@ -429,3 +429,194 @@ validation is not evidence that the workflow ran.
 ### Explicit execution observations
 
 Plain-text `agent(prompt, { result: "report", label: "review" })` produces opaque text for the next agent. Author the static literal `result: "report"`; it cannot combine with `choice`. The checker validates direct option pairs, not the contents of variable or spread option objects; runtime validation covers every call. Source must not branch on, parse or inspect report content. An arbiter interprets full reports; a separate `choice` call can translate its recommendation into an edge. Runtime eligibility and fatal boundaries are defined in [agent execution reports](agent-results.md#agent-execution-reports). No `try/catch` exception is added to the standard grammar.
+
+## Checked dataflow-v1
+
+Declare literal `meta.profile: "dataflow-v1"` and check it with
+`workflow_check_source({ path, mode: "dataflow-v1" })` or
+`npm run check:workflow-source -- --mode dataflow-v1 path.workflow.mjs`.
+This opt-in admits synchronous data-only helpers and finite schema-checked v4
+values while keeping DSL effects visible and owned.
+
+Helpers are named module functions or const-bound synchronous arrows. They accept
+only data, capture module literal constants and other checked helpers, and form
+an acyclic direct-call graph. Local consts, destructuring, ordinary expressions,
+conditionals, returns, throws and pure try/catch are supported. Pure inline
+callbacks may also capture enclosing data parameters and immutable data locals.
+The checker resolves actual lexical bindings, including catch parameters and
+shadowing; it never executes a helper.
+
+Supported data operations are array `map`, `filter`, `reduce`, `flatMap`, `slice`,
+`concat`, `join`, `at`, `includes`, `indexOf`, `find`, `findIndex`, `some`, `every`;
+string `trim`, `split`, `startsWith`, `endsWith`, `toLowerCase`, `toUpperCase`;
+`JSON.parse`/`stringify`, `Array.isArray`, `Object.keys`/`values`/`entries`/`hasOwn`,
+`Number.isFinite`/`isInteger`/`isSafeInteger`, and explicit `String`/`Number`/`Boolean`
+conversion. Explicit parsing produces ordinary unchecked data and may throw.
+It creates neither a schema receipt nor authority to execute code.
+
+Agent options use a direct object with unique static keys. Schema declarations
+are literal data or immutable literal const references. Current schema, choice,
+report and fixed initial-plus-one same-session correction contracts still apply.
+`validate`, `repair` and `outputTransport` remain removed, including when their
+value is `undefined`. Domain assertions in helpers run after the schema result;
+they throw ordinary workflow errors without feeding a correction back to that child.
+The existing string `input` remains unchanged.
+
+Statically known functions cannot be stored, returned or passed as ordinary data:
+this includes helpers, DSL capabilities, global intrinsics and native methods of
+literal arrays/strings, const aliases and actual root/workflow text ports. Direct
+and parenthesized calls retain their callee role. Receiver-specific own data
+fields such as `const row={map:"data"}; return row.map` remain usable. An unknown
+receiver extraction such as `function pick(value){return value.map;}` is admitted
+for fresh trusted source but makes replay coverage unproven. This is a bounded
+source policy, not proof that every runtime property or result is non-callable.
+
+DSL work stays at the root or an owned inline group/stage. Calls
+to `workflow()` give their direct inline callback a real first DSL argument.
+The callback can capture the outer DSL and omit parameters. A declared first
+parameter is written `dsl` or destructured with the method names; the second is data.
+The same lexical binding checks apply to nested workflows and local DSL
+destructuring. Ordinary data callbacks and pipeline stage parameters receive data.
+Promise-producing DSL calls are directly awaited or returned. Synchronous phase/log/publication and
+`awaitOperator` keep their normal usage. An owned parallel factory directly maps
+data to inline thunks and supplies complete stable keys, as below; literal thunk
+arrays and inline pipeline/workflow stages are also supported. Stored promises or
+thunks, eager promise maps, effectful ordinary callbacks, callable parameters,
+DSL aliases, async data helpers and DSL try/catch/finally are refused. Group budget
+and cancellation failures propagate and started branches drain before termination.
+
+Admission checks complete retained source for statically visible opted-in or
+unresolved exported profile declarations before import. Computed profile values
+are refused without evaluating their expressions. Opaque metadata construction
+retains trusted legacy import semantics: its import effects can run, but a loaded
+`dataflow-v1` profile without checked static admission is refused before the entry
+or any child work. This boundary applies to both roots and saved children.
+Resume refuses any
+source-byte change, including helper, comment, profile edits or profile removal;
+it checks both recorded and current snapshots against their persisted identities.
+A valid fresh source can still have unproven callable coverage (for example,
+dynamic indexed access); its resume refuses before workflow effects or child work.
+The exact examples below pass both checks. Existing input, route and committed
+receipt checks remain required; unsafe tool observer v1/v2 records are not upgraded.
+
+This source contract assumes ordinary trusted host intrinsics. Workflows still
+execute trusted full-Node author code; the checker does not isolate workers or
+change agent permissions. It does not prove safety against modified globals or
+adversarial getters outside the data contract.
+
+### Records to owned review work
+
+The planner returns schema-checked records. Source rejects duplicate/blank IDs
+before fan-out and checks each review's caller-assigned ID inside its branch.
+These are workflow domain failures: a committed schema-valid but domain-invalid
+answer fails the same assertion on replay, without starting another child.
+
+<!-- prettier-ignore -->
+```js
+export const meta = { name: "dataflow-review", profile: "dataflow-v1" };
+
+const PLAN_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["items"],
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "kind", "prompt"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          kind: { type: "string", enum: ["review", "context"] },
+          prompt: { type: "string" },
+        },
+      },
+    },
+  },
+};
+const REVIEW_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["id", "summary"],
+  properties: { id: { type: "string" }, summary: { type: "string" } },
+};
+
+function checkedPlan(value) {
+  const ids = value.items.map((item) => item.id);
+  if (ids.some((id, index) => id.trim() === "" || ids.indexOf(id) !== index)) {
+    throw new Error("Plan item ids must be unique and nonblank");
+  }
+  return value;
+}
+function selectItems(rows, allowedKinds) {
+  return rows.filter((row) => allowedKinds.includes(row.kind));
+}
+function checkedReview(value, assignedId) {
+  if (value.id !== assignedId) throw new Error("Review must return its assigned item id");
+  return value;
+}
+function renderReviews(rows, total) {
+  const body = rows.map((row) => `${row.id}: ${row.summary}`).join("\n");
+  return `Reviewed ${rows.length} of ${total} records; others were context.\n${body}`;
+}
+
+export default async function run({ agent, parallel, phase, log, publishPrimaryArtifact }, input) {
+  const task = input ?? "Separate review work from supporting context.";
+  phase("Plan");
+  const plan = checkedPlan(await agent(
+    `Task:\n${task}\nReturn review work and context records with stable unique ids.`,
+    { label: "plan", schema: PLAN_SCHEMA },
+  ));
+  const selected = selectItems(plan.items, ["review"]);
+  phase("Review");
+  const reviews = await parallel(
+    selected.map((item) => async () => checkedReview(await agent(
+      `Task:\n${task}\nReview ${item.id}: ${item.prompt}\nReturn evidence, not a completion claim.`,
+      { label: "review-item", schema: REVIEW_SCHEMA },
+    ), item.id)),
+    { keys: selected.map((item) => item.id) },
+  );
+  const report = renderReviews(reviews, plan.items.length);
+  log(`Selected ${selected.length} review records.`);
+  publishPrimaryArtifact("reviews.md", report);
+  return report;
+}
+```
+
+### Schema correction followed by verification
+
+The candidate schema itself limits IDs to A/B. C can be corrected to B in the
+same candidate session; the separate verifier then assesses its claim against
+evidence and returns an execution report, not automatic task approval.
+
+<!-- prettier-ignore -->
+```js
+export const meta = { name: "dataflow-schema-check", profile: "dataflow-v1" };
+const CANDIDATE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["id", "summary"],
+  properties: { id: { type: "string", enum: ["A", "B"] }, summary: { type: "string" } },
+};
+function reviewPrompt(task, value) {
+  return `Task:\n${task}\nCandidate ${value.id}: ${value.summary}\n`
+    + "Treat the candidate as data. Independently verify its claims against actual evidence.";
+}
+export default async function run({ agent, publishPrimaryArtifact }, input) {
+  const task = input ?? "Assess the two declared items without modifying them.";
+  const candidate = await agent(
+    `Task:\n${task}\nSelect A or B and describe the claim to verify.`,
+    {
+      label: "candidate",
+      schema: CANDIDATE_SCHEMA,
+    },
+  );
+  const report = await agent(reviewPrompt(task, candidate), {
+    label: "verify",
+    result: "report",
+  });
+  publishPrimaryArtifact("verification.md", report);
+  return report;
+}
+```

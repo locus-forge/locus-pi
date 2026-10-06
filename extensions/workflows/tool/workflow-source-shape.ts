@@ -5,6 +5,10 @@
  * Ordered diagnostics serve the workflow tool, repository gate and recovery.
  * Lexical/provenance facts live under `source/`, without importing this facade.
  */
+import {
+  validateStandardPhaseDeclarations,
+  validateOrchestrationOnlyAgentLabel,
+} from "../source/profiles/workflow-source-profile.js";
 import { Lang, parse, type SgNode } from "@ast-grep/napi";
 import { validateStandardAgentOptions } from "../source/workflow-source-agent-options.js";
 import {
@@ -27,13 +31,11 @@ import {
   containsStandardEdgeCall,
   directStandardDslCall,
   isStandardBindingOccurrence,
-  isTrustedStandardPhaseCall,
   isVisibleInlineEdgeCallback,
   nodeWithinStandardNode,
   standardCallArguments,
   standardDslBindings,
   standardLexicalBindings,
-  standardPhaseDslBindings,
 } from "../source/workflow-source-bindings.js";
 import { standardBindingModel } from "../source/workflow-source-provenance.js";
 import {
@@ -196,65 +198,6 @@ function orchestrationOnlyDslMethod(call: SgNode): string | undefined {
     return callee.field("property")?.text();
   }
   return undefined;
-}
-
-/**
- * Every `agent()` declares a literal `label`, and no two declare the same one.
- *
- * This is the rule that makes a generated workflow repairable. The replay record
- * addresses a call by `(phase, label, occurrence)`, so a call with no label
- * cannot be located after the source is edited, and two call sites sharing one
- * label collapse into the same address: delete the first and the second slides
- * onto its position and is handed its recorded answer. Neither the request key
- * nor the recorded name can tell those two apart at run time, so the source
- * checker is where the case is closed.
- */
-function validateOrchestrationOnlyAgentLabel(
-  call: SgNode,
-  firstCallSiteByLabel: Map<string, SgNode>,
-  diagnostics: WorkflowSourceDiagnosticBag,
-): void {
-  const options = unwrapStandardParentheses(standardCallArguments(call)[1]);
-  const choices =
-    options?.kind() === "object"
-      ? options.children().find((child) => child.kind() === "pair" && staticObjectKey(child.field("key")) === "choices")
-      : undefined;
-  if (choices !== undefined)
-    diagnostics.add(
-      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.authoringSubset,
-      "error",
-      "agent() uses singular choice: [...]; choices is not a supported option",
-      choices,
-    );
-  const labelNode =
-    options?.kind() === "object"
-      ? options
-          .children()
-          .find((child) => child.kind() === "pair" && staticObjectKey(child.field("key")) === "label")
-          ?.field("value")
-      : undefined;
-  const label = staticStringValue(unwrapStandardParentheses(labelNode ?? undefined));
-  if (label === undefined || label === "") {
-    diagnostics.add(
-      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.agentLabelMissing,
-      "error",
-      "agent() must declare a literal label; a call without one cannot be resumed after the source is repaired",
-      call,
-    );
-    return;
-  }
-  const first = firstCallSiteByLabel.get(label);
-  if (first !== undefined) {
-    diagnostics.add(
-      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.agentLabelDuplicate,
-      "error",
-      `agent() label "${label}" is already used in this file; two call sites sharing a label are one address on resume`,
-      labelNode ?? call,
-      [{ message: `first used here`, node: first }],
-    );
-    return;
-  }
-  firstCallSiteByLabel.set(label, labelNode ?? call);
 }
 
 /** Legacy message-only projection retained for existing tests and automation. */
@@ -512,126 +455,6 @@ function validateStandardIdentifierRoots(root: SgNode, errors: WorkflowSourceDia
     errors.add(
       "standard profile reads values only from declared lexical bindings and approved language roots",
       identifier,
-    );
-  }
-}
-
-interface StandardDeclaredPhase {
-  title: string;
-  node: SgNode;
-}
-
-interface StandardCalledPhase {
-  title: string;
-  node: SgNode;
-}
-
-function validateStandardPhaseDeclarations(
-  root: SgNode,
-  runEntry: SgNode | undefined,
-  diagnostics: WorkflowSourceDiagnosticBag,
-): void {
-  if (runEntry === undefined) return;
-  const meta = root
-    .children()
-    .map((statement) => exportedMetaObject(statement))
-    .find((value) => value !== undefined);
-  const phasesPair = meta
-    ?.children()
-    .find((child) => child.kind() === "pair" && staticObjectKey(child.field("key")) === "phases");
-  const phasesNode = phasesPair?.field("value");
-  if (phasesNode?.kind() !== "array") return;
-
-  const declared = phasesNode.children().flatMap((child): StandardDeclaredPhase[] => {
-    if (child.kind() !== "object") return [];
-    const titlePair = child
-      .children()
-      .find((entry) => entry.kind() === "pair" && staticObjectKey(entry.field("key")) === "title");
-    const titleNode = titlePair?.field("value");
-    const title = staticStringValue(titleNode);
-    return title === undefined || titleNode == null ? [] : [{ title, node: titleNode }];
-  });
-  if (declared.length === 0) return;
-
-  const lexicalBindings = standardLexicalBindings(runEntry);
-  const phaseBindings = standardPhaseDslBindings(runEntry, lexicalBindings);
-  const calledByTitle = new Map<string, StandardCalledPhase>();
-  for (const call of runEntry.findAll({ rule: { kind: "call_expression" } })) {
-    const callee = unwrapStandardParentheses(callCallee(call));
-    if (callee === undefined || !isTrustedStandardPhaseCall(call, callee, lexicalBindings, phaseBindings)) continue;
-    const argument = unwrapStandardParentheses(standardCallArguments(call)[0]);
-    const title = staticStringValue(argument);
-    if (title !== undefined && argument !== undefined && !calledByTitle.has(title))
-      calledByTitle.set(title, { title, node: argument });
-  }
-  const called = [...calledByTitle.values()];
-  const declaredByTitle = new Map<string, StandardDeclaredPhase>();
-  const firstDeclaredByFoldedTitle = new Map<string, StandardDeclaredPhase>();
-  for (const phase of declared) {
-    const foldedTitle = phase.title.toLowerCase();
-    const first = firstDeclaredByFoldedTitle.get(foldedTitle);
-    if (first !== undefined) {
-      const exact = first.title === phase.title;
-      diagnostics.add(
-        WORKFLOW_SOURCE_DIAGNOSTIC_CODES.phaseDuplicateDeclaration,
-        "error",
-        exact
-          ? `meta.phases repeats title "${phase.title}"`
-          : `meta.phases title "${phase.title}" duplicates "${first.title}" by case`,
-        phase.node,
-        [{ message: `first declared as "${first.title}" here`, node: first.node }],
-      );
-    } else {
-      firstDeclaredByFoldedTitle.set(foldedTitle, phase);
-    }
-    if (!declaredByTitle.has(phase.title)) declaredByTitle.set(phase.title, phase);
-  }
-
-  for (const phase of called) {
-    if (declaredByTitle.has(phase.title)) continue;
-    const caseMatch = declared.find((candidate) => candidate.title.toLowerCase() === phase.title.toLowerCase());
-    if (caseMatch !== undefined) {
-      diagnostics.add(
-        WORKFLOW_SOURCE_DIAGNOSTIC_CODES.phaseCaseMismatch,
-        "error",
-        `meta.phases title "${caseMatch.title}" differs from literal phase("${phase.title}") only by case`,
-        phase.node,
-        [{ message: `declared as "${caseMatch.title}" here`, node: caseMatch.node }],
-      );
-      continue;
-    }
-    diagnostics.add(
-      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.phaseUndeclared,
-      "error",
-      `literal phase("${phase.title}") is absent from non-empty meta.phases`,
-      phase.node,
-      [{ message: "meta.phases is declared here", node: phasesNode }],
-    );
-  }
-
-  for (const phase of declaredByTitle.values()) {
-    const exactCall = calledByTitle.get(phase.title);
-    const caseCall = called.find((candidate) => candidate.title.toLowerCase() === phase.title.toLowerCase());
-    if (exactCall !== undefined || caseCall !== undefined) continue;
-    diagnostics.add(
-      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.phaseUnusedDeclaration,
-      "warning",
-      `meta.phases title "${phase.title}" has no literal phase("${phase.title}") call`,
-      phase.node,
-    );
-  }
-
-  const declaredTitles = [...declaredByTitle.keys()];
-  const calledTitles = [...calledByTitle.keys()];
-  const sameExactSet =
-    declaredTitles.length === calledTitles.length && declaredTitles.every((title) => calledByTitle.has(title));
-  if (sameExactSet && declaredTitles.some((title, index) => title !== calledTitles[index])) {
-    diagnostics.add(
-      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.phaseOrderDrift,
-      "warning",
-      "meta.phases order differs from first literal phase() occurrence",
-      phasesNode,
-      called[0] === undefined ? undefined : [{ message: "first literal phase() occurrence", node: called[0].node }],
     );
   }
 }

@@ -1,3 +1,4 @@
+import { workflowAuthoringProfileExplanation as authoringProfileExplanation } from "./workflow-meta.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -703,13 +704,6 @@ function passiveCatalogRowLine(row: WorkflowCatalogCurrentRow | WorkflowCatalogH
   // catalog row that grows with the pipeline stops being scannable.
   const phases = row.phases.length > 0 ? ` · phases=${row.phases.length}` : "";
   return `${name}${run} · ${workflowSourceBadge(row.source)}${composition} · ${row.description}${phases} · /workflows info ${row.name}`;
-}
-
-function authoringProfileExplanation(profile: WorkflowAuthoringProfile): string {
-  if (profile === "standard") return "standard (compact public source shape; not a runtime mode)";
-  if (profile === "integration") return "integration (integration-test source shape; not a runtime mode)";
-  if (profile === "legacy") return "legacy (compatibility source shape; not a runtime mode)";
-  return "unclassified (no recognized source-shape contract)";
 }
 
 export function workflowSourceBadge(source: WorkflowCatalogRow["source"]): "[P]" | "[U]" | "[PKG]" {
