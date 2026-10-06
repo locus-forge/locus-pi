@@ -100,6 +100,46 @@ describe("workflow result text persistence", () => {
     expect(recovered.text).not.toContain("\\n");
   });
 
+  it.each([
+    ["different prose", "accepted report", "refused report\n"],
+    ["extra whitespace", "accepted report", "accepted report \n"],
+    ["empty projection", "accepted report", ""],
+    ["structured failure", { ok: false, status: "blocked" }, "stage committed\n"],
+    ["no result", undefined, "stage committed\n"],
+  ])("rejects a readable projection that disagrees with the envelope: %s", (_name, result, projection) => {
+    const root = makeRoot();
+    const runId = "20260726-212752-98cc";
+    const runDir = writeFinishedRun(root, runId, result);
+    mkdirSync(path.dirname(workflowResultTextFile(runDir)), { recursive: true });
+    writeFileSync(workflowResultTextFile(runDir), projection, "utf8");
+
+    expect(readWorkflowRunResultText(root, runId)).toMatchObject({ status: "invalid" });
+    expect(readFileSync(workflowResultTextFile(runDir), "utf8")).toBe(projection);
+  });
+
+  it.each(["missing", "malformed"])("does not accept orphan Markdown with a %s envelope", (kind) => {
+    const root = makeRoot();
+    const runId = "20260726-212752-98cc";
+    const runDir = writeFinishedRun(root, runId, REVIEW_TEXT);
+    if (kind === "missing") rmSync(workflowResultFile(runDir));
+    else writeFileSync(workflowResultFile(runDir), "{not-json", "utf8");
+
+    expect(readWorkflowRunResultText(root, runId)).toMatchObject({ status: "none" });
+    expect(readFileSync(workflowResultTextFile(runDir), "utf8")).toContain("# Code Review");
+  });
+
+  it.each(["report", "report\n", "report\n\n"])("accepts exactly the writer projection of %j", (result) => {
+    const root = makeRoot();
+    const runId = "20260726-212752-98cc";
+    const runDir = writeFinishedRun(root, runId, result);
+    expect(readWorkflowRunResultText(root, runId)).toEqual({
+      status: "ready",
+      runId,
+      path: workflowResultTextFile(runDir),
+      text: result.endsWith("\n") ? result : `${result}\n`,
+    });
+  });
+
   it("resolves the run id an operator actually has: the printed short suffix, or last", () => {
     const root = makeRoot();
     writeFinishedRun(root, "20260725-101010-7f3a", "older run", { ts: "2026-07-25T10:10:10.000Z" });

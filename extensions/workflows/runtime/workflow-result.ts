@@ -1,28 +1,9 @@
 /**
- * Durable workflow result persistence and its tolerant readback.
- *
- * Workflow scripts are trusted JavaScript and may return values JSON cannot
- * represent. The rules that decide what a result means — JSON detachment,
- * disposition, classification and formatting — are owned by the fs-free
- * `workflow-outcome.ts`; this module owns the run-local files those rules feed:
- * `runtime/result.json` and the verbatim `outputs/workflow-result.md`.
- *
- * It owns BOTH directions of those two files. The write half normalizes a
- * trusted in-process envelope; the read half parses the same bytes back as
- * UNTRUSTED input, because a persisted file can be legacy, hand-edited, copied
- * from another run, or left behind by a removed workspace. Splitting the two
- * halves apart would fork a parser away from the format it parses, so the
- * tolerant `WorkflowRunResultEnvelope` and its invalid markers live here with
- * the writer that produced them.
- *
- * `WorkflowRunResultEnvelope` is the untrusted-readback shape only. The trusted
- * in-process return of one execution is `RunWorkflowScriptResult` in
- * `workflow-runner.ts`, and what a result MEANS stays in `workflow-outcome.ts`;
- * neither is this type, and none of the three may be merged.
- *
- * Nothing here creates a directory or recovers a missing file on the read path:
- * a reader reports what is on disk and leaves admission — whether a readable
- * historical run may be RESUMED — to its owner.
+ * Durable workflow result storage and tolerant, read-only historical readback.
+ * `workflow-outcome.ts` owns result meaning; this owner writes and validates the
+ * untrusted `runtime/result.json` envelope and its derived verbatim Markdown.
+ * The trusted execution result lives in `workflow-runner.ts`, not this envelope.
+ * Missing evidence is never repaired here; resume admission belongs to its owner.
  */
 
 import path from "node:path";
@@ -98,17 +79,7 @@ export type WorkflowResultPersistence =
       message: string;
     };
 
-/**
- * The run's terminal text, kept verbatim in its own file.
- *
- * Every live surface for a finished run is bounded on purpose: the chat digest
- * caps a line at 160 characters because it enters model context, and the
- * progress panel clips to the terminal width. A run whose result IS prose — a
- * review, a plan, an answer — therefore had no readable copy anywhere except a
- * one-line JSON string inside `runtime/result.json`. This file is that readable
- * copy under `outputs/`, and
- * it is what `/workflows result` opens.
- */
+/** Full prose projection for bounded live surfaces and `/workflows result`. */
 export function workflowResultTextFile(runDir: string): string {
   return path.join(workflowRunOutputsDir(runDir), "workflow-result.md");
 }
@@ -123,14 +94,19 @@ export function workflowResultText(result: unknown): string | undefined {
   return result.trim() === "" ? undefined : result;
 }
 
+function workflowResultTextProjection(result: unknown): string | undefined {
+  const text = workflowResultText(result);
+  return text === undefined || text.endsWith("\n") ? text : `${text}\n`;
+}
+
 /** Return undefined on write failure; the runner promotes that to failed finalization. */
 export function writeWorkflowResultText(runDir: string, result: unknown): string | undefined {
-  const text = workflowResultText(result);
+  const text = workflowResultTextProjection(result);
   if (text === undefined) return undefined;
   const resultTextPath = workflowResultTextFile(runDir);
   try {
     ensureWorkflowDirectoryNoSymlink(runDir, path.dirname(resultTextPath));
-    writeWorkflowRunFile(runDir, resultTextPath, text.endsWith("\n") ? text : `${text}\n`);
+    writeWorkflowRunFile(runDir, resultTextPath, text);
     return resultTextPath;
   } catch {
     return undefined;
@@ -290,8 +266,9 @@ export type WorkflowRunResultText =
 /**
  * The whole terminal output of one finished run, read from disk.
  * `outputs/workflow-result.md` is the verbatim copy a prose run writes. The
- * canonical `runtime/result.json` envelope can recover the text if that readable
- * copy was removed. Nothing here is truncated — being readable is the point.
+ * canonical `runtime/result.json` envelope authorizes that copy only when its
+ * bytes match the writer's projection. It recovers text if the copy was removed.
+ * Nothing here is truncated — being readable is the point.
  */
 export function readWorkflowRunResultText(projectRoot: string, runId: string): WorkflowRunResultText {
   let runDir: string;
@@ -314,12 +291,6 @@ export function readWorkflowRunResultText(projectRoot: string, runId: string): W
       message: `Run ${runId} has malformed persisted workflow metadata (${invalidity}).`,
     };
   }
-  try {
-    const text = readWorkflowRunTextFile(runDir, textPath);
-    if (text.trim() !== "") return { status: "ready", runId, path: textPath, text };
-  } catch {
-    // No verbatim copy: fall through to the JSON envelope.
-  }
   const jsonPath = workflowResultFile(runDir);
   if (envelope === null) {
     return {
@@ -328,6 +299,22 @@ export function readWorkflowRunResultText(projectRoot: string, runId: string): W
       message:
         workflowLegacyRunMigrationMessage(projectRoot, runId) ?? `No persisted result was found for run ${runId}.`,
     };
+  }
+  let text: string | undefined;
+  try {
+    text = readWorkflowRunTextFile(runDir, textPath);
+  } catch {
+    // No readable projection: recover from the canonical JSON envelope.
+  }
+  if (text !== undefined) {
+    if (text !== workflowResultTextProjection(envelope.result)) {
+      return {
+        status: "invalid",
+        runId,
+        message: `Run ${runId} has a workflow-result.md projection that does not match its canonical result.json.`,
+      };
+    }
+    return { status: "ready", runId, path: textPath, text };
   }
   if (typeof envelope.result === "string" && envelope.result.trim() !== "") {
     return { status: "ready", runId, path: jsonPath, text: envelope.result };
