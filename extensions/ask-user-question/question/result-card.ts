@@ -10,7 +10,7 @@
 import { Text } from "@earendil-works/pi-tui";
 import type { ToolResult } from "../../_shared/host/pi-api.js";
 import { singleLine } from "./prompt-text.js";
-import type { QuestionResult } from "../interactive/question-runner.js";
+import type { QuestionResult } from "../interactive/human-control.js";
 
 const MARK_CHOSEN = "(o)";
 const MARK_UNCHOSEN = "( )";
@@ -28,11 +28,10 @@ export function renderAskResult(result: ToolResult): Text {
     lines.push(
       ...renderAnsweredQuestion(
         {
-          id: typeof details.questionId === "string" ? details.questionId : "",
           question: details.question,
           options: Array.isArray(details.options) ? (details.options as string[]) : [],
-          multi: Boolean(details.multi),
           selectedOptions: Array.isArray(details.selectedOptions) ? (details.selectedOptions as string[]) : [],
+          timedOut: details.timedOut === true,
           ...(typeof details.customInput === "string" ? { customInput: details.customInput } : {}),
         },
         result.isError,
@@ -45,14 +44,23 @@ export function renderAskResult(result: ToolResult): Text {
   return new Text(renderedLines.join("\n"), 0, 0);
 }
 
-function renderAnsweredQuestion(result: QuestionResult, isError?: boolean): string[] {
+function renderAnsweredQuestion(
+  result: Pick<QuestionResult, "question" | "options" | "selectedOptions" | "customInput"> & { timedOut?: boolean },
+  isError?: boolean,
+): string[] {
   const chosen = new Set(result.selectedOptions);
   const lines = [`Q: ${result.question}`];
   for (const option of result.options) {
     lines.push(`  ${chosen.has(option) ? MARK_CHOSEN : MARK_UNCHOSEN} ${option}`);
   }
   if (result.customInput !== undefined) lines.push(`  ${MARK_CHOSEN} (custom) ${singleLine(result.customInput)}`);
-  lines.push(isError ? "  -> cancelled" : "  -> answered");
+  lines.push(
+    result.timedOut
+      ? "  -> timed out; automatic answer, not submitted by the user"
+      : isError
+        ? "  -> cancelled"
+        : "  -> answered",
+  );
   return lines;
 }
 

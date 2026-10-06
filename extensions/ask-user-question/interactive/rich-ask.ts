@@ -2,22 +2,20 @@
  * extensions/ask-user-question/interactive/rich-ask.ts — The rich single-question ask flow.
  *
  * Serves the free-text kinds itself through Pi's input/editor dialogs, and
- * converts a select/multi-select question into the OMP flow before projecting
- * the answer back into the legacy result shape — redacted by the caller's
- * declared sensitivity, and recorded as a decision exactly once.
+ * uses the same side-effect-free collector for select/multi-select. Every kind
+ * reaches the same finalizer with its original sensitivity and outcome status.
  */
 
-import { emitDevEvent } from "../../_shared/runtime/event-bus.js";
-import { recordDecision, stableDecisionId } from "./human-control.js";
+import { finalizeQuestionOutcomes } from "./human-control.js";
 import { requestOperatorInput } from "../../_shared/operator/operator-input.js";
 import type { ExtensionAPI, ExtensionContext, ToolResult } from "../../_shared/host/pi-api.js";
-import { errorResult, textResult } from "../../_shared/host/pi-api.js";
+import { errorResult } from "../../_shared/host/pi-api.js";
 import { redactForSensitivity } from "../../_shared/host/redaction.js";
 import { errorMessage } from "../../_shared/host/error-text.js";
 import type { RichAskParams, OmpAskParams } from "../tool/ask-tool.js";
 import { inputTitle } from "../question/prompt-text.js";
 import type { OmpQuestion } from "../question/question-prompt.js";
-import { askOmpCompatible } from "./question-runner.js";
+import { collectQuestions } from "./question-runner.js";
 
 export async function askRichQuestion(
   pi: ExtensionAPI,
@@ -53,14 +51,7 @@ export async function askRichQuestion(
           reason: "no-ui",
         });
       }
-      return legacyResult(
-        pi,
-        ctx,
-        params,
-        input.status === "submitted" ? input.value : "",
-        input.status === "cancelled",
-        false,
-      );
+      return finalizeInput(pi, ctx, params, input);
     }
     if (params.kind === "editor") {
       const input = await requestOperatorInput(ctx, {
@@ -74,17 +65,10 @@ export async function askRichQuestion(
           reason: "no-ui",
         });
       }
-      return legacyResult(
-        pi,
-        ctx,
-        params,
-        input.status === "submitted" ? input.value : "",
-        input.status === "cancelled",
-        false,
-      );
+      return finalizeInput(pi, ctx, params, input);
     }
   } catch (error) {
-    const reason = errorMessage(error);
+    const reason = redactForSensitivity(errorMessage(error), params.sensitivity).text;
     return errorResult(`Ask UI failed: ${reason}`, {
       status: "error",
       source: "ask",
@@ -102,54 +86,36 @@ export async function askRichQuestion(
   };
   if (recommended !== undefined) question.recommended = recommended;
   const converted: OmpAskParams = { questions: [question] };
-  const result = await askOmpCompatible(pi, converted, ctx, signal, "ask");
-  if (result.isError) return result;
-  const details = result.details ?? {};
-  const value = params.kind === "multi-select" ? (details.selectedOptions as string[]) : firstLegacyValue(details);
-  return legacyResult(pi, ctx, params, value, false, false, details.decision);
+  const collected = await collectQuestions(converted, ctx, signal, "ask", params.sensitivity);
+  return "error" in collected ? collected.error : finalizeQuestionOutcomes(pi, ctx, collected.outcomes, "ask", params);
 }
 
 function promptWithReason(params: RichAskParams): string {
   return params.reason ? `${params.question}\n\nReason: ${params.reason}` : params.question;
 }
 
-async function legacyResult(
+function finalizeInput(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   params: RichAskParams,
-  value: string | string[],
-  cancelled: boolean,
-  timedOut: boolean,
-  existingDecision?: unknown,
+  input: { status: "submitted"; value: string } | { status: "cancelled" },
 ): Promise<ToolResult> {
-  const visibleAnswer = Array.isArray(value)
-    ? value.map((item) => redactForSensitivity(item, params.sensitivity).text)
-    : redactForSensitivity(value, params.sensitivity).text;
-  emitDevEvent("ask:answered", { kind: params.kind, cancelled, sensitivity: params.sensitivity ?? "internal" });
-  const decision =
-    existingDecision ??
-    (await recordDecision(pi, ctx, {
-      decisionId: stableDecisionId("ask", stableQuestionId(params.question)),
-      question: params.question,
-      answer: params.sensitivity === "secret" ? "[REDACTED:secret-answer]" : value,
-      status: cancelled ? "cancelled" : "answered",
-      source: "ask",
-      metadata: { kind: params.kind, sensitivity: params.sensitivity ?? "internal", timedOut },
-    }));
-  return textResult(
-    cancelled
-      ? "Question cancelled"
-      : `Answer: ${Array.isArray(visibleAnswer) ? visibleAnswer.join(", ") : visibleAnswer}`,
-    {
-      questionId: stableQuestionId(params.question),
-      kind: params.kind,
-      value: params.sensitivity === "secret" ? undefined : value,
-      visibleValue: visibleAnswer,
-      cancelled,
-      timedOut,
-      decision,
-      sensitivity: params.sensitivity ?? "internal",
-    },
+  return finalizeQuestionOutcomes(
+    pi,
+    ctx,
+    [
+      {
+        id: stableQuestionId(params.question),
+        question: params.question,
+        options: [],
+        multi: false,
+        selectedOptions: [],
+        ...(input.status === "submitted" ? { customInput: input.value } : {}),
+        status: input.status === "submitted" ? "answered" : "cancelled",
+      },
+    ],
+    "ask",
+    params,
   );
 }
 
@@ -158,12 +124,6 @@ function recommendedIndex(params: RichAskParams): number | undefined {
   if (!defaultValue) return undefined;
   const index = (params.options ?? []).indexOf(defaultValue);
   return index >= 0 ? index : undefined;
-}
-
-function firstLegacyValue(details: Record<string, unknown>): string {
-  const selected = details.selectedOptions;
-  if (Array.isArray(selected) && typeof selected[0] === "string") return selected[0];
-  return typeof details.customInput === "string" ? details.customInput : "";
 }
 
 function asString(value: string | string[] | undefined): string {

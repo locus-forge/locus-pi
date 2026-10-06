@@ -53,7 +53,7 @@ export type SessionEntryPayloadByType = {
     decisionId?: string;
     question?: string;
     answer?: unknown;
-    status: "answered" | "cancelled" | "deferred";
+    status: "answered" | "timed-out" | "cancelled" | "deferred";
     metadata?: Record<string, unknown>;
   };
   compact_summary: {
@@ -361,7 +361,7 @@ export function validateSessionEntryInput(input: SessionEntryInput): ValidationR
       requireString(payload, "content", errors);
       break;
     case "decision":
-      requireEnum(payload, "status", ["answered", "cancelled", "deferred"], errors);
+      requireEnum(payload, "status", ["answered", "timed-out", "cancelled", "deferred"], errors);
       break;
     case "compact_summary":
       requireString(payload, "summary", errors);
