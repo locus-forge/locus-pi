@@ -170,7 +170,11 @@ describe("explicit plain-text execution reports", () => {
       const runner = vi.fn(async () => success());
       const { dsl } = createWorkflowRuntime({ runId: "invalid", agentRunner: runner });
       await expect(dsl.agent("review", { ...report, [key]: "invalid" } as WorkflowAgentReportOptions)).rejects.toThrow(
-        `agent ${key} was removed`,
+        key === "schema"
+          ? "agent schema cannot be combined with result"
+          : key === "validate" || key === "repair"
+            ? `agent ${key} requires schema`
+            : `agent ${key} was removed`,
       );
       expect(runner).not.toHaveBeenCalled();
     },

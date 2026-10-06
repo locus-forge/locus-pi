@@ -213,7 +213,7 @@ describe("standard bounded carry and author-owned records; requires native ast-g
       'dsl.parallel(records.map((record) => () => dsl.agent(record.value, { label: "write" })));';
     expect(errors(wrap(body)).length).toBeGreaterThan(0);
   });
-  const REMOVED_OPTION_SOURCES: Record<string, string> = {
+  const UNSUPPORTED_OPTION_SOURCES: Record<string, string> = {
     handoffs: "handoffs: { maxItems: 3 }",
     schema: 'schema: { type: "array" }',
     validate: "validate: []",
@@ -223,19 +223,25 @@ describe("standard bounded carry and author-owned records; requires native ast-g
     maxAnswerChars: "maxAnswerChars: 4000",
     schemaMaxLength: "schemaMaxLength: 4000",
   };
-  it("covers exactly the option set the runtime refuses", () => {
-    expect(Object.keys(REMOVED_OPTION_SOURCES).sort()).toEqual([...REMOVED_AGENT_OPTION_NAMES].sort());
+  it("covers exactly the option set the source grammars refuse", () => {
+    expect(Object.keys(UNSUPPORTED_OPTION_SOURCES).sort()).toEqual([...REMOVED_AGENT_OPTION_NAMES].sort());
   });
   it.each(
-    Object.entries(REMOVED_OPTION_SOURCES).flatMap(([key, option]) => [
+    Object.entries(UNSUPPORTED_OPTION_SOURCES).flatMap(([key, option]) => [
       ["standard", key, option, standardWorkflowSourceShapeDiagnostics] as const,
       ["orchestration-only", key, option, orchestrationOnlyWorkflowSourceShapeDiagnostics] as const,
     ]),
-  )("%s mode names the removed agent option %s instead of admitting it", (_mode, key, option, check) => {
+  )("%s mode names the unsupported agent option %s instead of admitting it", (_mode, key, option, check) => {
     const messages = check(wrap(`return dsl.agent(input, { label: "discover", ${option} });`))
       .filter((item) => item.severity === "error")
       .map((item) => item.message);
-    expect(messages).toContainEqual(expect.stringContaining(`agent ${key} was removed`));
+    expect(messages).toContainEqual(
+      expect.stringContaining(
+        ["schema", "validate", "repair"].includes(key)
+          ? `agent ${key} is runtime-only and outside this authoring grammar`
+          : `agent ${key} was removed`,
+      ),
+    );
   });
   it("still refuses raw schema outside an agent declaration", () => {
     expect(

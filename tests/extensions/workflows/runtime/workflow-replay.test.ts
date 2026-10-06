@@ -1570,10 +1570,10 @@ describe("the return contract version boundary", () => {
     expect(controller.counts().divergedAtCall).toBeUndefined();
     expect(resumed.getJournal().filter((line) => line.kind === "agent_start")).toHaveLength(0);
 
-    // A schema declaration on a recorded ordinal is refused the same way.
+    // V4 cannot reinterpret a recorded v2 receipt or dispatch a fresh child on resume.
     await expect(
       resumed.dsl.agent("Discover units.", { label: "discover", schema: { type: "array" } } as never),
-    ).rejects.toThrow(/^agent schema was removed/u);
+    ).rejects.toThrow(/replay-contract-failure/u);
     expect(controller.counts()).toMatchObject({ replayedCalls: 0, freshCalls: 0 });
   });
 
@@ -1587,7 +1587,7 @@ describe("the return contract version boundary", () => {
     const resumed = choiceRuntime("removed-undefined-resume", controller);
     for (const [key, message] of [
       ["handoffs", /^agent handoffs was removed/u],
-      ["schema", /^agent schema was removed/u],
+      ["schema", /unsupported-schema/u],
       ["maxAnswerChars", /^agent maxAnswerChars was removed/u],
     ] as const) {
       await expect(

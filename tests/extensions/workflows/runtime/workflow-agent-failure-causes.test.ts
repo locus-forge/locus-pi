@@ -1,3 +1,4 @@
+import { structuredCause } from "../../../fixtures/agent-runtime/structured-sdk.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -34,18 +35,7 @@ import {
   tmpReportsDir,
 } from "../../../fixtures/agent-runtime/agent-failure-probes.js";
 
-/**
- * T-130 W1 — the machine-readable failure cause, as an EXECUTABLE matrix.
- *
- * Every member of the closed list has ONE entry below that drives a real path and RETURNS
- * the cause that path produced; the `it.each` over `AGENT_FAILURE_CAUSES` asserts it is the
- * member it was asked for — "obtained", not "mentioned" — for this file run alone, with no
- * module-level set that sibling suites could fill first.
- *
- * `Record<AgentFailureCause, CauseCase>` makes the table total at compile time; the last
- * case refuses a leftover entry for a cause the list no longer declares.
- */
-
+/** Every named cause is obtained from its producing path. Historical causes remain readable. */
 interface CauseCase {
   /** The layer the case drives, and what it asks of it. */
   readonly what: string;
@@ -85,6 +75,16 @@ const neverRuns: AgentExecutor = {
 };
 
 const CAUSE_MATRIX: Record<AgentFailureCause, CauseCase> = {
+  "output-refused": { what: "raw protocol refusal never enters correction", produce: () => structuredCause("refusal") },
+  "output-incomplete": {
+    what: "raw incomplete never commits a proposal",
+    produce: () => structuredCause("incomplete"),
+  },
+  "output-protocol-unknown": { what: "a missing raw terminal fails closed", produce: () => structuredCause("unknown") },
+  "author-validation-error": {
+    what: "author validator errors never retry the model",
+    produce: () => structuredCause("author"),
+  },
   "host-turn-timeout": {
     what: "the shared host aborts a turn its own budget outlived",
     async produce() {

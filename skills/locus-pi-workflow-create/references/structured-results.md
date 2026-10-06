@@ -1,11 +1,14 @@
 # Results: exact text, one choice, named files
 
-An agent returns exactly one of two things: plain `agent()` text, or one exact
+Within this skill's checked authoring grammar, an agent returns: plain `agent()` text, or one exact
 `choice` member when source must branch. Running commands or writing files does not
 change that. Anything richer — a record, a list of units, a queue, per-field findings —
 goes into a **exact caller-assigned file** that the agent writes and a later agent reads.
-`handoffs`, `schema`, `validate`, `output`, `repair` and `returnVia` were removed and
-are refused by name; caller-owned work units come from `dsl.items()`.
+`handoffs`, `output` and `returnVia` remain removed. The checker also refuses
+`schema`, `validate` and `repair`. Reviewed trusted runtime source has an opt-in
+[structured v4 contract](../../../docs/workflows/agent-results.md#structured-results-v4--trusted-runtime-source);
+this lesson does not teach that syntax before its authoring grammar is supported.
+Caller-owned work units come from `dsl.items()`.
 
 A choice is corrected in that same child session by construction: there is no other
 transport. A value that lists choices without selecting one must not become success.

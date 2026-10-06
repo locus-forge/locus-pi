@@ -1,3 +1,5 @@
+import type { WorkflowJSONSchema, WorkflowJSONValue, WorkflowValueValidator } from "./structured-results/schema.js";
+import type { WorkflowStructuredCall } from "./structured-results/return.js";
 /**
  * workflow-agent-contract.ts — the shared agent-call contract: what a workflow asks a
  * child for (`WorkflowAgentRequest`), what a child hands back (`WorkflowAgentResult`),
@@ -108,6 +110,8 @@ export function thrownAgentFailureCause(err: unknown): WorkflowAgentFailureCause
 export interface WorkflowAgentRequest {
   /** Host-owned immutable choice contract; only the bridge injects its return tool. */
   returnContract?: WorkflowReturnContract;
+  /** Logical v4 state; never serialized as a request field. */
+  structuredCall?: WorkflowStructuredCall;
   prompt: string;
   executionMode?: "bare" | "named";
   agent?: string | undefined; // project/user catalog name; absent in bare mode
@@ -288,6 +292,9 @@ export interface WorkflowAgentOptions {
   /** Reuse a runtime-owned workspace allocated by workspace(). */
   workspaceHandle?: string;
   /** A choice selects WorkflowAgentChoiceOptions instead of the exact-text overload. */
+  schema?: never;
+  validate?: never;
+  repair?: never;
   choice?: never;
   /** A choice fallback is valid only with WorkflowAgentChoiceOptions. */
   choiceFallback?: never;
@@ -310,7 +317,15 @@ export interface WorkflowAgentReportOptions extends Omit<WorkflowAgentOptions, "
   result: "report";
 }
 
-export type WorkflowAgentAnyOptions = WorkflowAgentOptions | WorkflowAgentReportOptions | WorkflowAgentChoiceOptions;
+export interface WorkflowAgentStructuredOptions extends Omit<WorkflowAgentOptions, "schema" | "validate" | "repair"> {
+  schema: WorkflowJSONSchema;
+  validate?: WorkflowValueValidator;
+  repair?: { maxAttempts: number };
+}
+export type WorkflowAgentAnyOptions =
+  WorkflowAgentOptions | WorkflowAgentReportOptions | WorkflowAgentChoiceOptions | WorkflowAgentStructuredOptions;
+export type { WorkflowJSONValue, WorkflowJSONSchema };
+export const WORKFLOW_STRUCTURED_CALL = Symbol("workflow-structured-call");
 
 export const FUSION_INVOCATION_RESERVATION = Symbol("fusion-invocation-reservation");
 export const FUSION_REPLAY_REQUIRED = Symbol("fusion-replay-required");
@@ -319,6 +334,7 @@ export const WORKFLOW_RETURN_CONTRACT = Symbol("workflow-return-contract");
 
 export type WorkflowInternalAgentOptions = WorkflowAgentAnyOptions & {
   [WORKFLOW_RETURN_CONTRACT]?: WorkflowReturnContract;
+  [WORKFLOW_STRUCTURED_CALL]?: WorkflowStructuredCall;
   [FUSION_INVOCATION_RESERVATION]?: WorkflowInvocationReservation;
   [FUSION_REPLAY_REQUIRED]?: true;
   [FUSION_CAPABILITY_MODE]?: WorkflowFusionMode;
@@ -419,8 +435,8 @@ export const WORKFLOW_SHAPED_TRANSPORT_REFUSAL =
  *  script or operator reads "this route cannot do choice results", never "bad answer". */
 export class WorkflowOutputCapabilityError extends Error {
   readonly result: WorkflowAgentResult;
-  constructor(result: WorkflowAgentResult) {
-    super(WORKFLOW_SHAPED_TRANSPORT_REFUSAL);
+  constructor(result: WorkflowAgentResult, message = WORKFLOW_SHAPED_TRANSPORT_REFUSAL) {
+    super(message);
     this.name = "WorkflowOutputCapabilityError";
     this.result = result;
   }
@@ -473,6 +489,7 @@ export interface PhysicalAgentAttemptInput {
   checkSchema?: (text: string) => AgentSchemaCheck;
   /** Present only when the logical call was served from a record; no child then runs. */
   replayedText?: string;
+  replayedAcceptance?: AgentOutputAcceptance;
   /** 1-based position of this physical attempt, and the bound it was drawn from. */
   attempt: number;
   attempts: number;

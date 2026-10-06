@@ -50,6 +50,10 @@ export const AGENT_FAILURE_CAUSES = [
   "unparseable-answer",
   /** Opt-in output submission exhausted; never a transport retry. */
   "output-contract-exhausted",
+  "output-refused",
+  "output-incomplete",
+  "output-protocol-unknown",
+  "author-validation-error",
   // A second, different proposal is a protocol conflict, not a format fallback.
   "output-contract-conflict",
   /** Host cannot enforce the requested same-session output boundary. */

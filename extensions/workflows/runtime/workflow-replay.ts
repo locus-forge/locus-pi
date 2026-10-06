@@ -1,3 +1,5 @@
+import type { AgentStructuredReceipt } from "../../_shared/agent-runtime/agent-runner.js";
+import { immutableJSON } from "./structured-results/schema.js";
 /**
  * workflow-replay.ts — recorded-call store for `--resume`.
  *
@@ -94,6 +96,7 @@ export type WorkflowReplayEntry =
       rcv?: number;
       ok: true;
       text: string;
+      structuredReceipt?: AgentStructuredReceipt;
     }
   | {
       v: typeof WORKFLOW_REPLAY_SCHEMA_VERSION;
@@ -138,7 +141,8 @@ export type WorkflowReplayMissReason =
   | "diverged";
 
 export type WorkflowReplayAgentLookup =
-  { replayed: true; text: string } | { replayed: false; reason: WorkflowReplayMissReason };
+  | { replayed: true; text: string; structuredReceipt?: AgentStructuredReceipt }
+  | { replayed: false; reason: WorkflowReplayMissReason };
 
 /**
  * What one run did about replay, persisted verbatim into `result.json`.
@@ -199,7 +203,10 @@ export interface WorkflowReplayController {
    */
   beginAgentAttempt(call: WorkflowReplayAgentCall & { replayable: boolean }): WorkflowReplayAgentLookup;
   /** Record this run's own outcome for the attempt just begun. */
-  recordAgentAttempt(call: WorkflowReplayAgentCall, outcome: { ok: true; text: string } | { ok: false }): void;
+  recordAgentAttempt(
+    call: WorkflowReplayAgentCall,
+    outcome: { ok: true; text: string; structuredReceipt?: AgentStructuredReceipt } | { ok: false },
+  ): void;
   /** Replay a recorded value, or produce and record a fresh one. */
   resolveValue(kind: WorkflowReplayValueKind, produce: () => number): number;
   counts(): WorkflowReplayCounts;
@@ -209,12 +216,7 @@ export function workflowReplayFile(runDir: string): string {
   return path.join(workflowRunRuntimeDir(runDir), WORKFLOW_REPLAY_FILE);
 }
 
-/**
- * Read one run's recorded calls. Best-effort in the same sense as the journal
- * reader: a malformed or partially written line is skipped rather than thrown,
- * because a truncated record must degrade into "fewer replayable calls", never
- * into a failed resume.
- */
+/** Skip partial/malformed legacy rows; a missing v4 committed prefix refuses resume. */
 export function readWorkflowReplayLog(projectRoot: string, runId: string): WorkflowReplayEntry[] {
   let raw: string;
   try {
@@ -283,7 +285,14 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
   constructor(options: CreateWorkflowReplayControllerOptions) {
     this.#runDir = options.runDir;
     this.#recordPath = workflowReplayFile(options.runDir);
-    const recorded = options.recorded ?? [];
+    const recorded = (options.recorded ?? []).map((entry) => {
+      if (entry.kind !== "agent" || entry.rcv !== 4) return entry;
+      try {
+        return immutableJSON(entry) as unknown as WorkflowReplayEntry;
+      } catch (error) {
+        throw new Error(`replay-contract-failure: invalid structured record: ${String(error)}`);
+      }
+    });
     this.#replayEnabled = options.recorded !== undefined;
     this.#sourceScriptChanged = options.sourceScriptChanged === true;
     this.#requireRecordedPrefix = options.requireRecordedPrefix === true;
@@ -305,6 +314,8 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
     // return sites. The two paths that return before this helper are the two
     // that must NOT latch: replay is switched off, and the latch already holds.
     const miss = (reason: WorkflowReplayMissReason): WorkflowReplayAgentLookup => {
+      if (call.returnContractVersion === 4)
+        throw new Error(`replay-contract-failure: v4 prefix unavailable (${reason})`);
       if (this.#requireRecordedPrefix && ordinal < this.#recordedAgents.length)
         throw new Error(`Interrupted recovery refused prefix divergence at call ${ordinal}: ${reason}`);
       this.#freshCalls += 1;
@@ -320,6 +331,7 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
       return { replayed: false, reason: "no-record" };
     }
     if (this.#diverged) {
+      if (call.returnContractVersion === 4) throw new Error("replay-contract-failure: v4 prefix diverged");
       this.#freshCalls += 1;
       return { replayed: false, reason: "diverged" };
     }
@@ -345,10 +357,17 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
     if (!call.replayable) return miss("side-effecting-call");
 
     this.#replayedCalls += 1;
-    return { replayed: true, text: entry.text };
+    return {
+      replayed: true,
+      text: entry.text,
+      ...(entry.structuredReceipt === undefined ? {} : { structuredReceipt: entry.structuredReceipt }),
+    };
   }
 
-  recordAgentAttempt(call: WorkflowReplayAgentCall, outcome: { ok: true; text: string } | { ok: false }): void {
+  recordAgentAttempt(
+    call: WorkflowReplayAgentCall,
+    outcome: { ok: true; text: string; structuredReceipt?: AgentStructuredReceipt } | { ok: false },
+  ): void {
     const seq = this.#writeCursor;
     this.#writeCursor += 1;
     const key = hashCanonicalRequest(call.canonicalRequest);
@@ -356,7 +375,17 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
     const rcv = call.returnContractVersion === undefined ? {} : { rcv: call.returnContractVersion };
     this.#append(
       outcome.ok
-        ? { v: WORKFLOW_REPLAY_SCHEMA_VERSION, seq, kind: "agent", ...node, key, ...rcv, ok: true, text: outcome.text }
+        ? {
+            v: WORKFLOW_REPLAY_SCHEMA_VERSION,
+            seq,
+            kind: "agent",
+            ...node,
+            key,
+            ...rcv,
+            ok: true,
+            text: outcome.text,
+            ...(outcome.structuredReceipt === undefined ? {} : { structuredReceipt: outcome.structuredReceipt }),
+          }
         : { v: WORKFLOW_REPLAY_SCHEMA_VERSION, seq, kind: "agent", ...node, key, ...rcv, ok: false },
     );
   }
@@ -442,6 +471,9 @@ function parseReplayEntry(value: unknown): WorkflowReplayEntry | undefined {
             ...rcv,
             ok: true,
             text: record.text,
+            ...(record.structuredReceipt === undefined
+              ? {}
+              : { structuredReceipt: immutableJSON(record.structuredReceipt) as unknown as AgentStructuredReceipt }),
           }
         : undefined;
     }

@@ -2,11 +2,11 @@
 title: Agent results and output acceptance
 type: guide
 status: active
-updated: "2026-09-30T12:00:00Z"
+updated: "2026-10-06T05:00:00Z"
 source_commit: "54dea11dbe11"
 update_event: "user_request"
-context: "task=T-129"
-description: "Agent calls return exact text or one exact declared choice; shaped JSON and list results are removed."
+context: "task=T-144"
+description: "Exact text and choice defaults, plus opt-in immutable structured results for trusted runtime source."
 ---
 
 # Agent results and output acceptance
@@ -15,19 +15,23 @@ description: "Agent calls return exact text or one exact declared choice; shaped
 
 Audience: workflow authors and bridge/host maintainers. This file owns the agent result API.
 
-An `agent()` call has exactly two result modes:
+An `agent()` call supports these result contracts:
 
 - **Plain text.** `agent(prompt)` resolves to the child's exact, full, non-empty final text.
   `result: "report"` is the same call observed as a whole execution report.
 - **One exact choice.** `agent(prompt, { choice: [...] })` resolves to one declared string,
   submitted through the same-session `workflow_return` tool.
 
-There is no third mode. An agent does not return JSON, an object, a list, or a value the
-workflow script has to parse. When a stage produces something richer than one routing
-token, the agent writes it to an **exact caller-assigned file destination in its prompt** and returns readable text; the
-next agent reads that same file. Native runtime workspaces own coordination and
-navigation, not user-file placement. The runtime persists every answer before emitting terminal
-`agent_end`; child metadata and diagnostics stay in journal and result evidence.
+- **Structured JSON v4.** Reviewed trusted runtime source can opt into `schema`,
+  optional synchronous `validate`, and a bounded `repair` allowance. It resolves to an
+  immutable JSON value after raw-protocol validation, whole child completion and storage.
+  The existing standard and orchestration-only source-check profiles still refuse these
+  options; the create skills keep their current text/choice grammar.
+
+Readable text remains the default. For shared reports or agent-owned product files, assign
+exact destinations in prompts and pass those same files to their consumers. Native runtime
+workspaces own coordination and navigation. The runtime persists every answer before
+terminal `agent_end`; execution metadata and diagnostics stay in journal and result evidence.
 
 ## The principle
 
@@ -73,14 +77,14 @@ const route = await agent(`Choose the next step from this review:\n${review}`, {
 });
 ```
 
-`choice` is the only option that changes what a call returns. The child alone receives
+`choice` selects the v3 routing contract. Its child alone receives
 `workflow_return({ value })`; a plain child is never given that tool. The closure, not
 tool arguments, owns the call's contract and identity; the tool accepts no file path,
 call ID or routing target. The first valid proposal is fixed, identical duplicates are
 idempotent, and a contradictory second proposal fails the call with
 `output-contract-conflict`.
 
-The contract carries one package-owned same-session clarification: two submissions in
+The choice v3 contract carries one package-owned same-session clarification: two submissions in
 total, the first proposal plus one correction turn. Every choice call journals
 `[workflow:return] <label>: contract v3, 1 same-session clarification turn(s) (package default 1)`.
 The count is not configurable.
@@ -95,18 +99,15 @@ reinterpreted under the reduced contract.
 | Removed                             | Use instead                                                                                                                                                                                                       |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `handoffs`                          | Have an agent write the exact caller-assigned destination in its prompt and return readable text; pass caller-owned work units through `items()`; or loop with a bounded `for` and route each pass with `choice`. |
-| `schema`                            | Have the agent write the record to the exact caller-assigned destination in its prompt and return readable text; use `choice` when source needs one exact token.                                                  |
-| `validate`                          | Put the rule in the prompt, or run a separate verifier agent that checks the same exact caller-assigned file and writes its own record at an assigned destination.                                                |
 | `output`                            | Drop it: plain `agent(prompt)` already returns the exact full text.                                                                                                                                               |
-| `repair`                            | Drop it: a choice call uses the package-owned single same-session correction.                                                                                                                                     |
 | `returnVia`                         | Drop it: a choice call always returns through `workflow_return`, and a plain call returns exact text.                                                                                                             |
 | `maxAnswerChars`, `schemaMaxLength` | Both are refused by name; state a length requirement in the prompt.                                                                                                                                               |
 | Fusion `schema`, `validate`         | The judge returns exact text; state the required format in the prompt, or have a later agent write the exact caller-assigned destination in its prompt from the judge's text.                                     |
 
-The standard source checker names `handoffs`, `output`, `repair` and `returnVia` on an
-`agent()` call, and still refuses raw `schema` and `validate`.
+Both source-check profiles also refuse `schema`, `validate` and `repair`: v4 is a
+trusted-runtime capability in this release, outside their existing authoring grammar.
 
-## Same-session lifecycle
+## Choice v3 same-session lifecycle
 
 The host creates one child session, performs the task and validates the tool proposal.
 An invalid proposal receives feedback in that session. If the turn ends without a usable
@@ -139,7 +140,7 @@ The value must be one exact declared string. An array, an object such as
 `{ choice, reason }`, or a string that contains JSON is refused with a named correction
 and never parsed into a member.
 
-## Canonical value and evidence
+## Choice v3 canonical value and evidence
 
 The accepted member is recorded as its canonical JSON string; runtime checks that
 boundary and returns the exact string to workflow code. The run-owned artifact store
@@ -164,6 +165,126 @@ reports the choice check.
 
 Older journals stay readable: `schemaValidation.source: "script"` and the `script-rejected`
 cause may appear on records written while `validate` existed.
+
+## Structured results v4 — trusted runtime source
+
+```js
+// Reviewed trusted Node workflow; neither source-check profile admits this yet.
+const allowedIds = new Set(["record-17", "record-23"]);
+const record = await agent("Return one authoritative record id from the supplied evidence.", {
+  label: "record",
+  schema: {
+    type: "object",
+    properties: { id: { type: "string" } },
+    required: ["id"],
+    additionalProperties: false,
+  },
+  validate: (value) => (allowedIds.has(value.id) ? [] : ["Use an authoritative input id"]),
+  repair: { maxAttempts: 2 },
+});
+```
+
+`schema` selects v4. `validate` or `repair` without it fails before a child exists.
+It cannot combine with choice, fallback or report mode. `output`, `returnVia` and
+`handoffs` remain removed aliases. Text, report and choice v3 defaults, return types
+and canonical replay keys remain unchanged.
+
+**Host boundary.** V4 uses the existing Pi coding-agent SDK `openai-codex` Responses
+route, with Pi **>=1.0.0 and actual raw/admission/tool/cancellation capabilities**.
+Other routes and older hosts fail `output-contract-unavailable` before prompt.
+Version alone is insufficient: callbacks must be installable and chainable, active-tool
+restriction must round-trip, and raw call identity/final arguments/terminal status must
+remain observable. Legacy text and choice continue to load on Pi 0.84.3. This route is
+a return tool with local validation; it does not inject a native provider schema or
+force tool selection, and does not change the caller's model, authentication or permissions.
+
+**Dialect `locus-json-subset-v1`.** Every schema node is an object with one string
+`type`: `null`, `boolean`, `string`, `number`, `integer`, `array` or `object`.
+Allowed keywords are primitive `enum`; object `properties`, `required`, boolean
+`additionalProperties`; array single-schema `items`, `minItems`, `maxItems`; string
+`minLength`, `maxLength`; number/integer `minimum`, `maximum`; and string `title` and
+`description`. Optional `$schema` must be exactly
+`https://json-schema.org/draft/2020-12/schema`. This named subset is not a full draft
+implementation. Other keywords, unions, refs, patterns, formats, wrong placement,
+invalid bounds or required keys outside properties fail `unsupported-schema` before work.
+
+Object, array, scalar and null roots are supported. Omitted or true
+`additionalProperties` preserves unknown keys; false rejects them. Declared properties
+remain optional unless required. Array items may be omitted. String length counts
+**grapheme clusters**, including a combining sequence or family emoji as one, matching
+the tested TypeBox engine. Integer means a finite JS number with no fractional part;
+it does not imply safe-integer precision. Encode exact large numbers or decimals as strings.
+No coercion, null deletion, defaults, trimming, truncation or fence removal occurs.
+The preflight gate verifies the supported route and writable/readable host hooks; actual
+provider events and terminal observation remain necessary to accept a value. A future
+host with a writable hook that never delivers events fails closed as unknown.
+Schema validation uses lazy TypeBox Compile/Check/Errors after the host capability gate.
+
+**Proposal and terminal evidence.** The only envelope is exactly `{value: JSONValue}`
+in finalized raw tool arguments with observed call identity. Partial deltas and Pi's
+repaired/normalized arguments cannot supply a proposal. Canonical JSON sorts object
+keys, preserves array order and finite numbers, and treats -0 as 0. Null is a value,
+not a missing proposal. Identical accepted duplicates are idempotent; different ones
+fail `output-contract-conflict`. Schema, candidates and receipts are detached and frozen.
+
+A completed tool proposal remains provisional until the whole child and required
+storage finish. Protocol refusal before or after a proposal is `output-refused`;
+incomplete is `output-incomplete`; provider errors remain failures; lost terminal/raw
+observation is `output-protocol-unknown`. None is inferred from English narrative or
+converted into a success. A failed store has no authoritative structured receipt.
+
+**Custom validation.** `validate(value)` is pure and synchronous, after schema validation,
+on a detached deeply frozen input with monitored mutation attempts. It returns `[]`
+to accept or nonblank error strings for same-session feedback. Throw, Promise/thenable,
+malformed return, or mutation (even caught by the callback) is `author-validation-error`
+without model repair. It is a predicate, not a transformer or security sandbox for
+trusted Node code. ID membership and cross-field checks need authoritative caller data;
+an accepted model assertion is not evidence that tests or required reviews happened.
+
+**Allowances.** Default `repair.maxAttempts` is **2 submissions**, including the initial
+one. An explicit positive safe integer changes it. Each distinct finalized return,
+including one rejected by the host before execution, and each completed output turn
+without a return consumes one slot. Partial events or repeated observations of the
+same call id do not consume another. Ordinary research before the first return uses
+the caller's ordinary budgets without spending output slots. After submitting, only
+the return tool is admitted; missing returns in correction turns still consume slots.
+The host's automatic loop and the outer clarification loop share that ledger and deny
+further generation/dispatch at exhaustion. Already dispatched effects are not rolled back.
+
+Corrections reuse the same child and remaining output/turn/tool/time allowances. The
+existing transport `attempts` default remains 1. Explicit fresh retries still require
+the existing eligible failure and workspace rules, consume a physical root invocation,
+and retain one logical ledger and remaining declared timeout. V4 permits such a retry
+only before any model turn has been dispatched: uncertain effects, refusal, schema,
+author/configuration, cancellation and lost observation never earn a fresh child.
+No new global turn/tool/time defaults or durable restart clock is introduced; omitted
+axes remain unbounded. A new explicit run receives a new ledger and preserves earlier evidence.
+
+**Replay.** Only a committed v4 receipt replays: exact contract/dialect/schema digest,
+observer revision, full source and caller-input identities, applied allowances, spent
+counters, completed raw turn/call provenance, and schema/custom validation outcome must
+agree. Changed validator/closure source or caller inputs refuses reuse. Uncovered
+external callbacks/imports or non-replayable source cannot resume v4. The runner uses
+conservative lexical coverage: source-declared functions and local aliases can be covered;
+ambient/free callbacks, `globalThis`/`process`, reflection and nonliteral property indexes
+are unproven. Callable coverage follows direct source functions and their local aliases, explicit DSL/intrinsic
+operations and a named standard instance-method subset. Arbitrary member callbacks,
+function parameters used as callees, call-returned callees and unproven callback arguments
+are unavailable for replay. Mutations, spreads and opaque agent option objects are also
+unproven in this subset. Source-owned object callbacks need a declaration on their actual
+receiver. This can
+refuse replay for otherwise valid trusted JavaScript; it does not restrict fresh execution
+or establish a sandbox or a full JavaScript dependency proof. Current validation
+runs again on immutable replayed data; mismatch or author errors are
+`replay-contract-failure`, without correction or a new model. Missing/uncommitted receipts,
+unknown effects or incomplete ledgers fail closed. V2/v3 records are never upgraded.
+A custom runtime embedder must supply verified source/input identities and a current host
+version reader for v4 replay. Warm sessions and durable elapsed time across restarts are
+outside this contract.
+
+The existing child/result and replay stores retain the immutable receipt. The operational
+`agent_end.outputAcceptance` is only `{source:"tool", toolName:"workflow_return", attempts,
+contractVersion:4}`; raw arguments and full receipts are not copied into each journal event.
 
 ## Command completed, answer rejected
 
@@ -265,7 +386,7 @@ line carries the same usage; transport errors that never produced an answer carr
 `/workflows status` sums both executed terminal shapes per run (`tokens=… cost=$…`).
 Observational only — there is no hard cap.
 
-**Replay across this release.** The return contract is now v3. See the single
+**Replay across this release.** Choice uses v3; structured calls use a distinct v4 receipt. See the single
 [release-boundary account](recovery-and-continuation.md#replay-across-this-release-boundary)
 before resuming an older run.
 
@@ -281,6 +402,6 @@ The initial capture set is deliberately narrow: terminal `failed`/`blocked` outc
 
 Cancellation, unclassified/raw thrown errors, uncertain timeout/shutdown, global invocation/deadline limits, workspace/permission/operator failures, unavailable SDK, output protocol failures and persistence errors propagate. Failures classified on replayed answers also propagate: tightening the current answer bound cannot silently turn a previously successful review into a failure report and rerun the suffix.
 
-`result` accepts only `"report"` or omission. It cannot combine with `choice` or `choiceFallback`; the removed shaped-result options are refused by name as they are for every call. Invalid declarations fail before child execution. Report mode does not impose an output schema or any answer limit. Author the option as the literal `result: "report"`. The source checker validates directly declared option pairs and keeps returned text opaque; it does not resolve option objects reached through variables or spreads. Runtime validation applies to every call.
+`result` accepts only `"report"` or omission. It cannot combine with `choice`, `choiceFallback`, `schema`, `validate` or `repair`; the remaining removed aliases are refused by name. Invalid declarations fail before child execution. Report mode does not impose an output schema or any answer limit. Author the option as the literal `result: "report"`. The source checker validates directly declared option pairs and keeps returned text opaque; it does not resolve option objects reached through variables or spreads. Runtime validation applies to every call.
 
 The real child status and raw answer remain in journal/artifact/replay records. Captured failures remain replay `ok:false`, so resume reruns that call and the following suffix. Successful reports omit volatile run/call ids and live-only metadata, keeping their rendered bytes stable when the raw answer is replayed. A runtime log records when a failed child was captured as an observation. Reports do not change result/partial semantics or `consumeTextArtifact` admission: the latter still requires a successful source run and verified artifact provenance, not completed independent review.

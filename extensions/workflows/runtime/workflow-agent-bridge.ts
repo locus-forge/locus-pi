@@ -457,7 +457,11 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
         : undefined;
     // Injected ONLY for a choice call: a plain child never sees `workflow_return`.
     const returnController =
-      req.returnContract === undefined ? undefined : createWorkflowReturnController(req.returnContract);
+      req.returnContract === undefined
+        ? undefined
+        : req.returnContract.version === 4
+          ? req.structuredCall?.controller()
+          : createWorkflowReturnController(req.returnContract);
     const customTools = [
       ...(askTool === undefined ? [] : [askTool]),
       ...(returnController === undefined ? [] : [returnController.tool]),

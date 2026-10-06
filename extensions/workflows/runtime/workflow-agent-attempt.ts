@@ -195,6 +195,7 @@ export function createWorkflowAgentAttempt(
         status: "completed",
         summary: "Replayed from a recorded run.",
         text: replayedText,
+        ...(input.replayedAcceptance === undefined ? {} : { outputAcceptance: input.replayedAcceptance }),
         diagnostics: [],
         ...workflowExecutionIdentity(req),
         permissionMode,
@@ -385,7 +386,16 @@ export function createWorkflowAgentAttempt(
       ...(finalResult.status !== "completed" ? { failureCause: workflowAgentFailureCause(finalResult) } : {}),
       // Choice verdict for THIS attempt; absent on every call that declared no choice.
       ...(schemaCheck !== undefined ? { schemaValidation: schemaCheck.validation } : {}),
-      ...(finalResult.outputAcceptance === undefined ? {} : { outputAcceptance: finalResult.outputAcceptance }),
+      ...(finalResult.outputAcceptance === undefined
+        ? {}
+        : {
+            outputAcceptance: {
+              source: finalResult.outputAcceptance.source,
+              attempts: finalResult.outputAcceptance.attempts,
+              toolName: finalResult.outputAcceptance.toolName,
+              ...(finalResult.outputAcceptance.structuredReceipt === undefined ? {} : { contractVersion: 4 as const }),
+            },
+          }),
       permissionMode: finalResult.permissionMode ?? permissionMode,
       workspaceMode: finalResult.workspaceMode ?? workspaceMode,
       ...activeGroupFields(),
