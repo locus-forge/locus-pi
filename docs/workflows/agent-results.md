@@ -228,7 +228,11 @@ not a missing proposal. Identical accepted duplicates are idempotent; different 
 fail `output-contract-conflict`. Schema, candidates and receipts are detached and frozen.
 
 A completed tool proposal remains provisional until the whole child and required
-storage finish. Protocol refusal before or after a proposal is `output-refused`;
+storage finish. The nonempty response identity and complete terminal tool set must agree
+with observed item IDs, call IDs, names and finalized raw arguments. Missing, additional,
+renamed or changed terminal evidence cannot commit a value. A mixed return/work-tool batch
+is one rejected submission: no sibling tool executes, in either order, and only the
+remaining correction allowance is available. Research in earlier turns is unaffected. Protocol refusal before or after a proposal is `output-refused`;
 incomplete is `output-incomplete`; provider errors remain failures; lost terminal/raw
 observation is `output-protocol-unknown`. None is inferred from English narrative or
 converted into a success. A failed store has no authoritative structured receipt.
@@ -261,7 +265,7 @@ No new global turn/tool/time defaults or durable restart clock is introduced; om
 axes remain unbounded. A new explicit run receives a new ledger and preserves earlier evidence.
 
 **Replay.** Only a committed v4 receipt replays: exact contract/dialect/schema digest,
-observer revision, full source and caller-input identities, applied allowances, spent
+observer revision (`codex-responses-v2`), full source and caller-input identities, applied allowances, spent
 counters, completed raw turn/call provenance, and schema/custom validation outcome must
 agree. Changed validator/closure source or caller inputs refuses reuse. Uncovered
 external callbacks/imports or non-replayable source cannot resume v4. The runner uses
@@ -277,7 +281,9 @@ refuse replay for otherwise valid trusted JavaScript; it does not restrict fresh
 or establish a sandbox or a full JavaScript dependency proof. Current validation
 runs again on immutable replayed data; mismatch or author errors are
 `replay-contract-failure`, without correction or a new model. Missing/uncommitted receipts,
-unknown effects or incomplete ledgers fail closed. V2/v3 records are never upgraded.
+unknown effects or incomplete ledgers fail closed. Earlier `codex-responses-v1` receipts
+remain readable but cannot be reused, because they do not prove exact terminal membership.
+V2/v3 records are never upgraded.
 A custom runtime embedder must supply verified source/input identities and a current host
 version reader for v4 replay. Warm sessions and durable elapsed time across restarts are
 outside this contract.

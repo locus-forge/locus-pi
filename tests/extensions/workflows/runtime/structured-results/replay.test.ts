@@ -56,11 +56,24 @@ describe("immutable committed v4 replay on existing record owner", () => {
     expect(first.replayRecord[0]).toMatchObject({
       ok: true,
       rcv: 4,
-      structuredReceipt: { version: 4, validation: "accepted", observerRevision: "codex-responses-v1" },
+      structuredReceipt: { version: 4, validation: "accepted", observerRevision: "codex-responses-v2" },
     });
     const result = await resume(first.replayRecord, options);
     expect(result.error).toBeUndefined();
     expect(result.value).toBe("known");
+    expect(result.calls).toBe(0);
+  });
+  it("refuses old observer receipts whose terminal membership was not proven", async () => {
+    const options = { schema: { type: "null" } };
+    const first = await structuredSdk(options, [rawTurn(['{"value":null}'])]);
+    const records = structuredClone(first.replayRecord);
+    const entry = records[0]!;
+    if (entry.kind !== "agent" || !entry.ok || entry.structuredReceipt === undefined)
+      throw new Error("missing fixture receipt");
+    entry.structuredReceipt.observerRevision = "codex-responses-v1";
+    const result = await resume(records, options);
+    expect(result.value).toBeUndefined();
+    expect(result.error).toMatchObject({ message: expect.stringContaining("replay-contract-failure") });
     expect(result.calls).toBe(0);
   });
   it("refuses changed full source/validator closure and incomplete or missing ledgers", async () => {

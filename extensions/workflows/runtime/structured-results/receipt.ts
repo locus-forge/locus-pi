@@ -1,5 +1,5 @@
-/** Immutable v4 replay provenance, identities and cumulative ledger validation. */
-import type { AgentStructuredReceipt } from "../../../_shared/agent-runtime/agent-runner.js";
+/** V4 live terminal evidence and immutable replay provenance validation. */
+import type { AgentStructuredReceipt, AgentFailureCause } from "../../../_shared/agent-runtime/agent-runner.js";
 import {
   immutableJSON,
   canonicalWorkflowJSON,
@@ -63,7 +63,10 @@ export function verifyWorkflowStructuredReceipt(
         !Array.isArray(turn.calls)
       )
         throw new Error("Invalid raw terminal provenance");
+      if (proposal !== undefined) throw new Error("Raw generation followed accepted output");
       responses.add(turn.responseId);
+      const mixed = turn.workTools && turn.calls.length > 0;
+      if (mixed) counted++;
       if (turn.calls.length === 0 && (!turn.workTools || counted > 0)) counted++;
       for (const call of turn.calls) {
         if (
@@ -74,8 +77,9 @@ export function verifyWorkflowStructuredReceipt(
         )
           throw new Error("Invalid raw call identity");
         ids.add(call.callId);
+        if (mixed && call.validation !== "rejected") throw new Error("Mixed batch cannot supply accepted output");
         if (call.validation === "rejected" && proposal === undefined) {
-          counted++;
+          if (!mixed) counted++;
           continue;
         }
         const raw = JSON.parse(call.arguments) as unknown;
@@ -111,4 +115,40 @@ export function verifyWorkflowStructuredReceipt(
   )
     throw new Error("replay-contract-failure: structured receipt/source identity mismatch");
   return receipt;
+}
+
+/** A terminal frame confirms exactly the finalized tool items already observed. */
+export function verifyWorkflowRawTerminal(
+  output: unknown,
+  observed: ReadonlyMap<string, { name: string; callId: string; arguments?: string }>,
+): { reason: string; failureCause: AgentFailureCause } | undefined {
+  const unknown = (reason: string) => ({ reason, failureCause: "output-protocol-unknown" as const });
+  if (!Array.isArray(output)) return unknown("Raw terminal output unavailable");
+  const seen = new Set<string>();
+  for (const entry of output) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry))
+      return unknown("Malformed raw terminal output item");
+    const item = entry as Record<string, unknown>;
+    if (item.type === "function_call") {
+      const identity = typeof item.id === "string" ? observed.get(item.id) : undefined;
+      if (
+        identity === undefined ||
+        seen.has(item.id as string) ||
+        identity.name !== item.name ||
+        identity.callId !== item.call_id ||
+        identity.arguments === undefined ||
+        identity.arguments !== item.arguments
+      )
+        return unknown("Terminal tool does not match finalized raw evidence");
+      seen.add(item.id as string);
+    }
+    if (
+      item.type === "message" &&
+      Array.isArray(item.content) &&
+      item.content.some((part) => part !== null && typeof part === "object" && part.type === "refusal")
+    )
+      return { reason: "Provider refused structured output", failureCause: "output-refused" };
+  }
+  if (seen.size !== observed.size) return unknown("Terminal output omitted observed tool evidence");
+  return undefined;
 }

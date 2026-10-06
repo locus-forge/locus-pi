@@ -21,6 +21,8 @@ export interface ReadOnlyAgentToolResult {
   content: Array<{ type: "text"; text: string }>;
   details?: Record<string, unknown>;
   isError?: boolean;
+  /** Stop the current Pi tool turn; supported structured hosts also fence generation. */
+  terminate?: boolean;
 }
 
 export interface ReadOnlyAgentCustomTool {
