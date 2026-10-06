@@ -62,11 +62,29 @@ tool-approval path; `locus-pi` adds no second launch prompt or `decision` entry.
 
 ## Approval / trust discipline
 
-- **Permissions and tools:** every workflow child uses `permissionMode:
-"inherit-parent"` and `tools: ["*"]`. Selecting a catalog role changes only
-  prompt/model identity. Legacy `tools`, `readOnly`, and `permissionMode` call
-  fields are ignored, so `write`, `edit`, `bash`, and all other available tools
-  work without author-maintained allowlists.
+Locus Pi executes trusted workflow JavaScript in Node.js and provides no general
+security sandbox. A model instruction such as "do not modify files" expresses
+read-only intent, not a technical guarantee. Requested capability fields are not
+proof of effective tool access; the execution path and host policy determine it.
+
+- **Workflow permissions and tools:** ordinary workflow children, including
+  Fusion `agent` mode, use `permissionMode: "inherit-parent"` and `tools: ["*"]`.
+  Selecting a catalog role changes only prompt/model identity. Legacy `tools`,
+  `readOnly`, and `permissionMode` call fields are ignored and do not independently
+  narrow permissions. Available host tools remain subject to native exclusions
+  and approvals.
+- **Standalone named read-only:** an explicit native `readOnly` profile takes a
+  separate host-adapter path that narrows the tool set and excludes `bash`,
+  `edit`, `write`, and delegation tools. This is not a complete filesystem or
+  command-execution security guarantee: helper argument validation does not
+  establish general physical path confinement or cover every command option.
+- **External CLI adapters:** a provider such as Claude Code owns its own CLI
+  tool loop. Narrowing Pi tools does not constrain that separate loop; a reviewer
+  role or read-only prompt alone does not establish effective read-only access.
+- **Fusion tool-free:** this separate internal path disables host action tools
+  and discovered resources and requires active-tool readback before prompting.
+  Missing readback or unexpected tools fail closed; only an explicitly declared
+  return tool may remain. See [Fusion execution details](fusion.md#fusion-execution-details).
 - **Bounded repository checks:** `repository_check` accepts only
   a baseline `package.json` script name while the complete scripts map remains
   byte-for-byte equivalent to its pre-writer capture; added `pre`/`post` hooks,
@@ -83,9 +101,10 @@ tool-approval path; `locus-pi` adds no second launch prompt or `decision` entry.
   inside a borrowed dependency root writes to the project's real directory — the
   isolation guarantee covers the repository's own files, not a package manager's
   install tree.
-  `git_read` accepts argv for
-  allowlisted Git queries and rejects mutation, output-file, external-diff,
-  textconv, pager, signature, and config options before launch.
+  `git_read` accepts allowlisted Git query subcommands and rejects known unsafe
+  option spellings. Its option admission is incomplete: alternate pager option
+  forms can still launch an external process. Do not treat these helpers as a
+  general read-only security boundary.
 - **Workspace:** `workspaceMode: "project"` keeps the child in the current project working directory. `workspaceMode: "worktree"` and `"temporary-worktree"` make the bridge create a retained git worktree under the selected execution's `runtime/worktrees/<call-id>/`, then pass that path as `AgentRunRequest.workingDirectory`. That execution is the group root at `.locus-pi/runs/<storageRootRunId>/` or a saved child/resume attempt in its fixed nested directory.
 - **Deprecated alias:** `sandbox: "read-only"` maps to `workspaceMode: "project"`; `sandbox: "workspace-write"` maps to `workspaceMode: "worktree"`. It never changes the tool set. New workflows should use `workspaceMode`.
 - Pi native approval policy owns whether the underlying write-tier calls are allowed, prompted, or denied.
