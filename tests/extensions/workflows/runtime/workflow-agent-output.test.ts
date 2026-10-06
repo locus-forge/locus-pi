@@ -59,18 +59,7 @@ function accepted(value: unknown, text = "ignored final text"): AgentAttemptOutc
 /** Every removed shaped-result option, with the start of its named refusal. */
 const REMOVED_DECLARATIONS: Array<[string, WorkflowAgentAnyOptions, RegExp]> = [
   ["handoffs", { handoffs: {} } as WorkflowAgentAnyOptions, /agent handoffs was removed: .*items\(\).*choice/u],
-  [
-    "schema",
-    { schema: { type: "array" } } as WorkflowAgentAnyOptions,
-    /agent schema was removed: .*exact caller-assigned file destination.*prompt/u,
-  ],
-  ["validate", { validate: () => [] } as WorkflowAgentAnyOptions, /agent validate was removed with schema/u],
   ["output", { output: { type: "string" } } as WorkflowAgentAnyOptions, /agent output was removed/u],
-  [
-    "repair",
-    { choice: ["a", "b"], repair: { maxAttempts: 2 } } as WorkflowAgentAnyOptions,
-    /agent repair was removed: .*package-owned/u,
-  ],
   ["returnVia", { returnVia: "tool" } as WorkflowAgentAnyOptions, /agent returnVia was removed/u],
   ["maxAnswerChars", { maxAnswerChars: 400 } as WorkflowAgentAnyOptions, /agent maxAnswerChars was removed/u],
   ["schemaMaxLength", { schemaMaxLength: 400 } as WorkflowAgentAnyOptions, /agent schemaMaxLength was removed/u],

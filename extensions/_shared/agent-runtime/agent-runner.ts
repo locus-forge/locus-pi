@@ -45,21 +45,14 @@ export type AgentExecutionMode = "bare" | "named";
 export type AgentRunIdentity =
   { executionMode: "bare"; agent?: never } | { executionMode: "named"; agent: AgentDefinition };
 
-/** Caller-owned output acceptance; the SDK host owns session lifecycle and cumulative budgets. */
-export interface AgentResponseAcceptance {
-  toolNames: readonly string[];
-  bindToolRestriction(restrict: () => void): void;
-  inspect():
-    | { status: "accepted"; text: string; attempts: number; toolName: string }
-    | { status: "retry"; prompt: string }
-    | { status: "failed"; reason: string; failureCause?: AgentFailureCause };
-}
-
-export interface AgentOutputAcceptance {
-  source: "tool";
-  attempts: number;
-  toolName: string;
-}
+export type {
+  AgentResponseAcceptance,
+  AgentObservedReturn,
+  AgentExecutionLedger,
+  AgentStructuredReceipt,
+  AgentOutputAcceptance,
+} from "./output-acceptance/agent-output-contract.js";
+import type { AgentResponseAcceptance, AgentOutputAcceptance } from "./output-acceptance/agent-output-contract.js";
 
 export interface AgentRunRequestBase {
   task: string;
@@ -420,6 +413,7 @@ export function writeAgentRunResultArtifact(
   result: AgentRunResult,
   resultArtifactsDir?: string,
 ): AgentRunResult {
+  if (result.status !== "completed") result = withoutStructuredReceipt(result);
   if (result.resultArtifact !== undefined) return result;
   const store =
     resultArtifactsDir === undefined
@@ -466,6 +460,7 @@ export function writeAgentRunResultArtifact(
     lifecycleEntryIds: result.lifecycleEntryIds,
     evidence: result.evidence,
     text: result.text,
+    ...(result.outputAcceptance?.structuredReceipt === undefined ? {} : { outputAcceptance: result.outputAcceptance }),
     childOutputStats: result.childOutputStats,
     childTrace: result.childTrace,
     metadata: request.metadata,
@@ -493,11 +488,7 @@ export function writeAgentRunResultArtifact(
     return { ...result, resultArtifact: artifact };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    // FINISHED, not stored. Returning the execution status here told the caller the run
-    // had succeeded, and the launcher printed `done` over a record that was never
-    // written. The status now says what actually happened to the storage, the execution
-    // outcome is kept beside it, and the answer itself travels on untouched — an
-    // unstorable result is still a received one.
+    // Preserve execution evidence, but remove provisional v4 acceptance on failed storage.
     const answerAvailable = typeof result.text === "string" && result.text !== "";
     const summary =
       `Agent run ${result.status} but its result envelope was not written: ${reason}. ` +
@@ -505,13 +496,20 @@ export function writeAgentRunResultArtifact(
         ? "The answer is in this result and in the child transcript; only the durable record is missing."
         : "This run produced no answer text either.");
     return {
-      ...result,
+      ...withoutStructuredReceipt(result),
       status: "storage-failed",
       reason: summary,
       resultStorage: { executionStatus: result.status, reason, answerAvailable },
       diagnostics: [...result.diagnostics, summary],
     };
   }
+}
+
+/** A v4 proposal becomes authoritative only after whole execution and durable storage. */
+function withoutStructuredReceipt(result: AgentRunResult): AgentRunResult {
+  if (result.outputAcceptance?.structuredReceipt === undefined) return result;
+  const { outputAcceptance: _uncommitted, ...rest } = result;
+  return rest;
 }
 
 export function agentRunDisplayName(request: AgentRunRequest): string {

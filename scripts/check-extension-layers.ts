@@ -111,6 +111,8 @@ const SHARED_LAYER_MEMBERS: Record<SharedLayer, readonly string[]> = {
     "agent-read-only-policy",
     "agent-runner",
     "agent-sdk-host",
+    "output-acceptance/agent-output-admission",
+    "output-acceptance/agent-output-contract",
     "agent-system-prompt",
     "fleet-menu",
   ],
@@ -136,6 +138,12 @@ interface FeatureInternalEntry {
 }
 
 const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
+  {
+    module: "extensions/workflows/runtime/structured-results/source-coverage.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/runtime/workflow-script-identity.ts",
+    reason: "v4 closure coverage is an internal AST policy; callers use the script identity assessment.",
+  },
   {
     module: "extensions/workflows/source/workflow-source-agent-options.ts",
     owner: "extensions/workflows",
@@ -367,6 +375,7 @@ if (process.argv[1] && path.resolve(fileURLToPath(import.meta.url)) === path.res
 
 interface Classification {
   readonly layer: SharedLayer;
+  readonly modulePath: string;
 }
 
 interface ImportEdge {
@@ -404,7 +413,7 @@ export async function checkExtensionLayers(root: string): Promise<void> {
     );
   }
   for (const [name, classification] of ledger) {
-    const expected = `${SHARED_DIR}/${classification.layer}/${name}.ts`;
+    const expected = `${SHARED_DIR}/${classification.layer}/${classification.modulePath}.ts`;
     const actual = byBasename.get(name);
     if (actual === undefined) {
       failures.push(
@@ -488,7 +497,8 @@ export async function checkExtensionLayers(root: string): Promise<void> {
 function buildLedger(failures: string[]): Map<string, Classification> {
   const ledger = new Map<string, Classification>();
   for (const [layer, members] of Object.entries(SHARED_LAYER_MEMBERS) as [SharedLayer, readonly string[]][]) {
-    for (const name of members) {
+    for (const modulePath of members) {
+      const name = path.basename(modulePath);
       const previous = ledger.get(name);
       if (previous) {
         failures.push(
@@ -496,7 +506,7 @@ function buildLedger(failures: string[]): Map<string, Classification> {
         );
         continue;
       }
-      ledger.set(name, { layer });
+      ledger.set(name, { layer, modulePath });
     }
   }
   return ledger;

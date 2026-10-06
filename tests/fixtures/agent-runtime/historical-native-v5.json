@@ -1,0 +1,409 @@
+{
+  "sourceHead": "f73b3fd4e91971ca6f44b5d19ed10c1c68dfa4bd",
+  "cases": [
+    {
+      "phase": "final_answer",
+      "records": [
+        {
+          "v": 4,
+          "seq": 0,
+          "kind": "agent",
+          "key": "0d0753c3b19839a4139f7a073fde06114b51791af6554985410bbf0e6542dbea",
+          "rcv": 5,
+          "ok": true,
+          "text": "\"known\"",
+          "structuredReceipt": {
+            "allowances": {
+              "assistantTurns": "unbounded",
+              "outputAttempts": 2,
+              "timeoutMs": "unbounded",
+              "toolCalls": "unbounded"
+            },
+            "contract": {
+              "dialect": "locus-json-subset-v1",
+              "maxAttempts": 2,
+              "outputTransport": "native",
+              "schema": {
+                "type": "string"
+              },
+              "version": 5
+            },
+            "customValidation": "absent",
+            "inputIdentity": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "observerRevision": "openai-responses-native-v2",
+            "rawTurns": [
+              {
+                "output": {
+                  "messageId": "native_message_1",
+                  "phase": "final_answer",
+                  "text": "{\"value\":\"known\"}"
+                },
+                "payload": {
+                  "route": {
+                    "api": "openai-responses",
+                    "baseUrl": "https://api.openai.com/v1",
+                    "model": "gpt-6.1-sol",
+                    "provider": "openai"
+                  },
+                  "wireRevision": "openai-responses-native-v1",
+                  "wireSchemaSha256": "12ed9447fbbb261381b19f521a226cefef9dd3f6250b42a14873a051886c18e7"
+                },
+                "responseId": "native_response_1",
+                "terminal": "completed",
+                "validation": "accepted",
+                "workTools": false
+              }
+            ],
+            "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96",
+            "sourceIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "spent": {
+              "assistantTurns": 1,
+              "elapsedMs": 14673,
+              "outputAttempts": 1,
+              "toolCalls": 0
+            },
+            "validation": "accepted",
+            "value": "known",
+            "version": 5
+          }
+        }
+      ],
+      "journal": [
+        {
+          "ts": "2026-10-06T10:14:16.622Z",
+          "runId": "structured-sdk",
+          "kind": "agent_queued",
+          "executionMode": "bare",
+          "permissionMode": "inherit-parent",
+          "workspaceMode": "project",
+          "callId": "call-0001"
+        },
+        {
+          "ts": "2026-10-06T10:14:16.623Z",
+          "runId": "structured-sdk",
+          "kind": "agent_start",
+          "executionMode": "bare",
+          "permissionMode": "inherit-parent",
+          "workspaceMode": "project",
+          "callId": "call-0001"
+        },
+        {
+          "ts": "2026-10-06T10:14:31.310Z",
+          "runId": "structured-sdk",
+          "kind": "agent_end",
+          "executionMode": "bare",
+          "callId": "call-0001",
+          "replayed": false,
+          "readOnly": false,
+          "displayName": "Landau",
+          "status": "completed",
+          "outputAcceptance": {
+            "attempts": 1,
+            "source": "native",
+            "contractVersion": 5
+          },
+          "permissionMode": "inherit-parent",
+          "workspaceMode": "project",
+          "model": "openai/gpt-6.1-sol",
+          "executedModel": "openai/gpt-6.1-sol",
+          "thinking": "medium",
+          "evidence": {
+            "evidence": "reasoning_only",
+            "warnings": [],
+            "missingRequiredTools": [],
+            "observedTools": []
+          },
+          "childSessionId": "01a110b4-f348-7307-ac0b-a2ece793c05c",
+          "answerArtifact": {
+            "runId": "structured-sdk",
+            "artifactId": "call-0001-answer",
+            "name": "sub-agent",
+            "sha256": "badd30000654a812d79bfbca8723079bf73d4b8c1c1d2b2d4b0726f7c07b5d59"
+          },
+          "transcriptArtifact": {
+            "runId": "structured-sdk",
+            "artifactId": "call-0001-transcript",
+            "name": "sub-agent.transcript",
+            "sha256": "cfa366e22e80ffa2004be3c2a8727dd51ab456649552412d08f487bd646b36f0"
+          },
+          "resultEnvelopeArtifact": {
+            "runId": "structured-sdk",
+            "artifactId": "call-0001-result",
+            "name": "sub-agent.result",
+            "sha256": "cae448a6560b4f90d22be957945e64055e83a46ab57abba028260f460f220679"
+          },
+          "durationMs": 14675
+        }
+      ]
+    },
+    {
+      "phase": "absent",
+      "records": [
+        {
+          "v": 4,
+          "seq": 0,
+          "kind": "agent",
+          "key": "0d0753c3b19839a4139f7a073fde06114b51791af6554985410bbf0e6542dbea",
+          "rcv": 5,
+          "ok": true,
+          "text": "\"known\"",
+          "structuredReceipt": {
+            "allowances": {
+              "assistantTurns": "unbounded",
+              "outputAttempts": 2,
+              "timeoutMs": "unbounded",
+              "toolCalls": "unbounded"
+            },
+            "contract": {
+              "dialect": "locus-json-subset-v1",
+              "maxAttempts": 2,
+              "outputTransport": "native",
+              "schema": {
+                "type": "string"
+              },
+              "version": 5
+            },
+            "customValidation": "absent",
+            "inputIdentity": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "observerRevision": "openai-responses-native-v2",
+            "rawTurns": [
+              {
+                "output": {
+                  "messageId": "native_message_2",
+                  "text": "{\"value\":\"known\"}"
+                },
+                "payload": {
+                  "route": {
+                    "api": "openai-responses",
+                    "baseUrl": "https://api.openai.com/v1",
+                    "model": "gpt-6.1-sol",
+                    "provider": "openai"
+                  },
+                  "wireRevision": "openai-responses-native-v1",
+                  "wireSchemaSha256": "12ed9447fbbb261381b19f521a226cefef9dd3f6250b42a14873a051886c18e7"
+                },
+                "responseId": "native_response_2",
+                "terminal": "completed",
+                "validation": "accepted",
+                "workTools": false
+              }
+            ],
+            "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96",
+            "sourceIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "spent": {
+              "assistantTurns": 1,
+              "elapsedMs": 26,
+              "outputAttempts": 1,
+              "toolCalls": 0
+            },
+            "validation": "accepted",
+            "value": "known",
+            "version": 5
+          }
+        }
+      ],
+      "journal": [
+        {
+          "ts": "2026-10-06T10:14:31.332Z",
+          "runId": "structured-sdk",
+          "kind": "agent_queued",
+          "executionMode": "bare",
+          "permissionMode": "inherit-parent",
+          "workspaceMode": "project",
+          "callId": "call-0001"
+        },
+        {
+          "ts": "2026-10-06T10:14:31.332Z",
+          "runId": "structured-sdk",
+          "kind": "agent_start",
+          "executionMode": "bare",
+          "permissionMode": "inherit-parent",
+          "workspaceMode": "project",
+          "callId": "call-0001"
+        },
+        {
+          "ts": "2026-10-06T10:14:31.368Z",
+          "runId": "structured-sdk",
+          "kind": "agent_end",
+          "executionMode": "bare",
+          "callId": "call-0001",
+          "replayed": false,
+          "readOnly": false,
+          "displayName": "Sanger",
+          "status": "completed",
+          "outputAcceptance": {
+            "attempts": 1,
+            "source": "native",
+            "contractVersion": 5
+          },
+          "permissionMode": "inherit-parent",
+          "workspaceMode": "project",
+          "model": "openai/gpt-6.1-sol",
+          "executedModel": "openai/gpt-6.1-sol",
+          "thinking": "medium",
+          "evidence": {
+            "evidence": "reasoning_only",
+            "warnings": [],
+            "missingRequiredTools": [],
+            "observedTools": []
+          },
+          "childSessionId": "01a110b5-2caa-7307-ac0b-a2ee9dfa53ab",
+          "answerArtifact": {
+            "runId": "structured-sdk",
+            "artifactId": "call-0001-answer",
+            "name": "sub-agent",
+            "sha256": "badd30000654a812d79bfbca8723079bf73d4b8c1c1d2b2d4b0726f7c07b5d59"
+          },
+          "transcriptArtifact": {
+            "runId": "structured-sdk",
+            "artifactId": "call-0001-transcript",
+            "name": "sub-agent.transcript",
+            "sha256": "2ea5c3a88ed94448d3ce8174c668f694960b16723aaf2d2a8f220783e939bdd2"
+          },
+          "resultEnvelopeArtifact": {
+            "runId": "structured-sdk",
+            "artifactId": "call-0001-result",
+            "name": "sub-agent.result",
+            "sha256": "24b01ae0d4d4e930703b870744a865c50632edd9690c3624748e2215ef90c8b2"
+          },
+          "durationMs": 27
+        }
+      ]
+    },
+    {
+      "phase": null,
+      "records": [
+        {
+          "v": 4,
+          "seq": 0,
+          "kind": "agent",
+          "key": "0d0753c3b19839a4139f7a073fde06114b51791af6554985410bbf0e6542dbea",
+          "rcv": 5,
+          "ok": true,
+          "text": "\"known\"",
+          "structuredReceipt": {
+            "allowances": {
+              "assistantTurns": "unbounded",
+              "outputAttempts": 2,
+              "timeoutMs": "unbounded",
+              "toolCalls": "unbounded"
+            },
+            "contract": {
+              "dialect": "locus-json-subset-v1",
+              "maxAttempts": 2,
+              "outputTransport": "native",
+              "schema": {
+                "type": "string"
+              },
+              "version": 5
+            },
+            "customValidation": "absent",
+            "inputIdentity": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "observerRevision": "openai-responses-native-v2",
+            "rawTurns": [
+              {
+                "output": {
+                  "messageId": "native_message_3",
+                  "phase": null,
+                  "text": "{\"value\":\"known\"}"
+                },
+                "payload": {
+                  "route": {
+                    "api": "openai-responses",
+                    "baseUrl": "https://api.openai.com/v1",
+                    "model": "gpt-6.1-sol",
+                    "provider": "openai"
+                  },
+                  "wireRevision": "openai-responses-native-v1",
+                  "wireSchemaSha256": "12ed9447fbbb261381b19f521a226cefef9dd3f6250b42a14873a051886c18e7"
+                },
+                "responseId": "native_response_3",
+                "terminal": "completed",
+                "validation": "accepted",
+                "workTools": false
+              }
+            ],
+            "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96",
+            "sourceIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "spent": {
+              "assistantTurns": 1,
+              "elapsedMs": 14,
+              "outputAttempts": 1,
+              "toolCalls": 0
+            },
+            "validation": "accepted",
+            "value": "known",
+            "version": 5
+          }
+        }
+      ],
+      "journal": [
+        {
+          "ts": "2026-10-06T10:14:31.386Z",
+          "runId": "structured-sdk",
+          "kind": "agent_queued",
+          "executionMode": "bare",
+          "permissionMode": "inherit-parent",
+          "workspaceMode": "project",
+          "callId": "call-0001"
+        },
+        {
+          "ts": "2026-10-06T10:14:31.386Z",
+          "runId": "structured-sdk",
+          "kind": "agent_start",
+          "executionMode": "bare",
+          "permissionMode": "inherit-parent",
+          "workspaceMode": "project",
+          "callId": "call-0001"
+        },
+        {
+          "ts": "2026-10-06T10:14:31.411Z",
+          "runId": "structured-sdk",
+          "kind": "agent_end",
+          "executionMode": "bare",
+          "callId": "call-0001",
+          "replayed": false,
+          "readOnly": false,
+          "displayName": "Bose",
+          "status": "completed",
+          "outputAcceptance": {
+            "attempts": 1,
+            "source": "native",
+            "contractVersion": 5
+          },
+          "permissionMode": "inherit-parent",
+          "workspaceMode": "project",
+          "model": "openai/gpt-6.1-sol",
+          "executedModel": "openai/gpt-6.1-sol",
+          "thinking": "medium",
+          "evidence": {
+            "evidence": "reasoning_only",
+            "warnings": [],
+            "missingRequiredTools": [],
+            "observedTools": []
+          },
+          "childSessionId": "01a110b5-2cdf-7307-ac0b-a2f06d6826b9",
+          "answerArtifact": {
+            "runId": "structured-sdk",
+            "artifactId": "call-0001-answer",
+            "name": "sub-agent",
+            "sha256": "badd30000654a812d79bfbca8723079bf73d4b8c1c1d2b2d4b0726f7c07b5d59"
+          },
+          "transcriptArtifact": {
+            "runId": "structured-sdk",
+            "artifactId": "call-0001-transcript",
+            "name": "sub-agent.transcript",
+            "sha256": "34626605d5221dd64d36697309d9df999f023ffc968a34db1e401b9835ec11d6"
+          },
+          "resultEnvelopeArtifact": {
+            "runId": "structured-sdk",
+            "artifactId": "call-0001-result",
+            "name": "sub-agent.result",
+            "sha256": "39b3d20c7501f59efea014036a5268895ef94c2287d1dd8137f4425b8deddc5d"
+          },
+          "durationMs": 16
+        }
+      ]
+    }
+  ]
+}

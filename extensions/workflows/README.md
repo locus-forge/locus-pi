@@ -31,6 +31,8 @@ never infers ownership from a path or replaces a real directory or foreign
 symlink. See
 [`skills/README.md`](../../skills/README.md).
 
+Reviewed trusted runtime source can opt into [immutable structured results v4](../../docs/workflows/agent-results.md#structured-results-v4--trusted-runtime-source) on the actual Pi >=1.0.0 `openai-codex` route. The standard and orchestration-only authoring profiles keep their existing text/choice grammar; host permissions remain unchanged. The `workflow_return` tool carries the actual caller schema and uses Pi’s standard `strict: "prefer"` sampling hint only where schema conversion preserves its semantics. `validate`, `repair` and `outputTransport` are removed; historical v5 evidence remains readable but cannot replay as current output.
+
 The `workflow` tool is the structured execution surface for agents. It supports fields that cannot always be represented safely by slash-command text, including caller `items` and approved continuations.
 
 `workflow_check_source` validates one project-relative `.workflow.mjs` file up to 512 KiB against the standard authoring grammar. It reads the source as text and never imports or executes the workflow. Results include stable error/warning codes, one-based source spans and the checked source digest; Node syntax is checked without import too. Warning-only checks remain successful. The Pi `tool_result` boundary preserves rejected checks and failed native runs as machine errors with their structured diagnostics.

@@ -1,3 +1,4 @@
+import { assessWorkflowStructuredReplayCoverage } from "./workflow-script-identity.js";
 /**
  * workflow-run-resume.ts — Resume authority: what a stopped run proves about itself.
  *
@@ -388,6 +389,17 @@ export function readWorkflowReplaySafety(scriptIdentity: WorkflowScriptIdentity)
   }
 }
 
+/** Reads the admitted immutable snapshot; uncovered closures refuse only v4 resume. */
+export function readWorkflowStructuredCoverage(identity: WorkflowScriptIdentity): boolean {
+  try {
+    return assessWorkflowStructuredReplayCoverage(
+      readWorkflowRunTextFile(path.dirname(identity.snapshotPath), identity.snapshotPath),
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function workflowReplayEnvelope(
   plan: WorkflowReplayPlan,
   controller: WorkflowReplayController | undefined,
@@ -415,7 +427,7 @@ export function describeWorkflowReplayPlan(plan: WorkflowReplayPlan): string | u
     return `replay: active source=${plan.sourceRunId ?? "?"} recordedCalls=${plan.recorded.length}`;
   }
   if (plan.refusedReason !== undefined) {
-    return `replay: refused source=${plan.sourceRunId ?? "?"} reason=${plan.refusedReason} — every call runs fresh`;
+    return `replay: refused source=${plan.sourceRunId ?? "?"} reason=${plan.refusedReason} — legacy calls run fresh; structured v4 requires a committed receipt`;
   }
   if (plan.notRecordedReason !== undefined) {
     return `replay: not recorded reason=${plan.notRecordedReason} — this run cannot be resumed`;

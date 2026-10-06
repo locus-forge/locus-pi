@@ -121,3 +121,48 @@ describe("workflow physical admission through the shared owner", () => {
     );
   });
 });
+
+describe("direct runtime fallback owner cancellation", () => {
+  it("refuses pre-aborted work without an explicitly supplied shared owner", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("embedding cancelled"));
+    let launches = 0;
+    const { dsl } = createWorkflowRuntime({
+      runId: "fallback-pre-aborted",
+      signal: controller.signal,
+      agentRunner: async () => {
+        launches++;
+        return completed();
+      },
+    });
+    await expect(dsl.agent("must not start")).rejects.toThrow("embedding cancelled");
+    expect(launches).toBe(0);
+  });
+
+  it("cancels queued direct calls through the runtime signal", async () => {
+    const controller = new AbortController();
+    const entered = deferred();
+    const finish = deferred();
+    let launches = 0;
+    const { dsl, getJournal } = createWorkflowRuntime({
+      runId: "fallback-queued-cancel",
+      signal: controller.signal,
+      maxConcurrentAgents: 1,
+      agentRunner: async () => {
+        launches++;
+        entered.resolve();
+        await finish.promise;
+        return completed();
+      },
+    });
+    const results = Promise.allSettled([dsl.agent("first"), dsl.agent("second")]);
+    await entered.promise;
+    controller.abort(new Error("embedding cancelled"));
+    finish.resolve();
+    expect((await results).map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
+    expect(launches).toBe(1);
+    expect(getJournal()).toContainEqual(
+      expect.objectContaining({ kind: "error", callId: "call-0002", message: "embedding cancelled" }),
+    );
+  });
+});

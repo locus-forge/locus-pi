@@ -1,14 +1,16 @@
+import {
+  normalizeWorkflowStructuredContract,
+  immutableJSON,
+  type WorkflowJSONValue,
+} from "./structured-results/schema.js";
+import { createWorkflowStructuredCall, type WorkflowStructuredSourceIdentity } from "./structured-results/return.js";
 /**
  * workflow-agent-output.ts — the RESULT-MODE owner of one `agent()` call.
  *
- * A workflow agent has exactly two result modes: a plain call resolves to the child's
- * exact final text, and a `choice` call resolves to one exact declared string. This module
- * decides which mode a declaration takes, refuses every removed shaped-result option by
- * name before a child starts, and accepts a choice from the confirmed `workflow_return`
- * receipt of the child's own session and from nothing else. There is no text parsing
- * here and no repair session — the same-session correction loop is owned by
- * `workflow-return.ts`, which this module reaches only to build the contract the child
- * is shown.
+ * This module dispatches plain text, exact choice v3, and opt-in structured v4.
+ * Structured declarations are normalized once before the logical call; committed values come only
+ * from the child's immutable receipt. Each protocol owner supplies same-session
+ * acceptance without parsing narrative text or creating a second logical call.
  *
  * The declaration side is pure and exported as plain functions; the acceptance side needs
  * the run's journal fan-out and the logical call, so it is a small factory over named
@@ -32,6 +34,8 @@ import {
   SchemaValidationError,
   WorkflowAgentExecutionError,
   WORKFLOW_RETURN_CONTRACT,
+  WORKFLOW_STRUCTURED_CALL,
+  type WorkflowAgentStructuredOptions,
   type AgentAttemptOutcome,
   type AgentSchemaCheck,
   type WorkflowAgentAnyOptions,
@@ -58,34 +62,39 @@ const FILE_TEXT_MIGRATION =
  * shaped receipt is never reinterpreted under the reduced contract. Ignoring an option
  * would leave its author believing a model-produced value is still being checked.
  *
- * A declaration is the key, not its value: `{ ...legacy, schema: undefined }` still
- * declares `schema`, so presence is tested with `Object.hasOwn` rather than `!== undefined`.
+ * A declaration is the key, not its value: `{ ...legacy, output: undefined }` still
+ * declares `output`, so presence is tested with `Object.hasOwn` rather than `!== undefined`.
  */
 const REMOVED_AGENT_OPTIONS: Readonly<Record<string, string>> = Object.freeze({
-  handoffs: `agent handoffs was removed: an agent no longer returns a runtime list. Instead, ${FILE_TEXT_MIGRATION}`,
-  schema: `agent schema was removed: an agent no longer returns JSON or another shaped value. Instead, ${FILE_TEXT_MIGRATION}`,
   validate:
-    "agent validate was removed with schema: there is no shaped value left to validate. Put the rule in the prompt, " +
-    "or have a separate verifier agent check that exact caller-assigned file and write its own record at an assigned destination",
+    "agent validate was removed: express result constraints in schema and check domain decisions in workflow source",
+  repair: "agent repair was removed: structured results allow one initial submission and one package-owned correction",
+  outputTransport: "agent outputTransport was removed: structured results use the validated workflow_return tool",
+  handoffs: `agent handoffs was removed: an agent no longer returns a runtime list. Instead, ${FILE_TEXT_MIGRATION}`,
   output:
     "agent output was removed: a plain agent(prompt) call already returns the exact full text. " +
     "Drop the option, or use choice: [...] when workflow source needs one exact token",
-  repair:
-    "agent repair was removed: a choice call uses the package-owned single same-session correction. Drop the option",
   returnVia:
     "agent returnVia was removed: a choice call always returns through workflow_return and a plain call returns exact text. " +
     "Drop the option",
   maxAnswerChars:
     "agent maxAnswerChars was removed: the runtime no longer rejects an answer for its size. " +
     "State a length requirement in the prompt instead",
-  schemaMaxLength: "agent schemaMaxLength was removed: the runtime no longer accepts shaped answers. Drop the option",
+  schemaMaxLength:
+    "agent schemaMaxLength was removed: use schema string minLength/maxLength in trusted v4 source instead. Drop the legacy option",
 });
 
-/** The removed option names, for the static source checker to refuse the same complete set. */
-export const REMOVED_AGENT_OPTION_NAMES: readonly string[] = Object.freeze(Object.keys(REMOVED_AGENT_OPTIONS));
+/** Both source-check profiles retain their existing grammar; v4 is trusted-runtime-only. */
+export const REMOVED_AGENT_OPTION_NAMES: readonly string[] = Object.freeze([
+  ...Object.keys(REMOVED_AGENT_OPTIONS),
+  "schema",
+]);
 
 export function assertNoRemovedAgentOptions(opts: unknown, scope = "agent"): void {
   if (typeof opts !== "object" || opts === null || Array.isArray(opts)) return;
+  if (scope !== "agent")
+    for (const key of ["schema", "validate", "repair", "outputTransport"])
+      if (Object.hasOwn(opts, key)) throw new Error(`${scope}: agent ${key} was removed from Fusion limits`);
   for (const [key, message] of Object.entries(REMOVED_AGENT_OPTIONS)) {
     if (Object.hasOwn(opts, key)) throw new Error(scope === "agent" ? message : `${scope}: ${message}`);
   }
@@ -129,6 +138,8 @@ export function normalizeAgentChoiceFallback(value: unknown, choices: readonly s
  *  root already owns; none of them is an SDK session. */
 export interface WorkflowAgentOutputDeps {
   readonly runId: string;
+  readonly structuredReplayHostVersion?: () => Promise<string | undefined>;
+  readonly structuredSourceIdentity?: WorkflowStructuredSourceIdentity;
   readonly now: () => string;
   /** The runtime's one journal fan-out (mirror + sink + progress callback). */
   readonly emit: (line: WorkflowJournalLine) => void;
@@ -148,9 +159,10 @@ export interface WorkflowAgentOutputDeps {
 
 export interface WorkflowAgentOutput {
   /** Which result mode one `agent()` declaration takes, and every refusal that fires first. */
-  dispatchWorkflowAgentShape(opts: WorkflowAgentAnyOptions | undefined): "plain" | "choice";
+  dispatchWorkflowAgentShape(opts: WorkflowAgentAnyOptions | undefined): "plain" | "choice" | "structured";
   /** THE choice path: one child session, one acceptance, one exact declared string. */
   runChoiceAgent(prompt: string, opts: WorkflowAgentChoiceOptions): Promise<string>;
+  runStructuredAgent(prompt: string, opts: WorkflowAgentStructuredOptions): Promise<WorkflowJSONValue>;
 }
 
 export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): WorkflowAgentOutput {
@@ -163,8 +175,13 @@ export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): Workfl
    * `result: "report"` exclusivity, then the mode itself. Everything here runs before the
    * logical call opens, so a refusal costs neither a replay ordinal nor an invocation.
    */
-  function dispatchWorkflowAgentShape(opts: WorkflowAgentAnyOptions | undefined): "plain" | "choice" {
+  function dispatchWorkflowAgentShape(opts: WorkflowAgentAnyOptions | undefined): "plain" | "choice" | "structured" {
     assertNoRemovedAgentOptions(opts);
+    if (opts !== undefined && Object.hasOwn(opts, "schema")) {
+      for (const key of ["choice", "choiceFallback", "result"] as const)
+        if (Object.hasOwn(opts, key)) throw new Error(`agent schema cannot be combined with ${key}`);
+      return "structured";
+    }
     if (opts?.result !== undefined) {
       if (opts.result !== "report") throw new Error("agent result must be report when supplied");
       for (const key of ["choice", "choiceFallback"] as const) {
@@ -278,5 +295,21 @@ export function createWorkflowAgentOutput(deps: WorkflowAgentOutputDeps): Workfl
     }
   }
 
-  return { dispatchWorkflowAgentShape, runChoiceAgent };
+  async function runStructuredAgent(prompt: string, opts: WorkflowAgentStructuredOptions): Promise<WorkflowJSONValue> {
+    const contract = normalizeWorkflowStructuredContract(opts.schema);
+    const call = createWorkflowStructuredCall(
+      contract,
+      deps.structuredSourceIdentity,
+      deps.structuredReplayHostVersion,
+    );
+    const outcome = await runAgentAttempt(prompt, {
+      ...opts,
+      [WORKFLOW_RETURN_CONTRACT]: contract,
+      [WORKFLOW_STRUCTURED_CALL]: call,
+    });
+    if (outcome.outputAcceptance?.structuredReceipt === undefined)
+      throw new Error("output-contract-unavailable: no committed structured receipt");
+    return immutableJSON(outcome.outputAcceptance.structuredReceipt.value);
+  }
+  return { dispatchWorkflowAgentShape, runChoiceAgent, runStructuredAgent };
 }

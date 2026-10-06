@@ -53,16 +53,17 @@ Entries describe ordinary runtime behavior; a custom host that omits a required 
 
 ### agent
 
-**Signature:** `agent(prompt: string, options?) -> Promise<string>`; the `choice` overload narrows the result to one exact declared member. Run a clean child by default, or select a catalog persona with `agent`. Prompt must be nonblank task text; no implicit answer length limit exists. Ordinary success returns the exact non-empty final answer. Execution failures throw `WorkflowAgentExecutionError`; invalid declarations fail before a child starts.
+**Signature:** `agent(prompt: string, options?) -> Promise<string>`; the `choice` overload narrows the result to one exact declared member; trusted runtime `schema` calls return `Promise<WorkflowJSONValue>`. Run a clean child by default, or select a catalog persona with `agent`. Prompt must be nonblank task text; no implicit answer length limit exists. Ordinary success returns the exact non-empty final answer. Execution failures throw `WorkflowAgentExecutionError`; invalid declarations fail before a child starts.
 
-| Result mode / options                    | Result and defaults                                                                                  | Availability and important constraints                                                  |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Omit result options                      | Exact final text, `Promise<string>`                                                                  | All three modes; no parsing or truncation                                               |
-| `choice: ["accept", "revise"]`           | One exact member; a TypeScript readonly tuple infers its member union, dynamic lists return `string` | All three; at least two unique nonblank strings; no option-count or text-length ceiling |
-| `choiceFallback: "revise"` with `choice` | Declared member after the one same-session correction is exhausted                                   | Must belong to `choice`; never substitutes for transport or host failure                |
-| `result: "report"`                       | Opaque host-rendered observation, `Promise<string>`                                                  | All three; accepted answer or eligible terminal failure, not semantic approval          |
+| Result mode / options                    | Result and defaults                                                                                  | Availability and important constraints                                                            |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Omit result options                      | Exact final text, `Promise<string>`                                                                  | All three modes; no parsing or truncation                                                         |
+| `choice: ["accept", "revise"]`           | One exact member; a TypeScript readonly tuple infers its member union, dynamic lists return `string` | All three; at least two unique nonblank strings; no option-count or text-length ceiling           |
+| `choiceFallback: "revise"` with `choice` | Declared member after the one same-session correction is exhausted                                   | Must belong to `choice`; never substitutes for transport or host failure                          |
+| `result: "report"`                       | Opaque host-rendered observation, `Promise<string>`                                                  | All three; accepted answer or eligible terminal failure, not semantic approval                    |
+| `schema`                                 | Immutable finite JSON, v4; initial plus one package-owned correction                                 | Trusted runtime only, Pi >=1.0.0 openai-codex with actual capabilities; neither checker admits it |
 
-A choice call uses `workflow_return` inside the same child session with one package-owned correction turn; exhaustion throws `SchemaValidationError` unless `choiceFallback` applies. A transport without the return-tool capability fails closed. `handoffs`, `schema`, `validate`, `output`, `repair` and `returnVia` were removed and are refused by name before any child starts; richer results live at exact caller-assigned file paths, and caller-owned work units come from [`items()`](#items). See [agent results](../../../docs/workflows/agent-results.md#removed-shaped-result-options).
+A choice call uses `workflow_return` inside the same child session with one package-owned correction turn; exhaustion throws `SchemaValidationError` unless `choiceFallback` applies. A transport without the return-tool capability fails closed. `handoffs`, `output` and `returnVia` remain removed. Both source-check profiles still refuse `schema`, `validate`, `repair` and `outputTransport`; reviewed trusted runtime source can use the [structured v4 contract](../../../docs/workflows/agent-results.md#structured-results-v4--trusted-runtime-source). `validate`, `repair` and `outputTransport` are removed runtime options, refused before work or replay. The return tool carries the actual schema and requests Pi strict sampling only where its conversion preserves the declared semantics. Ordinary generated workflows use exact caller-assigned files for richer handoffs and [`items()`](#items) for caller-owned units.
 
 **Example — orchestration-only:** a complete module; every agent edge has a distinct literal label. Caller-supplied items go unchanged to each worker, reports stay opaque, and only the exact choice controls the branch.
 
@@ -87,7 +88,7 @@ export default async function run({ agent, items, parallel, publishPrimaryArtifa
 }
 ```
 
-**Example — removed schema, rejected by both source-check modes and by the runtime:** the profile is deliberately present to demonstrate the refusal; do not copy this declaration.
+**Example — runtime-only schema, rejected by both source-check modes:** the standard profile is deliberately present to demonstrate that authoring boundary; do not copy it into checked source.
 
 <!-- dsl-example: rejected-schema -->
 

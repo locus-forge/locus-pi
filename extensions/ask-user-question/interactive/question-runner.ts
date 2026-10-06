@@ -3,30 +3,23 @@
  *
  * Walks a question list one prompt at a time, honouring back/forward
  * navigation, turns a lost prompt surface into its own retryable status,
- * records every answer as a durable decision, and formats the answers the model
- * reads back.
+ * collects outcomes without side effects, then hands the terminal batch to the
+ * single decision/result finalizer.
  */
 
-import { emitDevEvent } from "../../_shared/runtime/event-bus.js";
-import { recordDecision, stableDecisionId } from "./human-control.js";
+import { finalizeQuestionOutcomes, type QuestionOutcome } from "./human-control.js";
+import { redactForSensitivity } from "../../_shared/host/redaction.js";
 import {
   isStaleInlineOperatorInteractionError,
   isSupersededInlineOperatorInteractionError,
 } from "../../_shared/operator/operator-interaction.js";
 import type { ExtensionAPI, ExtensionContext, ToolResult } from "../../_shared/host/pi-api.js";
-import { errorResult, textResult } from "../../_shared/host/pi-api.js";
+import { errorResult } from "../../_shared/host/pi-api.js";
 import { errorMessage } from "../../_shared/host/error-text.js";
 import type { OmpAskParams } from "../tool/ask-tool.js";
 import { askSingleQuestion, type AskNavigation, type AskSelection } from "../question/question-prompt.js";
 
-export interface QuestionResult {
-  id: string;
-  question: string;
-  options: string[];
-  multi: boolean;
-  selectedOptions: string[];
-  customInput?: string;
-}
+export type CollectedQuestions = { outcomes: QuestionOutcome[] } | { error: ToolResult };
 
 export async function askOmpCompatible(
   pi: ExtensionAPI,
@@ -35,18 +28,32 @@ export async function askOmpCompatible(
   signal: AbortSignal,
   source: string,
 ): Promise<ToolResult> {
-  if (params.questions.length === 0) return errorResult("Error: questions must not be empty");
+  const collected = await collectQuestions(params, ctx, signal, source);
+  return "error" in collected ? collected.error : finalizeQuestionOutcomes(pi, ctx, collected.outcomes, source);
+}
+
+/** No journal writes, events or public answer projection before finalization. */
+export async function collectQuestions(
+  params: OmpAskParams,
+  ctx: ExtensionContext,
+  signal: AbortSignal,
+  source: string,
+  sensitivity?: "public" | "internal" | "secret",
+): Promise<CollectedQuestions> {
+  if (params.questions.length === 0) return { error: errorResult("Error: questions must not be empty") };
   if (ctx.hasUI === false || ctx.mode === "json" || ctx.mode === "print") {
-    return errorResult("Ask is unavailable because this host mode cannot prompt the user.", {
-      status: "unavailable",
-      reason: "no-ui",
-      source,
-    });
+    return {
+      error: errorResult("Ask is unavailable because this host mode cannot prompt the user.", {
+        status: "unavailable",
+        reason: "no-ui",
+        source,
+      }),
+    };
   }
   const timeoutSetting = Number(ctx.settings?.get("ask.timeout") ?? 0);
   const timeoutMs = Number.isFinite(timeoutSetting) && timeoutSetting > 0 ? timeoutSetting * 1000 : undefined;
   const questionCount = params.questions.length;
-  const resultsByIndex: Array<QuestionResult | undefined> = Array.from({ length: questionCount });
+  const resultsByIndex: Array<QuestionOutcome | undefined> = Array.from({ length: questionCount });
   let questionIndex = 0;
 
   while (questionIndex < questionCount) {
@@ -75,7 +82,7 @@ export async function askOmpCompatible(
         askOptions,
       );
     } catch (error) {
-      const reason = errorMessage(error);
+      const reason = redactForSensitivity(errorMessage(error), sensitivity).text;
       // Pi shows one inline surface at a time. Another prompt taking the screen
       // is normal traffic, not a broken tool: it is reported as its own
       // retryable status so the model re-asks instead of treating the question
@@ -85,40 +92,42 @@ export async function askOmpCompatible(
         // never reached the screen at all, and saying "ask again" to that would
         // promise a retry that fails the same way.
         const superseded = isSupersededInlineOperatorInteractionError(error);
-        return errorResult(
-          superseded
-            ? "Ask was closed because another prompt took the screen; ask again."
-            : "Ask did not reach the screen: this session's prompt surface is no longer the one that asked.",
-          {
-            status: superseded ? "superseded" : "stale",
-            source,
-            question: question.id,
-          },
-        );
+        return {
+          error: errorResult(
+            superseded
+              ? "Ask was closed because another prompt took the screen; ask again."
+              : "Ask did not reach the screen: this session's prompt surface is no longer the one that asked.",
+            {
+              status: superseded ? "superseded" : "stale",
+              source,
+              question: question.id,
+            },
+          ),
+        };
       }
-      return errorResult(`Ask UI failed: ${reason}`, {
-        status: "error",
-        source,
-        question: question.id,
-      });
-    }
-    if (selection.cancelled && !selection.timedOut) {
-      const decision = await recordDecision(pi, ctx, {
-        decisionId: stableDecisionId(source, question.id),
-        question: question.question,
-        status: "cancelled",
-        source,
-      });
-      return errorResult("Ask tool was cancelled by the user", { question: question.id, decision });
+      return {
+        error: errorResult(`Ask UI failed: ${reason}`, {
+          status: "error",
+          source,
+          question: question.id,
+        }),
+      };
     }
     resultsByIndex[questionIndex] = {
       id: question.id,
       question: question.question,
       options: labels,
       multi: Boolean(question.multi),
+      status: selection.timedOut ? "timed-out" : selection.cancelled ? "cancelled" : "answered",
       selectedOptions: selection.selectedOptions,
       ...(selection.customInput !== undefined ? { customInput: selection.customInput } : {}),
     };
+
+    if (selection.cancelled && !selection.timedOut) {
+      // Preserve batch cancellation: only the cancelled question is recorded;
+      // answers that could still be changed by navigation are not committed.
+      return { outcomes: [resultsByIndex[questionIndex]!] };
+    }
 
     if (selection.navigation === "back") {
       questionIndex = Math.max(0, questionIndex - 1);
@@ -127,75 +136,5 @@ export async function askOmpCompatible(
     questionIndex += 1;
   }
 
-  const results = resultsByIndex.map((result, index) => {
-    if (result) return result;
-    const question = params.questions[index]!;
-    return {
-      id: question.id,
-      question: question.question,
-      options: question.options.map((option) => option.label),
-      multi: Boolean(question.multi),
-      selectedOptions: [],
-    };
-  });
-
-  emitDevEvent("ask:answered", { questions: questionCount });
-  const decisions: unknown[] = [];
-  for (const result of results) {
-    decisions.push(
-      await recordDecision(pi, ctx, {
-        decisionId: stableDecisionId(source, result.id),
-        question: result.question,
-        answer: {
-          selectedOptions: result.selectedOptions,
-          ...(result.customInput !== undefined ? { customInput: result.customInput } : {}),
-        },
-        status: "answered",
-        source,
-        metadata: { multi: result.multi },
-      }),
-    );
-  }
-  if (results.length === 1) {
-    const result = results[0]!;
-    return textResult(formatSingleAnswer(result), {
-      question: result.question,
-      options: result.options,
-      multi: result.multi,
-      selectedOptions: result.selectedOptions,
-      ...(result.customInput !== undefined ? { customInput: result.customInput } : {}),
-      decision: decisions[0],
-    });
-  }
-  return textResult(`User answers:\n${results.map(formatQuestionLine).join("\n")}`, { results, decisions });
-}
-
-function formatSingleAnswer(result: QuestionResult): string {
-  const lines: string[] = [];
-  if (result.selectedOptions.length > 0) lines.push(`User selected: ${result.selectedOptions.join(", ")}`);
-  if (result.customInput !== undefined) {
-    lines.push(
-      result.customInput.includes("\n")
-        ? `User provided custom input:\n${indentMultiline(result.customInput)}`
-        : `User provided custom input: ${result.customInput}`,
-    );
-  }
-  return lines.join("\n") || "User answered with no selection.";
-}
-
-function formatQuestionLine(result: QuestionResult): string {
-  if (result.customInput !== undefined) return `${result.id}: "${result.customInput}"`;
-  if (result.selectedOptions.length > 0) {
-    return result.multi
-      ? `${result.id}: [${result.selectedOptions.join(", ")}]`
-      : `${result.id}: ${result.selectedOptions[0]}`;
-  }
-  return `${result.id}: (cancelled)`;
-}
-
-function indentMultiline(text: string): string {
-  return text
-    .split(/\r?\n/)
-    .map((line) => `  ${line}`)
-    .join("\n");
+  return { outcomes: resultsByIndex.map((result) => result!) };
 }

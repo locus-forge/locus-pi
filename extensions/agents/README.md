@@ -32,7 +32,7 @@ Standalone task defaults and workflow constraints are listed together in the
 
 - Unknown agents, unavailable SDK support, cancellation, failure, blocked execution, and empty answers return explicit errors.
 - Direct child-to-child delegation is blocked by removing `spawn_agent` from child sessions.
-- Explicit native `readOnly` profiles are narrowed by the Pi host adapter. Workflow children use the full tool surface. External Claude Code repository-agent profiles own a separate CLI tool loop and must expose full tools; a reviewer role alone must not remove shell/git or report writing.
+- Read-only intent and effective tool access differ across standalone profiles, workflow children, external CLI adapters, and Fusion tool-free; see [trust and permission limits](../../docs/workflows/trust.md#approval--trust-discipline).
 - Parallel or multi-stage orchestration belongs to the workflow runtime, not one `spawn_agent` call.
 - `/ps` and `/agent drill` inspect live and retained child rows; closing the view does not stop a child.
 - In TUI mode `/ps` focuses the agent roster already visible below the editor instead of drawing a second copy. Recursive `├─`, `└─`, and `│` rails keep workflow groups, agents, latest messages, and tool activity attached across the focused viewport. Its row membership and order stay fixed until close, live fields keep updating, and Up/Down can reach every leaf through the eight-row viewport. Reopen `/ps` to include agents that arrived while it was focused. Escape from a drill opened by `/ps` returns to `/ps` on the same row, with membership re-read on return; `q` leaves the agent surface for the editor instead, and so does a drill whose row retired while it was open.
