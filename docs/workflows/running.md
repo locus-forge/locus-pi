@@ -52,6 +52,12 @@ truncated. The native workflow tool's operator card also renders this exact text
 without clipping, while its model-facing content remains bounded. Structured
 (non-text) results stay in `runtime/result.json`, which already pretty-prints them.
 
+`runtime/result.json` is authoritative. The reader opens `workflow-result.md`
+only when it matches the envelope's prose exactly, including the terminal newline
+added by the writer when needed. A missing readable copy falls back to the envelope;
+a conflicting copy reports an invalid result. Without a readable envelope, an
+orphan Markdown copy is not accepted. Readback never repairs or rewrites either file.
+
 A run that ends badly and produced **no** prose result — a script returning a
 structured `{ ok: false }` is the common case — gets the same treatment against a
 different command. Its verdict line carries the failure summary and is clipped
@@ -217,8 +223,9 @@ The project-local state map is:
 | `.locus-pi/workflow-output-state/` | Historical output-lease records; no new runs allocate them.                                                                                           |
 | `.locus-pi/logs/errors.jsonl`      | Shared host error journal. Deleting the journal loses diagnostics but does not change ownership.                                                      |
 
-The two lease roots intentionally remain separate because they fence different
-write targets. There is no legacy-to-new migration in this release.
+Only `workflow-state` allocates active leases. Retained `workflow-output-state`
+records remain historical evidence; the runtime neither migrates them nor uses
+them to lock caller-assigned agent-file destinations.
 
 ### No-operator mode — `--no-operator` / `--operator`
 
