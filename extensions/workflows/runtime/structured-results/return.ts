@@ -29,7 +29,7 @@ interface RawTurn {
   responseId: string;
   terminal?: "completed";
   calls: Map<string, string>;
-  items: Map<string, { name: string; callId: string; arguments?: string }>;
+  items: Map<string, { name: string; callId: string; arguments?: string; done?: boolean }>;
 }
 export interface WorkflowStructuredSourceIdentity {
   sha256: string;
@@ -104,23 +104,13 @@ export function createWorkflowStructuredCall(
       schemaSha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
     }
   }
-  function finalized(callId: string, name: string, raw: unknown): void {
-    if (name !== "workflow_return") {
-      if (turn !== undefined) turn.workTools = true;
-      return;
-    }
-    restrict?.();
-    if (typeof raw !== "string" || callId === "") {
-      fail("Raw finalized return arguments/call identity unavailable", "output-protocol-unknown");
-      return;
-    }
+  function validateProposal(callId: string, raw: string): void {
     const prior = calls.get(callId);
     if (prior !== undefined) {
       if (!turn?.calls.has(callId)) fail("Call identity reused across raw responses", "output-protocol-unknown");
       if (prior.raw !== raw) fail("Conflicting raw arguments for one call id", "output-contract-conflict");
       return;
     }
-    turn?.calls.set(callId, raw);
     if (failed !== undefined) {
       if (accepted === undefined) attempts++;
       calls.set(callId, { raw, validation: "rejected", error: failed.reason });
@@ -200,36 +190,24 @@ export function createWorkflowStructuredCall(
       return;
     }
     identity.arguments = item.arguments;
-    finalized(identity.callId, identity.name, item.arguments);
+    if (identity.name === "workflow_return") {
+      restrict?.();
+      turn!.calls.set(identity.callId, item.arguments);
+    } else turn!.workTools = true;
   }
   function reconcileTerminal(output: unknown): void {
     if (turn === undefined) return;
     const mismatch = verifyWorkflowRawTerminal(output, turn.items);
     if (mismatch !== undefined) fail(mismatch.reason, mismatch.failureCause);
-    if (turn.workTools && turn.calls.size > 0 && failed === undefined) {
+    if (failed !== undefined || turn.terminal === "completed") return;
+    if (turn.workTools && turn.calls.size > 0) {
       // Submission is a whole-batch boundary. No sibling may execute, in either order.
       turn.rejectedBatch = "workflow_return must be the only tool in its submission batch";
-      accepted = undefined;
       attempts = turn.attemptsBefore + 1;
-      for (const id of turn.calls.keys()) {
-        const proposal = calls.get(id)!;
-        proposal.validation = "rejected";
-        proposal.error = turn.rejectedBatch;
-      }
+      for (const [id, raw] of turn.calls) calls.set(id, { raw, validation: "rejected", error: turn.rejectedBatch });
       lastError = turn.rejectedBatch;
       exhaust();
-    }
-  }
-  function bindHostCall(item: Record<string, unknown>): void {
-    if (typeof item.id !== "string" || typeof item.call_id !== "string" || item.id === "" || item.call_id === "") {
-      fail("Raw tool item identity unavailable", "output-protocol-unknown");
-      return;
-    }
-    // Pi Codex Responses v1 constructs this exact host id; never split or infer it from prose.
-    const hostId = `${item.call_id}|${item.id}`;
-    if (hostCalls.has(hostId) && hostCalls.get(hostId) !== item.call_id)
-      fail("Ambiguous host call identity", "output-protocol-unknown");
-    hostCalls.set(hostId, item.call_id);
+    } else for (const [id, raw] of turn.calls) validateProposal(id, raw);
   }
   function providerEvent(event: unknown): void {
     const data = record(event);
@@ -254,18 +232,24 @@ export function createWorkflowStructuredCall(
     if (typeof type === "string" && (type.startsWith("response.refusal.") || type === "response.output_text.refusal"))
       fail("Provider refused structured output", "output-refused");
     const item = record(data.item);
-    if (
-      type === "response.output_item.added" &&
-      item?.type === "function_call" &&
-      typeof item.id === "string" &&
-      typeof item.call_id === "string" &&
-      typeof item.name === "string"
-    ) {
-      const prior = turn.items.get(item.id);
-      if (prior !== undefined && (prior.callId !== item.call_id || prior.name !== item.name))
-        fail("Raw tool item identity changed", "output-protocol-unknown");
-      if (prior === undefined) turn.items.set(item.id, { name: item.name, callId: item.call_id });
-      bindHostCall(item);
+    if (type === "response.output_item.added" && item?.type === "function_call") {
+      if (
+        typeof item.id !== "string" ||
+        item.id === "" ||
+        typeof item.call_id !== "string" ||
+        item.call_id === "" ||
+        typeof item.name !== "string" ||
+        item.name === "" ||
+        turn.items.has(item.id) ||
+        hostCalls.has(`${item.call_id}|${item.id}`) ||
+        [...hostCalls.values()].includes(item.call_id)
+      )
+        fail("Repeated or ambiguous executable tool identity", "output-protocol-unknown");
+      else {
+        turn.items.set(item.id, { name: item.name, callId: item.call_id });
+        // Exact Pi Codex host id; never split or infer it from prose.
+        hostCalls.set(`${item.call_id}|${item.id}`, item.call_id);
+      }
     }
     if (type === "response.function_call_arguments.done") {
       const identity = typeof data.item_id === "string" ? turn.items.get(data.item_id) : undefined;
@@ -274,7 +258,12 @@ export function createWorkflowStructuredCall(
         finalizedItem({ id: data.item_id, name: identity.name, call_id: identity.callId, arguments: data.arguments });
     }
     if (type === "response.output_item.done" && item?.type === "function_call") {
-      finalizedItem(item);
+      const identity = typeof item.id === "string" ? turn.items.get(item.id) : undefined;
+      if (identity?.done === true) fail("Repeated executable tool completion", "output-protocol-unknown");
+      else {
+        if (identity !== undefined) identity.done = true;
+        finalizedItem(item);
+      }
     }
     if (type === "response.incomplete" || response?.status === "incomplete")
       fail("Provider output incomplete", "output-incomplete");

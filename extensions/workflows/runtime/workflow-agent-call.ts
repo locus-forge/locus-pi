@@ -1,19 +1,10 @@
 /**
- * workflow-agent-call.ts — ONE logical `agent()` call.
- *
- * Everything that identifies a call rather than a child lives here, each as ONE piece of
- * state with one owner: the per-run logical ordinal, the `(phase,label)` occurrence map the
- * replay node name counts with, the live-row slot claim held exactly as long as the call,
- * the canonical request key, the replay envelope opened once and closed once, and the
- * transport-retry loop. A second ordinal or a second slot set anywhere else would let one
- * call be recorded twice, or one live row describe two branches.
- *
- * The PHYSICAL half — the invocation charge, the `callId`, the permit, the journal pair —
- * belongs to `workflow-agent-attempt.ts` and is reached only through the injected
- * `runPhysicalAgentAttempt` port, so a retry of one call can never be mistaken for two.
- *
- * Pure host-agnostic execution: no fs / process / network. Part of the DSL core's
- * `node:fs`-free value closure that rule 7 of `scripts/check-extension-layers.ts` proves.
+ * Logical agent calls: IDs, named-node occurrences, live-row claims, canonical
+ * requests and transport retries. The replay controller supplies one admission
+ * receipt per logical call; it is not interchangeable with the physical callId.
+ * Physical invocation charges, permits, transcripts and journal pairs belong to
+ * workflow-agent-attempt.ts, reached through runPhysicalAgentAttempt.
+ * Host-agnostic DSL closure: no filesystem, process or network access.
  */
 
 import {
@@ -224,22 +215,14 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
   const runPhysicalAgentAttempt = deps.runPhysicalAgentAttempt;
   const { maxToolCalls: defaultMaxToolCalls, timeoutMs: defaultTimeoutMs, maxTurns: defaultMaxTurns } = deps.defaults;
 
-  /**
-   * Logical `agent()` calls, so every physical attempt of one call can name the call it
-   * belongs to.
-   *
-   * `callId` cannot do that job: it is per-attempt by design (D5 — a discarded attempt is a
-   * real agent call with its own transcript). And (agent, label, phase, group) cannot either:
-   * `parallel()` may run two calls that agree on all four, and a reader grouping by those
-   * fields would attribute one call's discarded attempt to the other.
-   */
+  /** Logical IDs distinguish identical parallel calls and group their per-attempt retries. */
   let totalLogicalAgentCalls = 0;
   /** Per-run `(phase,label)` -> how many calls that slot has already opened. */
   const agentNodeOccurrences = new Map<string, number>();
   /** Effective live-row slots this run is executing RIGHT NOW. */
   const activeAgentSlots = new Set<string>();
 
-  /** One ordinal and replay envelope per logical call; physical retries retain both. */
+  /** One admission receipt and replay envelope per logical call; physical retries retain both. */
   async function runAgentAttempt(
     prompt: string,
     opts: WorkflowInternalAgentOptions | undefined,
@@ -368,38 +351,57 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
         ...(req.returnContract === undefined ? {} : { returnContractVersion: req.returnContract.version }),
       };
       const lookup = replay?.beginAgentAttempt({ ...replayCall, replayable });
-      if (lookup?.replayed === false && lookup.reason === "return-contract-changed") {
+      const recordReplayWarning = (message: string, phase?: string): void => {
         emit({
           ts: nowFn(),
           runId,
           kind: "log",
           source: "runtime",
-          ...(req.phase !== undefined ? { phase: req.phase } : {}),
-          message:
-            `[workflow:replay] ${req.label ?? workflowAgentDisplayName(req)}: the return contract changed in this ` +
-            `release (now v${String(req.returnContract!.version)}: workflow_return carries only one exact declared choice). ` +
-            "The recorded answer stays readable, but it answered a different contract, so replay stops here and this call runs fresh.",
+          ...(phase === undefined ? {} : { phase }),
+          message: `[workflow:replay] ${req.label ?? workflowAgentDisplayName(req)}: ${message}`,
         });
+      };
+      if (lookup?.replayed === false && lookup.reason === "return-contract-changed") {
+        recordReplayWarning(
+          `the return contract changed in this release (now v${String(req.returnContract!.version)}: workflow_return carries only one exact declared choice). ` +
+            "The recorded answer stays readable, but it answered a different contract, so replay stops here and this call runs fresh.",
+          req.phase,
+        );
+      }
+      if (
+        lookup?.replayed === false &&
+        (lookup.reason === "invocation-identity-unproven" || lookup.reason === "recorded-sequence-invalid")
+      ) {
+        recordReplayWarning(
+          `${lookup.reason}; recorded invocation order is not proven. Replay stops here and this call runs fresh.`,
+        );
       }
       if (opts?.[FUSION_REPLAY_REQUIRED] === true && lookup?.replayed !== true) {
-        replay?.recordAgentAttempt(replayCall, { ok: false });
+        replay?.recordAgentAttempt(lookup!, { ok: false });
         throw new Error(
           `fusion resume cannot mix recorded and fresh agent calls; replay missed with ${lookup?.reason ?? "no replay controller"}`,
         );
       }
-      if (req.structuredCall !== undefined && deps.replaySourceRunId !== undefined && lookup?.replayed !== true)
-        throw new Error(`replay-contract-failure: no committed structured prefix (${lookup?.reason ?? "unavailable"})`);
       const replayedText = lookup?.replayed === true ? lookup.text : undefined;
       let replayedAcceptance: import("../../_shared/agent-runtime/agent-runner.js").AgentOutputAcceptance | undefined;
-      if (req.structuredCall !== undefined && lookup?.replayed === true) {
-        if (lookup.structuredReceipt === undefined) throw new Error("replay-contract-failure: v4 receipt missing");
-        await req.structuredCall.replay(lookup.structuredReceipt, lookup.text);
-        replayedAcceptance = {
-          source: "tool",
-          attempts: lookup.structuredReceipt.spent.outputAttempts,
-          toolName: "workflow_return",
-          structuredReceipt: lookup.structuredReceipt,
-        };
+      try {
+        if (req.structuredCall !== undefined && deps.replaySourceRunId !== undefined && lookup?.replayed !== true)
+          throw new Error(
+            `replay-contract-failure: no committed structured prefix (${lookup?.reason ?? "unavailable"})`,
+          );
+        if (req.structuredCall !== undefined && lookup?.replayed === true) {
+          if (lookup.structuredReceipt === undefined) throw new Error("replay-contract-failure: v4 receipt missing");
+          await req.structuredCall.replay(lookup.structuredReceipt, lookup.text);
+          replayedAcceptance = {
+            source: "tool",
+            attempts: lookup.structuredReceipt.spent.outputAttempts,
+            toolName: "workflow_return",
+            structuredReceipt: lookup.structuredReceipt,
+          };
+        }
+      } catch (error) {
+        if (lookup !== undefined) replay?.recordAgentAttempt(lookup, { ok: false });
+        throw error;
       }
 
       let lastFailure: Extract<PhysicalAgentAttempt, { ok: false }> | undefined;
@@ -425,13 +427,13 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
           // A THROWN failure carries no classified cause, so it is never retried. Record it so
           // the recorded sequence keeps the same ordinals as the live one: a later resume then
           // replays the prefix and re-runs the call that failed, which is the point of resuming.
-          replay?.recordAgentAttempt(replayCall, { ok: false });
+          replay?.recordAgentAttempt(lookup!, { ok: false });
           throw err;
         }
         if (physical.ok) {
           // This run writes its OWN complete record, replayed entries included, so a
           // resume of a resume still has an unbroken prefix to work from.
-          replay?.recordAgentAttempt(replayCall, {
+          replay?.recordAgentAttempt(lookup!, {
             ok: true,
             text: physical.text,
             ...(physical.outcome.outputAcceptance?.structuredReceipt === undefined
@@ -460,7 +462,7 @@ export function createWorkflowAgentCall(deps: WorkflowAgentCallDeps): WorkflowAg
           message: `[workflow:retry] ${workflowAgentDisplayName(req)}${req.label === undefined ? "" : ` (${req.label})`}: transport attempt ${attempt} of ${attempts} failed with ${workflowAgentFailureCause(physical.result)}; re-running the identical request`,
         });
       }
-      replay?.recordAgentAttempt(replayCall, { ok: false });
+      replay?.recordAgentAttempt(lookup!, { ok: false });
       const failed = lastFailure!;
       if (opts?.result === "report" && !failed.replayed && isReportableAgentFailure(failed.result)) {
         emit({

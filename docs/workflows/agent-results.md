@@ -265,7 +265,7 @@ No new global turn/tool/time defaults or durable restart clock is introduced; om
 axes remain unbounded. A new explicit run receives a new ledger and preserves earlier evidence.
 
 **Replay.** Only a committed v4 receipt replays: exact contract/dialect/schema digest,
-observer revision (`codex-responses-v2`), full source and caller-input identities, applied allowances, spent
+observer revision (`codex-responses-v3`), full source and caller-input identities, applied allowances, spent
 counters, completed raw turn/call provenance, and schema/custom validation outcome must
 agree. Changed validator/closure source or caller inputs refuses reuse. Uncovered
 external callbacks/imports or non-replayable source cannot resume v4. The runner uses
@@ -280,9 +280,17 @@ receiver. This can
 refuse replay for otherwise valid trusted JavaScript; it does not restrict fresh execution
 or establish a sandbox or a full JavaScript dependency proof. Current validation
 runs again on immutable replayed data; mismatch or author errors are
-`replay-contract-failure`, without correction or a new model. Missing/uncommitted receipts,
-unknown effects or incomplete ledgers fail closed. Earlier `codex-responses-v1` receipts
-remain readable but cannot be reused, because they do not prove exact terminal membership.
+`replay-contract-failure`, without correction or a new child for that failed call.
+A rejected offered receipt is settled as failure, excluded from successful reuse
+counts, and closes reuse of the remaining prefix even if trusted code catches the
+error. A later ordinary call must run fresh; a confirmed interrupted-recovery
+prefix refusal remains terminal for that controller. Missing/uncommitted receipts,
+unknown effects or incomplete ledgers fail closed. Earlier `codex-responses-v1` and `codex-responses-v2` receipts
+remain readable but cannot be reused: v1 does not prove exact terminal membership, and
+v2 does not prove executable-frame multiplicity or unique work-call identities.
+Repeated executable added/done frames and ambiguous call identities are rejected before
+dispatch; matching argument-evidence and terminal repeats remain harmless. Mixed batches
+are classified before proposal validation and consume one bounded correction allowance.
 V2/v3 records are never upgraded.
 A custom runtime embedder must supply verified source/input identities and a current host
 version reader for v4 replay. Warm sessions and durable elapsed time across restarts are

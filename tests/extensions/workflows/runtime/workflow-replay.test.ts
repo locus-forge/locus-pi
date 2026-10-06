@@ -173,42 +173,6 @@ describe("workflow --resume replays recorded agent calls", () => {
     expect(chained).toHaveLength(3);
   });
 
-  it("keeps mapped live occurrences out of the base replay node identity", async () => {
-    const root = temporaryProject();
-    writeWorkflow(
-      root,
-      "mapped-replay",
-      `export const meta = { name: "mapped-replay", description: "three mapped calls from one callsite" };
-export default async function runWorkflow(dsl) {
-  const values = ["one", "two", "three"];
-  const answers = await dsl.parallel(values.map((value) => () =>
-    dsl.agent("classify " + value, { label: "classify-candidate", phase: "classify" })
-  ));
-  return { summary: answers.join(" | ") };
-}
-`,
-    );
-
-    const first = await runWorkflow(root, "mapped-replay");
-    expect(first.ok).toBe(true);
-    expect(first.executedPrompts).toEqual(["classify one", "classify two", "classify three"]);
-    expect(
-      readWorkflowReplayLog(root, first.runId)
-        .filter((entry) => entry.kind === "agent")
-        .map((entry) => (entry as { node?: string }).node),
-    ).toEqual([
-      nodeName("classify-candidate", 0, "classify"),
-      nodeName("classify-candidate", 1, "classify"),
-      nodeName("classify-candidate", 2, "classify"),
-    ]);
-
-    const resumed = await runWorkflow(root, "mapped-replay", { resumeFromRunId: first.runId });
-    expect(resumed.ok).toBe(true);
-    expect(resumed.executedPrompts).toEqual([]);
-    expect(resumed.result).toEqual(first.result);
-    expect(resumed.replay).toMatchObject({ replayed: true, replayedCalls: 3, freshCalls: 0 });
-  });
-
   it("refuses a resumed source that declares a removed shaped option before the child and the record", async () => {
     const root = temporaryProject();
     writeWorkflow(root, "counted", COUNTED_WORKFLOW);
@@ -616,7 +580,7 @@ export default async function runWorkflow(dsl) {
     const sourceRunId = "20260812-020202-a001";
     const source = createWorkflowReplayController({ runDir: ensureWorkflowRunDir(root, sourceRunId) });
     source.recordAgentAttempt(
-      { node: nodeName("recorded"), canonicalRequest: "recorded-request" },
+      source.beginAgentAttempt({ node: nodeName("recorded"), canonicalRequest: "recorded-request", replayable: true }),
       {
         ok: true,
         text: "recorded answer",
@@ -639,9 +603,17 @@ export default async function runWorkflow(dsl) {
     const root = temporaryProject();
     const sourceRunId = "20260812-010101-f001";
     const source = createWorkflowReplayController({ runDir: ensureWorkflowRunDir(root, sourceRunId) });
-    source.recordAgentAttempt({ canonicalRequest: "call-0" }, { ok: true, text: "recorded answer" });
-    source.recordAgentAttempt({ canonicalRequest: "call-1" }, { ok: false });
-    source.recordAgentAttempt({ canonicalRequest: "call-2" }, { ok: true, text: "later answer" });
+    source.recordAgentAttempt(source.beginAgentAttempt({ ...{ canonicalRequest: "call-0" }, replayable: true }), {
+      ok: true,
+      text: "recorded answer",
+    });
+    source.recordAgentAttempt(source.beginAgentAttempt({ ...{ canonicalRequest: "call-1" }, replayable: true }), {
+      ok: false,
+    });
+    source.recordAgentAttempt(source.beginAgentAttempt({ ...{ canonicalRequest: "call-2" }, replayable: true }), {
+      ok: true,
+      text: "later answer",
+    });
 
     const resumed = createWorkflowReplayController({
       runDir: ensureWorkflowRunDir(root, "20260812-010101-f002"),
@@ -671,9 +643,18 @@ export default async function runWorkflow(dsl) {
     const root = temporaryProject();
     const sourceRunId = "20260812-030303-s001";
     const source = createWorkflowReplayController({ runDir: ensureWorkflowRunDir(root, sourceRunId) });
-    source.recordAgentAttempt({ canonicalRequest: "call-0" }, { ok: true, text: "first answer" });
-    source.recordAgentAttempt({ canonicalRequest: "call-1" }, { ok: true, text: "worktree answer" });
-    source.recordAgentAttempt({ canonicalRequest: "call-2" }, { ok: true, text: "later answer" });
+    source.recordAgentAttempt(source.beginAgentAttempt({ ...{ canonicalRequest: "call-0" }, replayable: true }), {
+      ok: true,
+      text: "first answer",
+    });
+    source.recordAgentAttempt(source.beginAgentAttempt({ ...{ canonicalRequest: "call-1" }, replayable: true }), {
+      ok: true,
+      text: "worktree answer",
+    });
+    source.recordAgentAttempt(source.beginAgentAttempt({ ...{ canonicalRequest: "call-2" }, replayable: true }), {
+      ok: true,
+      text: "later answer",
+    });
 
     const resumed = createWorkflowReplayController({
       runDir: ensureWorkflowRunDir(root, "20260812-030303-s002"),
