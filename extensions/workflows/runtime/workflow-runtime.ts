@@ -326,6 +326,8 @@ export type WorkflowSavedChildRunner = (input: WorkflowSavedChildInvocation) => 
 
 export interface WorkflowRuntimeOptions {
   runId: string;
+  /** Host cancellation stops new group branches and pipeline stages. */
+  signal?: AbortSignal;
   agentRunner: WorkflowAgentRunner;
   structuredReplayRoute?: import("./workflow-agent-output.js").WorkflowAgentOutputDeps["structuredReplayRoute"];
   structuredReplayHostVersion?: () => Promise<string | undefined>;
@@ -463,6 +465,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
   let _currentPhase: string | undefined;
   const groups: WorkflowGroupExecution = createWorkflowGroupExecution({
     runId,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
     now: nowFn,
     emit,
     sharedExecution,

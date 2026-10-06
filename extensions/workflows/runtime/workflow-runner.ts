@@ -887,6 +887,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   });
   runtime = createWorkflowRuntime({
     runId,
+    signal: opts.signal,
     agentRunner,
     structuredReplayHostVersion: readAgentSdkHostVersion,
     structuredReplayRoute: createWorkflowStructuredReplayRoute(agentBridgeOptions),

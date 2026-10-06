@@ -52,6 +52,15 @@ text. Same-session clarification stays within the same logical call and does not
 create another replay ordinal. Transport retries also share that logical ordinal;
 see [the two retry loops](outcomes.md#the-two-retries-and-which-failure-each-one-owns).
 
+Structured calls also revalidate their committed receipt, full source and caller
+input; native calls check the current route. Replay-log v4 is separate from tool
+return-contract v4 and native return-contract v5. Missing or unproven structured
+evidence refuses before child work, including historical log-v3 identity misses.
+If revalidation fails and the workflow catches it, subsequent prefix reuse still
+stops: ordinary suffix calls run fresh and structured suffix calls refuse. Calls
+already admitted concurrently retain their own settlement; this does not roll
+back their effects. Groups drain their started branches before ending the run.
+
 Each recorded agent line also carries a `node` name, `[phase, label, occurrence]`,
 absent when the call had no `label`. It is the readable identity of the completed
 prefix: `runtime/replay.ndjson` answers "which nodes finished" without the

@@ -1,19 +1,10 @@
 /**
- * workflow-groups.ts — `parallel()` / `pipeline()`: branch identity, the per-group
- * scheduler, the fail-closed barrier, and the typed partial result a barrier raises.
- *
- * The scheduler here bounds width PER group operation. It is NOT the run's leaf-agent
- * gate — that one lives in `workflow-execution-state.ts` and bounds simultaneously
- * executing children across the whole run. Both bounds exist on purpose: a nested
- * `dsl.agent()` inside a `parallel()` wrapper takes a leaf permit, while its wrapper
- * holds only a slot in this group's own pool, so a group never waits on itself.
- *
- * Branch identity — phase, member path, business keys, row occurrence — travels in an
- * `AsyncLocalStorage`, so a branch-local `phase()` never leaks into a sibling or the
- * parent. The DSL core reads that context READ-ONLY when it builds an agent request.
- *
- * Pure host-agnostic execution, no fs / process / network: part of the DSL core's
- * `node:fs`-free value closure that rule 7 of `scripts/check-extension-layers.ts` proves.
+ * Group branch identity, bounded scheduling and the fail-closed result barrier.
+ * Group width limits wrappers; the root leaf gate separately limits child agents.
+ * Nested wrappers own independent pools so they never wait on their own leaf slot.
+ * AsyncLocalStorage keeps branch phase, member path, keys and row occurrence local;
+ * agent calls read this identity without mutating siblings or their parent.
+ * Host-agnostic and fs-free, as enforced by rule 7 of check-extension-layers.ts.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -42,6 +33,8 @@ export interface WorkflowParallelOptions {
 
 interface WorkflowGroupContext {
   readonly group: { id: string; kind: WorkflowGroupKind; label: string };
+  /** Nested groups stop admission together, but drain their own started branches. */
+  readonly stop: { failure?: { error: unknown } };
   readonly member?: WorkflowAgentRowOccurrence;
   /** Branch-local phase changes never leak into sibling branches or their parent. */
   phase: string | undefined;
@@ -172,56 +165,46 @@ class CapturedWorkflowBranchFailure<T = unknown> extends Error {
   }
 }
 
-// ---------------------------------------------------------------------------
-// THE single concurrency seam
-// ---------------------------------------------------------------------------
-
 /**
- * THE single concurrency seam for the whole runtime. Every agent execution —
- * agent(), parallel(), pipeline() — funnels through here.
- *
- * Bounded per-call concurrency seam. Real concurrency with git-worktree
- * isolation for parallel writes can be dropped in HERE without touching any
- * workflow script.
- *
- * `width` is REQUIRED and has no local default. It used to have a private
- * `SCHEDULER_WIDTH = 4` that nobody could see, sitting beside a `budget.concurrency`
- * of 4 that meant the same thing: two constants, one meaning, and an operator who
- * narrowed the visible one still got groups of four. The run's single effective
- * concurrency is the only width now, and a local one exists only when a
- * `parallel()`/`pipeline()` author passes it explicitly.
- *
- * // TODO(concurrency): add git-worktree isolation. Keep this signature stable.
+ * Bounds branch wrappers per group, separately from the root leaf-agent gate.
+ * Width comes from the run unless the group declares its own. Nested groups own
+ * independent pools so an outer wrapper cannot deadlock its inner agent calls.
+ * On rejection, stop dispatch and drain every started thunk before rethrowing.
+ * `assertDispatch` also observes host cancellation and nested hard failures.
  */
-export async function runScheduled<T>(thunks: Array<() => Promise<T>>, width: number): Promise<T[]> {
+export async function runScheduled<T>(
+  thunks: Array<() => Promise<T>>,
+  width: number,
+  assertDispatch?: () => void,
+): Promise<T[]> {
   const out: T[] = new Array(thunks.length);
   let next = 0;
+  let failure: { error: unknown } | undefined;
   const workerCount = Math.min(width, thunks.length);
-  // This bounds width PER runScheduled call, not globally.
-  // Nested orchestration wrappers create their OWN pool, so nested dsl.agent()
-  // inside a parallel() wrapper does NOT deadlock against leaf agent slots.
-  // Global leaf-agent concurrency is enforced separately by AgentConcurrencyGate.
   async function worker() {
-    for (;;) {
-      const i = next++;
-      if (i >= thunks.length) return;
-      out[i] = await thunks[i]!();
+    while (failure === undefined) {
+      try {
+        assertDispatch?.();
+        const i = next++;
+        if (i >= thunks.length) return;
+        out[i] = await thunks[i]!();
+      } catch (error) {
+        // A receipt (rather than a truthy error) also preserves `throw undefined`.
+        failure ??= { error };
+      }
     }
   }
+  // Workers capture their first rejection, so this barrier drains every started
+  // thunk before exposing the original failure to group/run finalization.
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  if (failure !== undefined) throw failure.error;
+  assertDispatch?.();
   return out;
 }
 
-/**
- * A display name and a `parallel` key have to be a name: non-blank, and free of control
- * characters that would corrupt a journal line, a terminal row or a path component.
- *
- * The former 240-character ceiling is gone. A key is part of branch IDENTITY and enters the
- * replay key, so control characters are REFUSED rather than encoded — encoding them would
- * silently rewrite the identity of already-recorded branches — but length was never an
- * identity property, and a title long enough to be awkward is a display problem the renderer
- * already solves by clipping what it draws.
- */
+/** Names must be nonblank and free of journal/path control characters. Keys are
+ * replay identity, so reject invalid characters rather than silently encoding them.
+ * Length is display policy (the renderer clips), not an identity restriction. */
 export function assertWorkflowDisplayTitle(value: unknown, field: string): asserts value is string {
   if (typeof value !== "string" || value.trim() === "" || /[\u0000-\u001f\u007f]/u.test(value)) {
     throw new Error(`${field} must be non-blank text without control characters`);
@@ -303,6 +286,8 @@ function workflowErrorMessage(value: unknown): string {
  *  nothing here imports the DSL core back. */
 export interface WorkflowGroupExecutionDeps {
   readonly runId: string;
+  /** Stop dispatch on host cancellation; the host still owns child abort/settlement. */
+  readonly signal?: AbortSignal;
   readonly now: () => string;
   /** The runtime's one journal fan-out (mirror + sink + progress callback). */
   readonly emit: (line: WorkflowJournalLine) => void;
@@ -357,6 +342,12 @@ export function createWorkflowGroupExecution(deps: WorkflowGroupExecutionDeps): 
     return true;
   }
 
+  function assertDispatch(): void {
+    const failure = groupContext.getStore()?.stop.failure;
+    if (failure !== undefined) throw failure.error;
+    deps.signal?.throwIfAborted();
+  }
+
   async function parallel<T>(thunks: Array<() => Promise<T>>, input?: WorkflowParallelOptions): Promise<T[]> {
     const groupOptions = normalizeWorkflowParallelOptions(input, thunks.length);
     return runGrouped(
@@ -374,6 +365,7 @@ export function createWorkflowGroupExecution(deps: WorkflowGroupExecutionDeps): 
         let acc: unknown = item;
         for (const [_si, stage] of stages.entries()) {
           const si = _si;
+          assertDispatch();
           try {
             const next = await stage(acc, itemIndex * stages.length + si);
             const returnedFailure = classifyReturnedGroupFailure(next, itemIndex, si);
@@ -407,6 +399,7 @@ export function createWorkflowGroupExecution(deps: WorkflowGroupExecutionDeps): 
       const currentContext = groupContext.getStore();
       const memberContext: WorkflowGroupContext = {
         group: currentContext!.group,
+        stop: currentContext!.stop,
         member: { groupId, memberIndex: index },
         phase: currentPhase(),
         memberPath: [...currentContext!.memberPath, groupOptions?.keys?.[index] ?? `#${index}`],
@@ -416,18 +409,22 @@ export function createWorkflowGroupExecution(deps: WorkflowGroupExecutionDeps): 
         const value = await groupContext.run(memberContext, thunk);
         const returnedFailure = classifyReturnedGroupFailure(value, index);
         if (returnedFailure === undefined) return { index, status: "completed", value };
-        emitGroupBranchFailure(returnedFailure);
+        emitGroupBranchFailure(returnedFailure, memberContext.phase);
         return { index, status: "failed", value, failure: returnedFailure };
       } catch (err) {
         // The invocation cap and the run deadline are hard RUN-level failures and
         // keep their own public error types instead of being converted into a
         // partial group: a bound on the whole run is not one branch's problem.
-        if (isRunLevelWorkflowFailure(err)) throw err;
+        if (isRunLevelWorkflowFailure(err)) {
+          memberContext.stop.failure ??= { error: err };
+          throw memberContext.stop.failure.error;
+        }
+        if (deps.signal?.aborted) throw err;
         const failure =
           err instanceof CapturedWorkflowBranchFailure
             ? err.failure
             : { index, kind: "thrown" as const, message: workflowErrorMessage(err) };
-        emitGroupBranchFailure(failure);
+        emitGroupBranchFailure(failure, memberContext.phase);
         return {
           index,
           status: "failed",
@@ -440,20 +437,20 @@ export function createWorkflowGroupExecution(deps: WorkflowGroupExecutionDeps): 
     });
     // The run's ONE effective concurrency, unless this group's author narrowed it
     // explicitly. There is no second hidden package width any more.
-    const slots = await runScheduled(wrapped, groupOptions?.concurrency ?? sharedExecution.concurrency);
+    const slots = await runScheduled(wrapped, groupOptions?.concurrency ?? sharedExecution.concurrency, assertDispatch);
     if (slots.some((slot) => slot.status === "failed")) {
       throw new WorkflowGroupFailureError(kind, groupId, slots);
     }
     return slots.map((slot) => (slot as Extract<WorkflowGroupSlot<T>, { status: "completed" }>).value);
   }
 
-  function emitGroupBranchFailure(failure: WorkflowBranchFailure): void {
+  function emitGroupBranchFailure(failure: WorkflowBranchFailure, phase: string | undefined): void {
     emit({
       ts: nowFn(),
       runId,
       kind: "error",
       message: failure.message,
-      ...(currentPhase() !== undefined ? { phase: currentPhase()! } : {}),
+      ...(phase === undefined ? {} : { phase }),
       ...activeGroupFields(),
     });
   }
@@ -481,6 +478,7 @@ export function createWorkflowGroupExecution(deps: WorkflowGroupExecutionDeps): 
     });
     const currentContext: WorkflowGroupContext = {
       group: { id, kind, label },
+      stop: parentContext?.stop ?? {},
       phase: currentPhase(),
       memberPath: parentContext?.memberPath ?? [],
       hasBusinessKeys: parentContext?.hasBusinessKeys ?? false,
