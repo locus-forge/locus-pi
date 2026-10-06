@@ -266,3 +266,83 @@ it("emits the legacy identity diagnostic before executing a fresh child", async 
     expect(await resumed.dsl.agent("same")).toBe("fresh");
     expect(resumed.getJournal().find((line) => line.message?.includes("invocation-identity-unproven"))).toBeDefined();
   }));
+
+it.each([false, true])("rejects a failed offered replay without counting reuse (strict=%s)", async (strict) =>
+  temporary(async (root) => {
+    const replay = createWorkflowReplayController({
+      runDir: tempRun(root, "failed-offer"),
+      recorded: [record(0), record(1)],
+      requireRecordedPrefix: strict,
+    });
+    const offered = replay.beginAgentAttempt(call);
+    expect(offered.replayed).toBe(true);
+    replay.recordAgentAttempt(offered, { ok: false });
+    expect(replay.counts()).toMatchObject({ replayedCalls: 0, freshCalls: 0, divergedAtCall: 0 });
+    if (strict) expect(() => replay.beginAgentAttempt(call)).toThrow(/prefix divergence/u);
+    else expect(replay.beginAgentAttempt(call)).toEqual({ replayed: false, reason: "diverged" });
+  }),
+);
+
+it("keeps a caught strict prefix mismatch terminal for later agents and values", async () =>
+  temporary(async (root) => {
+    const replay = createWorkflowReplayController({
+      runDir: tempRun(root, "strict-caught"),
+      recorded: [record(0), record(1)],
+      requireRecordedPrefix: true,
+    });
+    expect(() => replay.beginAgentAttempt({ ...call, canonicalRequest: "changed" })).toThrow(/prefix divergence/u);
+    expect(() => replay.beginAgentAttempt(call)).toThrow(/prefix divergence/u);
+    expect(() => replay.beginAgentAttempt(call)).toThrow(/prefix divergence/u);
+    let produced = false;
+    expect(() =>
+      replay.resolveValue("clock", () => {
+        produced = true;
+        return 1;
+      }),
+    ).toThrow(/prefix divergence/u);
+    expect(produced).toBe(false);
+    expect(replay.counts()).toMatchObject({ replayedCalls: 0, freshCalls: 0, divergedAtCall: 0 });
+  }));
+
+it.each(["clock", "random"] as const)("keeps a caught missing strict %s terminal", async (kind) =>
+  temporary(async (root) => {
+    const replay = createWorkflowReplayController({
+      runDir: tempRun(root, kind),
+      recorded: [record(0)],
+      requireRecordedPrefix: true,
+    });
+    let produced = false;
+    expect(() =>
+      replay.resolveValue(kind, () => {
+        produced = true;
+        return 1;
+      }),
+    ).toThrow(/prefix divergence/u);
+    expect(() => replay.beginAgentAttempt(call)).toThrow(/prefix divergence/u);
+    expect(() =>
+      replay.resolveValue(kind, () => {
+        produced = true;
+        return 2;
+      }),
+    ).toThrow(/prefix divergence/u);
+    expect(produced).toBe(false);
+  }),
+);
+
+it("allows fresh suffix work after a completely accepted strict prefix", async () =>
+  temporary(async (root) => {
+    const replay = createWorkflowReplayController({
+      runDir: tempRun(root, "strict-valid"),
+      recorded: [record(0)],
+      requireRecordedPrefix: true,
+    });
+    const hit = replay.beginAgentAttempt(call);
+    expect(hit).toEqual({ replayed: true, text: "answer-0" });
+    replay.recordAgentAttempt(hit, { ok: true, text: "answer-0" });
+    const fresh = replay.beginAgentAttempt(call);
+    expect(fresh).toEqual({ replayed: false, reason: "no-record" });
+    replay.recordAgentAttempt(fresh, { ok: true, text: "fresh" });
+    expect(replay.resolveValue("clock", () => 42)).toBe(42);
+    expect(replay.beginAgentAttempt(call)).toEqual({ replayed: false, reason: "diverged" });
+    expect(replay.counts()).toMatchObject({ replayedCalls: 1, freshCalls: 2, divergedAtCall: 1 });
+  }));

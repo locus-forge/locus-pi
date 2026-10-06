@@ -279,6 +279,7 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
   #readCursor = 0;
   readonly #valueCursors = new Map<WorkflowReplayValueKind, number>();
   #diverged = false;
+  #strictRefusal: string | undefined;
   #divergedAtCall: number | undefined;
   #divergedAtNode: string | undefined;
   #replayedCalls = 0;
@@ -318,18 +319,11 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
   }
 
   #lookupAgent(call: WorkflowReplayAgentCall & { replayable: boolean }, ordinal: number): WorkflowReplayAgentLookup {
-    // Every miss below latches, so the latch is set here once rather than at six
-    // return sites. The two paths that return before this helper are the two
-    // that must NOT latch: replay is switched off, and the latch already holds.
+    if (this.#strictRefusal !== undefined) throw new Error(this.#strictRefusal);
     const miss = (reason: WorkflowReplayMissReason): WorkflowReplayAgentLookup => {
-      if (this.#requireRecordedPrefix && ordinal < this.#recordedAgentExtent)
-        throw new Error(`Interrupted recovery refused prefix divergence at call ${ordinal}: ${reason}`);
+      this.#refusePrefix(ordinal, call.node, reason);
+      if (this.#strictRefusal !== undefined) throw new Error(this.#strictRefusal);
       this.#freshCalls += 1;
-      if (!this.#diverged) {
-        this.#diverged = true;
-        this.#divergedAtCall = ordinal;
-        this.#divergedAtNode = call.node;
-      }
       return { replayed: false, reason };
     };
     if (!this.#replayEnabled) {
@@ -374,6 +368,10 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
     if (admission === undefined) throw new Error("Replay receipt is foreign or already settled");
     this.#admissions.delete(receipt);
     const { seq, call } = admission;
+    if (receipt.replayed && !outcome.ok) {
+      this.#replayedCalls -= 1;
+      this.#refusePrefix(seq, call.node, "recorded-failure");
+    }
     const key = hashCanonicalRequest(call.canonicalRequest);
     const node = call.node === undefined ? {} : { node: call.node };
     const rcv = call.returnContractVersion === undefined ? {} : { rcv: call.returnContractVersion };
@@ -385,14 +383,13 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
   }
 
   resolveValue(kind: WorkflowReplayValueKind, produce: () => number): number {
+    if (this.#strictRefusal !== undefined) throw new Error(this.#strictRefusal);
     const ordinal = this.#valueCursors.get(kind) ?? 0;
     this.#valueCursors.set(kind, ordinal + 1);
     const recorded = this.#replayEnabled && !this.#diverged ? this.#recordedValues.get(kind)?.get(ordinal) : undefined;
     if (this.#replayEnabled && !this.#diverged && recorded === undefined) {
-      if (this.#requireRecordedPrefix && this.#readCursor < this.#recordedAgentExtent)
-        throw new Error(`Interrupted recovery refused missing ${kind} at ${ordinal}`);
-      this.#diverged = true;
-      this.#divergedAtCall = this.#readCursor;
+      this.#refusePrefix(this.#readCursor, undefined, "recorded-sequence-invalid");
+      if (this.#strictRefusal !== undefined) throw new Error(this.#strictRefusal);
     }
     const value = recorded ?? produce();
     this.#append({ v: WORKFLOW_REPLAY_SCHEMA_VERSION, seq: ordinal, kind, value });
@@ -406,6 +403,17 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
       ...(this.#divergedAtCall !== undefined ? { divergedAtCall: this.#divergedAtCall } : {}),
       ...(this.#divergedAtNode !== undefined ? { divergedAtNode: this.#divergedAtNode } : {}),
     };
+  }
+
+  /** Every known refusal closes reuse before throwing or returning to trusted callers. */
+  #refusePrefix(ordinal: number, node: string | undefined, reason: WorkflowReplayMissReason): void {
+    this.#diverged = true;
+    if (this.#divergedAtCall === undefined || ordinal < this.#divergedAtCall) {
+      this.#divergedAtCall = ordinal;
+      this.#divergedAtNode = node;
+    }
+    if (this.#requireRecordedPrefix && ordinal < this.#recordedAgentExtent)
+      this.#strictRefusal ??= `Interrupted recovery refused prefix divergence at call ${ordinal}: ${reason}`;
   }
 
   #append(entry: WorkflowReplayEntry): void {

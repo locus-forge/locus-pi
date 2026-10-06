@@ -241,3 +241,12 @@ A replayed call reports **no** token usage, so the run budget shown by
   predecessor that executed again.
 - Recording is skipped entirely for `unproven` and `entry-only` scripts, so those
   runs write no `replay.ndjson` and cannot be resumed.
+
+## Refused replay stays refused
+
+A rejected offered replay closes prefix reuse before returning control, including
+when its caller catches the error. Rejected offers are not counted as successfully
+replayed calls. If a confirmed interrupted-recovery prefix is refused, later agent
+and recorded-value requests remain blocked; catching that failure cannot repeat
+previously confirmed effects. This does not block normal continuation after an
+entire confirmed prefix succeeds: its new, unrecorded suffix may execute normally.
