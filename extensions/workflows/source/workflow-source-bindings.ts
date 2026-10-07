@@ -92,8 +92,6 @@ export function standardLexicalBindings(root: SgNode, includeCatchParameters = f
   ]) {
     const parameters = standardFunctionParameters(callable);
     add(boundStandardNames(parameters), callable, parameters?.id() ?? callable.id());
-    if (includeCatchParameters && parameters?.children().some((node) => node.kind() === "undefined"))
-      add(["undefined"], callable, parameters.id());
     const name = callable.field("name")?.text();
     if (name === undefined) continue;
     add(
@@ -304,25 +302,19 @@ export function standardCollectionBindings(
 }
 
 export function boundStandardNames(pattern: SgNode | undefined): string[] {
+  return standardPatternBindings(pattern).map((node) => node.text());
+}
+
+/** Only pattern-side nodes bind names; default expressions and computed keys are reads. */
+function standardPatternBindings(pattern: SgNode | undefined): SgNode[] {
   if (pattern === undefined) return [];
-  if (pattern.kind() === "identifier" || pattern.kind() === "shorthand_property_identifier_pattern") {
-    return [pattern.text()];
-  }
-  if (pattern.kind() === "pair_pattern") {
-    return boundStandardNames(pattern.field("value") ?? undefined);
-  }
-  const names: string[] = [];
-  for (const child of pattern.children()) {
-    if (
-      child.kind() === "property_identifier" ||
-      child.kind() === "shorthand_property_identifier" ||
-      child.kind() === "comment"
-    ) {
-      continue;
-    }
-    names.push(...boundStandardNames(child));
-  }
-  return names;
+  const kind = String(pattern.kind());
+  if (["identifier", "undefined", "shorthand_property_identifier_pattern"].includes(kind)) return [pattern];
+  if (["assignment_pattern", "object_assignment_pattern"].includes(kind))
+    return standardPatternBindings(pattern.field("left") ?? undefined);
+  if (kind === "pair_pattern") return standardPatternBindings(pattern.field("value") ?? undefined);
+  if (!["formal_parameters", "array_pattern", "object_pattern", "rest_pattern"].includes(kind)) return [];
+  return pattern.children().flatMap(standardPatternBindings);
 }
 
 /** Tree-sitter exposes a bare arrow parameter separately from parenthesized parameters. */
@@ -366,25 +358,22 @@ export function standardCallArguments(call: SgNode): SgNode[] {
 }
 
 export function isStandardBindingOccurrence(identifier: SgNode, includeCatchParameters = false): boolean {
-  for (const clause of includeCatchParameters
-    ? identifier.ancestors().filter((node) => node.kind() === "catch_clause")
-    : []) {
-    if (nodeWithinStandardNode(identifier, clause.field("parameter") ?? undefined)) return true;
-  }
-  for (const declaration of identifier.ancestors().filter((ancestor) => ancestor.kind() === "variable_declarator")) {
-    if (nodeWithinStandardNode(identifier, declaration.field("name") ?? undefined)) return true;
-  }
-  for (const callable of identifier
-    .ancestors()
-    .filter((ancestor) =>
-      ["arrow_function", "function_declaration", "function_expression"].includes(String(ancestor.kind())),
-    )) {
-    if (nodeWithinStandardNode(identifier, standardFunctionParameters(callable))) return true;
-  }
-  for (const loop of identifier.ancestors().filter((ancestor) => ancestor.kind() === "for_in_statement")) {
-    if (nodeWithinStandardNode(identifier, loop.field("left") ?? undefined)) return true;
-  }
-  return false;
+  return identifier.ancestors().some((owner) => {
+    const kind = String(owner.kind());
+    const pattern =
+      kind === "variable_declarator"
+        ? owner.field("name")
+        : kind === "for_in_statement"
+          ? owner.field("left")
+          : kind === "catch_clause"
+            ? includeCatchParameters
+              ? owner.field("parameter")
+              : undefined
+            : ["arrow_function", "function_declaration", "function_expression"].includes(kind)
+              ? standardFunctionParameters(owner)
+              : undefined;
+    return standardPatternBindings(pattern ?? undefined).some((node) => node.id() === identifier.id());
+  });
 }
 
 export function nodeWithinStandardNode(node: SgNode, container: SgNode | undefined): boolean {

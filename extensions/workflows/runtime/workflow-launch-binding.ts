@@ -13,6 +13,8 @@ import { lstatSync, realpathSync, statSync } from "node:fs";
 import {
   assertWorkflowRunId,
   readWorkflowRunFile,
+  readWorkflowRunTextFile,
+  workflowStorageRootRunId,
   renameWorkflowRunFile,
   resolveWorkflowRunDir,
   workflowRunRuntimeFile,
@@ -27,6 +29,15 @@ import {
   type WorkflowWorkspaceDirectory,
 } from "./workflow-output.js";
 import { parseWorkflowPersistedBinding } from "./workflow-persisted-binding.js";
+
+import { readWorkflowRunResult, workflowResultFile } from "./workflow-result.js";
+import { readWorkflowRunScriptSnapshot, readWorkflowRunJournalState } from "./workflow-journal.js";
+import {
+  readPersistedWorkflowOperatorHandoff,
+  assertWorkflowHandoffContinuationEligibility,
+} from "./workflow-handoff.js";
+import { workflowTargetIdentityKey } from "./workflow-saved-name.js";
+import { workflowSourceInputSchema } from "../source/workflow-source-structured.js";
 
 export const WORKFLOW_LAUNCH_BINDING_SCHEMA = "locus-pi.workflow-launch-binding.v3" as const;
 export const WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA = "locus-pi.workflow-launch-binding.v4" as const;
@@ -201,6 +212,126 @@ export function workflowLaunchBindingMatchesResult(
         canonicalWorkflowJSON(result.typedInput) ===
           canonicalWorkflowJSON(workflowTypedInputProjection(binding.typedInput)))
   );
+}
+
+/** Corroborate a completed typed slot through already admitted ancestry; never grants a skip. */
+export function hasPriorCompletedTypedChild(options: {
+  projectRoot: string;
+  sourceRunId?: string | undefined;
+  rootLineageId: string;
+  workspaceIdentity: string;
+  itemKey: string;
+  targetKey: string;
+}): boolean {
+  const { projectRoot, rootLineageId, workspaceIdentity, itemKey, targetKey } = options;
+  let sourceId = options.sourceRunId;
+  const seen = new Set<string>(),
+    pending = new Set<string>();
+  while (sourceId !== undefined) {
+    assertWorkflowRunId(sourceId);
+    if (seen.has(sourceId)) throw new Error("typed child prior navigation cycle");
+    seen.add(sourceId);
+    const parentDir = resolveWorkflowRunDir(projectRoot, sourceId);
+    const binding = readWorkflowLaunchBinding(projectRoot, sourceId, parentDir);
+    const result = readWorkflowRunResult(projectRoot, sourceId, parentDir);
+    if (
+      binding === null ||
+      binding.rootLineageId !== rootLineageId ||
+      binding.workspace.physicalIdentity !== workspaceIdentity ||
+      !workflowLaunchBindingMatchesResult(binding, result)
+    )
+      throw new Error("typed child prior parent authority unproven");
+    const raw = JSON.parse(readWorkflowRunTextFile(parentDir, workflowResultFile(parentDir)));
+    const refs = raw.childRuns === undefined ? [] : raw.childRuns;
+    if (
+      !isRecord(raw) ||
+      !Array.isArray(refs) ||
+      refs.some(
+        (ref) =>
+          !isRecord(ref) ||
+          typeof ref.key !== "string" ||
+          typeof ref.status !== "string" ||
+          !["running", "completed", "skipped", "awaiting_operator", "cancelled", "failed"].includes(ref.status),
+      )
+    )
+      throw new Error("typed child navigation is malformed");
+    for (const ref of refs) {
+      if (ref.key !== itemKey || !["completed", "skipped"].includes(ref.status)) continue;
+      const childId = assertWorkflowRunId(ref.status === "skipped" ? ref.sourceRunId : ref.runId);
+      const childDir = resolveWorkflowRunDir(projectRoot, childId);
+      const child = readWorkflowRunResult(projectRoot, childId, childDir);
+      if (child?.target === undefined || child.scriptIdentity === undefined)
+        throw new Error("typed child prior reference unproven");
+      if (
+        workflowTargetIdentityKey(child.target, {
+          projectRoot: projectRoot,
+          resolvedPath: child.scriptIdentity.sourcePath,
+        }) !== targetKey
+      )
+        continue;
+      const snapshot = readWorkflowRunScriptSnapshot(projectRoot, childId, childDir);
+      if (snapshot.kind !== "ready") throw new Error("typed child retained source unproven");
+      const schema = workflowSourceInputSchema(snapshot.source);
+      if (schema === undefined && child.typedInput === undefined) continue;
+      const lineage = JSON.parse(readWorkflowRunTextFile(childDir, workflowResultFile(childDir))).lineage;
+      if (
+        !isRecord(lineage) ||
+        child.ok !== true ||
+        !isRecord(child.disposition) ||
+        child.disposition.status !== "completed" ||
+        child.workspacePhysicalIdentity !== workspaceIdentity ||
+        lineage.depth !== 1 ||
+        lineage.parentItemKey !== itemKey ||
+        lineage.rootRunId !== lineage.parentRunId ||
+        snapshot.sha256 !== ref.childScriptSha256 ||
+        schema === undefined
+      )
+        throw new Error("prior completed typed child evidence unproven");
+      if (ref.status === "skipped") {
+        pending.add(childId);
+        continue;
+      }
+      if (
+        lineage.parentRunId !== sourceId ||
+        [...pending].some((id) => id !== childId) ||
+        workflowStorageRootRunId(projectRoot, childId) !== workflowStorageRootRunId(projectRoot, sourceId)
+      )
+        throw new Error("typed child owning completion unproven");
+      return true;
+    }
+    if (sourceId === binding.rootLineageId) break;
+    const resume = raw.resumeFromRunId !== undefined;
+    const continuation = isRecord(raw.continuation) ? raw.continuation : undefined;
+    if (resume === (raw.continuation !== undefined)) throw new Error("typed child prior ancestry is missing or mixed");
+    const next = assertWorkflowRunId(resume ? raw.resumeFromRunId : continuation?.originRunId);
+    const journal = readWorkflowRunJournalState(projectRoot, sourceId, parentDir);
+    if (
+      journal.diagnostics.length > 0 ||
+      !journal.lines.some(
+        (line) =>
+          line.kind === "log" &&
+          line.source === "runtime" &&
+          (resume
+            ? line.resumeFromRunId === next
+            : canonicalWorkflowJSON(line.continuation ?? null) === canonicalWorkflowJSON(raw.continuation)),
+      )
+    )
+      throw new Error("typed child prior ancestry journal is unproven");
+    if (!resume) {
+      const handoff = readPersistedWorkflowOperatorHandoff(projectRoot, next);
+      if (
+        handoff.status !== "ready" ||
+        !Array.isArray(continuation?.artifacts) ||
+        canonicalWorkflowJSON(continuation.artifacts.map((ref: { sourceRef?: unknown }) => ref?.sourceRef)) !==
+          canonicalWorkflowJSON(handoff.handoff.continuationArtifactRefs)
+      )
+        throw new Error("typed child prior handoff is unproven");
+      assertWorkflowHandoffContinuationEligibility(handoff.handoff, binding, projectRoot);
+    }
+    sourceId = next;
+  }
+  if (pending.size > 0) throw new Error("typed child skipped completion has no authenticated owner");
+  return false;
 }
 
 function parseWorkflowLaunchBinding(

@@ -67,6 +67,8 @@ export interface WorkflowCheckpointIdentity {
   /** Exact child work units, preserving input presence and item order. */
   input?: string;
   typedInput?: WorkflowTypedInputIdentity;
+  /** Qualified physical child target; persisted only by typed checkpoints. */
+  targetKey?: string;
   items: readonly string[];
 }
 
@@ -170,6 +172,12 @@ export function readWorkflowCompletedCheckpoint(
   identity: WorkflowCheckpointIdentity,
 ): WorkflowCompletedCheckpoint | undefined {
   assertWorkflowRootLease(lease);
+  if (
+    identity.typedInput === undefined &&
+    identity.targetKey !== undefined &&
+    assertCheckpointPath(lease, checkpointFile(lease, identity, true), false)
+  )
+    throw new Error("typed input checkpoint cannot be downgraded to legacy input");
   const file = checkpointFile(lease, identity);
   if (!assertCheckpointPath(lease, file, false)) return undefined;
   let value: unknown;
@@ -207,7 +215,7 @@ export function commitWorkflowCompletedCheckpoint(
     itemKey: input.itemKey,
     rootLineageId: assertWorkflowRunId(input.rootLineageId),
     ...(input.input === undefined ? {} : { input: input.input }),
-    ...(input.typedInput === undefined ? {} : { typedInput: input.typedInput }),
+    ...(input.typedInput === undefined ? {} : { typedInput: input.typedInput, targetKey: input.targetKey }),
     items: [...input.items],
     childRunId,
     completedAt: new Date().toISOString(),
@@ -279,22 +287,28 @@ function assertFreshWorkflowWorkspaceNamespaceIdentity(input: {
   );
 }
 
-function checkpointFile(lease: WorkflowRootLease, identity: WorkflowCheckpointIdentity): string {
+function checkpointFile(
+  lease: WorkflowRootLease,
+  identity: WorkflowCheckpointIdentity,
+  typed = identity.typedInput !== undefined,
+): string {
   assertWorkflowItemKey(identity.itemKey);
-  const digest = createHash("sha256")
-    .update(
-      JSON.stringify([
+  const lineage = assertWorkflowRunId(identity.rootLineageId);
+  if (typed && (typeof identity.targetKey !== "string" || identity.targetKey === ""))
+    throw new Error("typed input checkpoint requires its resolved target");
+  const key = typed
+    ? [identity.workspaceIdentity, lineage, identity.itemKey, identity.targetKey]
+    : [
         identity.parentScriptSha256,
         identity.childScriptSha256,
         identity.workspaceIdentity,
         identity.itemKey,
-        assertWorkflowRunId(identity.rootLineageId),
-        identity.typedInput === undefined ? (identity.input ?? null) : identity.typedInput,
+        lineage,
+        identity.input ?? null,
         identity.items,
-      ]),
-    )
-    .digest("hex");
-  return path.join(lease.stateDir, "checkpoints", identity.typedInput === undefined ? "v3" : "v4", `${digest}.json`);
+      ];
+  const digest = createHash("sha256").update(JSON.stringify(key)).digest("hex");
+  return path.join(lease.stateDir, "checkpoints", typed ? "v4" : "v3", `${digest}.json`);
 }
 
 /**
@@ -349,7 +363,7 @@ function isCompletedCheckpoint(value: unknown): value is WorkflowCompletedCheckp
         "itemKey",
         "rootLineageId",
         "input",
-        ...(record.schema === TYPED_CHECKPOINT_SCHEMA ? ["typedInput"] : []),
+        ...(record.schema === TYPED_CHECKPOINT_SCHEMA ? ["typedInput", "targetKey"] : []),
         "items",
         "childRunId",
         "completedAt",
@@ -357,7 +371,7 @@ function isCompletedCheckpoint(value: unknown): value is WorkflowCompletedCheckp
     ) &&
     (record.schema === CHECKPOINT_SCHEMA || record.schema === TYPED_CHECKPOINT_SCHEMA) &&
     (record.schema === TYPED_CHECKPOINT_SCHEMA
-      ? record.typedInput !== undefined && record.input === undefined
+      ? record.typedInput !== undefined && record.input === undefined && typeof record.targetKey === "string"
       : record.typedInput === undefined) &&
     record.status === "completed" &&
     typeof record.parentScriptSha256 === "string" &&
@@ -387,6 +401,7 @@ function sameCheckpointIdentity(
     (identity.typedInput === undefined
       ? checkpoint.typedInput === undefined
       : checkpoint.typedInput !== undefined &&
+        checkpoint.targetKey === identity.targetKey &&
         canonicalWorkflowJSON(checkpoint.typedInput) === canonicalWorkflowJSON(identity.typedInput)) &&
     JSON.stringify(checkpoint.items) === JSON.stringify(identity.items)
   );

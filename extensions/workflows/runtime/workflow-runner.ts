@@ -856,6 +856,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     parentRunId: runId,
     parentTarget: target,
     parentScriptSha256: scriptIdentity.scriptSha256,
+    sourceRunId: opts.operatorHandoffClaim?.sourceRunId ?? resumeFromRunId,
     coordination: executionCoordination,
     childRuns,
     // Recursion is injected, so the child owner never imports this module and

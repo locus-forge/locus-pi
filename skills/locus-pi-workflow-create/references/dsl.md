@@ -2,11 +2,11 @@
 title: Workflow DSL reference
 type: guide
 status: active
-updated: "2026-10-06T14:26:19Z"
-source_commit: "35b4a1294375"
+updated: "2026-10-06T17:53:00Z"
+source_commit: "94268a7fa802"
 update_event: "review_refresh"
-context: "changes=XL files=34 task=T-147"
-description: "Document dataflow declarations while retaining current readonly schema ports"
+context: "changes=XL task=T-148"
+description: "Explicit readonly JSON input and optional accepted operator context across workflow launches"
 ---
 
 <!-- Generated from docs/workflows/dsl.md by npm run build:catalogs; do not edit. -->
@@ -15,7 +15,48 @@ description: "Document dataflow declarations while retaining current readonly sc
 
 [Workflow documentation](../../../docs/workflows/index.md) · [Create a workflow](../../../docs/workflows/create.md) · [Run a workflow](../../../docs/workflows/running.md) · [Runnable examples](../../../examples/workflows/README.md)
 
-A workflow receives `dsl` and optional exact text `input` in its default async function. Destructure the methods you need; the examples below use that form. `Promise<T>` means await the result. Removed methods retain narrow throwing migration traps; they never resolve user files.
+A workflow receives `dsl` and optional exact text `input`, or an explicitly schema-validated readonly JSON value, in its default async function. Destructure the methods you need; the examples below use that form. `Promise<T>` means await the result. Removed methods retain narrow throwing migration traps; they never resolve user files.
+
+## Typed workflow input
+
+Declare `meta.inputSchema` as a complete literal or one unshadowed top-level literal
+`const` using the [existing JSON schema dialect](../../../docs/workflows/agent-results.md#structured-results-v4).
+Supply explicit `inputValue` through the tool/direct runner, or terminal `--input-json`
+through the command. Input is detached and frozen before callbacks or awaits;
+normalization, compilation and validation finish before import, lease or agent work.
+Unsupported visible schema declarations refuse early. Opaque legacy metadata is
+checked after import and cannot opt into typed entry without static proof.
+
+```js
+export const meta = {
+  name: "typed-review",
+  profile: "dataflow-v1",
+  inputSchema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["task", "ids"],
+    properties: { task: { type: "string" }, ids: { type: "array", items: { type: "string" } } },
+  },
+};
+export default async function run({ agent }, input) {
+  return await agent(`Task: ${input.task}; ids: ${input.ids.join(",")}`, { label: "review" });
+}
+```
+
+Tool: `{name:"typed-review",inputValue:{task:"Review",ids:["A","B"]}}`.
+Command: `/workflows run typed-review --input-json {"task":"Review","ids":["A","B"]}`.
+Missing input, `inputValue:null`, a JSON string and legacy text remain distinct.
+Any own `input` field conflicts with `inputValue`, including `input:undefined`.
+There is no coercion, default insertion or unknown-property stripping. Typed
+input works without a child SDK call on the supported Pi peer floor.
+
+A validated operator continuation preserves the original JSON. Its typed root
+may receive `run(dsl,input,context)`, with absent context on ordinary launches
+and readonly `{operatorAnswer:string}` after an accepted handoff. Guard optional
+context before reading the answer. The answer is ordinary exact plaintext in
+private typed authority, separate from the JSON and bounded presentation;
+existing question/tool policies still apply. Inline and saved children receive
+only explicitly supplied input and do not inherit this context.
 
 ## DSL surface (v0)
 
@@ -244,11 +285,11 @@ export default async function run({ fusion }, input) {
 
 ### workflow
 
-**Signature:** `workflow<T>(subFn: (dsl, input?: string) => Promise<T>, input?: string) -> Promise<T>`. Invoke an inline nested function with the same DSL and return its result; omitted nested input is `undefined`, not automatically the root input. Journals enter/exit but creates no saved child run, independent checkpoint, or new budget. Invalid non-text input and callback errors propagate. **Example:** `await workflow(async ({ agent }, request) => agent(request, { label: "nested-review" }), input)`. Keep the callback inline for standard source.
+**Signature:** `workflow<T>(subFn: (dsl, input?: string) => Promise<T>, input?: string) -> Promise<T>`. Invoke an inline nested function with the same DSL and return its result; omitted nested input is `undefined`, not automatically the root input. Journals enter/exit but creates no saved child run, independent checkpoint, or new budget. The typed overload `workflow(fn,{inputValue,inputSchema})` validates a closed two-field descriptor before calling `fn` with frozen JSON. Other invalid input and callback errors propagate. **Example:** `await workflow(async ({ agent }, request) => agent(request, { label: "nested-review" }), input)`. Keep the callback inline for standard source.
 
 ### invokeWorkflow
 
-**Signature:** `invokeWorkflow({ child | name | scriptPath | packageName, input?, items?, key, keys }) -> Promise<{ status: "completed" | "skipped", key, workspaceDir, runId?, sourceRunId? }>`. Exactly one target selector is required. `child` binds a sibling to the current root source; `name` uses saved-name precedence; `scriptPath` is project-relative; `packageName` requires the exact Package source. `input` is optional semantic text; `items` carries exact work units. `key` identifies this unit and `keys` is the complete frozen unique set. Children inherit the root native workspace; location overrides are rejected. Pass exact agent-file destinations in the same whole input. Completion returns a child run ID; a matching checkpoint returns `skipped` with `sourceRunId`.
+**Signature:** `invokeWorkflow({ child | name | scriptPath | packageName, input?, inputValue?, items?, key, keys }) -> Promise<{ status: "completed" | "skipped", key, workspaceDir, runId?, sourceRunId? }>`. Exactly one target selector is required. `child` binds a sibling to the current root source; `name` uses saved-name precedence; `scriptPath` is project-relative; `packageName` requires the exact Package source. `input` is optional semantic text; explicit `inputValue` requires the child’s own static schema and is validated before checkpoint reuse. `items` carries exact work units. `key` identifies this unit and `keys` is the complete frozen unique set. Children inherit the root native workspace; location overrides are rejected. Pass exact agent-file destinations in the same whole input. Completion returns a child run ID; a matching checkpoint returns `skipped` with `sourceRunId`.
 
 **Example:** `await invokeWorkflow({ child: "review", input, key: "review", keys: ["review"] })`. Do not invent a location or derive resumable keys from fresh model output. Missing selectors, invalid keys, directory overrides, grandchildren, and source cycles fail closed. [Saved-child details](#workspace-and-saved-child-contract) explain checkpointing and shared execution.
 
@@ -394,7 +435,7 @@ Replay reuses answers but never restores filesystem effects. New-format roots ge
 
 `invokeWorkflow()` accepts exactly one source-bound sibling `child`, saved
 `name`, project-relative `scriptPath`, or exact legacy `packageName`, optional
-semantic `input` and exact `items`, one safe item `key`, the complete unique
+semantic `input` or explicit schema-validated `inputValue`, and exact `items`, one safe item `key`, the complete unique
 `keys` list. Directory fields are forbidden: the child inherits the root's native workspace, while agent files use explicit prompt destinations. It starts a real depth-one child with an
 independent run directory, source snapshot, journal, result, and parent lineage.
 `child` resolves `<running-root>/<child>` inside the exact source and folder of

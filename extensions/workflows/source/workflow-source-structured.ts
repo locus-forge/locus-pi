@@ -237,21 +237,7 @@ function workflowTypedEntryIssues(root: SgNode, fn: SgNode): SgNode[] {
     ["identifier", "shorthand_property_identifier"].includes(String(node.kind())) &&
     node.text() === context.text() &&
     standardBindingOf(node, bindings)?.bindingId === owner;
-  function presence(input: SgNode | undefined): boolean | undefined {
-    const condition = unwrapParentheses(input);
-    if (condition?.kind() !== "binary_expression") return undefined;
-    const left = condition.field("left") ?? undefined,
-      right = condition.field("right") ?? undefined;
-    const absent = contextReference(left) ? right : contextReference(right) ? left : undefined;
-    if (
-      (absent?.kind() !== "undefined" && absent?.kind() !== "identifier") ||
-      absent.text() !== "undefined" ||
-      standardBindingOf(absent, bindings) !== undefined
-    )
-      return undefined;
-    const operator = condition.field("operator")?.text();
-    return operator === "!==" ? true : operator === "===" ? false : undefined;
-  }
+  const presence = (input: SgNode | undefined) => workflowOperatorContextPresence(input, contextReference, bindings);
   function guarded(node: SgNode): boolean {
     for (const ancestor of node.ancestors()) {
       if (!["if_statement", "ternary_expression"].includes(String(ancestor.kind()))) continue;
@@ -289,7 +275,10 @@ function workflowTypedEntryIssues(root: SgNode, fn: SgNode): SgNode[] {
   return root
     .findAll({ rule: { any: [{ kind: "identifier" }, { kind: "shorthand_property_identifier" }] } })
     .filter((node) => {
-      if (!contextReference(node) || isStandardBindingOccurrence(node, true)) return false;
+      if (isStandardBindingOccurrence(node, true)) return false;
+      const binding = node.text() === context.text() ? standardBindingOf(node, bindings) : undefined;
+      if (binding !== undefined && node.range().start.index < binding.activationIndex) return true;
+      if (!contextReference(node)) return false;
       const parent = node.parent();
       if (parent?.kind() === "binary_expression" && presence(parent) !== undefined) return false;
       return (
@@ -299,6 +288,29 @@ function workflowTypedEntryIssues(root: SgNode, fn: SgNode): SgNode[] {
         !guarded(parent)
       );
     });
+}
+
+/** Exact optional-context presence fact shared by guarded reads and value classification. */
+export function workflowOperatorContextPresence(
+  input: SgNode | undefined,
+  contextReference: (node: SgNode | undefined) => boolean,
+  bindings: ReturnType<typeof standardLexicalBindings>,
+): boolean | undefined {
+  const condition = unwrapParentheses(input);
+  if (condition?.kind() !== "binary_expression") return undefined;
+  const left = condition.field("left") ?? undefined,
+    right = condition.field("right") ?? undefined;
+  const absent = contextReference(left) ? right : contextReference(right) ? left : undefined;
+  if (
+    (absent?.kind() !== "undefined" && absent?.kind() !== "identifier") ||
+    absent.text() !== "undefined" ||
+    bindings.some(
+      (binding) => binding.name === "undefined" && absent.ancestors().some((scope) => scope.id() === binding.scopeId),
+    )
+  )
+    return undefined;
+  const operator = condition.field("operator")?.text();
+  return operator === "!==" ? true : operator === "===" ? false : undefined;
 }
 
 /** Preserve schema-specific diagnostics; standard callers pass no reference resolver. */

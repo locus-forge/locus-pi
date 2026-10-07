@@ -1,5 +1,7 @@
 import { snapshotWorkflowInput, prepareWorkflowTypedInput, type WorkflowInputValue } from "./workflow-input.js";
 import { workflowSourceInputSchema } from "../source/workflow-source-structured.js";
+import { hasPriorCompletedTypedChild } from "./workflow-launch-binding.js";
+import { workflowTargetIdentityKey } from "./workflow-saved-name.js";
 /**
  * workflow-saved-child.ts — Saved-child owner for one root workflow run.
  *
@@ -234,6 +236,7 @@ export interface SavedChildExecutionOwnerOptions {
   parentRunId: string;
   parentTarget: ResolvedWorkflowTarget;
   parentScriptSha256: string;
+  sourceRunId?: string | undefined;
   coordination: WorkflowRunnerCoordination;
   childRuns: WorkflowChildRunEvidence[];
   /** Recursion stays injected so this module never imports the runner. */
@@ -271,6 +274,10 @@ export class SavedChildExecutionOwner {
       workspaceIdentity: this.options.coordination.workspace.identity,
       itemKey: validated.key,
       rootLineageId: this.options.coordination.checkpointLineageId,
+      targetKey: workflowTargetIdentityKey(source.target, {
+        projectRoot: this.options.projectRoot,
+        resolvedPath: source.path,
+      }),
       ...(input.input === undefined ? {} : { input: input.input }),
       ...(typedInput === undefined ? {} : { typedInput: typedInput.identity }),
       items: validated.items,
@@ -348,11 +355,21 @@ export class SavedChildExecutionOwner {
   }
 
   private reuseCheckpoint(
-    identity: WorkflowCheckpointIdentity,
+    identity: WorkflowCheckpointIdentity & { targetKey: string },
     lifecycle: SavedChildLifecycleOwner,
   ): WorkflowSavedChildResult | undefined {
     const checkpoint = readWorkflowCompletedCheckpoint(this.options.coordination.lease, identity);
-    if (checkpoint === undefined) return undefined;
+    if (checkpoint === undefined) {
+      if (
+        hasPriorCompletedTypedChild({
+          ...identity,
+          projectRoot: this.options.projectRoot,
+          sourceRunId: this.options.sourceRunId,
+        })
+      )
+        throw new Error("typed child completed checkpoint is missing or was downgraded");
+      return undefined;
+    }
     assertWorkflowRootLease(this.options.coordination.lease);
     return lifecycle.recordSkipped(checkpoint);
   }

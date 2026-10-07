@@ -6,7 +6,7 @@ import type {
   StandardValueProvenance,
   StandardLiteralShadow,
 } from "./workflow-source-provenance.js";
-import { structuredRequiredField } from "./workflow-source-structured.js";
+import { structuredRequiredField, workflowOperatorContextPresence } from "./workflow-source-structured.js";
 import { staticObjectKey, unwrapParentheses as unwrapStandardParentheses } from "./workflow-source-literals.js";
 import {
   callCallee,
@@ -14,6 +14,7 @@ import {
   directStandardDslCall,
   isBoundaryInputDefaultExpression,
   standardCallArguments,
+  standardLexicalBindings,
   type StandardDslMethod,
 } from "./workflow-source-bindings.js";
 
@@ -85,7 +86,17 @@ export function standardExpressionProvenance(
         standardExpressionProvenance(node ?? undefined, provenance, dslBindings, literalShadows),
       ),
     );
-    return Object.keys(facts).length === 0 ? undefined : { kind: "opaque-value", ...facts };
+    const contextSelection =
+      value.kind() === "ternary_expression" &&
+      workflowOperatorContextPresence(
+        value.field("condition") ?? undefined,
+        (reference) =>
+          standardExpressionProvenance(reference, provenance, dslBindings, literalShadows)?.operatorContext === true,
+        standardLexicalBindings(value.ancestors().at(-1)!, true),
+      ) !== undefined;
+    return Object.keys(facts).length === 0 && !contextSelection
+      ? undefined
+      : { kind: "opaque-value", ...facts, ...(contextSelection ? { contextSelection: true } : {}) };
   }
   if (value.kind() === "array" || value.kind() === "object") {
     const contents = standardCompositeValueExpressions(value).map((expression) =>
