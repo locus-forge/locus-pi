@@ -2,11 +2,11 @@
 title: Workflow source contract
 type: guide
 status: active
-updated: "2026-10-06T17:57:00Z"
-source_commit: "94268a7fa802"
-update_event: "review_refresh"
-context: "changes=XL task=T-148"
-description: "Teach checked helper graphs and full-source replay identity over current schema authoring"
+updated: "2026-10-07T21:05:26Z"
+source_commit: "f94a891581d1"
+update_event: "user_request"
+context: "changes=XL files=32 task=T-149"
+description: "Point source rules to consolidated authoring approaches"
 ---
 
 # Workflow source contract
@@ -303,7 +303,7 @@ These are all rules enforced for `meta.profile: "standard"`:
 ### Bounded carry and author-owned records
 
 A literal bounded loop is ordinary control flow in any graph, including a fixed
-graph; see the [adaptive card](../../skills/locus-pi-workflow-create/references/adaptive-slices.md)
+graph; see the [adaptive pattern](../../skills/locus-pi-workflow-create/references/agentic-approaches.md#adaptive-slices)
 for re-cut queues.
 A `let` seeded with `[]` may carry a whole opaque list in the same finite literal
 `for` shape described below. List length/indexing schedules work; contents remain
@@ -406,7 +406,7 @@ policy of its own; the reason is stated once in
 fresh-worker rounds retain separate contracts. The standard source grammar does not
 parse model prose. It admits only the literal-schema declaration and bounded consumption
 above, still refusing `validate`, `repair`, `outputTransport` and the removed `handoffs`,
-`output` and `returnVia` options by name. Review the [pattern index](../../skills/locus-pi-workflow-create/references/INDEX.md)
+`output` and `returnVia` options by name. Review the [pattern index](../../skills/locus-pi-workflow-create/references/agentic-approaches.md#choose-an-approach)
 before selecting adaptive slices, fixed, refinement, decomposition or human-gated execution.
 
 The owner contract separately forbids mandatory acknowledgement protocols whose

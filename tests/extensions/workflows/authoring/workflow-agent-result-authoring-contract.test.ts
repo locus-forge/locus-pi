@@ -468,8 +468,11 @@ describe("agent result authoring contract", () => {
     }
     // The adaptive queue lives in a workspace file the queue owner rewrites; source holds no
     // JavaScript copy of it and declares no list result for it.
-    const adaptive = source("skills/locus-pi-workflow-create/references/adaptive-slices.md");
-    for (const sentence of adaptive.split(/(?<=[.;!?])\s+/u)) {
+    const adaptive = source("skills/locus-pi-workflow-create/references/agentic-approaches.md")
+      .split("\n## Adaptive slices\n")[1]
+      ?.split("\n## ")[0];
+    expect(adaptive).toBeDefined();
+    for (const sentence of adaptive!.split(/(?<=[.;!?])\s+/u)) {
       if (/\bqueue\b/iu.test(sentence)) expect(sentence).not.toMatch(/`let`|`\[\]`|handoffs/u);
     }
   });

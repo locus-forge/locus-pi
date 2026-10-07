@@ -20,6 +20,14 @@ function source(relativePath: string): string {
   return readFileSync(path.join(root, relativePath), "utf8");
 }
 
+function sourceSection(relativePath: string, heading: string): string {
+  const text = source(relativePath);
+  const start = text.indexOf(`\n## ${heading}\n`);
+  expect(start, `${relativePath} section ${heading}`).toBeGreaterThanOrEqual(0);
+  const end = text.indexOf("\n## ", start + 1);
+  return text.slice(start, end < 0 ? undefined : end);
+}
+
 function standardSource(run: string, declarations = ""): string {
   return [
     'export const meta = { name: "contract-test", profile: "standard", description: "Contract test." };',
@@ -276,7 +284,10 @@ ${authoring[0] ?? ""}
     expect(design).toContain("Bound costly checker commands");
     expect(design).toContain("exhaustion leaves required evidence incomplete");
     expect(design).toContain("Nonblocking suggestions do not become acceptance criteria");
-    const styles = source("skills/locus-pi-workflow-create/references/authoring-styles.md");
+    const styles = sourceSection(
+      "skills/locus-pi-workflow-create/references/design-and-build.md",
+      "Choose style, detail, size and executors separately",
+    );
     expect(styles).toContain("fixed control skeleton does not require precomputed implementation work");
     expect(styles).toContain("granular per-item or per-file work fixed");
     expect(styles).not.toContain("every exact agent-file destination");
@@ -338,10 +349,13 @@ ${authoring[0] ?? ""}
         expect(snippet, relativePath).not.toMatch(/\b(?:maxToolCalls|timeoutMs)\s*:/u);
       }
     }
-    const card = source("skills/locus-pi-workflow-create/references/fixed-graph.md");
+    const card = sourceSection("skills/locus-pi-workflow-create/references/agentic-approaches.md", "Fixed graph");
     expect(card).toContain("author-known");
     expect(card).toContain("do not encode them as newline/CSV/JSON");
-    const human = source("skills/locus-pi-workflow-create/references/human-continuation.md");
+    const human = sourceSection(
+      "skills/locus-pi-workflow-create/references/agentic-approaches.md",
+      "Human continuation",
+    );
     expect(human).toContain("integration/compatibility");
     expect(human).toContain("Do not label that example standard");
   });
@@ -378,59 +392,8 @@ ${authoring[0] ?? ""}
     expect(source("docs/workflows/agent-results.md")).toContain("## Removed shaped-result options");
   });
 
-  it("ships the graph cards and focused authoring references without empty redirects", () => {
-    const base = "skills/locus-pi-workflow-create/references";
-    const cards = ["fixed-graph.md", "bounded-refinement.md", "decomposition.md", "human-continuation.md"];
-    const index = source(`${base}/INDEX.md`);
-    for (const name of cards) {
-      expect(index).toContain(name);
-      const text = source(`${base}/${name}`);
-      for (const word of ["Use", "Avoid", "Graph", "Cost", "Handoff", "Failure", "Primitives"])
-        expect(text, name).toContain(word);
-      expect(text).toContain(".workflow.mjs");
-    }
-    // The six legacy redirect cards and large-agent-runs.md are gone, not renamed:
-    // a card that only points elsewhere is catalog noise, and fan-out is run-skill territory.
-    const retired = [
-      "sequential-text",
-      "fixed-fan-out",
-      "bounded-review-loop",
-      "bounded-candidate-search",
-      "dynamic-orchestrator-workers",
-      "human-gate",
-      "large-agent-runs",
-    ];
-    expect(readdirSync(path.join(root, base)).sort()).toEqual([
-      "INDEX.md",
-      "adaptive-slices.md",
-      "agentic-approaches.md",
-      "authoring-styles.md",
-      "bounded-refinement.md",
-      "decomposition.md",
-      "design-and-build.md",
-      "dsl.md",
-      "fixed-graph.md",
-      "human-continuation.md",
-      "procedural-briefs.md",
-      "repair-and-continue.md",
-      "source-boundary.md",
-      "structured-results.md",
-    ]);
-    for (const name of retired) expect(index, name).not.toContain(name);
-    // Return contracts refine a graph; the worked example must use the real standard DSL.
-    expect(index).toContain("structured-results.md");
-    const snippets = javascriptDocSnippets(`${base}/structured-results.md`);
-    expect(snippets.length).toBeGreaterThan(0);
-    for (const snippet of snippets) {
-      const workflow = /\bexport\s+default\b/u.test(snippet)
-        ? snippet
-        : standardSource(`export default async function run({ agent }, input) {\n${snippet}\n}`);
-      expect(standardWorkflowSourceShapeErrors(workflow)).toEqual([]);
-    }
-  });
-
   it("distinguishes recorded discovery replay from unsafe rediscovered checkpoint identity", () => {
-    const card = source("skills/locus-pi-workflow-create/references/decomposition.md");
+    const card = sourceSection("skills/locus-pi-workflow-create/references/agentic-approaches.md", "Decomposition");
     expect(card).toContain("dsl.items()");
     expect(card).toContain("exact caller-assigned file");
     expect(card).toContain("prefix");
@@ -482,7 +445,10 @@ ${authoring[0] ?? ""}
   });
 
   it("reviews every paid revision and reports cap/no-progress without a final unreviewed worker", () => {
-    const card = source("skills/locus-pi-workflow-create/references/bounded-refinement.md");
+    const card = sourceSection(
+      "skills/locus-pi-workflow-create/references/agentic-approaches.md",
+      "Bounded refinement",
+    );
     const example = source("extensions/workflows/references/examples/refinement.workflow.mjs");
     expect(card).toContain("3R");
     expect(card).toContain("cap/no-progress");

@@ -105,7 +105,7 @@ session; ordinary missing implementation details remain work, not new approval.
 At exhaustion keep the plan, next step, latest work and uncovered requirements
 as incomplete. A concrete unavailable prerequisite is blocked with its actual
 continuation condition. For reviewed slices and richer final verification, use
-the existing [adaptive card](../../locus-pi-workflow-create/references/adaptive-slices.md).
+the existing [adaptive card](../../locus-pi-workflow-create/references/agentic-approaches.md#adaptive-slices).
 If inspection merely reveals independent units without changing the remaining
 plan, discovery followed by a frozen caller-items launch can be simpler.
 

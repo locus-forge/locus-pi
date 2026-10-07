@@ -22,7 +22,7 @@ Tools: `workflow`, read-only `workflow_check_source`, and opt-in `fusion`. Compa
 At normal interactive heights, `/workflows list` keeps the Project, User, Package, and History tabs directly below the catalog heading. The existing compact projection may omit the heading or put the selected row first when only a few lines fit. Wherever tabs are shown, the active tab uses the shared high-contrast purple selection background. The source view uses the same treatment for its left-to-right Back, Start, Edit, Review, and copy actions. A parent description starts one column to the right of its child's `└` branch, so the description remains attached to the parent instead of reading like a heading for the child. See the cross-extension [TUI visual language](../../docs/tui-design.md).
 
 `/workflows skills` exposes the package's action-named workflow skills to
-external agents. Pi already loads the packaged skills. The command manages
+external agents. Pi already discovers the packaged skills. The command manages
 all four entries, including the ordinary and detailed authoring lessons; the
 [create guide](../../docs/workflows/create.md#choose-an-authoring-route) owns selection and explicit invocations. It manages
 fail-closed symlinks in Codex `.agents/skills` and Claude Code `.claude/skills`;
@@ -64,7 +64,7 @@ Workflow modules execute in the Pi Node.js host and are not sandboxed. Review pr
 - [Operator workflow guide](../../docs/workflows/running.md)
 - [Readable authoring contract](../../docs/workflows/create.md)
 - [Advanced runtime and DSL reference](../../docs/workflows/index.md)
-- [Output acceptance](../../docs/workflows/agent-results.md) — the text and choice result modes, and the
+- [Output acceptance](../../docs/workflows/agent-results.md) — exact text, exact choice and opt-in structured JSON results, and the
   single statement of what the runtime does and does not bound
 - [Packaged examples](../../examples/workflows/README.md)
 - [Manifest](manifest.json)

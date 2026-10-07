@@ -22,7 +22,7 @@ not compulsory templates or runnable names in the Package catalog.
 | [Reflection](reflection.workflow.mjs)                                   | Improve a low-risk explanation through draft, critique and revision                                   | Editorial revision in `document.md`; no independent acceptance claim                                                  |
 | [Parallel investigation + Reflection](parallel-reflection.workflow.mjs) | Independent evidence and reader investigation before synthesis, critique and revision                 | Editorial revision in `document.md`, preserving both investigations in its handoffs                                   |
 
-The primary loop uses the [shared working context](../../../../../skills/locus-pi-workflow-create/references/authoring-styles.md#folder-level-context):
+The primary loop uses the [shared working context](../../../../../skills/locus-pi-workflow-create/references/design-and-build.md#folder-level-context):
 original Task, verified checkout/branch, delegated product root, and an explicit orchestration/evidence folder.
 Only the developer changes product files. It writes `implementation.md`; the reviewer reads it and writes
 only `findings.md`, then returns the actual DSL choice. Corrections reopen the files; source passes short
