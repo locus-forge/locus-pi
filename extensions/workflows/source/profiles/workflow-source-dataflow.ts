@@ -107,7 +107,10 @@ export function dataflowWorkflowSourceDiagnostics(source: string): WorkflowSourc
   );
   const entry = entries[0];
   for (const node of workflowTypedInputIssues(root, entry))
-    errors.add("typed workflow context requires a closed optional port and a proven presence guard", node);
+    errors.add(
+      "typed workflow input requires a plain parameter; context requires a closed optional port and a proven presence guard",
+      node,
+    );
   const bindings = standardLexicalBindings(root, true);
   const bindingOf = (node: SgNode) => standardBindingOf(node, bindings);
   const byId = new Map(declarations.map((node) => [node.id(), node]));

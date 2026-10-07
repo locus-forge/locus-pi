@@ -57,6 +57,38 @@ export default async function runWorkflow(dsl, input) {
 }`;
   const createExecutor = executor(() => "ok");
 
+  it("admits destructuring in fresh trusted JavaScript without granting checked replay proof", async () => {
+    const root = temporaryProject();
+    writeWorkflow(
+      root,
+      "typed",
+      `export const meta={inputSchema:${JSON.stringify(schema)}};
+export default function run(dsl,{target}){return target;}`,
+    );
+    const harness = createHarness(root);
+    const result = await runWorkflowScript({
+      pi: harness.pi,
+      ctx: harness.ctx,
+      signal: new AbortController().signal,
+      name: "typed",
+      inputValue: { target: "fresh" },
+      createExecutor,
+    });
+    expect(result.ok, result.error).toBe(true);
+    expect(result.result).toBe("fresh");
+    const resumed = await runWorkflowScript({
+      pi: harness.pi,
+      ctx: harness.ctx,
+      signal: new AbortController().signal,
+      name: "typed",
+      inputValue: { target: "fresh" },
+      resumeFromRunId: result.runId,
+      createExecutor,
+    });
+    expect(resumed.ok).toBe(false);
+    expect(resumed.error).toMatch(/proven callable coverage/u);
+  });
+
   it("detaches before presentation callbacks and persists typed authority rather than discarding the value", async () => {
     const root = temporaryProject();
     writeWorkflow(root, "typed", source);

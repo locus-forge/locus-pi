@@ -225,6 +225,7 @@ function workflowTypedEntryIssues(root: SgNode, fn: SgNode): SgNode[] {
     return [fn];
   }
   const parameters = standardFunctionParameterNodes(standardFunctionParameters(fn), true);
+  if (parameters[1] !== undefined && parameters[1].kind() !== "identifier") return [parameters[1]];
   const rootEntry = fn.parent()?.kind() === "export_statement" && /^export\s+default\b/u.test(fn.parent()!.text());
   if (parameters.length > (rootEntry ? 3 : 2)) return [parameters.at(-1)!];
   const context = rootEntry ? parameters[2] : undefined;

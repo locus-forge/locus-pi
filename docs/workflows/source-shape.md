@@ -230,6 +230,9 @@ These are all rules enforced for `meta.profile: "standard"`:
   semantic text or JSON proven by static `meta.inputSchema`, never another DSL
   object. Required schema properties and array items supply value facts; local
   objects/functions named `workflow` do not acquire DSL input ownership.
+  Checked root and inline typed inputs use a plain identifier parameter; binding
+  patterns/defaults do not inherit the whole schema. Fresh trusted JavaScript can
+  still destructure validated input, but that does not establish replay coverage.
   Typed-only operator context is optional host input at the root and never
   another DSL or an implicitly forwarded child value. The checked typed root has
   at most three parameters and an identifier context. Read only direct

@@ -214,6 +214,8 @@ export function readWorkflowReplayLog(projectRoot: string, runId: string): Workf
 }
 
 export interface CreateWorkflowReplayControllerOptions {
+  /** Completed typed runs have no unrecorded suffix to execute. */
+  requireRecordedComplete?: boolean;
   /** Only for a journal-verified, non-overlapping serial prefix (including v3).
    *  Crash recovery must not duplicate that confirmed prefix on mismatch. */
   requireRecordedPrefix?: boolean;
@@ -227,7 +229,7 @@ export interface CreateWorkflowReplayControllerOptions {
 
 export function createWorkflowReplayController(
   options: CreateWorkflowReplayControllerOptions,
-): WorkflowReplayController {
+): WorkflowReplayController & { assertComplete(): void } {
   return new FileBackedWorkflowReplayController(options);
 }
 
@@ -241,6 +243,7 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
   readonly #replayEnabled: boolean;
   readonly #sourceScriptChanged: boolean;
   readonly #requireRecordedPrefix: boolean;
+  readonly #requireRecordedComplete: boolean;
   #readCursor = 0;
   readonly #valueCursors = new Map<WorkflowReplayValueKind, number>();
   #diverged = false;
@@ -271,6 +274,9 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
     this.#replayEnabled = options.recorded !== undefined;
     this.#sourceScriptChanged = options.sourceScriptChanged === true;
     this.#requireRecordedPrefix = options.requireRecordedPrefix === true;
+    this.#requireRecordedComplete = options.requireRecordedComplete === true;
+    if (this.#requireRecordedComplete && options.recorded === undefined)
+      throw new Error("Completed typed replay requires its recorded execution");
     const agents = new Map<number, WorkflowReplayAgentEntry | undefined>();
     let extent = 0;
     for (const entry of recorded) {
@@ -417,6 +423,16 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
     };
   }
 
+  assertComplete(): void {
+    if (!this.#requireRecordedComplete) return;
+    if (this.#strictRefusal !== undefined) throw new Error(this.#strictRefusal);
+    if (
+      this.#readCursor !== this.#recordedAgentExtent ||
+      [...this.#recordedValues].some(([kind, rows]) => (this.#valueCursors.get(kind) ?? 0) !== rows.size)
+    )
+      throw new Error("Completed typed replay ended before consuming its recorded execution");
+  }
+
   /** Every known refusal closes reuse before throwing or returning to trusted callers. */
   #refusePrefix(ordinal: number, node: string | undefined, reason: WorkflowReplayMissReason): void {
     this.#diverged = true;
@@ -424,8 +440,8 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
       this.#divergedAtCall = ordinal;
       this.#divergedAtNode = node;
     }
-    if (this.#requireRecordedPrefix && ordinal < this.#recordedAgentExtent)
-      this.#strictRefusal ??= `Interrupted recovery refused prefix divergence at call ${ordinal}: ${reason}`;
+    if (this.#requireRecordedComplete || (this.#requireRecordedPrefix && ordinal < this.#recordedAgentExtent))
+      this.#strictRefusal ??= `${this.#requireRecordedComplete ? "Completed typed replay" : "Interrupted recovery"} refused prefix divergence at call ${ordinal}: ${reason}`;
   }
 
   #append(entry: WorkflowReplayEntry): void {
@@ -464,35 +480,17 @@ function parseReplayEntry(value: unknown): WorkflowReplayEntry | undefined {
     // Unknown contract-version types cannot collapse into the legacy plain-text reading.
     if (record.rcv !== undefined && (typeof record.rcv !== "number" || !Number.isInteger(record.rcv))) return undefined;
     const rcv = record.rcv === undefined ? {} : { rcv: record.rcv as number };
-    if (record.ok === true) {
-      return typeof record.text === "string"
-        ? {
-            v: record.v,
-            seq: record.seq,
-            kind: "agent",
-            ...node,
-            key: record.key,
-            ...rcv,
-            ok: true,
-            text: record.text,
-            ...(record.structuredReceipt === undefined
-              ? {}
-              : { structuredReceipt: immutableJSON(record.structuredReceipt) as unknown as AgentStructuredReceipt }),
-          }
-        : undefined;
-    }
-    if (record.ok === false) {
-      return {
-        v: record.v,
-        seq: record.seq,
-        kind: "agent",
-        ...node,
-        key: record.key,
-        ...rcv,
-        ok: false,
-      };
-    }
-    return undefined;
+    const identity = { v: record.v, seq: record.seq, kind: "agent", ...node, key: record.key, ...rcv } as const;
+    if (record.ok === false) return { ...identity, ok: false };
+    if (record.ok !== true || typeof record.text !== "string") return undefined;
+    return {
+      ...identity,
+      ok: true,
+      text: record.text,
+      ...(record.structuredReceipt === undefined
+        ? {}
+        : { structuredReceipt: immutableJSON(record.structuredReceipt) as unknown as AgentStructuredReceipt }),
+    };
   }
   if (record.kind !== "clock" && record.kind !== "random") return undefined;
   if (typeof record.value !== "number" || !Number.isFinite(record.value)) return undefined;

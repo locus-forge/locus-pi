@@ -211,7 +211,11 @@ export function assertCompletedTypedReplayEvidence(
     (raw !== "" && !raw.endsWith("\n")) ||
     (raw === "" && valuesPossible) ||
     ["agent", "clock", "random"].some((kind) =>
-      recorded.filter((entry) => entry.kind === kind).some((entry, index) => entry.seq !== index),
+      recorded
+        .filter((entry) => entry.kind === kind)
+        .map((entry) => entry.seq)
+        .sort((a, b) => a - b)
+        .some((sequence, index) => sequence !== index),
     )
   )
     throw new Error("typed input replay evidence is missing, damaged or incomplete");

@@ -255,6 +255,23 @@ export function hasPriorCompletedTypedChild(options: {
       )
     )
       throw new Error("typed child navigation is malformed");
+    const journal = readWorkflowRunJournalState(projectRoot, sourceId, parentDir);
+    if (journal.diagnostics.length > 0) throw new Error("typed child prior journal is damaged");
+    const runtimeLogs = journal.lines.filter((line) => line.kind === "log" && line.source === "runtime");
+    const endPrefix = `[workflow:child-end] key=${JSON.stringify(itemKey)} runId=`;
+    for (const { message } of runtimeLogs) {
+      if (!message?.startsWith(endPrefix) || !message.endsWith(" status=completed")) continue;
+      const runId = assertWorkflowRunId(message.slice(endPrefix.length, -" status=completed".length));
+      const startPrefix = `[workflow:child-start] key=${JSON.stringify(itemKey)} runId=${runId} childScriptSha256=`;
+      const start = runtimeLogs.find((row) => row.message?.startsWith(startPrefix));
+      if (start === undefined) throw new Error("typed child completed journal has no source-bound start");
+      refs.push({
+        key: itemKey,
+        status: "completed",
+        runId,
+        childScriptSha256: start.message!.slice(startPrefix.length),
+      });
+    }
     for (const ref of refs) {
       if (ref.key !== itemKey || !["completed", "skipped"].includes(ref.status)) continue;
       const childId = assertWorkflowRunId(ref.status === "skipped" ? ref.sourceRunId : ref.runId);
@@ -304,16 +321,11 @@ export function hasPriorCompletedTypedChild(options: {
     const continuation = isRecord(raw.continuation) ? raw.continuation : undefined;
     if (resume === (raw.continuation !== undefined)) throw new Error("typed child prior ancestry is missing or mixed");
     const next = assertWorkflowRunId(resume ? raw.resumeFromRunId : continuation?.originRunId);
-    const journal = readWorkflowRunJournalState(projectRoot, sourceId, parentDir);
     if (
-      journal.diagnostics.length > 0 ||
-      !journal.lines.some(
-        (line) =>
-          line.kind === "log" &&
-          line.source === "runtime" &&
-          (resume
-            ? line.resumeFromRunId === next
-            : canonicalWorkflowJSON(line.continuation ?? null) === canonicalWorkflowJSON(raw.continuation)),
+      !runtimeLogs.some((line) =>
+        resume
+          ? line.resumeFromRunId === next
+          : canonicalWorkflowJSON(line.continuation ?? null) === canonicalWorkflowJSON(raw.continuation),
       )
     )
       throw new Error("typed child prior ancestry journal is unproven");

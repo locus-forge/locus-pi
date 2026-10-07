@@ -71,7 +71,7 @@ import {
 } from "./workflow-journal.js";
 import type { WorkflowRunResultEnvelope, WorkflowRunSummary } from "./workflow-journal.js";
 import type { ResolvedWorkflowTarget } from "./workflow-discovery.js";
-import { createWorkflowReplayController, type WorkflowReplayController } from "./workflow-replay.js";
+import { createWorkflowReplayController } from "./workflow-replay.js";
 import { admitWorkflowRun } from "./workflow-run-admission.js";
 import {
   describeWorkflowReplayPlan,
@@ -388,7 +388,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   let resumeSourceBinding: WorkflowResumeSourceBinding | undefined;
   let interruptedRecovery = false;
   let replayPlan: WorkflowReplayPlan | undefined;
-  let replayController: WorkflowReplayController | undefined;
+  let replayController: ReturnType<typeof createWorkflowReplayController> | undefined;
   let resourceLoader: WorkflowResourceLoader | undefined;
   let workspaceManager: WorkflowWorkspaceManager | undefined;
   let runtime: WorkflowRuntime | undefined;
@@ -764,6 +764,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     replayController = createWorkflowReplayController({
       runDir,
       ...(interruptedRecovery ? { requireRecordedPrefix: true } : {}),
+      ...(replayPlan.requireRecordedComplete ? { requireRecordedComplete: true } : {}),
       ...(replayPlan.recorded === undefined ? {} : { recorded: replayPlan.recorded }),
       ...(replayPlan.sourceScriptChanged === true ? { sourceScriptChanged: true } : {}),
     });
@@ -1031,6 +1032,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     // that last script-owned callback, then enter the synchronous persistence
     // path without yielding. Read-only mode alone is not immutable to the owner.
     verifyWorkflowScriptSnapshot(scriptIdentity);
+    replayController?.assertComplete();
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     return failExecution(error);

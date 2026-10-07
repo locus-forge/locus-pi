@@ -120,7 +120,10 @@ export function standardWorkflowSourceShapeDiagnostics(source: string): Workflow
   for (const node of workflowTypedInputIssues(root, runEntry))
     diagnostics
       .sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.policy)
-      .add("typed workflow context requires a closed optional port and a proven presence guard", node);
+      .add(
+        "typed workflow input requires a plain parameter; context requires a closed optional port and a proven presence guard",
+        node,
+      );
   validateStandardStatements(runEntry, diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.statement, runEntry ?? root));
   validateStandardDependencies(root, diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.import, root));
   const structured = validateStandardOwnedPolicy(

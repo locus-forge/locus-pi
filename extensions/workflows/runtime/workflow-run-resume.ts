@@ -48,6 +48,7 @@ import {
 } from "./workflow-replay.js";
 import { readWorkflowRunTextFile } from "./workflow-run-layout.js";
 import { assertCompletedTypedReplayEvidence } from "./workflow-interrupted-recovery.js";
+import { projectWorkflowDisposition } from "./workflow-outcome.js";
 import {
   isPostCodeReviewTargetProjection,
   workflowTargetIdentityKey,
@@ -306,6 +307,7 @@ export interface WorkflowReplayPlan {
   record: boolean;
   /** Recorded entries to replay from. Present only when replay is active. */
   recorded?: readonly WorkflowReplayEntry[];
+  requireRecordedComplete?: true;
   sourceRunId?: string;
   refusedReason?: WorkflowReplayRefusalReason;
   notRecordedReason?: WorkflowReplayNotRecordedReason;
@@ -392,9 +394,14 @@ export function planWorkflowReplay(input: PlanWorkflowReplayInput): WorkflowRepl
   // recorded node name mandatory for the rest of the run.
   const sourceScriptChanged = sourceSha256 !== scriptIdentity.scriptSha256;
   const recorded = readWorkflowReplayLog(projectRoot, resumeFromRunId);
-  if (sourceResult.typedInput !== undefined && input.interruptedRecovery !== true) {
+  if (
+    sourceResult.typedInput !== undefined &&
+    input.interruptedRecovery !== true &&
+    projectWorkflowDisposition({ ...sourceResult, ok: sourceResult.ok === true, result: sourceResult.result })
+      .status === "completed"
+  ) {
     assertCompletedTypedReplayEvidence(projectRoot, resumeFromRunId, scriptIdentity, recorded);
-    if (recorded.length === 0) return { record, recorded, sourceRunId: resumeFromRunId };
+    return { record, recorded, sourceRunId: resumeFromRunId, requireRecordedComplete: true };
   }
   if (recorded.length === 0) return refuse("no-recorded-calls");
   return { record, recorded, sourceRunId: resumeFromRunId, ...(sourceScriptChanged ? { sourceScriptChanged } : {}) };

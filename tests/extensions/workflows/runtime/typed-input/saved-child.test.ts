@@ -28,6 +28,9 @@ it.each([
   "different-key",
   "resume-of-resume",
   "resume-missing",
+  "navigation-delete",
+  "navigation-empty",
+  "navigation-failed",
   "navigation-null",
   "navigation-mixed",
   "navigation-status",
@@ -92,6 +95,9 @@ it.each([
     "missing",
     "downgrade-missing",
     "resume-missing",
+    "navigation-delete",
+    "navigation-empty",
+    "navigation-failed",
     "navigation-null",
     "navigation-mixed",
     "navigation-status",
@@ -102,6 +108,9 @@ it.each([
   if (missing) unlinkSync(checkpoint);
   if (mode.startsWith("navigation-")) {
     const result = JSON.parse(readFileSync(workflowResultFile(first.runDir), "utf8"));
+    if (mode === "navigation-delete") delete result.childRuns;
+    if (mode === "navigation-empty") result.childRuns = [];
+    if (mode === "navigation-failed") result.childRuns[0].status = "failed";
     if (mode === "navigation-null") result.childRuns = null;
     if (mode === "navigation-mixed") result.childRuns.push(null);
     if (mode === "navigation-status") result.childRuns[0].status = "unknown";
