@@ -5,12 +5,12 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeWorkflowReturnContract,
   workflowReturnInstructions,
-} from "../../../../extensions/workflows/runtime/workflow-return.js";
+} from "../../../../../extensions/workflows/runtime/workflow-return.js";
 import {
   orchestrationOnlyWorkflowSourceShapeDiagnostics,
   standardWorkflowSourceShapeDiagnostics,
-} from "../../../../extensions/workflows/tool/workflow-source-shape.js";
-import { runStarter } from "./starters/starter-fixture.js";
+} from "../../../../../extensions/workflows/tool/workflow-source-shape.js";
+import { runStarter } from "./starter-fixture.js";
 
 const starterPath = "extensions/workflows/references/examples/starters/evaluator-optimizer.workflow.mjs";
 const lessons = [
