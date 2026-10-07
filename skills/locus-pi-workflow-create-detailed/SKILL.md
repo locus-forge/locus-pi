@@ -17,7 +17,7 @@ Workflow design is separate, and a proposal alone does not authorize implementat
 Before source, read [Design → review → Build](../locus-pi-workflow-create/references/design-and-build.md).
 Write/review `.locus-pi/workflows/<name>/<name>.design.md`; build exactly its `Entries`, not an implicit root.
 The first example implements a Task, reviews it and allows one correction followed by fresh review.
-Read [working context](../locus-pi-workflow-create/references/authoring-styles.md#folder-level-context) first:
+Read [working context](../locus-pi-workflow-create/references/design-and-build.md#folder-level-context) first:
 
 ```js
 export const meta = {
@@ -69,7 +69,7 @@ Both reopen exact files. Source routes `choice`, never report text.
 Keep the Task authoritative; avoid changed paraphrases. Parent context is absent.
 Assign exact shared handoff and Task-required output paths; reuse them for reads. Implementation actors choose internal files in assigned product roots, subject to narrower Task bounds.
 Children use tools; source never parses files, JSON or prose.
-Read [structured results](../locus-pi-workflow-create/references/structured-results.md).
+Read [structured results](../locus-pi-workflow-create/references/source-boundary.md#structured-results).
 Before source, read the installed [DSL/API reference](../locus-pi-workflow-create/references/dsl.md#dsl-surface-v0):
 Read selected method signatures/options and availability; runtime support is not source permission.
 
@@ -81,8 +81,8 @@ change remaining work; reassess even after the last step. Editorial critique alo
 Independent per-item inspect → verify uses `pipeline(items(), ...)`; structured caller items are required.
 Cross-source synthesis waits for all reports, with separate writer paths and one merge owner.
 For reuse read DSL `workflow()` versus saved `invokeWorkflow()`; saved grandchildren are refused.
-Choose the relevant [semantic guide](../locus-pi-workflow-create/references/agentic-approaches.md)
-and [card](../locus-pi-workflow-create/references/INDEX.md); read only selected sections. Leave methods to children;
+Read only the relevant semantic and execution sections in
+[the approach guide](../locus-pi-workflow-create/references/agentic-approaches.md#choose-an-approach). Leave methods to children;
 read the [procedural case](references/worked-decisions.md#brief-detail-with-a-real-dependency) only for a real dependency.
 
 ## Review, Build and report honestly

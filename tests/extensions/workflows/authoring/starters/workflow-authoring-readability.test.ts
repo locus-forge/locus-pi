@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -27,6 +27,14 @@ const moduleSource = (body: string, declarations = ""): string =>
     `export default async function run({ agent }, input) {\n${body}\n}`,
   ].join("\n");
 
+function sourceSection(relativePath: string, heading: string): string {
+  const text = source(relativePath);
+  const start = text.indexOf(`\n## ${heading}\n`);
+  expect(start, `${relativePath} section ${heading}`).toBeGreaterThanOrEqual(0);
+  const end = text.indexOf("\n## ", start + 1);
+  return text.slice(start, end < 0 ? undefined : end);
+}
+
 function checkSource(text: string): void {
   expect(standardWorkflowSourceShapeDiagnostics(text)).toEqual([]);
   expect(orchestrationOnlyWorkflowSourceShapeDiagnostics(text)).toEqual([]);
@@ -34,6 +42,81 @@ function checkSource(text: string): void {
 }
 
 describe("authoring readability without changing prompt or input values", () => {
+  it("ships six responsibility-owned files with complete execution sections and checked result examples", () => {
+    const base = "skills/locus-pi-workflow-create/references";
+    const approachPath = `${base}/agentic-approaches.md`;
+    const selection = sourceSection(approachPath, "Choose an approach");
+    const sections = [
+      ["Fixed graph", "fixed-graph"],
+      ["Bounded refinement", "bounded-refinement"],
+      ["Decomposition", "decomposition"],
+      ["Human continuation", "human-continuation"],
+    ];
+    for (const [heading, anchor] of sections) {
+      expect(selection).toContain(`](#${anchor})`);
+      const text = sourceSection(approachPath, heading!);
+      for (const word of ["Use", "Avoid", "Graph", "Cost", "Handoff", "Failure", "Primitives"])
+        expect(text, heading).toContain(word);
+      expect(text).toContain(".workflow.mjs");
+    }
+    const adaptive = sourceSection(approachPath, "Adaptive slices");
+    expect(selection).toContain("](#adaptive-slices)");
+    for (const contract of [
+      "queue owner rewrites an exact caller-assigned queue file whole",
+      "Source never reads the file",
+      "Derive limits from the task",
+      "incomplete required outcome remains non-successful",
+      'result: "report"',
+      "adaptive-design.workflow.mjs",
+      "adaptive-slices.workflow.mjs",
+    ])
+      expect(adaptive).toContain(contract);
+
+    expect(readdirSync("skills/locus-pi-workflow-create").sort()).toEqual(["SKILL.md", "references"]);
+    const references = [
+      "agentic-approaches.md",
+      "design-and-build.md",
+      "dsl.md",
+      "repair-and-continue.md",
+      "source-boundary.md",
+    ];
+    expect(readdirSync(base).sort()).toEqual(references);
+    for (const name of references) expect(source(`${base}/${name}`).split("\n").length, name).toBeLessThan(600);
+
+    for (const name of [
+      "INDEX.md",
+      "authoring-styles.md",
+      "procedural-briefs.md",
+      "structured-results.md",
+      "fixed-graph.md",
+      "bounded-refinement.md",
+      "adaptive-slices.md",
+      "decomposition.md",
+      "human-continuation.md",
+      "sequential-text",
+      "fixed-fan-out",
+      "bounded-review-loop",
+      "bounded-candidate-search",
+      "dynamic-orchestrator-workers",
+      "human-gate",
+      "large-agent-runs",
+    ])
+      expect(selection, name).not.toContain(name);
+
+    // The same result examples remain in their consumer-boundary owner and use the real standard DSL.
+    expect(selection).toContain("source-boundary.md#structured-results");
+    const snippets = [
+      ...sourceSection(`${base}/source-boundary.md`, "Structured results").matchAll(
+        /```(?:js|javascript|mjs)\n([\s\S]*?)```/gu,
+      ),
+    ].map((match) => match[1]!);
+    expect(snippets).toHaveLength(2);
+    for (const snippet of snippets) {
+      const workflow = /\bexport\s+default\b/u.test(snippet) ? snippet : moduleSource(snippet);
+      checkSource(workflow);
+    }
+  });
+
   it("keeps requested SVG work in its optional owner while preserving its artifact and visual safeguards", () => {
     const manual = source("docs/workflows/authoring.md");
     const appendixStart = manual.indexOf("## Optional diagram appendix");
@@ -92,13 +175,13 @@ describe("authoring readability without changing prompt or input values", () => 
       'returns `{ ok: false, status: "failed" }`',
     ])
       expect(prose).toContain(requirement);
-    const index = source("skills/locus-pi-workflow-create/references/INDEX.md").replace(/\s+/gu, " ");
+    const index = source("skills/locus-pi-workflow-create/references/agentic-approaches.md").replace(/\s+/gu, " ");
     expect(index).toContain("Read only the selected semantic explanation and the execution card needed");
     expect(index).toContain("do not reread another copy");
   });
 
   it("owns width at authoring time with explicit byte-preservation exceptions and no runtime formatter", () => {
-    const styles = source("skills/locus-pi-workflow-create/references/authoring-styles.md").replace(/\s+/gu, " ");
+    const styles = source("skills/locus-pi-workflow-create/references/design-and-build.md").replace(/\s+/gu, " ");
     for (const requirement of [
       "120 Unicode code points, including indentation",
       "not a cap on answer length",
@@ -114,7 +197,23 @@ describe("authoring readability without changing prompt or input values", () => 
     const canonical = source(starterPath);
     const modules: Array<{ file: string; text: string }> = [{ file: starterPath, text: canonical }];
     for (const file of lessons) {
-      const examples = [...source(file).matchAll(/```(?:js|javascript|mjs)\n([\s\S]*?)```/gu)]
+      const text = source(file);
+      if (file.startsWith("skills/")) {
+        const firstExample = text.indexOf("```js\n");
+        const approachSelection = text.indexOf(
+          "## " +
+            (file.includes("create-detailed") ? "Work through the task's choices" : "Choose stages from dependencies"),
+        );
+        expect(firstExample).toBeGreaterThan(0);
+        expect(approachSelection).toBeGreaterThan(firstExample);
+        for (const sharedSection of [
+          "design-and-build.md#folder-level-context",
+          "source-boundary.md#structured-results",
+          "agentic-approaches.md#choose-an-approach",
+        ])
+          expect(text).toContain(sharedSection);
+      }
+      const examples = [...text.matchAll(/```(?:js|javascript|mjs)\n([\s\S]*?)```/gu)]
         .map((match) => match[1]!)
         .filter((text) => /name:\s*"evaluator-optimizer"/u.test(text));
       expect(examples, file).toHaveLength(1);

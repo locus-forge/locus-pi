@@ -148,13 +148,13 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
       `capability isolation. A canonical folder <name>/ may own <name>.workflow.mjs plus direct child entries addressable as <name>/<child>, or may be group-only ` +
       `with direct children and no runnable root; the nearest Project namespace wins as a whole, then User, then Package. Existing flat Project/User files remain ` +
       `standalone compatibility entries. The DSL orchestrates sub-agents; bare agent() starts a clean child, while an explicit agent name selects a project or ` +
-      `user profile. agent() returns exact non-empty child text or a runtime-owned exact choice, while parallel/pipeline provide fail-closed grouping. A root may ` +
+      `user profile. agent() returns exact non-empty child text by default, one runtime-owned exact choice with choice, or immutable JSON with explicit schema; parallel/pipeline provide fail-closed grouping. A root may ` +
       `invoke one source-bound sibling with invokeWorkflow({ child }); child work shares cancellation, concurrency, physical-call budget, workspace, and durable ` +
       `item checkpoints. Legacy script strings normalize to name or path; arbitrary inline JavaScript is not supported. To AUTHOR a new workflow, use the ` +
       `packaged \`locus-pi-workflow-create\` skill: a raw request writes and reviews .locus-pi/workflows/<name>/<name>.design.md before writing exactly the ` +
       `design-declared entries in the same turn (a declared \`runnable root\` includes the root; \`group-only\` omits it); explicit design-only wording pauses ` +
       `before source, while \`Build design: <exact path>\` and \`Build approved design: <exact path>\` remain build-only forms. Create-only stops at checked source; authorized create-and-run hands it to locus-pi-workflow-run for execution and terminal evidence. ` +
-      ` Substantive implementation defaults to adaptive slices with owner re-cutting and outcome-led briefs; fixed graphs are explicit alternatives. The contract is skills/locus-pi-workflow-create/SKILL.md → skills/locus-pi-workflow-create/references/source-boundary.md → docs/workflows/index.md.`,
+      ` Known stages use a fixed graph or bounded work/review/correction loop; use adaptive slices when observations change the remaining work. Brief children with outcomes and exact handoffs. The authoring route is skills/locus-pi-workflow-create/SKILL.md → skills/locus-pi-workflow-create/references/dsl.md for API → skills/locus-pi-workflow-create/references/source-boundary.md for source rules; docs/workflows/index.md owns topical details.`,
     parameters: WorkflowParams,
     prepareArguments: (args) => {
       const input = typeof args === "object" && args !== null ? snapshotWorkflowInput(args as WorkflowInputFields) : {};

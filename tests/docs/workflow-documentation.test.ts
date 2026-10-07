@@ -103,7 +103,13 @@ describe("installed workflow documentation ownership", () => {
   });
 
   it("routes machine-visible contract prose to the same public owners", () => {
-    expect(read("extensions/workflows/tool/workflow-tool.ts")).toContain("docs/workflows/index.md");
+    const workflowTool = read("extensions/workflows/tool/workflow-tool.ts");
+    for (const owner of [
+      "skills/locus-pi-workflow-create/references/dsl.md",
+      "skills/locus-pi-workflow-create/references/source-boundary.md",
+      "docs/workflows/index.md",
+    ])
+      expect(workflowTool).toContain(owner);
     for (const file of ["docs/workflows/budgets.md", "extensions/workflows/manifest.json"])
       expect(read(file), file).toContain(workflowLaunchDefaults);
     expect(read("extensions/workflows/manifest.json")).not.toContain(

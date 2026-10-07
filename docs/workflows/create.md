@@ -4,11 +4,11 @@ type: guide
 status: active
 owner: locus-pi maintainers
 tags: [workflows, authoring]
-updated: "2026-10-06T12:27:00Z"
-source_commit: "fee5f591caaf"
+updated: "2026-10-07T21:05:26Z"
+source_commit: "f94a891581d1"
 update_event: "user_request"
-context: "bounded schema authoring on the standard-tool contract"
-description: "Design, review and build workflow source with checked result contracts."
+context: "changes=XL files=32 task=T-149"
+description: "Route working context and patterns through consolidated skill sections"
 ---
 
 # Create a workflow with an agent
@@ -91,7 +91,7 @@ Start with a sequential implementer/reviewer loop. The developer owns product ch
 artifact; the reviewer writes only its findings artifact and returns the next action. One correction is
 illustrative: choose a Task-derived bound. Every correction is reviewed before acceptance.
 
-Supply the original Task plus [verified working context and exact paths](../../skills/locus-pi-workflow-create/references/authoring-styles.md#folder-level-context)
+Supply the original Task plus [verified working context and exact paths](../../skills/locus-pi-workflow-create/references/design-and-build.md#folder-level-context)
 as semantic input. The native child already receives actual pwd and source project root. Authoring adds
 verified branch, Task source, product root and a separate orchestration/evidence folder. It does not add a
 solution or parse a new input protocol.
@@ -189,7 +189,7 @@ The [design contract](../../skills/locus-pi-workflow-create/references/design-an
 owns author review and the final comparison with actual source. It does not require a separate
 design-review agent. Retain independent review where required by the Task or authoring workflow.
 Create SVG only on explicit request; the [optional appendix](authoring.md#workflow-diagram-contract)
-contains its checks. The [readability rule](../../skills/locus-pi-workflow-create/references/authoring-styles.md#text-readability)
+contains its checks. The [readability rule](../../skills/locus-pi-workflow-create/references/design-and-build.md#text-readability)
 wraps new author-owned prose to 120 columns while preserving frozen Task/input bytes.
 
 The authoring `.design.md` describes the workflow graph. In the adaptive references,
@@ -311,9 +311,9 @@ The full statement, including how budgets and unsupported capabilities behave, i
 
 ### Use the references
 
-The [approach index](../../skills/locus-pi-workflow-create/references/INDEX.md)
+The [approach index](../../skills/locus-pi-workflow-create/references/agentic-approaches.md#choose-an-approach)
 starts from task needs and maps them to supported graph forms. The
-[adaptive pattern](../../skills/locus-pi-workflow-create/references/adaptive-slices.md)
+[adaptive pattern](../../skills/locus-pi-workflow-create/references/agentic-approaches.md#adaptive-slices)
 links executable design and implementation examples. They are teaching sources,
 not names installed in the Package command catalog. Copy and adapt them into
 `.locus-pi/workflows/<name>/` through the authoring skill. Match filenames,

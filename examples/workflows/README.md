@@ -140,9 +140,8 @@ The [complete DSL reference](../../docs/workflows/dsl.md) describes the availabl
 ## Patterns to adapt
 
 Start with an [ordinary or detailed authoring lesson](../../docs/workflows/create.md#choose-an-authoring-route),
-then use the [authoring approach index](../../skills/locus-pi-workflow-create/references/INDEX.md)
-starts from task needs; the [semantic guide](../../skills/locus-pi-workflow-create/references/agentic-approaches.md)
-explains feedback, planning and composition before graph selection. The
+then use the [authoring approach index](../../skills/locus-pi-workflow-create/references/agentic-approaches.md#choose-an-approach)
+to select a graph from task needs. The same guide explains feedback, planning and composition. The
 [small starter guide](../../extensions/workflows/references/examples/starters/README.md)
 shows how to simplify and adapt six complete modules. The teaching modules under
 `extensions/workflows/references/examples/` ship with the package but are separate

@@ -11,6 +11,10 @@ export function verifyInstalledWorkflowDocs(packageRoot: string, temporaryRoot: 
   );
   const manual = realpathSync(path.join(packageRoot, "docs/workflows/index.md"));
   expect(readFileSync(manual, "utf8")).toContain("## What belongs here");
+  for (const file of ["docs/workflows/dsl.md", "skills/locus-pi-workflow-create/references/dsl.md"]) {
+    expect(packedFiles, `${file}: version-matched installed DSL`).toContain(file);
+    expect(readFileSync(path.join(packageRoot, file), "utf8")).toContain("### invokeWorkflow");
+  }
   expect(WORKFLOW_SKILL_NAMES).toEqual([
     "locus-pi-workflow-create",
     "locus-pi-workflow-create-detailed",
@@ -97,30 +101,44 @@ export function installedSkillSelectionScript(packageRoot: string, temporaryRoot
       const { DefaultResourceLoader, SettingsManager } = await import("@earendil-works/pi-coding-agent");
       const { mkdirSync, readFileSync, realpathSync } = await import("node:fs");
       const path = await import("node:path");
-      const root = ${JSON.stringify(packageRoot)};
+      const root = realpathSync(${JSON.stringify(packageRoot)});
       const cwd = ${JSON.stringify(path.join(temporaryRoot, "pi-consumer"))};
       mkdirSync(cwd);
       mkdirSync(path.join(cwd, ".git")); // Bound project discovery before the separate managed-host fixtures.
-      const names = ["locus-pi-workflow-create", "locus-pi-workflow-create-detailed"];
-      // Selection filters discovery, not package contents: test each entry in isolation, then together.
-      for (const selection of [...names.map((name) => [name]), names]) {
-        const agentDir = path.join(cwd, selection.join("+"));
+      const names = ${JSON.stringify(WORKFLOW_SKILL_NAMES)};
+      const authoringNames = names.filter((name) => name.startsWith("locus-pi-workflow-create"));
+      const canonical = realpathSync(path.join(root, "docs/workflows/dsl.md"));
+      if (!readFileSync(canonical, "utf8").includes("### invokeWorkflow"))
+        throw new Error("Incomplete canonical installed DSL");
+      // Omission discovers all four entries; [] disables them. Individual selection preserves sibling references.
+      const selections = [undefined, [], ...authoringNames.map((name) => [name]), authoringNames];
+      for (const [index, selection] of selections.entries()) {
+        const expectedNames = selection ?? names;
+        const agentDir = path.join(cwd, String(index));
         mkdirSync(agentDir);
         const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager: SettingsManager.inMemory({
-          packages: [{ source: root, extensions: [], skills: selection.map((name) => "skills/" + name + "/SKILL.md") }],
+          packages: [{ source: root, extensions: [], ...(selection === undefined ? {} : {
+            skills: selection.map((name) => "skills/" + name + "/SKILL.md"),
+          }) }],
         }) });
         await loader.reload();
-        const skills = loader.getSkills().skills;
-        if (JSON.stringify(skills.map((skill) => skill.name).sort()) !== JSON.stringify([...selection].sort()))
-          throw new Error("Unexpected selected skill discovery: " + JSON.stringify(skills.map((skill) => skill.name)));
+        const { skills, diagnostics } = loader.getSkills();
+        if (diagnostics.length) throw new Error("Installed skill diagnostics: " + JSON.stringify(diagnostics));
+        if (JSON.stringify(skills.map((skill) => skill.name).sort()) !== JSON.stringify([...expectedNames].sort()))
+          throw new Error("Unexpected skill discovery for profile " + index + ": " + JSON.stringify(skills.map((skill) => skill.name)));
         for (const skill of skills) {
           const entry = realpathSync(skill.filePath);
           if (!entry.startsWith(root + path.sep)) throw new Error("Skill escaped the installed package");
           const text = readFileSync(entry, "utf8");
+          const manualTarget = text.split("[workflow manual](")[1]?.split(")")[0];
+          if (!manualTarget || realpathSync(path.resolve(path.dirname(entry), manualTarget)) !== path.join(root, "docs/workflows/index.md"))
+            throw new Error("Skill manual link does not reach the installed package: " + skill.name);
+          if (!authoringNames.includes(skill.name)) continue;
           const target = text.split("[DSL/API reference](")[1]?.split(")")[0]?.split("#")[0];
           if (!target) throw new Error("Missing skill API link");
           const apiPath = realpathSync(path.resolve(path.dirname(entry), target));
-          if (!apiPath.startsWith(root + path.sep)) throw new Error("API reference escaped installed package");
+          if (apiPath !== realpathSync(path.join(root, "skills/locus-pi-workflow-create/references/dsl.md")))
+            throw new Error("API reference does not reach the packaged projection: " + skill.name);
           if (!readFileSync(apiPath, "utf8").includes("### invokeWorkflow")) throw new Error("Incomplete API reference");
         }
       }`;

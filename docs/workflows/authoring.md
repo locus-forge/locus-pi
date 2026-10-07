@@ -2,11 +2,11 @@
 title: Workflow file format
 type: guide
 status: active
-updated: "2026-10-07T19:05:59Z"
-source_commit: "87298468676c"
+updated: "2026-10-07T21:05:25Z"
+source_commit: "f94a891581d1"
 update_event: "user_request"
-context: "changes=S files=3"
-description: "Text-first workflow authoring and explicit parameterized input contracts"
+context: "changes=XL files=32 task=T-149"
+description: "Describe text, choice and opt-in schema results from the current runtime"
 ---
 
 # Workflow file format
@@ -141,9 +141,10 @@ Notes:
   display after 96 characters. Project and user workflows are never rewritten by
   the browser.
 - `agent()` returns the child's exact non-empty final text by default. It never
-  exposes child status fields as a model-controlled result and never parses the
-  answer; `choice` is the only call form that returns something other than text.
-  Technical metadata is written to the workflow journal.
+  exposes child status fields as a model-controlled result or parses narrative text.
+  `choice` returns one exact declared string; literal `schema` opts into immutable JSON
+  with bounded, schema-proven consumption. Both use the runtime-owned return tool;
+  see [agent results](agent-results.md). Technical metadata is written to the workflow journal.
 - Write a stage's prompt inline in the script by default: a shared `COMMON`
   contract constant plus a per-stage template literal that interpolates the
   previous stage's exact text between `--- BEGIN <NAME> ---` / `--- END <NAME> ---`
@@ -338,7 +339,7 @@ The diagram is an ownership map, not a decorative code trace:
 - Every agent box says what it **receives** and what it **returns**. The handoffs
   between stages are the pipeline; a box that names only a role explains nothing.
 - Say what constrains each child: its prompt, its exact caller-assigned files, and whether
-  it returns text or one exact choice. Every child already receives all tools. A branch
+  it returns text, one exact choice or schema-validated JSON. Every child already receives all tools. A branch
   on an exact choice is not the same claim as a branch on prose, and the picture must
   not blur them.
 - Every branch and loop carries its real exit condition, including the ones that

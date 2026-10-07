@@ -2,11 +2,11 @@
 title: Workflow catalog and source resolution
 type: guide
 status: active
-updated: "2026-10-02T22:53:27Z"
-source_commit: "0d098c9e06d1"
+updated: "2026-10-07T21:05:26Z"
+source_commit: "f94a891581d1"
 update_event: "user_request"
-context: "changes=L files=29"
-description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
+context: "changes=XL files=32 task=T-149"
+description: "Align task-fit patterns and bounded literal-schema results with source checks"
 ---
 
 # Workflow catalog and source resolution
@@ -23,21 +23,22 @@ runtime behavior or model choice; catalog rows omit the internal label.
 ## Authoring patterns
 
 New workflows start with an [ordinary or detailed lesson](create.md#choose-an-authoring-route):
-a complete module and dependency reasoning precede task-fit patterns. Shared cards under
+a complete module and dependency reasoning precede task-fit patterns. Shared sections under
 `skills/locus-pi-workflow-create/references/` map requirements to supported forms;
-read only the selected card after those foundations.
-Cards are algorithms and snippets, not Package workflows. Saving a local workflow
+read only the selected section after those foundations.
+Patterns are algorithms and snippets, not Package workflows. Saving a local workflow
 does not add it to the Package registry.
 
-The [current pattern index](../../skills/locus-pi-workflow-create/references/INDEX.md)
+The [current pattern index](../../skills/locus-pi-workflow-create/references/agentic-approaches.md#choose-an-approach)
 selects the graph; the [agent result contract](agent-results.md)
-owns the two result modes and the removed shaped-result options.
+owns exact text, exact choice and opt-in structured JSON results, including the removed options.
 
-Standard scripts pass narrative results as exact text, use
-`agent({ choice: [...] })` when JavaScript must select a branch, and write richer
-results at exact caller-assigned destinations in prompts that later agents read. A choice may explicitly name a
+Standard scripts pass narrative results as exact text by default, use
+`agent(prompt, { choice: [...] })` when JavaScript needs one routing token, and opt into a
+bounded literal `schema` when source needs proven JSON fields or arrays. Agents write
+files at exact caller-assigned destinations in prompts that later agents read. A choice may explicitly name a
 `choiceFallback` from the same list for a design-approved degraded route after
-both invalid answers. Raw `schema`, `validate`, parsers, renderers, and custom
+both invalid answers. Dynamic schemas, `validate`, `repair`, `outputTransport`, prose parsers and custom
 recovery remain outside the standard profile. Only files in the curated
 `examples/` registry are Package workflows.
 

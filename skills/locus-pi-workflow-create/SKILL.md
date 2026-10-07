@@ -9,7 +9,7 @@ A workflow makes dependencies visible. Scout first if work is unclear.
 Owns authoring and checked-source handoff, not running existing workflows.
 Resolve this `SKILL.md` to its physical file before following relative links; the
 [workflow manual](../../docs/workflows/index.md) belongs to that package, never the caller cwd.
-This ordinary entry follows [route selection](../../docs/workflows/create.md#choose-an-authoring-route):
+Follow [route selection](../../docs/workflows/create.md#choose-an-authoring-route):
 an explicit invocation wins; a detailed deliverable does not select detailed authoring.
 
 ## Start with a complete module
@@ -18,7 +18,7 @@ Identify the requested artifact and actual sources; workflow design is not the t
 Before source, read [Design → review → Build](references/design-and-build.md), then write/review
 `.locus-pi/workflows/<name>/<name>.design.md`. Its `Entries` declare exactly which modules to build.
 Start with sequential implementation → review → bounded correction, adapting the allowance to the Task.
-Read [working context](references/authoring-styles.md#folder-level-context) and supply its verified paths:
+Read [working context](references/design-and-build.md#folder-level-context) and supply its verified paths:
 
 ```js
 export const meta = {
@@ -74,20 +74,20 @@ Assign exact paths for shared handoffs and Task-required outputs; writers/reader
 Delegate internal file layout within an implementation actor's product root, subject to narrower Task boundaries.
 Source exposes control edges; children inspect and act with tools. Never parse prose, JSON or those files in source.
 `phase()`/`log()` show progress; text publication retains optional native evidence. It never saves or attests an agent-owned file.
-Read [structured results](references/structured-results.md) for result contracts.
+Read [structured results](references/source-boundary.md#structured-results) for result contracts.
 
 ## Choose stages from dependencies
 
 The sequential loop fits known work; plan/replan fits observations changing remaining work.
-Read only the selected [approach](references/agentic-approaches.md) and [card](references/INDEX.md).
+Read selected sections of [the approach guide](references/agentic-approaches.md#choose-an-approach).
 For independent per-item inspect → verify use `pipeline(items(), ...)`; caller items need the structured tool.
 Use `parallel()` only for independent writers with distinct files and a later merge owner.
-Before writing source, read the installed [DSL/API reference](references/dsl.md#dsl-surface-v0)
+Before source, read the installed [DSL/API reference](references/dsl.md#dsl-surface-v0)
 and selected method/options sections. Runtime support is not source permission.
 
 ## Build, check and hand off
 
-Brief children with outcomes; leave methods to them. Use [procedural detail](references/procedural-briefs.md) only when needed.
+Brief children with outcomes; leave methods to them. Use [procedural detail](references/design-and-build.md#procedural-briefs) only when needed.
 Preserve user-configured model/effort routing; omit selectors unless authorized. For an essential override,
 verify provider, adapter and authentication via [models](../../docs/workflows/models.md); never substitute a paid API.
 Read [source boundary](references/source-boundary.md) before Build and the
