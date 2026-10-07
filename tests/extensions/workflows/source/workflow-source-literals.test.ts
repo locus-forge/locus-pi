@@ -10,9 +10,12 @@
  * Each case therefore asks all three owners the same lexical question about the
  * same bytes and pins their answers together.
  */
+import { runInNewContext } from "node:vm";
+import { Lang, parse } from "@ast-grep/napi";
 import { describe, expect, it } from "vitest";
 import { staticWorkflowMeta } from "../../../../extensions/workflows/catalog/workflow-meta.js";
 import { assessWorkflowSourceIdentity } from "../../../../extensions/workflows/runtime/workflow-script-identity.js";
+import { staticStringValue } from "../../../../extensions/workflows/source/workflow-source-literals.js";
 import { standardWorkflowSourceShapeDiagnostics } from "../../../../extensions/workflows/tool/workflow-source-shape.js";
 
 /** A lone backslash, so the sources below carry escape sequences rather than what they denote. */
@@ -32,6 +35,43 @@ function phasedSource(metaLines: readonly string[], calledTitle: string): string
 }
 
 describe("workflow source literals shared by every static reader", () => {
+  it.each([
+    ["template LF", "`  Read exact files.\nPreserve π 😀.  `", "  Read exact files.\nPreserve π 😀.  "],
+    ["template CRLF", "`  Read exact files.\r\nPreserve π 😀.  `", "  Read exact files.\nPreserve π 😀.  "],
+    ["escaped CRLF", '"  Read exact files.\\r\\nPreserve π 😀.  "', "  Read exact files.\r\nPreserve π 😀.  "],
+    ["escaped punctuation", '`  π 😀 "quoted" \\\\path \\` \\${input}  `', '  π 😀 "quoted" \\path ` ${input}  '],
+    ...["\n", "\r\n", "\r"].flatMap((newline) =>
+      ['"', "`"].map((quote) => [
+        `${quote} continuation ${JSON.stringify(newline)}`,
+        `${quote}  Read exact files. ${BACKSLASH}${newline}  Preserve π 😀.  ${quote}`,
+        "  Read exact files.   Preserve π 😀.  ",
+      ]),
+    ),
+  ])(
+    "preserves the cooked value of %s without treating source wrapping as prompt wrapping",
+    (_name, literal, value) => {
+      const source = phasedSource(
+        [
+          '  name: "sample", profile: "standard", identityCoverage: "self-contained-static",',
+          `  description: ${literal}, phases: [{ title: ${literal} }],`,
+        ],
+        value!,
+      );
+      // Evaluate only this test-owned literal, never a workflow module, as the JavaScript-value oracle.
+      expect(runInNewContext(literal!, {}, { timeout: 1_000 })).toBe(value);
+      const literalNode = parse(Lang.JavaScript, `const text = ${literal};`)
+        .root()
+        .find({ rule: { kind: "variable_declarator" } })
+        ?.field("value");
+      expect(staticStringValue(literalNode)).toBe(value);
+      // Catalog display has its own intentional whitespace policy; it is not a prompt-value reader.
+      expect(staticWorkflowMeta(source).description).toBe(value!.replace(/\s+/gu, " ").trim());
+      expect(staticWorkflowMeta(source).phases).toEqual([{ title: value!.trim() }]);
+      expect(assessWorkflowSourceIdentity(source).identityCoverage).toBe("self-contained-static");
+      expect(standardWorkflowSourceShapeDiagnostics(source)).toEqual([]);
+    },
+  );
+
   it("spells quoted keys and escape sequences the same way in all three readers", () => {
     // Every key is quoted and every value carries a unicode escape, so each
     // reader has to both unquote the key and decode the value to agree.

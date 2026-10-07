@@ -1,8 +1,8 @@
 ---
-updated: "2026-10-06T12:27:00Z"
-source_commit: "fee5f591caaf"
+updated: "2026-10-07T15:24:00Z"
+source_commit: "f6f04156193e"
 update_event: "user_request"
-context: "bounded schema authoring on the standard-tool contract"
+context: "compact design, conditional references and optional SVG"
 description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
@@ -41,95 +41,82 @@ build-only compatibility route with `Build approved design: <exact design path>`
 or `Build design: <exact design path>`.
 
 If design review or Build discovers a material algorithm mismatch, update and
-re-review the design before
-building; never hide the change in source. Ask the user only when resolving the
+re-review the design before building; never hide the change in source. Ask the user only when resolving the
 mismatch would change the requested result, not for routine authoring choices.
 
 ## Design contract
 
-The design is short Markdown a reader can approve without opening JavaScript:
+Keep one short record of the decisions needed to build and review the graph.
+Reference the unchanged Task; do not copy its requirements into a second specification
+or prewrite the product solution. Describe each dependency once, using an edge list
+or a node table, not both plus a numbered algorithm and a separate mechanisms list.
 
 ```markdown
 # Design: <name>
 
-Purpose: <one sentence>
-Input: <semantic text or none>
-Primary deliverable: <requested artifact and location>; accompanying report: <if needed>
-Authoring route: <ordinary or explicitly selected detailed lesson; not a runtime field>
-Evidence boundary: <semantic input, caller items, author-known prompt material, or child inspection>
-Approach: <task need and semantic approach(s); omit any unnecessary roles>
-Graph: <fixed for known scope/stages; replan when observed results must change remaining work>
-Brief detail: <outcome-led by default, or procedural with reason>
-Context: <repository checkout, task directory, output location; agents discover files>
-Executors: <responsibility roles and verified model routes; no unverified engine names>
-Verification: <required evidence, available or discoverable child capabilities, optional checks and delivery effects>
-
-Namespace: `runnable root` (include the `<name>` entry below) or `group-only`
-(omit the root entry; children remain directly runnable)
+Task: <unchanged request or exact source; additional evidence separately>
+Deliverable: <requested artifact and exact location>
+Context: <verified checkout/branch, delegated product root and exact shared paths>
 
 ## Entries
 
-| Ref              | Entry kind    | Responsibility         | Invoked by |
-| ---------------- | ------------- | ---------------------- | ---------- |
-| `<name>`         | runnable root | <standard entry point> | operator   |
-| `<name>/<child>` | direct child  | <one bounded subtask>  | `<node>`   |
+| Ref            | Entry kind    | Responsibility         | Invoked by |
+| -------------- | ------------- | ---------------------- | ---------- |
+| <name>         | runnable root | <entry responsibility> | operator   |
+| <name>/<child> | direct child  | <bounded subtask>      | <node>     |
+
+Graph: <each role's input, output, consumer and choice destination, once>
+Handoffs: <exact Task/shared file paths, writers and readers; disjoint parallel scopes>
+Bounds: <literal loop/group bounds with reasons; worst-case calls including saved children>
+Evidence: <Task-derived criteria, required checks, optional checks and completion owner>
+Exits: <accept, correct/recheck, blocked and exhausted routes; preserve work on non-success>
+Review: <design checked against Task and source contract; material issues resolved>
+```
 
 For `group-only`, omit the `<name>` row entirely. Declare every direct child
 that Build must create; do not declare grandchildren or an implicit root.
+Omit unused child rows and mechanisms. Add model-route or procedural-brief decisions
+only when they differ from authorized defaults. No default-value checklist is needed.
+For budgets, launch defaults apply; every other undeclared workflow budget axis is unbounded.
+An author-selected budget axis needs a consumer and a one-line reason, not a copied sample number.
 
-1. <numbered algorithm>
+Use the already selected pattern, without a mandatory planner or arbiter.
+Known work can use one implement → review → bounded correction → fresh review loop,
+including substantive implementation. Split stages only for real dependencies,
+separate ownership or evidence that changes remaining work; keep integration QA when required.
+Count orchestration machinery, not agents. A coherent additional subtask is not a defect.
+Pattern-specific decisions below apply only when that mechanism is used.
 
-| Node     | Responsibility         | Receives      | Returns                                | Next       |
-| -------- | ---------------------- | ------------- | -------------------------------------- | ---------- |
-| `<node>` | <one coherent subtask> | <exact input> | <complete text, choice, or named file> | <consumer> |
+### Briefs and context
 
-Concurrency: <groups or none>
-Loop bounds: <bounds or none>
-Budgets: <axis=value with a one-line reason, or none — launch defaults apply; every other undeclared workflow budget axis is unbounded>
-Named files: <shared handoffs and Task-required output paths, each writer and its readers; delegated product roots>
-File boundary: workflow source performs no file reads; name any child-owned source inspection
-Worst-case calls: <exact formula including saved children>
-Failure exits: <fail-closed exits>
-Mechanisms: <parallel barriers, choices, loops, human gates; no agent-count penalty>
-Status: REVIEWED — ready for build.
-```
+The [working-context contract](authoring-styles.md#folder-level-context) owns clean-child
+context. Give each child the complete relevant original Task or its unchanged accessible
+source, current evidence and role-specific duties. Keep the original Task authoritative,
+not repeated task copies or cumulative handoff history. Corrections need complete actionable
+findings. Remove mechanical headings, repeated criteria and tool choreography that add no
+information; do not turn workflow bookkeeping into product requirements.
 
-Count orchestration machinery, not agents. More agents are fine when the task
-really decomposes into more coherent subtasks.
+Assign exact paths and writers/readers to shared handoffs and Task-required outputs.
+Delegate product internals within the product root, respecting narrower Task bounds such as
+an `index.html`-only product and preserving unrelated work. A product-read-only
+reviewer may write its assigned report, not product files. The reviewer inspects the full
+current diff with its own tools, including uncommitted work and every in-scope path;
+the producer need not rebuild the change as an evidence bundle. Commit only when authorized.
 
-Review whether each brief gives the agent enough to complete its task. Remove
-mechanical headings, repeated completion criteria, tool choreography and
-general policy that add no task-specific information.
-Give each clean child the complete relevant original Task, evidence and constraints
-in its own brief; do not assume it inherits the parent conversation. Keep the
-original Task authoritative. Add role-specific duties without redundant task
-paraphrases that change semantics or turn workflow bookkeeping into product requirements.
-Pass that Task once per child with relevant current evidence, not repeated task
-copies or cumulative handoff history; corrections still need complete actionable findings.
-Separate Task-required output paths, shared coordination records and product internals.
-Assign exact paths and writers/readers to the first two. An implementation actor
-may choose internal files within its delegated product root unless the Task sets
-a narrower boundary, such as an `index.html`-only product. Preserve unrelated work.
-A product-read-only reviewer may write its assigned report, not product files.
-The fixed control skeleton states dependencies, observations and exits; it need
-not enumerate runtime-discovered implementation work. Existing worker/evaluator
-and plan/replan patterns cover these choices without a mandatory planner.
-For a review edge, let the reviewer inspect the full current diff with its own tools.
-Commit only within existing task authorization; require it to account for every
-in-scope path in that diff before a favorable verdict. Do not have the producer
-rebuild the change as an evidence bundle for the reviewer to read.
-For each choice, named file or author-selected limit, identify the consuming edge
-and why it needs that contract. Plain narrative is passed whole without an
-invented length cap; a choice belongs only at a real routing edge. Two review
-checks apply to every design:
+A choice belongs only at a real routing edge; narrative travels whole without an invented
+length cap. No brief requests a character, word, line or item count without a consumer
+requirement. The [120-column readability rule](authoring-styles.md#text-readability)
+wraps new author-owned prose; it never caps an answer or changes protected payload bytes.
+Create SVG only on explicit request. The [optional diagram appendix](../../../docs/workflows/authoring.md#workflow-diagram-contract)
+owns its artifact and visual checks; ordinary Build does not require a diagram.
 
-- **No invented size policy.** Every budget axis carries a one-line reason. A
-  number with no owner is removed, not lowered.
-- **No prompt-side size request.** No brief asks for a character, word, line or
-  item count the consumer did not declare. "Keep it short" is the removed policy
-  rewritten in English.
+### Review decisions and completion
 
-Use the already selected pattern card as an algorithm, not a full workflow to copy blindly.
+The author checks the design before source: requested output, dependencies, ownership,
+bounds and failure exits. A separate design-review agent is not required by default.
+After Build, review the actual source against this record; a correct design does not prove
+that its implementation has the same edges. Keep any independent review required by the Task
+or selected authoring workflow. Do not add another reviewer merely to restate the design.
 
 For each acceptance edge, trace blocking criteria to the request or an
 authoritative contract and identify evidence an available child can obtain.
@@ -175,8 +162,7 @@ Walk terminal paths for a produced artifact with an optional check unavailable, 
 confirmed defect and an explicitly required verifier unavailable. Delivery reports the
 artifact's location, actual checks, known issues and unverified behavior. Non-success
 preserves any produced artifact with the unmet requirement; it does not claim acceptance.
-The author owns this design review. Operator changes to a generated workflow are not
-evidence that the authoring skill produced a correct design.
+Operator changes to a generated workflow are not evidence that the authoring skill produced a correct design.
 
 ## Build checks
 
@@ -224,16 +210,13 @@ unmet required evidence returns `{ ok: false, status: "failed" }` with the lates
 artifact and evidence; do not publish it as accepted or silently start a fresh run.
 An optional check not performed does not, by itself, make a completed implementation fail.
 
-The packaged `task/plan` writes the whole caller-assigned `workflow.mjs` in one author
-call, then runs at most three independent reviews with at most two revisions.
-The packaged `task/plan-light`, for lighter author models, creates a minimal
-runnable caller-assigned `workflow.mjs`, then grows it through at most six complete
-graph-node slices. An owner re-cuts the source-free remaining queue after each
-accepted slice. Independent mechanical and design gates share one cumulative
-correction per slice; final whole-file gates run after the queue is empty. The exact routes and terminal reasons live in the
-[task authoring manual](../../../examples/workflows/task/README.md).
-
-The caller assigns one exact workflow.mjs path and the design, review, log and source-slice record paths in the whole semantic input. Agents write those files directly. The same source is used by Node, the project-confined native checker, reviewer and launcher; source outside the checker's existing boundary fails explicitly. Checks retain the actual source path, checked-byte SHA-256 and tool outcomes. Before launch, reopen the assigned regular nonempty source, compare the persisted reviewed/check evidence and repeat current required checks after correction or replay. Failed/exhausted review, missing or drifted source forbids execution. Native completion and returned prose never attest file delivery, and there is no publication prerequisite.
+The packaged `task/plan` and `task/plan-light` own their authoring review loops and
+caller-assigned source/evidence paths in the [task authoring manual](../../../examples/workflows/task/README.md).
+They do not inherit an extra design-review stage from this lesson. Use the same exact source
+for Node, the project-confined checker, reviewer and launcher. Retain its path, checked-byte
+SHA-256 and actual outcomes. Before launch, reopen the regular nonempty source and compare
+reviewed evidence; correction or replay requires current checks. Missing, drifted or failed
+source forbids execution. Native completion prose does not attest file delivery.
 
 A successful Build returns `/workflows run <name>` (or the qualified child ref).
 Create-only stops there. Create-and-run continues through
@@ -243,7 +226,14 @@ approval and external-effect boundaries intact.
 
 ## Pattern-specific design decisions
 
-For adaptive slices, name the queue owner, cumulative slice allowance, correction/recheck edge, scope-change exit and required final QA. Re-cut after each accepted slice, including the apparent last one, so an empty queue cannot hide unmet requirements. For fixed graphs, do not add a judge or semantic retry that the request did not require. For refinement, record the completion authority, immutable criteria, measured evidence, literal round cap, no-progress rule, exact handoff and terminal outcomes. For decomposition, record local concurrency, global budget and key ownership. Human continuation names two runs and a verified artifact handoff, never a suspended JavaScript stack.
+Read only the card needed by the selected graph:
+
+- Adaptive slices: queue owner, cumulative allowance, correction/recheck, scope-change exit and final QA.
+  Re-cut after every accepted slice, including the apparent last one; an empty queue does not prove completion.
+- Fixed graph: known dependencies and bounds, with no unrequested judge or semantic retry.
+- Refinement: completion authority, immutable criteria, measured evidence, round cap and no-progress rule.
+- Decomposition: local concurrency, shared budget and key ownership; disjoint write scopes.
+- Human continuation: two runs and a verified artifact handoff, not a suspended JavaScript stack.
 
 Budget values and failure dispositions belong to the [runtime reference](../../../docs/workflows/index.md); source provenance, mutation and permitted DSL methods belong to [source contract](../../../docs/workflows/source-shape.md#machine-enforced-standard-source-shape). Read the relevant sections before Build. Do not duplicate those invariants in another skill.
 

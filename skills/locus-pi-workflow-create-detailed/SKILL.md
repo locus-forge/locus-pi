@@ -33,14 +33,16 @@ Read those sources; missing or conflicting context/paths means blocked. Do not g
   // Teaching bound: initial implementation plus one correction, both independently reviewed.
   for (let round = 0; round < 2; round += 1) {
     const work = await agent(
-      `${context}\nOriginal Task and working context:\n${input}\nImplement the Task in its assigned product root; choose internal files within its bounds.
+      `${context}\nOriginal Task and working context:\n${input}
+Implement the Task in its assigned product root; choose internal files within its bounds.
 Preserve unrelated work; do not commit. On correction, read the assigned findings.md and implementation.md.
 Write the complete result, changed paths, actual checks and remaining work to assigned implementation.md;
 read it back. Return only a short status and its exact path. This is pass ${round + 1}.`,
       { label: "implement", title: "Implement or correct the task" },
     );
     const decision = await agent(
-      `${context}\nOriginal Task and working context:\n${input}\nRead assigned implementation.md, then inspect the complete actual diff and required evidence.
+      `${context}\nOriginal Task and working context:\n${input}
+Read assigned implementation.md, then inspect the complete actual diff and required evidence.
 Verify each Task requirement; equal outputs do not prove reuse or state transitions.
 Do not edit product source. Write only assigned findings.md: verified/unmet/unverified requirements, defects,
 checks, prior finding dispositions and next action, keep optional checks separate. Read it back.
@@ -59,7 +61,7 @@ block on missing required prerequisites or handoff files. Worker status:\n${work
 
 The developer writes product files/result; the reviewer writes only its review artifact.
 Both reopen exact files. Source routes `choice`, never report text.
-The [starter guide](../../extensions/workflows/references/examples/starters/README.md) includes optional parallel work.
+The shared design contract owns text wrapping and SVG only on explicit request.
 
 ## Read handoffs before adding control
 
@@ -80,7 +82,7 @@ Independent per-item inspect → verify uses `pipeline(items(), ...)`; structure
 Cross-source synthesis waits for all reports, with separate writer paths and one merge owner.
 For reuse read DSL `workflow()` versus saved `invokeWorkflow()`; saved grandchildren are refused.
 Choose the relevant [semantic guide](../locus-pi-workflow-create/references/agentic-approaches.md)
-and [card](../locus-pi-workflow-create/references/INDEX.md). Outcome-led briefs leave methods to children;
+and [card](../locus-pi-workflow-create/references/INDEX.md); read only selected sections. Leave methods to children;
 read the [procedural case](references/worked-decisions.md#brief-detail-with-a-real-dependency) only for a real dependency.
 
 ## Review, Build and report honestly
