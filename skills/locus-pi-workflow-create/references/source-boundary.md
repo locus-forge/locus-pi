@@ -107,6 +107,26 @@ These exact-path contracts do not enumerate every product internal. A task may d
 
 The caller also owns durability. Write a file needed after temporary-worktree release to its assigned durable path before release. Keep authorized scratch/caches in normal temporary locations. Native text snapshots remain optional evidence and verified-continuation inputs; they are never substitutes for requested files. A native completed result does not attest a filesystem write: the consuming stage reopens the exact assigned file and checks current required evidence. Replay restores answers, not file effects; missing or drifted prerequisites fail the consumer.
 
+## Readable string literals
+
+Follow the [text readability rule](authoring-styles.md#text-readability) when writing prompts.
+A physical newline in a template literal is part of its value. Replacing an existing escaped
+`\n` with that physical newline preserves the prompt; adding a new newline does not.
+For a static value that must remain on one logical line, use a literal continuation:
+
+```js
+const CONTEXT = `Read exact files. \
+Preserve the Task.`;
+```
+
+The space before the backslash remains; the backslash-newline contributes no character.
+Indenting the continuation would add spaces to the value. Do not split escapes, backticks
+or interpolation syntax arbitrarily. The checker accepts multiline and continued literals;
+top-level string concatenation is not a literal declaration. Do not add wrap/dedent helpers,
+array joins or runtime input transformations merely to format source. Forward Task bytes whole.
+Preserving a literal value still changes the source hash; do not reformat an existing replay
+or frozen evaluation source. Review source and prompt identity separately.
+
 ## Standard-profile bad smells
 
 Do not generate:

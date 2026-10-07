@@ -112,18 +112,21 @@ Read those sources; missing or conflicting context/paths means blocked. Do not g
   // Teaching bound: initial implementation plus one correction, both independently reviewed.
   for (let round = 0; round < 2; round += 1) {
     const work = await agent(
-      `${context}\nOriginal Task and working context:\n${input}\nImplement the Task in its assigned product root; choose internal files within its bounds.
+      `${context}\nOriginal Task and working context:\n${input}
+Implement the Task in its assigned product root; choose internal files within its bounds.
 Preserve unrelated work; do not commit. On correction, read the assigned findings.md and implementation.md.
 Write the complete result, changed paths, actual checks and remaining work to assigned implementation.md;
 read it back. Return only a short status and its exact path. This is pass ${round + 1}.`,
       { label: "implement", title: "Implement or correct the task" },
     );
     const decision = await agent(
-      `${context}\nOriginal Task and working context:\n${input}\nRead assigned implementation.md, then inspect the complete actual diff and required evidence.
-Do not edit product source. Write only assigned findings.md: criteria, defects, check outcomes, prior
-finding dispositions and next action. Read it back before choosing. Keep nonblocking suggestions separate.
-Accept only verified Task requirements; disclose optional checks not performed. Revise correctable defects;
-block on missing required prerequisites or handoff files. Do not weaken criteria. Short worker status:\n${work}`,
+      `${context}\nOriginal Task and working context:\n${input}
+Read assigned implementation.md, then inspect the complete actual diff and required evidence.
+Verify each Task requirement; equal outputs do not prove reuse or state transitions.
+Do not edit product source. Write only assigned findings.md: verified/unmet/unverified requirements, defects,
+checks, prior finding dispositions and next action, keep optional checks separate. Read it back.
+Accept only verified requirements; revise correctable defects;
+block on missing required prerequisites or handoff files. Worker status:\n${work}`,
       { label: "review", title: "Review the change", choice: ["accept", "revise", "blocked"] },
     );
     if (decision === "accept") return { ok: true, status: "accepted", handoff: work };
@@ -168,6 +171,26 @@ The author writes and reviews a `.design.md` file, builds the declared
 it does not execute its agents. Ask for `design only` to stop before source is
 built. The task directory is the entry context; agents find `task.md`, the
 accepted design and relevant artifacts inside it.
+
+For known work, keep the design compact and describe each dependency once. For example:
+
+```text
+Task: /project/task.md, unchanged; product root /project/app
+Entries: fix, runnable root
+Graph: implement -> review; revise -> implement; accept -> return
+Handoffs: /project/review/implementation.md (worker writes; reviewer reads)
+         /project/review/findings.md (reviewer writes; correction reads)
+Bound: 2 worker/review rounds, one task-justified correction; max 4 calls
+Evidence: every Task criterion verified against current files
+Exits: missing required prerequisite or exhausted correction -> non-success
+```
+
+The [design contract](../../skills/locus-pi-workflow-create/references/design-and-build.md)
+owns author review and the final comparison with actual source. It does not require a separate
+design-review agent. Retain independent review where required by the Task or authoring workflow.
+Create SVG only on explicit request; the [optional appendix](authoring.md#workflow-diagram-contract)
+contains its checks. The [readability rule](../../skills/locus-pi-workflow-create/references/authoring-styles.md#text-readability)
+wraps new author-owned prose to 120 columns while preserving frozen Task/input bytes.
 
 The authoring `.design.md` describes the workflow graph. In the adaptive references,
 the design entry later produces the task-change proposal in `artifacts/design.md`.

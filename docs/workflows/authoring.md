@@ -2,11 +2,11 @@
 title: Workflow file format
 type: guide
 status: active
-updated: "2026-10-02T22:53:27Z"
-source_commit: "0d098c9e06d1"
+updated: "2026-10-07T19:05:59Z"
+source_commit: "87298468676c"
 update_event: "user_request"
-context: "changes=L files=29"
-description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
+context: "changes=S files=3"
+description: "Text-first workflow authoring and explicit parameterized input contracts"
 ---
 
 # Workflow file format
@@ -30,16 +30,19 @@ a create-and-run request passes the checked file to the run skill.
 
 A workflow is a single ESM module `<name>.workflow.mjs` with two exports:
 
-- `export const meta = { name, description, phases? }` — catalog metadata only.
+- `export const meta = { ... }` — workflow descriptions and explicit source/input declarations.
   `name` should match the saved file's `<name>` so it resolves by bare name;
   `description` appears in `/workflows list` and `/workflows info <name>`;
   optional `phases` declares the pipeline's shape before the run (see "Declared
-  phases" below). Metadata does not declare the execution graph, agents,
-  permissions, or runtime model, and nothing in it is enforced at runtime.
+  phases" below). These descriptive fields do not select the execution graph,
+  agents, permissions, or runtime model. Optional `profile` and `identityCoverage`
+  declare source-checking and dependency-identity policies. Optional `inputSchema`
+  declares validation for parameterized JSON input; it is checked before entry.
 - `export default async function runWorkflow(dsl, input) { ... }` — executable
   behavior. `dsl` is the intended authoring handle; `input` is the run's task,
-  always absent or semantic text (see "Workflow input" below). Whatever
-  the function returns is written to `result.json` as `result`.
+  absent or unchanged semantic text by default. When workflow code needs fixed
+  parameters, explicit typed input follows the [DSL contract](dsl.md#typed-workflow-input).
+  Whatever the function returns is written to `result.json` as `result`.
   Trusted JavaScript can still use host capabilities allowed by its identity mode,
   so `dsl`-only is a convention, not enforcement.
 
@@ -80,47 +83,6 @@ export default async function runWorkflow(dsl, input) {
 
 Adjust the relative type path for a nested workflow. This comment performs no
 runtime import and does not change source-identity coverage.
-
-### Workflow diagram contract
-
-A workflow with several stages, agents, branches, parallel groups, or persisted
-handoffs keeps a visual map beside its source: exactly one hand-authored
-`<name>-pipeline.svg`. It is edited directly. There is no generator, no
-rendering dependency, and no exported preview to keep in sync;
-[`examples/workflows/post-code-review/post-code-review-pipeline.svg`](../../examples/workflows/post-code-review/post-code-review-pipeline.svg)
-is the remaining Package reference shape.
-
-This replaced a generated trio — an `@kroffske/excalidraw-diagrams` generator,
-its `.excalidraw` document, and a rendered PNG — on 2026-07-28. Three files had
-to agree, changing anything required a library this package does not depend on,
-and the only file a reader opened was the one nobody could review in a diff.
-
-The diagram is an ownership map, not a decorative code trace:
-
-- Separate the deterministic script from the child agents visually, and give the
-  script one box per `phase()`. A reader must be able to see which decisions the
-  code makes and which a model makes without opening the source.
-- Every agent box says what it **receives** and what it **returns**. The handoffs
-  between stages are the pipeline; a box that names only a role explains nothing.
-- Say what constrains each child: its prompt, its exact caller-assigned files, and whether
-  it returns text or one exact choice. Every child already receives all tools. A branch
-  on an exact choice is not the same claim as a branch on prose, and the picture must
-  not blur them.
-- Every branch and loop carries its real exit condition, including the ones that
-  end the run: an operator pause with `disposition: awaiting_operator`, a
-  fail-closed stop, and the terminal result a later run may consume.
-- Draw each persisted artifact under the exact name the code publishes it with,
-  so the picture and `.locus-pi/runs/<runId>/runtime/artifacts/` agree.
-- Include a legend explaining every visual type used.
-
-Keep the file self-contained and diffable: no `<script>`, no embedded or remote
-images, no remote fonts or stylesheets, and a `<title>`/`<desc>` pair so the
-diagram is readable without seeing it. `tests/extensions/workflows/tool/workflow-diagram-artifacts.test.ts`
-pins those properties, refuses any resurrected generator or Excalidraw artifact
-under the examples directory, and checks the diagram against the workflow source
-so a renamed phase or a new artifact fails the suite instead of quietly leaving
-the picture wrong. Visual inspection is still required: no structural check
-proves that a diagram is readable.
 
 ### Minimal working example
 
@@ -266,14 +228,15 @@ own locations.
 
 ### Workflow input and host continuation
 
-`input` is absent or one semantic string of any length, handed to
+Without `meta.inputSchema`, `input` is absent or one semantic string of any length, handed to
 `runWorkflow(dsl, input)` unchanged by the tool and outer-trimmed only by the
 slash-command parser. The runtime declares no character ceiling on it: an input
 too large for a model is a provider-side failure with real evidence, not a
 runtime guess made before the run starts. It contains the operator request or answers. It is not a
-JSON command, marker grammar, or generic parameter bag. An object is rejected by
-the tool schema and guarded again by the runner; nested `dsl.workflow()` calls
-have the same string-only bound before their callback starts.
+JSON command, marker grammar, or generic parameter bag. An object does not implicitly
+opt into typed input. Explicit `meta.inputSchema` with `inputValue`, including typed saved
+children, follows the [typed workflow input contract](dsl.md#typed-workflow-input).
+Untyped nested `dsl.workflow()` calls keep the string-only bound before their callback starts.
 
 ```json
 { "name": "audit-module", "input": "Audit src/auth strictly; report at most five confirmed findings." }
@@ -353,3 +316,43 @@ replay-only `resumeFromRunId`.
 Use either [authoring lesson](create.md#choose-an-authoring-route) directly or
 ask a clean child to follow it. The [creation guide](create.md#ask-pi-to-create-it)
 shows the request and separates creating source from executing its agents.
+
+## Optional diagram appendix
+
+### Workflow diagram contract
+
+Create a workflow SVG only on explicit request. Several stages, agents, branches,
+parallel groups or handoffs do not require one. Ordinary authoring and Build finish
+without drawing, rendering or visually checking a diagram.
+
+When requested, keep exactly one hand-authored `<name>-pipeline.svg` beside source.
+Edit it directly; no generator, rendering dependency or exported preview is required;
+[`examples/workflows/post-code-review/post-code-review-pipeline.svg`](../../examples/workflows/post-code-review/post-code-review-pipeline.svg)
+is the remaining Package reference shape.
+
+The diagram is an ownership map, not a decorative code trace:
+
+- Separate the deterministic script from the child agents visually, and give the
+  script one box per `phase()`. A reader must be able to see which decisions the
+  code makes and which a model makes without opening the source.
+- Every agent box says what it **receives** and what it **returns**. The handoffs
+  between stages are the pipeline; a box that names only a role explains nothing.
+- Say what constrains each child: its prompt, its exact caller-assigned files, and whether
+  it returns text or one exact choice. Every child already receives all tools. A branch
+  on an exact choice is not the same claim as a branch on prose, and the picture must
+  not blur them.
+- Every branch and loop carries its real exit condition, including the ones that
+  end the run: an operator pause with `disposition: awaiting_operator`, a
+  fail-closed stop, and the terminal result a later run may consume.
+- Draw each persisted artifact under the exact name the code publishes it with,
+  so the picture and `.locus-pi/runs/<runId>/runtime/artifacts/` agree.
+- Include a legend explaining every visual type used.
+
+Keep the file self-contained and diffable: no `<script>`, no embedded or remote
+images, no remote fonts or stylesheets, and a `<title>`/`<desc>` pair so the
+diagram is readable without seeing it. `tests/extensions/workflows/tool/workflow-diagram-artifacts.test.ts`
+pins those properties, refuses any resurrected generator or Excalidraw artifact
+under the examples directory, and checks the diagram against the workflow source
+so a renamed phase or a new artifact fails the suite instead of quietly leaving
+the picture wrong. Visual inspection is still required: no structural check
+proves that a diagram is readable.

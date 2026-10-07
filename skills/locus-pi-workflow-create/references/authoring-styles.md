@@ -1,9 +1,9 @@
 ---
-updated: "2026-10-02T22:53:28Z"
-source_commit: "0d098c9e06d1"
+updated: "2026-10-07T19:05:59Z"
+source_commit: "87298468676c"
 update_event: "user_request"
-context: "changes=L files=29"
-description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
+context: "changes=S files=3"
+description: "Keep ordinary authoring text-first and choose typed parameters for code consumers"
 ---
 
 # Choose style, detail, size and executors separately
@@ -30,7 +30,9 @@ A fixed control skeleton does not require precomputed implementation work. The e
 
 ## Folder-level context
 
-Pi's public `input` remains one semantic string; it does not accept an `args` object. Do not embed and parse a second JSON protocol.
+Ordinary `input` is one unchanged semantic string, not an `args` protocol to parse.
+Choose [typed input](dsl.md#typed-workflow-input) when workflow code consumes fixed structured parameters.
+Keep ordinary requests passed whole to agents in semantic text.
 
 Use one short shared working context in the existing semantic input or an author-owned prompt string,
 then append each role's responsibility. It is not a new DSL `preamble` option, a detailed solution,
@@ -71,6 +73,24 @@ uses this contract. The optional [parallel tour](../../../extensions/workflows/r
 adds distinct `purpose.md`/`commands.md` writer paths and one `guide.md` merge owner.
 For richer adaptive work assign each shared queue, slice, review and final handoff explicitly;
 consumers reopen the same files after dependencies finish. See [runtime inputs](../../../docs/workflows/authoring.md#workflow-input-and-host-continuation).
+
+## Text readability
+
+Write new author-owned design, Task, ContextRules and workflow text blocks with physical
+lines of at most 120 Unicode code points, including indentation. Wrap prose at word boundaries;
+preserve paragraphs, lists, code fences and meaningful Markdown hard breaks. ContextRules is
+ordinary prompt prose, not a new runtime field. This is formatting, not a cap on answer length.
+
+Do not reflow the original Task, opaque inputs/results, frozen evaluation inputs or reviewed
+prompt bytes. A newly authored Task may be wrapped before approval and freezing; later changes
+need an explicitly identified new input version. Reference an unchanged accessible Task source
+instead of copying it merely to satisfy width. Never truncate content or normalize input at runtime.
+
+Use lossless source literals where possible; [source boundary](source-boundary.md#readable-string-literals)
+shows the supported forms. Exact commands, paths, URLs and code tokens must retain their values.
+For a protected payload or indivisible token over 120 columns, keep the bytes and record that
+specific exception or use display-only soft wrapping. Existing eval/replay snapshots are not
+formatting targets: even unchanged prompt values do not preserve changed source-byte identity.
 
 ## Executor selection
 

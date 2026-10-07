@@ -24,8 +24,9 @@ For a failed or stopped graph needing a source fix, start with
 | Pass known stages forward, choose a route, or investigate independent angles | Chaining, routing, parallel cooperation      | [Combine mechanisms](agentic-approaches.md#combine-and-simplify)               |
 | Inspect or act on external information inside one task                       | Child Tool Use; ReAct when actually designed | [Child tools and observations](agentic-approaches.md#child-tool-use-and-react) |
 
-Read the selected semantic explanation, its complete starter source and the
-execution card needed for its control flow. These approaches combine; they are
+Read only the selected semantic explanation and the execution card needed for its control flow.
+The entry skill already includes the complete sequential starter; do not reread another copy.
+Read a different starter only when its mechanism is needed. These approaches combine; they are
 not compulsory role lists. Keep known scope/stages fixed, including substantive
 implementation. Replan when observed results must change remaining work, not
 because a task is large. Review alone does not require a queue manager or arbiter.

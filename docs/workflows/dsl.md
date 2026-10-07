@@ -2,11 +2,11 @@
 title: Workflow DSL reference
 type: guide
 status: active
-updated: "2026-10-06T17:53:00Z"
-source_commit: "94268a7fa802"
-update_event: "review_refresh"
-context: "changes=XL task=T-148"
-description: "Explicit readonly JSON input and optional accepted operator context across workflow launches"
+updated: "2026-10-07T19:05:59Z"
+source_commit: "87298468676c"
+update_event: "user_request"
+context: "changes=S files=3"
+description: "Workflow DSL with optional schema-checked parameters for source-owned control flow"
 ---
 
 # Workflow DSL reference
@@ -16,6 +16,12 @@ description: "Explicit readonly JSON input and optional accepted operator contex
 A workflow receives `dsl` and optional exact text `input`, or an explicitly schema-validated readonly JSON value, in its default async function. Destructure the methods you need; the examples below use that form. `Promise<T>` means await the result. Removed methods retain narrow throwing migration traps; they never resolve user files.
 
 ## Typed workflow input
+
+Keep ordinary agent tasks as semantic text passed whole to children. Choose typed
+input when workflow JavaScript consumes fixed parameters for routing or iteration,
+such as a supported mode, an exact revision or structured records from a programmatic
+caller. The schema checks those parameters before work starts. A simple list of
+exact text work units already has the separate [`items`](#items) input.
 
 Declare `meta.inputSchema` as a complete literal or one unshadowed top-level literal
 `const` using the [existing JSON schema dialect](agent-results.md#structured-results-v4).
