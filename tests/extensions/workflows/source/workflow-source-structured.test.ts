@@ -1,7 +1,10 @@
 import { dataflowWorkflowSourceDiagnostics } from "../../../../extensions/workflows/source/profiles/workflow-source-dataflow.js";
 import { describe, expect, it } from "vitest";
 import { Lang, parse } from "@ast-grep/napi";
-import { standardStructuredDeclarations, workflowInputBindings } from "../../../../extensions/workflows/source/workflow-source-structured.js";
+import {
+  standardStructuredDeclarations,
+  workflowInputBindings,
+} from "../../../../extensions/workflows/source/workflow-source-structured.js";
 import {
   orchestrationOnlyWorkflowSourceShapeDiagnostics,
   standardWorkflowSourceShapeDiagnostics,
@@ -471,15 +474,20 @@ export default async function run(dsl) { return dsl.workflow(async ({},value) =>
 });
 
 describe("inline input schema ownership", () => {
-  it.each(["const local={workflow:()=>null}; return local.workflow", "const workflow=()=>null; return workflow"])("does not seed schemas for local names: %s", (prefix) => {
-    const source=`export default function run(dsl){${prefix}((inner,values)=>values.map(value=>value),{inputValue:[1],inputSchema:{type:"array",items:{type:"number"}}});}`;
-    const root=parse(Lang.JavaScript,source).root();const entry=root.findAll({rule:{kind:"function_declaration"}})[0];
-    expect(workflowInputBindings(root,entry).some(binding=>binding.name==="values")).toBe(false);
-    expect(assessWorkflowStructuredReplayCoverage(source)).toBe(false);
-  });
+  it.each(["const local={workflow:()=>null}; return local.workflow", "const workflow=()=>null; return workflow"])(
+    "does not seed schemas for local names: %s",
+    (prefix) => {
+      const source = `export default function run(dsl){${prefix}((inner,values)=>values.map(value=>value),{inputValue:[1],inputSchema:{type:"array",items:{type:"number"}}});}`;
+      const root = parse(Lang.JavaScript, source).root();
+      const entry = root.findAll({ rule: { kind: "function_declaration" } })[0];
+      expect(workflowInputBindings(root, entry).some((binding) => binding.name === "values")).toBe(false);
+      expect(assessWorkflowStructuredReplayCoverage(source)).toBe(false);
+    },
+  );
   it.each(["dsl.workflow", "workflow"])("retains owned DSL inputs: %s", (callee) => {
-    const source=`export default function run(${callee==="workflow"?"{workflow}":"dsl"}){return ${callee}((dsl,values)=>values.map(value=>value),{inputValue:[1],inputSchema:{type:"array",items:{type:"number"}}});}`;
-    const root=parse(Lang.JavaScript,source).root();const entry=root.findAll({rule:{kind:"function_declaration"}})[0];
-    expect(workflowInputBindings(root,entry).find(binding=>binding.name==="values")?.schema?.type).toBe("array");
+    const source = `export default function run(${callee === "workflow" ? "{workflow}" : "dsl"}){return ${callee}((dsl,values)=>values.map(value=>value),{inputValue:[1],inputSchema:{type:"array",items:{type:"number"}}});}`;
+    const root = parse(Lang.JavaScript, source).root();
+    const entry = root.findAll({ rule: { kind: "function_declaration" } })[0];
+    expect(workflowInputBindings(root, entry).find((binding) => binding.name === "values")?.schema?.type).toBe("array");
   });
 });

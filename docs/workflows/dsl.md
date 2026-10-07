@@ -27,14 +27,17 @@ checked after import and cannot opt into typed entry without static proof.
 
 ```js
 export const meta = {
-  name: "typed-review", profile: "dataflow-v1",
+  name: "typed-review",
+  profile: "dataflow-v1",
   inputSchema: {
-    type: "object", additionalProperties: false, required: ["task", "ids"],
-    properties: {task: {type: "string"}, ids: {type: "array", items: {type: "string"}}},
+    type: "object",
+    additionalProperties: false,
+    required: ["task", "ids"],
+    properties: { task: { type: "string" }, ids: { type: "array", items: { type: "string" } } },
   },
 };
-export default async function run({agent}, input) {
-  return await agent(`Task: ${input.task}; ids: ${input.ids.join(",")}`, {label: "review"});
+export default async function run({ agent }, input) {
+  return await agent(`Task: ${input.task}; ids: ${input.ids.join(",")}`, { label: "review" });
 }
 ```
 

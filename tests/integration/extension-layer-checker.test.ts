@@ -17,9 +17,17 @@ afterEach(async () => {
 describe("extension layer checker negative rules", () => {
   it("keeps typed input admission inside the workflow facade and free of filesystem I/O", async () => {
     const root = await extensionFixture();
-    await appendFile(path.join(root, CROSS_FEATURE_READER), '\nimport "../workflows/runtime/workflow-input.js";\n', "utf8");
+    await appendFile(
+      path.join(root, CROSS_FEATURE_READER),
+      '\nimport "../workflows/runtime/workflow-input.js";\n',
+      "utf8",
+    );
     await expectRule(root, "rule 6 (feature-internal facade)");
-    await appendFile(path.join(root, "extensions/workflows/runtime/workflow-input.ts"), '\nimport "node:fs";\n', "utf8");
+    await appendFile(
+      path.join(root, "extensions/workflows/runtime/workflow-input.ts"),
+      '\nimport "node:fs";\n',
+      "utf8",
+    );
     await expectRule(root, "rule 7 (pure modules)");
   });
   it.each(["source/profiles/workflow-source-dataflow", "source/profiles/workflow-source-profile"])(
