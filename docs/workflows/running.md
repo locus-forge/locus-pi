@@ -2,10 +2,10 @@
 title: Launch and operate a workflow
 type: guide
 status: active
-updated: "2026-09-22T17:02:17Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=46"
+updated: "2026-10-06T17:57:00Z"
+source_commit: "94268a7fa802"
+update_event: "review_refresh"
+context: "changes=XL task=T-148"
 description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
@@ -146,6 +146,30 @@ If either option is repeated, the last supplied value wins. Use the conventional
 `--workspace-dir`, `--`, or another option-looking token; the entire remainder
 after the delimiter is forwarded byte-for-byte as semantic input. The delimiter
 works the same way for `/workflows run`.
+
+For a [typed-input workflow](dsl.md#typed-workflow-input), put every option before
+`--input-json`, then supply the complete raw JSON tail:
+`/workflows run typed-review --resume <runId> --input-json {"task":"Review","ids":["A","B"]}`.
+The tail is parsed once; missing/invalid JSON, repeated typed options or mixed
+text and JSON refuse. Shell quoting, stdin and JSON files are not input channels.
+`-- --input-json literal text` retains the exact legacy text form.
+
+Typed launches use private `launch-binding.v4` authority containing one canonical
+value/schema and, when admitted, the exact operator context. Its initial fenced
+write uses mode `0600`; result metadata contains identities/digests only. Typed
+checkpoints use v4 and recovery identity v2. Legacy v3/text/v1 records keep their
+existing format. Typed resume repeats the original value and verifies schema,
+source, ordered items, resolved launch inputs, projection and completed replay
+evidence. Changed, missing or damaged authority/known-call records refuse fresh
+work; a proven run with no agent work can still resume. Failed calls retry only
+when the retained logical-call identity and final attempt confirm failure; physical
+parallel completion order cannot authorize a retry. Missing typed logical identity
+refuses reuse. Resume of a continuation
+restores its original answer without requesting a new claim or answer.
+
+Physical-call accounting and any declared deadline remain process-local to the
+current root and its inherited children. Ordinary resume creates fresh execution
+state; durable cross-restart quota/deadline continuity is not provided here.
 
 Direct typed `/workflows <subcommand>` forms retain argument completion for
 workflow names, persisted run ids, `last`, and replay ids. Completion does not

@@ -1,3 +1,5 @@
+import { canonicalWorkflowJSON } from "../runtime/structured-results/schema.js";
+import type { WorkflowInputFields } from "../runtime/workflow-input.js";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { CustomUiComponent, ExtensionAPI, ThemeLike } from "../../_shared/host/pi-api.js";
 import { WORKFLOW_RESULT_CUSTOM_TYPE, WORKFLOW_RUN_CUSTOM_TYPE } from "./receipts.js";
@@ -168,3 +170,53 @@ function packageTaskRef(
   const ref = res.target !== undefined ? (res.target.source === "package" ? res.target.ref : undefined) : safeTarget;
   return ref === "task/draft" || ref === "task/plan" || ref === "task/plan-light" ? ref : undefined;
 }
+
+export function shortWorkflowRunId(runId: string): string {
+  const compact = runId.replace(/[^a-zA-Z0-9]/gu, "");
+  if (compact === "") return runId;
+  return compact.slice(-4);
+}
+
+function formatContinuationLine(res: RunWorkflowScriptResult, input: string | undefined): string[] {
+  const originRunId = res.continuation?.originRunId;
+  if (originRunId === undefined || originRunId === "") return [];
+  const answer = (input ?? "").trim();
+  const answerPart = answer === "" ? "" : ` · operator answered: "${compactTranscriptText(truncateAnswer(answer))}"`;
+  return [firstTranscriptLine(`↳ continues run #${shortWorkflowRunId(originRunId)}${answerPart}`)];
+}
+
+function truncateAnswer(value: string): string {
+  const line = value.replace(/\s+/gu, " ").trim();
+  return line.length <= TRANSCRIPT_ANSWER_MAX_CHARS ? line : `${line.slice(0, TRANSCRIPT_ANSWER_MAX_CHARS - 3)}...`;
+}
+
+export function compactTranscriptText(value: string): string {
+  const line = firstTranscriptLine(value);
+  return line.length <= TRANSCRIPT_LINE_MAX_CHARS ? line : `${line.slice(0, TRANSCRIPT_LINE_MAX_CHARS - 3)}...`;
+}
+
+export function firstTranscriptLine(value: string): string {
+  return (value.split(/\r?\n/u, 1)[0] ?? "").trim();
+}
+
+/** Only admitted successful typed continuation displays the separate accepted answer. */
+export function workflowInputPresentation(
+  res: RunWorkflowScriptResult,
+  input: WorkflowInputFields & { operatorAnswer?: string },
+): string[] {
+  const answer =
+    res.typedInput === undefined
+      ? input.input
+      : res.ok && res.typedInput.operatorContext?.originRunId === res.continuation?.originRunId
+        ? input.operatorAnswer
+        : undefined;
+  return [
+    ...(res.typedInput !== undefined && Object.hasOwn(input, "inputValue")
+      ? [compactTranscriptText(`Input (JSON): ${canonicalWorkflowJSON(input.inputValue)}`)]
+      : []),
+    ...formatContinuationLine(res, answer),
+  ];
+}
+
+const TRANSCRIPT_LINE_MAX_CHARS = 160;
+const TRANSCRIPT_ANSWER_MAX_CHARS = 96;

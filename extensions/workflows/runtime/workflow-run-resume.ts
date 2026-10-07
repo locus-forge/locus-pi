@@ -20,7 +20,11 @@ import { realpathSync } from "node:fs";
 import type { WorkflowContinuation } from "./workflow-artifacts.js";
 import type { ResolvedWorkflowTarget } from "./workflow-discovery.js";
 import type { WorkflowHandoffClaimLease } from "./workflow-handoff.js";
-import { readWorkflowRunResult, workflowPersistedResultInvalidity } from "./workflow-journal.js";
+import {
+  readWorkflowRunResult,
+  readWorkflowRunJournalState,
+  workflowPersistedResultInvalidity,
+} from "./workflow-journal.js";
 import type { WorkflowRunResultEnvelope } from "./workflow-journal.js";
 import {
   readWorkflowLaunchBinding,
@@ -43,6 +47,8 @@ import {
   type WorkflowReplayRefusalReason,
 } from "./workflow-replay.js";
 import { readWorkflowRunTextFile } from "./workflow-run-layout.js";
+import { readTypedReplayRetryOrdinals } from "./workflow-interrupted-recovery.js";
+import { projectWorkflowDisposition } from "./workflow-outcome.js";
 import {
   isPostCodeReviewTargetProjection,
   workflowTargetIdentityKey,
@@ -301,6 +307,7 @@ export interface WorkflowReplayPlan {
   record: boolean;
   /** Recorded entries to replay from. Present only when replay is active. */
   recorded?: readonly WorkflowReplayEntry[];
+  typedReplayRetryOrdinals?: readonly number[];
   sourceRunId?: string;
   refusedReason?: WorkflowReplayRefusalReason;
   notRecordedReason?: WorkflowReplayNotRecordedReason;
@@ -318,6 +325,7 @@ export interface PlanWorkflowReplayInput {
   target: ResolvedWorkflowTarget;
   resumeFromRunId?: string;
   resumeSourceResult?: WorkflowRunResultEnvelope;
+  interruptedRecovery?: true;
 }
 
 /**
@@ -352,6 +360,14 @@ export function planWorkflowReplay(input: PlanWorkflowReplayInput): WorkflowRepl
 
   const sourceResult = input.resumeSourceResult ?? readWorkflowRunResult(projectRoot, resumeFromRunId);
   assertDataflowReplaySource(input, sourceResult);
+  if (
+    sourceResult?.typedInput !== undefined &&
+    (!coverageProven ||
+      replaySafety === "unproven" ||
+      !readWorkflowStructuredCoverage(scriptIdentity) ||
+      sourceResult.scriptIdentity?.scriptSha256 !== scriptIdentity.scriptSha256)
+  )
+    throw new Error("typed input resume requires identical retained source and proven callable coverage");
   const sourceSha256 = sourceResult?.scriptIdentity?.scriptSha256;
   if (
     sourceResult === null ||
@@ -378,6 +394,13 @@ export function planWorkflowReplay(input: PlanWorkflowReplayInput): WorkflowRepl
   // recorded node name mandatory for the rest of the run.
   const sourceScriptChanged = sourceSha256 !== scriptIdentity.scriptSha256;
   const recorded = readWorkflowReplayLog(projectRoot, resumeFromRunId);
+  if (sourceResult.typedInput !== undefined && input.interruptedRecovery !== true) {
+    const retryable = readTypedReplayRetryOrdinals(projectRoot, resumeFromRunId, scriptIdentity, recorded);
+    const completed =
+      projectWorkflowDisposition({ ...sourceResult, ok: sourceResult.ok === true, result: sourceResult.result })
+        .status === "completed";
+    return { record, recorded, sourceRunId: resumeFromRunId, typedReplayRetryOrdinals: completed ? [] : retryable };
+  }
   if (recorded.length === 0) return refuse("no-recorded-calls");
   return { record, recorded, sourceRunId: resumeFromRunId, ...(sourceScriptChanged ? { sourceScriptChanged } : {}) };
 }

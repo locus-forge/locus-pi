@@ -324,6 +324,11 @@ export function validateStandardValueUses(
   ]) {
     if (isInsideBoundaryInputDefault(expression)) continue;
     if (
+      expression.kind() === "ternary_expression" &&
+      standardExpressionProvenance(expression, provenance, dslBindings, literalShadows)?.contextSelection
+    )
+      continue;
+    if (
       expression.kind() === "binary_expression" &&
       expression.field("operator")?.text() === "+" &&
       isInsideApprovedOpaqueSink(expression, dslBindings)

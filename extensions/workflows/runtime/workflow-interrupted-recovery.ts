@@ -1,3 +1,8 @@
+import path from "node:path";
+import { Lang, parse } from "@ast-grep/napi";
+import { ownedStandardDslCall } from "../source/workflow-source-bindings.js";
+import type { WorkflowScriptIdentity } from "./workflow-script-identity.js";
+import { workflowTypedInputProjection, type WorkflowTypedInput } from "./workflow-input.js";
 /** Explicit, conservative recovery admission. This never manufactures or writes a terminal result. */
 import { createHash } from "node:crypto";
 import {
@@ -25,6 +30,7 @@ export interface InterruptedRecoveryExpectation {
 /** Hash all caller-owned semantic inputs and resolved budgets, preserving exact item order and bytes. */
 export function workflowRecoveryInputHash(value: {
   input?: string;
+  typedInput?: WorkflowTypedInput;
   items: readonly string[];
   args?: Record<string, unknown>;
   budget: unknown;
@@ -36,8 +42,10 @@ export function workflowRecoveryInputHash(value: {
   return createHash("sha256")
     .update(
       JSON.stringify({
-        version: 1,
-        input: value.input ?? null,
+        version: value.typedInput === undefined ? 1 : 2,
+        ...(value.typedInput === undefined
+          ? { input: value.input ?? null }
+          : { typedInput: workflowTypedInputProjection(value.typedInput) }),
         items: value.items,
         args,
         budget: value.budget,
@@ -154,10 +162,72 @@ export function readInterruptedWorkflowResumeBinding(
     workspacePhysicalIdentitySchemaVersion: 1,
     semanticInputPresent: binding.semanticInput.present,
     semanticInputSha256: binding.semanticInput.sha256,
+    ...(binding.typedInput === undefined ? {} : { typedInput: workflowTypedInputProjection(binding.typedInput) }),
   };
 }
 
 /** No changed prefix may silently turn an interrupted recovery into duplicate fresh work. */
 export function confirmedRecoveryAgentCount(entries: readonly WorkflowReplayEntry[]): number {
   return entries.filter((entry) => entry.kind === "agent").length;
+}
+
+/** Typed replay corroborates every logical call; only real failed calls can be retried. */
+export function readTypedReplayRetryOrdinals(
+  projectRoot: string,
+  runId: string,
+  scriptIdentity: WorkflowScriptIdentity,
+  recorded: readonly WorkflowReplayEntry[],
+): readonly number[] {
+  const runDir = resolveWorkflowRunDir(projectRoot, runId);
+  const journal = readWorkflowRunJournalState(projectRoot, runId, runDir);
+  const counts = JSON.parse(readWorkflowRunTextFile(runDir, workflowResultFile(runDir))).replay;
+  const agentRows = recorded.filter((entry) => entry.kind === "agent");
+  const starts = journal.lines.filter((line) => line.kind === "agent_start");
+  const ends = journal.lines.filter((line) => line.kind === "agent_end" || line.kind === "error");
+  const calls = new Set(
+    journal.lines
+      .filter((line) => line.kind === "agent_queued" || line.kind === "agent_start")
+      .map((line) => line.logicalCallId),
+  );
+  const terminalByCall = new Map(ends.map((line) => [line.logicalCallId, line]));
+  const raw = workflowRunFileExists(runDir, workflowReplayFile(runDir))
+    ? readWorkflowRunTextFile(runDir, workflowReplayFile(runDir))
+    : "";
+  const rows = raw.split("\n").filter((row) => row.trim() !== "");
+  const source = parse(
+    Lang.JavaScript,
+    readWorkflowRunTextFile(path.dirname(scriptIdentity.snapshotPath), scriptIdentity.snapshotPath),
+  ).root();
+  const valuesPossible = source
+    .findAll({ rule: { kind: "call_expression" } })
+    .some((node) => ["now", "random"].includes(ownedStandardDslCall(source, node) ?? ""));
+  if (
+    journal.diagnostics.length !== 0 ||
+    journal.lines.length === 0 ||
+    counts?.recorded !== true ||
+    !Number.isSafeInteger(counts.freshCalls) ||
+    counts.freshCalls < 0 ||
+    !Number.isSafeInteger(counts.replayedCalls) ||
+    counts.replayedCalls < 0 ||
+    counts.freshCalls + counts.replayedCalls !== agentRows.length ||
+    calls.size !== agentRows.length ||
+    calls.has(undefined) ||
+    agentRows.some((entry) => {
+      const terminal = terminalByCall.get(`logical-${String(entry.seq + 1).padStart(4, "0")}`);
+      return terminal === undefined || entry.ok !== (terminal.kind === "agent_end" && terminal.status === "completed");
+    }) ||
+    starts.some((start) => !ends.some((end) => end.callId === start.callId)) ||
+    rows.length !== recorded.length ||
+    (raw !== "" && !raw.endsWith("\n")) ||
+    (raw === "" && valuesPossible) ||
+    ["agent", "clock", "random"].some((kind) =>
+      recorded
+        .filter((entry) => entry.kind === kind)
+        .map((entry) => entry.seq)
+        .sort((a, b) => a - b)
+        .some((sequence, index) => sequence !== index),
+    )
+  )
+    throw new Error("typed input replay evidence is missing, damaged or incomplete");
+  return agentRows.filter((entry) => !entry.ok).map((entry) => entry.seq);
 }

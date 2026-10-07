@@ -1,3 +1,7 @@
+import { snapshotWorkflowInput, prepareWorkflowTypedInput, type WorkflowInputValue } from "./workflow-input.js";
+import { workflowSourceInputSchema } from "../source/workflow-source-structured.js";
+import { hasPriorCompletedTypedChild } from "./workflow-launch-binding.js";
+import { workflowTargetIdentityKey } from "./workflow-saved-name.js";
 /**
  * workflow-saved-child.ts — Saved-child owner for one root workflow run.
  *
@@ -114,6 +118,7 @@ export interface SavedChildLaunchRequest {
   /** Absent only for the legacy exact-Package selector, which re-resolves. */
   targetBinding?: ResolvedWorkflowTarget;
   input?: string;
+  inputValue?: WorkflowInputValue;
   items: readonly string[];
   onRunStart: (run: { runId: string; runDir: string }) => void;
   /** Inherited root coordination for the child. The runner attaches it under
@@ -231,6 +236,7 @@ export interface SavedChildExecutionOwnerOptions {
   parentRunId: string;
   parentTarget: ResolvedWorkflowTarget;
   parentScriptSha256: string;
+  sourceRunId?: string | undefined;
   coordination: WorkflowRunnerCoordination;
   childRuns: WorkflowChildRunEvidence[];
   /** Recursion stays injected so this module never imports the runner. */
@@ -252,15 +258,28 @@ interface ResolvedSavedChildSource {
 /** Owns validation, checkpoint reuse, and recursive execution for one root run. */
 export class SavedChildExecutionOwner {
   readonly invoke = async (input: WorkflowSavedChildInvocation): Promise<WorkflowSavedChildResult> => {
+    const inputSnapshot = snapshotWorkflowInput(input);
+    input = { ...input, ...inputSnapshot };
     const validated = this.validateInvocation(input);
     const source = this.resolveSource(input);
+    const bytes = readFileSync(source.path);
+    if (sha256WorkflowBytes(bytes) !== source.scriptSha256)
+      throw new Error("saved child source changed during input admission");
+    const typedInput = await prepareWorkflowTypedInput(input, workflowSourceInputSchema(bytes.toString("utf8")));
+    if (sha256WorkflowBytes(readFileSync(source.path)) !== source.scriptSha256)
+      throw new Error("saved child source changed during input admission");
     const checkpointIdentity = {
       parentScriptSha256: this.options.parentScriptSha256,
       childScriptSha256: source.scriptSha256,
       workspaceIdentity: this.options.coordination.workspace.identity,
       itemKey: validated.key,
       rootLineageId: this.options.coordination.checkpointLineageId,
+      targetKey: workflowTargetIdentityKey(source.target, {
+        projectRoot: this.options.projectRoot,
+        resolvedPath: source.path,
+      }),
       ...(input.input === undefined ? {} : { input: input.input }),
+      ...(typedInput === undefined ? {} : { typedInput: typedInput.identity }),
       items: validated.items,
     };
     const lifecycle = createSavedChildLifecycleOwner({
@@ -336,11 +355,21 @@ export class SavedChildExecutionOwner {
   }
 
   private reuseCheckpoint(
-    identity: WorkflowCheckpointIdentity,
+    identity: WorkflowCheckpointIdentity & { targetKey: string },
     lifecycle: SavedChildLifecycleOwner,
   ): WorkflowSavedChildResult | undefined {
     const checkpoint = readWorkflowCompletedCheckpoint(this.options.coordination.lease, identity);
-    if (checkpoint === undefined) return undefined;
+    if (checkpoint === undefined) {
+      if (
+        hasPriorCompletedTypedChild({
+          ...identity,
+          projectRoot: this.options.projectRoot,
+          sourceRunId: this.options.sourceRunId,
+        })
+      )
+        throw new Error("typed child completed checkpoint is missing or was downgraded");
+      return undefined;
+    }
     assertWorkflowRootLease(this.options.coordination.lease);
     return lifecycle.recordSkipped(checkpoint);
   }
@@ -375,7 +404,7 @@ export class SavedChildExecutionOwner {
         // source snapshot reject a newly introduced project shadow with the
         // established source-change error instead of rebinding it.
         ...(input.packageName === undefined ? { targetBinding: source.target } : {}),
-        ...(input.input === undefined ? {} : { input: input.input }),
+        ...snapshotWorkflowInput(input),
         items: validated.items,
         onRunStart: lifecycle.recordStarted,
         coordination: childCoordination,
@@ -412,7 +441,17 @@ export class SavedChildExecutionOwner {
     if (typeof input !== "object" || input === null || Array.isArray(input)) {
       throw new Error("invokeWorkflow requires one closed invocation object");
     }
-    const allowed = new Set(["child", "name", "scriptPath", "packageName", "input", "items", "key", "keys"]);
+    const allowed = new Set([
+      "child",
+      "name",
+      "scriptPath",
+      "packageName",
+      "input",
+      "inputValue",
+      "items",
+      "key",
+      "keys",
+    ]);
     const unknown = Object.keys(input).find((key) => !allowed.has(key));
     if (unknown !== undefined) throw new Error(`invokeWorkflow has no field ${JSON.stringify(unknown)}`);
     const targetCount = [input.child, input.name, input.scriptPath, input.packageName].filter(

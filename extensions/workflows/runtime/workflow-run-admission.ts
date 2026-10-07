@@ -1,3 +1,13 @@
+import { readFileSync } from "node:fs";
+import { workflowSourceInputSchema } from "../source/workflow-source-structured.js";
+import {
+  prepareWorkflowTypedInput,
+  workflowTypedInputProjection,
+  type WorkflowInputValue,
+  type WorkflowTypedInput,
+  type WorkflowOperatorContext,
+} from "./workflow-input.js";
+import { canonicalWorkflowJSON } from "./structured-results/schema.js";
 /**
  * workflow-run-admission.ts — The ordered pre-execution admission of one run.
  *
@@ -104,6 +114,8 @@ export interface WorkflowRunAdmissionLaunch {
   scriptPath?: string;
   script?: string;
   input?: string;
+  inputValue?: WorkflowInputValue;
+  operatorAnswer?: string;
   workspaceDir?: string;
   /** @deprecated Legacy launch field; rejected by admission when supplied. */
   outputDir?: string;
@@ -141,6 +153,7 @@ export interface WorkflowRunAdmissionRequest {
  * when these locals lived in the runner.
  */
 export interface WorkflowRunAdmissionState {
+  typedInput?: WorkflowTypedInput;
   interruptedRecovery: boolean;
   resumeSourceWorkspace?: WorkflowResumeWorkspaceIdentity;
   resumeSourceBinding?: WorkflowResumeSourceBinding;
@@ -169,7 +182,7 @@ export type WorkflowRunAdmissionOutcome =
  * Run the four admission steps in order and return the validated data, or the
  * first refusal with exactly the evidence that was established when it happened.
  */
-export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): WorkflowRunAdmissionOutcome {
+export async function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Promise<WorkflowRunAdmissionOutcome> {
   const {
     projectRoot,
     workingDirectory,
@@ -186,6 +199,7 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
     launch: opts,
   } = request;
 
+  let typedInput: WorkflowTypedInput | undefined;
   let selectedWorkspaceDir = inheritedCoordination?.workspace.relativePath ?? opts.workspaceDir;
   let interruptedRecovery = false;
   let resumeSourceWorkspace: WorkflowResumeWorkspaceIdentity | undefined;
@@ -193,6 +207,7 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
   let handoffReuseWorkspace: WorkflowWorkspaceDirectory | undefined;
   let stableWorkspace: WorkflowWorkspaceDirectory | undefined = inheritedCoordination?.workspace;
   const state = (): WorkflowRunAdmissionState => ({
+    ...(typedInput === undefined ? {} : { typedInput }),
     interruptedRecovery,
     ...(resumeSourceWorkspace === undefined ? {} : { resumeSourceWorkspace }),
     ...(resumeSourceBinding === undefined ? {} : { resumeSourceBinding }),
@@ -241,6 +256,62 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
   try {
     scriptIdentity = createWorkflowScriptSnapshot(target.path, runtimeDir);
     assertWorkflowOutputDirRemoved(scriptIdentity.snapshotPath);
+    const schema = workflowSourceInputSchema(readFileSync(scriptIdentity.snapshotPath, "utf8"));
+    let operatorContext: WorkflowOperatorContext | undefined;
+    const consumedOrigins = new Map<string, string>();
+    const contextSourceId = opts.operatorHandoffClaim?.sourceRunId ?? resumeFromRunId;
+    if (contextSourceId !== undefined) {
+      const origin = readWorkflowLaunchBinding(projectRoot, contextSourceId);
+      if (origin?.typedInput !== undefined) {
+        consumedOrigins.set(contextSourceId, canonicalWorkflowJSON(origin));
+        if (
+          !workflowLaunchBindingMatchesResult(origin, readWorkflowRunResult(projectRoot, contextSourceId)) &&
+          opts.recoverInterrupted !== true
+        )
+          throw new Error("typed input origin has no matching authoritative result");
+        operatorContext =
+          opts.operatorHandoffClaim === undefined
+            ? origin.typedInput.operatorContext
+            : opts.operatorAnswer === undefined
+              ? undefined
+              : { originRunId: contextSourceId, operatorAnswer: opts.operatorAnswer };
+        if (
+          opts.operatorHandoffClaim !== undefined &&
+          canonicalWorkflowJSON(opts.inputValue) !== canonicalWorkflowJSON(origin.typedInput.value)
+        )
+          throw new Error("typed input continuation must preserve the origin value");
+      }
+    }
+    if (
+      opts.operatorAnswer !== undefined &&
+      (opts.operatorHandoffClaim === undefined ||
+        operatorContext === undefined ||
+        typeof opts.operatorAnswer !== "string")
+    )
+      throw new Error("typed input operatorAnswer requires a matching typed handoff claim");
+    if (operatorContext !== undefined) {
+      const origin = readWorkflowLaunchBinding(projectRoot, operatorContext.originRunId);
+      if (origin !== null) consumedOrigins.set(operatorContext.originRunId, canonicalWorkflowJSON(origin));
+      if (
+        origin?.typedInput === undefined ||
+        !workflowLaunchBindingMatchesResult(origin, readWorkflowRunResult(projectRoot, operatorContext.originRunId)) ||
+        origin.scriptIdentity.scriptSha256 !== scriptIdentity.scriptSha256 ||
+        canonicalWorkflowJSON(origin.typedInput.schema) !== canonicalWorkflowJSON(schema) ||
+        canonicalWorkflowJSON(origin.typedInput.value) !== canonicalWorkflowJSON(opts.inputValue)
+      )
+        throw new Error("typed input operator context origin is invalid");
+    }
+    typedInput = await prepareWorkflowTypedInput(opts, schema, operatorContext);
+    for (const [originRunId, consumed] of consumedOrigins) {
+      const origin = readWorkflowLaunchBinding(projectRoot, originRunId);
+      if (
+        origin === null ||
+        canonicalWorkflowJSON(origin) !== consumed ||
+        (opts.recoverInterrupted !== true &&
+          !workflowLaunchBindingMatchesResult(origin, readWorkflowRunResult(projectRoot, originRunId)))
+      )
+        throw new Error("typed input origin authority changed during admission");
+    }
     if (inheritedCoordination?.expectedChildSource !== undefined) {
       const actualCanonicalPath = realpathSync(target.path);
       const expected = inheritedCoordination.expectedChildSource;
@@ -302,6 +373,7 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
           scriptSha256: scriptIdentity.scriptSha256,
           recoveryInputSha256: workflowRecoveryInputHash({
             ...(opts.input === undefined ? {} : { input: opts.input }),
+            ...(typedInput === undefined ? {} : { typedInput }),
             items,
             budget,
             ...(noOperator === undefined ? {} : { noOperator }),
@@ -328,6 +400,25 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
       const currentOwner = isPostCodeReviewTarget(target, projectRoot);
       const sourceLaunchBinding = readWorkflowLaunchBinding(projectRoot, resumeFromRunId);
       if (sourceLaunchBinding === null) throw new Error(workflowExecutionMigrationMessage(resumeFromRunId));
+      if (
+        typedInput !== undefined &&
+        (sourceLaunchBinding.scriptIdentity.scriptSha256 !== scriptIdentity.scriptSha256 ||
+          sourceLaunchBinding.recoveryInputSha256 !==
+            workflowRecoveryInputHash({
+              typedInput,
+              items,
+              budget,
+              ...(noOperator === undefined ? {} : { noOperator }),
+            }))
+      )
+        throw new Error("Cannot resume workflow: typed input source, items or resolved launch inputs changed.");
+      if (
+        (typedInput === undefined) !== (sourceLaunchBinding.typedInput === undefined) ||
+        (typedInput !== undefined &&
+          canonicalWorkflowJSON(workflowTypedInputProjection(typedInput)) !==
+            canonicalWorkflowJSON(workflowTypedInputProjection(sourceLaunchBinding.typedInput!)))
+      )
+        throw new Error("Cannot resume workflow: typed input or operator context differs from the source run.");
       if (sourceResult === null || !workflowLaunchBindingMatchesResult(sourceLaunchBinding, sourceResult)) {
         throw new Error(`Cannot resume workflow: source run ${resumeFromRunId} has no valid host launch binding.`);
       }
@@ -353,7 +444,7 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
         );
       }
       if (
-        (sourceOwner || currentOwner) &&
+        (sourceOwner || currentOwner || typedInput !== undefined) &&
         persistedTargetIdentityKey(
           sourceLaunchBinding.target,
           projectRoot,
@@ -507,6 +598,7 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
         rootLineageId,
         recoveryInputSha256: workflowRecoveryInputHash({
           ...(opts.input === undefined ? {} : { input: opts.input }),
+          ...(typedInput === undefined ? {} : { typedInput }),
           items,
           budget,
           ...(noOperator === undefined ? {} : { noOperator }),
@@ -519,6 +611,7 @@ export function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Workflow
             ? resumeSourceWorkspace?.explicit === true || opts.workspaceDir !== undefined
             : opts.operatorHandoffWorkspaceReuse?.explicit === true,
         semanticInput: requestedSemanticInput,
+        ...(typedInput === undefined ? {} : { typedInput }),
       });
       try {
         writeWorkflowLaunchBinding(runDir, launchBinding);

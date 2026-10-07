@@ -1,3 +1,4 @@
+import { snapshotWorkflowInput } from "../runtime/workflow-input.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../_shared/host/pi-api.js";
 import { getProjectRoot, getWorkingDirectory } from "../../_shared/host/pi-api.js";
 import { setOperatorWidget } from "../../_shared/operator/widget-render.js";
@@ -24,6 +25,10 @@ export async function handleWorkflowRunCommand(
     return true;
   };
 
+  if (parsed.inputJSONError !== undefined) {
+    setOperatorWidget(ctx, "workflows", workflowWarningBlock(parsed.inputJSONError, workflowRunUsage()));
+    return reject("launch_policy_refused", `Workflow not started: ${parsed.inputJSONError}`);
+  }
   if (parsed.obsoleteOutputDir === true) {
     const message =
       "--output-dir was removed; assign exact file destinations in agent prompts. --workspace-dir selects native runtime state only.";
@@ -99,7 +104,7 @@ export async function handleWorkflowRunCommand(
     scriptRef,
     ...(targetPreflight.status === "runner-durable-failure" ? { targetKind: targetPreflight.targetKind } : {}),
     ...(target === undefined ? {} : { target }),
-    ...(parsed.input === undefined ? {} : { input: parsed.input }),
+    ...snapshotWorkflowInput(parsed),
     ...(parsed.workspaceDir === undefined ? {} : { workspaceDir: parsed.workspaceDir }),
     ...(parsed.runName === undefined ? {} : { runName: parsed.runName }),
     ...(parsed.resumeFromRunId === undefined ? {} : { resumeFromRunId: parsed.resumeFromRunId }),

@@ -14,7 +14,12 @@ export {
   isInsideLiteralShadow,
 } from "./workflow-source-provenance-query.js";
 import type { WorkflowJSONSchema } from "../runtime/structured-results/schema.js";
-import { structuredArrayItem } from "./workflow-source-structured.js";
+import {
+  structuredArrayItem,
+  workflowInputBindings,
+  workflowFunctionInputSchema,
+  structuredLiteralValue,
+} from "./workflow-source-structured.js";
 import {
   staticObjectKey,
   staticStringValue,
@@ -24,6 +29,7 @@ import {
 import type { WorkflowSourceDiagnosticSink } from "./workflow-source-diagnostics.js";
 import {
   boundStandardNames,
+  simpleAuthorRecordBindings,
   callCallee,
   directStandardDslCall,
   standardCallArguments,
@@ -32,6 +38,9 @@ import {
   standardFunctionParameters,
   standardLoopBindingNames,
   unwrapStandardValue,
+  standardLexicalBindings,
+  standardBindingOf,
+  nodeWithinStandardNode,
   type StandardCollectionBindings,
   type StandardDslMethod,
 } from "./workflow-source-bindings.js";
@@ -52,6 +61,9 @@ type StandardValueKind =
 
 export interface StandardValueProvenance {
   kind: StandardValueKind;
+  operatorContext?: true;
+  /** A ternary selects by proven context presence, never answer content. */
+  contextSelection?: true;
   sourceMethod?: StandardDslMethod;
   schema?: WorkflowJSONSchema;
   /** Await settles only the root Promise, never pending/callable graph contents. */
@@ -71,6 +83,7 @@ export type StandardProvenanceMap = ReadonlyMap<string, StandardValueProvenance>
 export interface StandardLiteralShadow {
   name: string;
   scopeId: number;
+  bindingId: number;
 }
 
 export interface StandardBindingModel {
@@ -104,11 +117,11 @@ function standardValueProvenance(
 ): Pick<StandardBindingModel, "literalShadows" | "provenance" | "carryAssignments"> {
   const provenance = Object.assign(new Map<string, StandardValueProvenance>(), { structuredCalls });
   const owners = new Map<string, number>();
-  const duplicateNames = new Set<string>();
+  const duplicateOwners = new Set<number>();
   const reserve = (name: string, value: StandardValueProvenance, ownerId: number): void => {
     const priorOwner = owners.get(name);
     if (priorOwner !== undefined && priorOwner !== ownerId) {
-      duplicateNames.add(name);
+      duplicateOwners.add(ownerId);
       return;
     }
     // An empty array seed cannot erase a carried model list on the alias fixed-point pass.
@@ -117,9 +130,16 @@ function standardValueProvenance(
     owners.set(name, ownerId);
     provenance.set(name, value);
   };
-  const parameters = standardFunctionParameterNodes(standardFunctionParameters(runEntry));
-  for (const name of boundStandardNames(parameters[1])) {
-    reserve(name, { kind: "opaque-value" }, parameters[1]?.id() ?? runEntry.id());
+  for (const { name, schema, ownerId, operatorContext } of workflowInputBindings(root, runEntry)) {
+    reserve(
+      name,
+      operatorContext
+        ? { kind: "known-value", operatorContext: true }
+        : schema === undefined
+          ? { kind: "opaque-value" }
+          : { kind: "structured-value", schema },
+      ownerId,
+    );
   }
   for (const [name, ownerId] of collections.owners) {
     reserve(name, { kind: "known-collection" }, ownerId);
@@ -185,10 +205,9 @@ function standardValueProvenance(
   }
   // Diagnose unresolved map receivers only after loop and callback facts converge.
   classifyStandardCallbackParameters(root, runEntry, provenance, dslBindings, reserve, errors);
-  if (duplicateNames.size > 0) {
-    errors.add("standard profile gives every semantic or runtime-owned value binding one unique name", runEntry);
-  }
   const literalShadows: StandardLiteralShadow[] = [];
+  const lexicalBindings = standardLexicalBindings(root, true);
+  const runBody = runEntry.field("body") ?? undefined;
   for (const declaration of root.findAll({ rule: { kind: "variable_declarator" } })) {
     const name = declaration.field("name");
     if (name?.kind() !== "identifier" || !provenance.has(name.text()) || owners.get(name.text()) === declaration.id()) {
@@ -198,8 +217,23 @@ function standardValueProvenance(
     const scope = declaration
       .ancestors()
       .find((ancestor) => ancestor.kind() === "statement_block" || ancestor.kind() === "switch_body");
-    if (value === undefined && scope !== undefined) literalShadows.push({ name: name.text(), scopeId: scope.id() });
+    const context = provenance.get(name.text())?.operatorContext === true;
+    if (context) duplicateOwners.add(declaration.id());
+    const literalContext =
+      context &&
+      declaration.parent()?.children()[0]?.kind() === "const" &&
+      scope !== undefined &&
+      scope.id() !== runBody?.id() &&
+      nodeWithinStandardNode(scope, runBody) &&
+      standardBindingOf(name, lexicalBindings)?.bindingId === declaration.id() &&
+      standardBindingOf(name, lexicalBindings)?.scopeId === scope.id() &&
+      structuredLiteralValue(declaration.field("value") ?? undefined) !== undefined;
+    if (literalContext) duplicateOwners.delete(declaration.id());
+    if (scope !== undefined && ((!context && value === undefined) || literalContext))
+      literalShadows.push({ name: name.text(), scopeId: scope.id(), bindingId: declaration.id() });
   }
+  if (duplicateOwners.size > 0)
+    errors.add("standard profile gives every semantic or runtime-owned value binding one unique name", runEntry);
   return { literalShadows, provenance, carryAssignments };
 }
 
@@ -293,6 +327,8 @@ function classifyStandardCallbackParameters(
     const callbackArgumentIndex = ownerArguments.findIndex(
       (argument) => unwrapStandardParentheses(argument)?.id() === callback.id(),
     );
+    if (method === "workflow" && parameters.length <= 2 && workflowFunctionInputSchema(root, callback) !== undefined)
+      continue;
     if (method === "pipeline" && callbackArgumentIndex > 0) {
       classifyKnownStandardCallbackParameters(
         parameters,
@@ -335,29 +371,6 @@ function classifyKnownStandardCallbackParameters(
     }
     reserve(parameter.text(), value, parameter.id());
   });
-}
-
-/** Only flat static record bindings are readable author data, never an output parser. */
-function simpleAuthorRecordBindings(pattern: SgNode): string[] | undefined {
-  if (pattern.kind() !== "object_pattern") return undefined;
-  const names: string[] = [];
-  for (const child of pattern.children()) {
-    if (["{", "}", ",", "comment"].includes(String(child.kind()))) continue;
-    if (child.kind() === "shorthand_property_identifier_pattern") {
-      names.push(child.text());
-      continue;
-    }
-    if (
-      child.kind() === "pair_pattern" &&
-      staticObjectKey(child.field("key")) !== undefined &&
-      child.field("value")?.kind() === "identifier"
-    ) {
-      names.push(child.field("value")!.text());
-      continue;
-    }
-    return undefined;
-  }
-  return names.length > 0 ? names : undefined;
 }
 
 function collectStandardBoundedCarry(

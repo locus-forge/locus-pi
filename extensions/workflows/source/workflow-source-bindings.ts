@@ -219,6 +219,51 @@ export function directStandardDslCall(callee: SgNode, bindings: ReadonlySet<stri
   return property !== undefined && STANDARD_DSL_METHODS.has(property) ? (property as StandardDslMethod) : undefined;
 }
 
+/** Resolve a DSL call through the actual lexical parameter or direct destructure owner. */
+export function ownedStandardDslCall(root: SgNode, call: SgNode): StandardDslMethod | undefined {
+  const bindings = standardLexicalBindings(root);
+  const functions = root.findAll({
+    rule: { any: [{ kind: "function_declaration" }, { kind: "function_expression" }, { kind: "arrow_function" }] },
+  });
+  function vocabulary(reference: SgNode): Set<string> | undefined {
+    const binding = standardBindingOf(reference, bindings);
+    if (binding === undefined || binding.activationIndex > reference.range().start.index) return undefined;
+    const fn = functions.find((node) => standardFunctionParameters(node)?.id() === binding?.bindingId);
+    if (fn !== undefined) {
+      if (fn.parent()?.kind() !== "export_statement" || !/^export\s+default\b/u.test(fn.parent()!.text())) {
+        const owner = fn.parent()?.kind() === "arguments" ? fn.parent()?.parent() : undefined;
+        if (
+          owner?.kind() !== "call_expression" ||
+          method(owner) !== "workflow" ||
+          standardCallArguments(owner)[0]?.id() !== fn.id()
+        )
+          return undefined;
+      }
+      return standardEntryDslBindings(fn);
+    }
+    const declaration = root
+      .findAll({ rule: { kind: "variable_declarator" } })
+      .find((node) => node.id() === binding?.bindingId);
+    const value = declaration?.field("value");
+    if (
+      declaration?.field("name")?.kind() !== "object_pattern" ||
+      value?.kind() !== "identifier" ||
+      !vocabulary(value)?.has("dsl")
+    )
+      return undefined;
+    const names = new Set<string>();
+    addStandardDslBindings(names, declaration.field("name")!);
+    return names;
+  }
+  function method(node: SgNode): StandardDslMethod | undefined {
+    const callee = unwrapStandardParentheses(callCallee(node));
+    const receiver = callee?.kind() === "member_expression" ? callee.field("object") : callee;
+    const names = receiver == null ? undefined : vocabulary(receiver);
+    return callee === undefined || names === undefined ? undefined : directStandardDslCall(callee, names);
+  }
+  return method(call);
+}
+
 export function standardCollectionBindings(
   root: SgNode,
   runEntry: SgNode | undefined,
@@ -257,25 +302,19 @@ export function standardCollectionBindings(
 }
 
 export function boundStandardNames(pattern: SgNode | undefined): string[] {
+  return standardPatternBindings(pattern).map((node) => node.text());
+}
+
+/** Only pattern-side nodes bind names; default expressions and computed keys are reads. */
+function standardPatternBindings(pattern: SgNode | undefined): SgNode[] {
   if (pattern === undefined) return [];
-  if (pattern.kind() === "identifier" || pattern.kind() === "shorthand_property_identifier_pattern") {
-    return [pattern.text()];
-  }
-  if (pattern.kind() === "pair_pattern") {
-    return boundStandardNames(pattern.field("value") ?? undefined);
-  }
-  const names: string[] = [];
-  for (const child of pattern.children()) {
-    if (
-      child.kind() === "property_identifier" ||
-      child.kind() === "shorthand_property_identifier" ||
-      child.kind() === "comment"
-    ) {
-      continue;
-    }
-    names.push(...boundStandardNames(child));
-  }
-  return names;
+  const kind = String(pattern.kind());
+  if (["identifier", "undefined", "shorthand_property_identifier_pattern"].includes(kind)) return [pattern];
+  if (["assignment_pattern", "object_assignment_pattern"].includes(kind))
+    return standardPatternBindings(pattern.field("left") ?? undefined);
+  if (kind === "pair_pattern") return standardPatternBindings(pattern.field("value") ?? undefined);
+  if (!["formal_parameters", "array_pattern", "object_pattern", "rest_pattern"].includes(kind)) return [];
+  return pattern.children().flatMap(standardPatternBindings);
 }
 
 /** Tree-sitter exposes a bare arrow parameter separately from parenthesized parameters. */
@@ -283,15 +322,20 @@ export function standardFunctionParameters(callable: SgNode): SgNode | undefined
   return callable.field("parameters") ?? callable.field("parameter") ?? undefined;
 }
 
-export function standardFunctionParameterNodes(parameters: SgNode | undefined): SgNode[] {
+export function standardFunctionParameterNodes(parameters: SgNode | undefined, includeUndefined = false): SgNode[] {
   if (parameters === undefined) return [];
   if (parameters.kind() !== "formal_parameters") return [parameters];
   return parameters
     .children()
     .filter((child) =>
-      ["array_pattern", "assignment_pattern", "identifier", "object_pattern", "rest_pattern"].includes(
-        String(child.kind()),
-      ),
+      [
+        "array_pattern",
+        "assignment_pattern",
+        "identifier",
+        "object_pattern",
+        "rest_pattern",
+        ...(includeUndefined ? ["undefined"] : []),
+      ].includes(String(child.kind())),
     );
 }
 
@@ -314,25 +358,22 @@ export function standardCallArguments(call: SgNode): SgNode[] {
 }
 
 export function isStandardBindingOccurrence(identifier: SgNode, includeCatchParameters = false): boolean {
-  for (const clause of includeCatchParameters
-    ? identifier.ancestors().filter((node) => node.kind() === "catch_clause")
-    : []) {
-    if (nodeWithinStandardNode(identifier, clause.field("parameter") ?? undefined)) return true;
-  }
-  for (const declaration of identifier.ancestors().filter((ancestor) => ancestor.kind() === "variable_declarator")) {
-    if (nodeWithinStandardNode(identifier, declaration.field("name") ?? undefined)) return true;
-  }
-  for (const callable of identifier
-    .ancestors()
-    .filter((ancestor) =>
-      ["arrow_function", "function_declaration", "function_expression"].includes(String(ancestor.kind())),
-    )) {
-    if (nodeWithinStandardNode(identifier, standardFunctionParameters(callable))) return true;
-  }
-  for (const loop of identifier.ancestors().filter((ancestor) => ancestor.kind() === "for_in_statement")) {
-    if (nodeWithinStandardNode(identifier, loop.field("left") ?? undefined)) return true;
-  }
-  return false;
+  return identifier.ancestors().some((owner) => {
+    const kind = String(owner.kind());
+    const pattern =
+      kind === "variable_declarator"
+        ? owner.field("name")
+        : kind === "for_in_statement"
+          ? owner.field("left")
+          : kind === "catch_clause"
+            ? includeCatchParameters
+              ? owner.field("parameter")
+              : undefined
+            : ["arrow_function", "function_declaration", "function_expression"].includes(kind)
+              ? standardFunctionParameters(owner)
+              : undefined;
+    return standardPatternBindings(pattern ?? undefined).some((node) => node.id() === identifier.id());
+  });
 }
 
 export function nodeWithinStandardNode(node: SgNode, container: SgNode | undefined): boolean {
@@ -416,4 +457,27 @@ function isDirectStandardEdgeCall(call: SgNode, edge: string): boolean {
 
 export function callCallee(call: SgNode): SgNode | undefined {
   return call.children().find((child) => child.kind() !== "arguments" && child.kind() !== "comment");
+}
+
+/** Only flat static record bindings are readable author data, never an output parser. */
+export function simpleAuthorRecordBindings(pattern: SgNode): string[] | undefined {
+  if (pattern.kind() !== "object_pattern") return undefined;
+  const names: string[] = [];
+  for (const child of pattern.children()) {
+    if (["{", "}", ",", "comment"].includes(String(child.kind()))) continue;
+    if (child.kind() === "shorthand_property_identifier_pattern") {
+      names.push(child.text());
+      continue;
+    }
+    if (
+      child.kind() === "pair_pattern" &&
+      staticObjectKey(child.field("key")) !== undefined &&
+      child.field("value")?.kind() === "identifier"
+    ) {
+      names.push(child.field("value")!.text());
+      continue;
+    }
+    return undefined;
+  }
+  return names.length > 0 ? names : undefined;
 }

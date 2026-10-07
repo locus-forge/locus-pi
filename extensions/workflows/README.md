@@ -11,7 +11,7 @@
 /workflows info [name]
 /workflows status [runId]
 /workflows result [runId|last]
-/workflows run <name|path> [--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--force] [--no-operator|--operator] [--] [input]
+/workflows run <name|path> [--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--force] [--no-operator|--operator] [--] [input] | --input-json <JSON tail>
 /workflows continue <runId>
 /workflows stop [runId|last]
 /workflows skills <sync|status|remove> [--host codex|claude|all] [--scope user|project]
@@ -30,6 +30,8 @@ the adjacent `.locus-pi-workflow-skills.v1.json` file records ownership, so it
 never infers ownership from a path or replaces a real directory or foreign
 symlink. See
 [`skills/README.md`](../../skills/README.md).
+
+Explicit [typed input](../../docs/workflows/dsl.md#typed-workflow-input) uses `meta.inputSchema` and tool `inputValue` or terminal command `--input-json`. The runtime validates and freezes JSON before entry; inline/saved children validate their own explicit schemas. Typed continuation keeps the JSON and receives its separate operator answer through optional root context. Legacy text remains exact.
 
 Both checked authoring profiles admit bounded literal-schema [immutable structured results v4](../../docs/workflows/agent-results.md#structured-results-v4) on the actual verified Pi >=1.0.0 `openai-codex` route. `validate`, `repair` and `outputTransport` remain removed; the return tool carries the actual schema and requests Pi strict preference only where semantics are preserved. The checked [dataflow-v1 profile](../../docs/workflows/source-shape.md#checked-dataflow-v1) adds bounded synchronous data helpers and visible owned keyed graphs with full-source resume identity. Historical v5 evidence remains readable but cannot replay as current output. Host permissions are unchanged.
 

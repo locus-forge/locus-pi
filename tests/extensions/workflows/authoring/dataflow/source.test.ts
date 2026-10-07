@@ -3,6 +3,11 @@ import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { Lang, parse } from "@ast-grep/napi";
+import {
+  boundStandardNames,
+  isStandardBindingOccurrence,
+} from "../../../../../extensions/workflows/source/workflow-source-bindings.js";
 import { checkWorkflowSourceText } from "../../../../../extensions/workflows/tool/workflow-source-check-tool.js";
 import { staticWorkflowMeta } from "../../../../../extensions/workflows/catalog/workflow-meta.js";
 import { assessWorkflowStructuredReplayCoverage } from "../../../../../extensions/workflows/runtime/workflow-script-identity.js";
@@ -349,4 +354,87 @@ it("inherits numeric/escaped schema literal facts without widening standard refe
   const escaped = source(String.raw`return a\u0067ent(input,{label:"x"});`);
   expect(check(escaped).some((row) => row.message.includes("without Unicode escapes"))).toBe(true);
   expect(assessWorkflowStructuredReplayCoverage(escaped)).toBe(false);
+});
+
+describe.each(["standard", "orchestration-only", "dataflow-v1"] as const)("typed optional host context: %s", (mode) => {
+  const typed = (body: string, parameters = "context") =>
+    `export const meta={profile:${JSON.stringify(mode === "orchestration-only" ? "standard" : mode)},inputSchema:{type:"string"}};
+export default async function run({agent}, input, ${parameters}) { ${body} }`;
+  const diagnostics = (value: string) =>
+    checkWorkflowSourceText(value, mode === "standard" ? "compatibility" : mode).filter(
+      (row) => row.severity === "error",
+    );
+  it.each([
+    'if(context !== undefined) return await agent(context.operatorAnswer,{label:"x"}); return input;',
+    'if(context === undefined) return input; return await agent(context.operatorAnswer,{label:"x"});',
+    'if(context === undefined) return input; else return await agent(context.operatorAnswer,{label:"x"});',
+    'if(context !== undefined) {const answer=context.operatorAnswer; return await agent(answer,{label:"x"});} return input;',
+    'return context !== undefined ? context.operatorAnswer : "absent";',
+    'return undefined !== context ? context.operatorAnswer : "absent";',
+    'return context === undefined ? "absent" : context.operatorAnswer;',
+    'const answer=context !== undefined ? context.operatorAnswer : "absent"; return await agent(answer,{label:"x"});',
+    'if(context !== undefined) {const context={operatorAnswer:"local"}; return await agent(context.operatorAnswer,{label:"x"});} return input;',
+    'if(context !== undefined) {const context={operatorAnswer:"local"}; await agent(context.operatorAnswer,{label:"local"});}if(context !== undefined)return await agent(context.operatorAnswer,{label:"root"});return input;',
+  ])("proves the exact present arm without treating the answer as author data: %s", (body) => {
+    const value = typed(body);
+    expect(diagnostics(value)).toEqual([]);
+    expect(assessWorkflowStructuredReplayCoverage(value)).toBe(true);
+  });
+  it.each([
+    ['return await agent(context.operatorAnswer,{label:"x"});', "context"],
+    ['if(context === undefined) return await agent(context.operatorAnswer,{label:"x"}); return input;', "context"],
+    ['if(context !== undefined) {return input;} return await agent(context.operatorAnswer,{label:"x"});', "context"],
+    ["if(context !== undefined) return context.unknown; return input;", "context"],
+    ["if(context !== undefined) return {context}; return input;", "context"],
+    ["if(context !== undefined) {const alias=context; return alias;} return input;", "context"],
+    ["if(context !== undefined) {const {operatorAnswer}=context; return operatorAnswer;} return input;", "context"],
+    ['if(context !== undefined) return context["operatorAnswer"]; return input;', "context"],
+    ['const undefined="forged"; if(context !== undefined) return context.operatorAnswer; return input;', "context"],
+    ["return input;", "{operatorAnswer}"],
+    ["return input;", "context, extra"],
+    ["return input;", "context, undefined"],
+    [
+      "try{return input;}catch(undefined){if(context !== undefined)return context.operatorAnswer;return input;}",
+      "context",
+    ],
+    ['if(context !== undefined)context.operatorAnswer="changed";return input;', "context"],
+    [
+      'if(context!==undefined){const boxed={context};const context={operatorAnswer:"local"};return boxed;}return input;',
+      "context",
+    ],
+  ])("refuses unsupported context proof: %s", (body, parameters) => {
+    const value = typed(body, parameters);
+    expect(diagnostics(value).length).toBeGreaterThan(0);
+    expect(assessWorkflowStructuredReplayCoverage(value)).toBe(false);
+  });
+  if (mode !== "dataflow-v1")
+    it.each([
+      'if(context !== undefined && context.operatorAnswer === "deploy") return input; return input;',
+      'if(context !== undefined) {const answer=context.operatorAnswer; if(answer === "deploy") return input;} return input;',
+      'const answer=context !== undefined ? context.operatorAnswer : "absent"; if(answer === "deploy") return input; return input;',
+      'return context !== undefined ? context.operatorAnswer === "deploy" : false;',
+      'const context={operatorAnswer:"local"};return input;',
+      'if(context !== undefined){const context={operatorAnswer:"a"};const context={operatorAnswer:"b"};return input;}return input;',
+      'if(context !== undefined){await agent(context.operatorAnswer,{label:"x"});const context={operatorAnswer:"local"};}return input;',
+      'if(context !== undefined){const context=await agent("x",{label:"x"});return context;}return input;',
+      'if(context !== undefined){const context=agent("x",{label:"x"});return context;}return input;',
+      'if(context !== undefined){const context=()=>"x";return context;}return input;',
+    ])("preserves ordinary answer opacity in content routing: %s", (body) => {
+      expect(diagnostics(typed(body)).length).toBeGreaterThan(0);
+    });
+});
+
+it.each([
+  ["function f(undefined) {}", ["undefined"]],
+  ["function f(value = context.operatorAnswer) {}", ["value"]],
+  ["function f({value = context.operatorAnswer}) {}", ["value"]],
+  ["function f({[context.operatorAnswer]: value}) {}", ["value"]],
+])("lexical binding facts distinguish patterns from reads: %s", (source, expected) => {
+  const root = parse(Lang.JavaScript, source as string).root();
+  const parameters = root.find({ rule: { kind: "formal_parameters" } })!;
+  expect(boundStandardNames(parameters)).toEqual(expected);
+  for (const reference of parameters
+    .findAll({ rule: { kind: "identifier" } })
+    .filter((node) => node.text() === "context"))
+    expect(isStandardBindingOccurrence(reference, true)).toBe(false);
 });

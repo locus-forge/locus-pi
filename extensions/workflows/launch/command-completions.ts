@@ -182,6 +182,11 @@ function workflowRunOptionCompletions(
             },
           ]),
       {
+        value: `${stem}--input-json `,
+        label: "--input-json",
+        description: "Pass one complete JSON value as the remaining tail",
+      },
+      {
         value: `${stem}-- `,
         label: "--",
         description: "Pass the remaining text unchanged as semantic input",
@@ -191,7 +196,7 @@ function workflowRunOptionCompletions(
 
   for (let index = 0; index < tokens.length;) {
     const token = tokens[index] ?? "";
-    if (token === "--") {
+    if (token === "--" || token === "--input-json") {
       // End-of-options switches the rest to opaque semantic input. Never offer
       // option completions once that boundary has been crossed.
       return null;

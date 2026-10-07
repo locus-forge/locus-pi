@@ -2,10 +2,10 @@
 title: Workflow source contract
 type: guide
 status: active
-updated: "2026-10-06T14:26:19Z"
-source_commit: "35b4a1294375"
+updated: "2026-10-06T17:57:00Z"
+source_commit: "94268a7fa802"
 update_event: "review_refresh"
-context: "changes=XL files=34 task=T-147"
+context: "changes=XL task=T-148"
 description: "Teach checked helper graphs and full-source replay identity over current schema authoring"
 ---
 
@@ -212,7 +212,7 @@ These are all rules enforced for `meta.profile: "standard"`:
   Opaque and runtime/host values may be forwarded whole through documented
   prompt, log, publication, scheduling, and return sinks, but may not be
   inspected, branched on, indexed, transformed, or embedded in `Error`.
-  `invokeWorkflow` accepts no directory field; saved children inherit both root locations. Publication
+  `invokeWorkflow` accepts no directory field; saved children inherit the root native workspace. Publication
   references and host paths may flow whole into an agent/log/return. A reference
   returned by `publishArtifact` or `publishPrimaryArtifact` may also appear unchanged as a direct array element only
   at `awaitOperator({ operatorHandoff: { continuationArtifactRefs: [...] } })`.
@@ -227,7 +227,20 @@ These are all rules enforced for `meta.profile: "standard"`:
   effects and cannot be bound, nested, or returned as values.
 
 - Only the first run parameter supplies DSL bindings. The second parameter is
-  semantic input, never another DSL object.
+  semantic text or JSON proven by static `meta.inputSchema`, never another DSL
+  object. Required schema properties and array items supply value facts; local
+  objects/functions named `workflow` do not acquire DSL input ownership.
+  Checked root and inline typed inputs use a plain identifier parameter; binding
+  patterns/defaults do not inherit the whole schema. Fresh trusted JavaScript can
+  still destructure validated input, but that does not establish replay coverage.
+  Typed-only operator context is optional host input at the root and never
+  another DSL or an implicitly forwarded child value. The checked typed root has
+  at most three parameters and an identifier context. Read only direct
+  `.operatorAnswer` after an exact unshadowed `context !== undefined` present
+  arm, its `=== undefined` else arm, or a direct absent-arm return/throw.
+  Unknown fields, whole-context escape and destructuring are unsupported.
+  Standard/orchestration forwards the answer as opaque ordinary text; dataflow
+  retains its distinct checked transformation policy.
 - Every value read by standard source resolves to a declared lexical/literal
   binding or the approved `Error` language root. Ambient host values and hidden
   environment input are unavailable. Lexical identifier spellings cannot contain Unicode
@@ -241,7 +254,7 @@ These are all rules enforced for `meta.profile: "standard"`:
 - Inline callbacks use arrow functions. Function expressions, including named
   function expressions, are outside the standard grammar; this keeps callback
   bindings and their lexical scope explicit.
-- Semantic input, plain `agent()` text, and items/item aliases are opaque.
+- Legacy semantic text, plain `agent()` text, and items/item aliases are opaque.
   Standard source may forward each whole value into an agent prompt, progress
   log, exact text publication, return value, or unchanged saved/inline item
   scheduling. It may not inspect properties, measure or compare the value,

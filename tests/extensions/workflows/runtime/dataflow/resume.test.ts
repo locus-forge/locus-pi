@@ -1,4 +1,9 @@
-import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { createWorkflowOperatorHandoffService } from "../../../../../extensions/workflows/operator/operator-handoff-service.js";
+import {
+  readWorkflowLaunchBinding,
+  workflowLaunchBindingFile,
+} from "../../../../../extensions/workflows/runtime/workflow-launch-binding.js";
+import { existsSync, readFileSync, writeFileSync, rmSync, readdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { runWorkflowScript } from "../../../../../extensions/workflows/runtime/workflow-runner.js";
 import { createHarness } from "../../../../test-harness.js";
@@ -239,4 +244,145 @@ describe("full retained source fence before dataflow effects", () => {
     expect(next.executedPrompts).toEqual([]);
     expect(JSON.stringify(next.journal)).not.toContain("entered-unproven");
   });
+});
+
+describe("typed saved-child input authority", () => {
+  it("validates the child's own schema before a source-bound checkpoint and preserves a detached value", async () => {
+    const root = temporaryProject();
+    writeWorkflow(
+      root,
+      "typed-child",
+      `export const meta = {inputSchema:{type:"object",properties:{text:{type:"string"}},required:["text"],additionalProperties:false}};
+export default async function run(dsl,input) { await dsl.agent(input.text,{label:"child"}); return input; }`,
+    );
+    writeWorkflow(
+      root,
+      "typed-parent",
+      `export default async function run(dsl) { return dsl.invokeWorkflow({name:"typed-child",key:"item",keys:["item"],inputValue:{text:" exact "}}); }`,
+    );
+    const harness = createHarness(root);
+    const calls: string[] = [];
+    const options = {
+      pi: harness.pi,
+      ctx: harness.ctx,
+      signal: new AbortController().signal,
+      name: "typed-parent",
+      createExecutor: executor((prompt) => {
+        calls.push(prompt);
+        return "ok";
+      }),
+    };
+    const first = await runWorkflowScript(options);
+    expect(first.ok, first.error).toBe(true);
+    expect(calls).toEqual([" exact "]);
+    calls.length = 0;
+    const resumed = await runWorkflowScript({ ...options, resumeFromRunId: first.runId });
+    expect(resumed.ok, resumed.error).toBe(true);
+    expect(calls).toEqual([]);
+    expect(resumed.childRuns?.[0]?.status).toBe("skipped");
+    writeWorkflow(
+      root,
+      "typed-parent",
+      `export default async function run(dsl) { return dsl.invokeWorkflow({name:"typed-child",key:"item",keys:["item"],inputValue:{text:7}}); }`,
+    );
+    const invalid = await runWorkflowScript(options);
+    expect(invalid.ok).toBe(false);
+    expect(invalid.error).toMatch(/typed input/u);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("typed operator continuation authority", () => {
+  it.each(["ordinary", "retried"])(
+    "preserves JSON, answer and child completion across %s handoff ancestry",
+    async (mode) => {
+      const root = temporaryProject();
+      let childCalls = 0,
+        failContinuation = mode === "retried";
+      writeWorkflow(
+        root,
+        "handoff-child",
+        'export const meta={inputSchema:{type:"string"}};export default async function run({agent}){return agent("saved-child",{label:"saved-child"});}',
+      );
+      writeWorkflow(
+        root,
+        "typed",
+        `export const meta = {profile:"dataflow-v1",inputSchema:{type:"object",properties:{id:{type:"string"}},required:["id"],additionalProperties:false}};
+export default async function run(dsl,input,context) {
+  await dsl.invokeWorkflow({name:"handoff-child",key:"unit",keys:["unit"],inputValue:"original"});
+  if (context === undefined) {
+    const intent = dsl.publishArtifact("intent.md","intent");
+    dsl.awaitOperator({reason:"decision",operatorHandoff:{title:"Decision",questions:[{kind:"select",id:"decision",prompt:"Choose",options:[{label:"Proceed"}],recommended:"Proceed",allowCustom:true}],continuationArtifactRefs:[intent]}});
+    return "waiting";
+  }
+  await dsl.agent("after-handoff",{label:"after-handoff"});return {input,answer:context.operatorAnswer};
+}`,
+      );
+      const harness = createHarness(root);
+      const options = {
+        pi: harness.pi,
+        ctx: harness.ctx,
+        signal: new AbortController().signal,
+        name: "typed",
+        inputValue: { id: "original" },
+        createExecutor: executor((prompt) => {
+          if (prompt === "saved-child") childCalls++;
+          else if (failContinuation) {
+            failContinuation = false;
+            throw new Error("retry witness");
+          }
+          return "ok";
+        }),
+      };
+      const first = await runWorkflowScript(options);
+      expect(first.ok, first.error).toBe(true);
+      const originBytes = readFileSync(workflowLaunchBindingFile(first.runDir), "utf8");
+      let terminal: ReturnType<typeof runWorkflowScript> | undefined;
+      const service = createWorkflowOperatorHandoffService({
+        launch(request) {
+          const { inputValue: _original, ...base } = options;
+          terminal = runWorkflowScript({
+            ...base,
+            ...request,
+            targetBinding: request.target,
+            ...(Object.hasOwn(request, "inputValue") ? { inputValue: request.inputValue } : { input: request.input }),
+          } as Parameters<typeof runWorkflowScript>[0]);
+          return { status: "started" };
+        },
+      });
+      const item = service.scan(root).find((item) => item.status === "actionable");
+      if (item?.status !== "actionable") throw new Error("expected typed handoff");
+      const answer = " exact accepted answer\n ";
+      expect(await service.launch(item.handoff, answer, harness.ctx)).toMatchObject({ status: "started" });
+      const firstContinuation = await terminal!;
+      if (mode === "retried") {
+        expect(firstContinuation.ok).toBe(false);
+        expect(await service.launch(item.handoff, answer, harness.ctx)).toMatchObject({ status: "started" });
+      }
+      const continued = mode === "retried" ? await terminal! : firstContinuation;
+      expect(continued.ok, continued.error).toBe(true);
+      expect(continued.result).toEqual({ input: { id: "original" }, answer });
+      expect(readWorkflowLaunchBinding(root, continued.runId)?.typedInput?.operatorContext).toEqual({
+        originRunId: first.runId,
+        operatorAnswer: answer,
+      });
+      expect(readFileSync(workflowLaunchBindingFile(first.runDir), "utf8")).toBe(originBytes);
+      for (const source of [continued, await runWorkflowScript({ ...options, resumeFromRunId: continued.runId })]) {
+        const resumed = await runWorkflowScript({ ...options, resumeFromRunId: source.runId });
+        expect(resumed.ok, resumed.error).toBe(true);
+        expect(resumed.result).toEqual(continued.result);
+        expect(JSON.stringify(resumed.typedInput)).not.toContain(answer);
+      }
+      expect(childCalls).toBe(1);
+      const checkpoint = readdirSync(root, { recursive: true })
+        .map(String)
+        .find((file) => file.includes("checkpoints/v4/") && file.endsWith(".json"))!;
+      unlinkSync(path.join(root, checkpoint));
+      const historical = mode === "retried" ? firstContinuation : continued;
+      const refused = await runWorkflowScript({ ...options, resumeFromRunId: historical.runId });
+      expect(refused.ok).toBe(false);
+      expect(refused.error).toMatch(/typed child completed checkpoint is missing/u);
+      expect(childCalls).toBe(1);
+    },
+  );
 });

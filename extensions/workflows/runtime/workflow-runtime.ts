@@ -1,3 +1,5 @@
+import { snapshotWorkflowInput, prepareWorkflowTypedInput, type WorkflowInputValue } from "./workflow-input.js";
+import { immutableJSON } from "./structured-results/schema.js";
 /**
  * workflow-runtime.ts — DSL core (agent/fusion/phase/log) + journal mirror. The two
  * scheduling owners it composes sit beside it: the run's ONE execution budget — counter,
@@ -297,12 +299,17 @@ export interface WorkflowDsl {
   random(): number;
   /** Run a nested workflow function with the same typed DSL handle. */
   workflow<T = unknown>(subFn: (dsl: WorkflowDsl, input?: string) => Promise<T>, input?: string): Promise<T>;
+  workflow<T = unknown>(
+    subFn: (dsl: WorkflowDsl, input: WorkflowInputValue) => Promise<T>,
+    input: { inputValue: WorkflowInputValue; inputSchema: WorkflowJSONSchema },
+  ): Promise<T>;
   /** Start one reviewed saved child workflow under the root execution's coordination context. */
   invokeWorkflow(input: WorkflowSavedChildInvocation): Promise<WorkflowSavedChildResult>;
 }
 
 interface WorkflowSavedChildInvocationFields {
   input?: string;
+  inputValue?: WorkflowInputValue;
   items?: readonly string[];
   /** Stable semantic identity for this item. Opaque payload does not redefine it. */
   key: string;
@@ -385,6 +392,7 @@ export interface WorkflowRuntimeOptions {
   replay?: WorkflowReplayController;
   artifactPorts?: WorkflowArtifactPorts;
   replaySourceRunId?: string;
+  retainLogicalCallIdentity?: boolean;
   now?: () => string; // default () => new Date().toISOString()
   onEvent?: (line: WorkflowJournalLine) => void; // progress callback (UI streaming)
   /** Runner-owned sink for one out-of-band operator handoff declaration. */
@@ -569,6 +577,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
     currentPhase,
     activeGroupFields: () => groups.activeGroupFields(),
     journalBudgetStop,
+    retainLogicalCallIdentity: options.retainLogicalCallIdentity === true,
     ...(options.artifactPorts === undefined ? {} : { artifactPorts: options.artifactPorts }),
     ...(options.replaySourceRunId === undefined ? {} : { replaySourceRunId: options.replaySourceRunId }),
   });
@@ -695,10 +704,28 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
   }
 
   async function workflowDsl<T = unknown>(
-    subFn: (dsl: WorkflowDsl, input?: string) => Promise<T>,
-    input?: string,
+    subFn:
+      | ((dsl: WorkflowDsl, input?: string) => Promise<T>)
+      | ((dsl: WorkflowDsl, input: WorkflowInputValue) => Promise<T>),
+    input?: string | { inputValue: WorkflowInputValue; inputSchema: WorkflowJSONSchema },
   ): Promise<T> {
-    assertWorkflowInput(input, "nested workflow input");
+    let value: WorkflowInputValue | undefined;
+    if (typeof input === "object" && input !== null) {
+      const descriptor = immutableJSON(input) as { inputValue: WorkflowInputValue; inputSchema: WorkflowJSONSchema };
+      if (
+        Array.isArray(descriptor) ||
+        Object.keys(descriptor).length !== 2 ||
+        !Object.hasOwn(descriptor, "inputValue") ||
+        !Object.hasOwn(descriptor, "inputSchema")
+      )
+        throw new Error(
+          "nested workflow input must be a string or the closed typed {inputValue,inputSchema} descriptor",
+        );
+      value = (await prepareWorkflowTypedInput(snapshotWorkflowInput(descriptor), descriptor.inputSchema))!.value;
+    } else {
+      assertWorkflowInput(input, "nested workflow input");
+      value = input;
+    }
     emit({
       ts: nowFn(),
       runId,
@@ -707,7 +734,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
       message: "[workflow:enter]",
       ...(currentPhase() !== undefined ? { phase: currentPhase()! } : {}),
     });
-    const result = await subFn(dsl, input);
+    const result = await (subFn as (dsl: WorkflowDsl, value: WorkflowInputValue | undefined) => Promise<T>)(dsl, value);
     emit({
       ts: nowFn(),
       runId,

@@ -1,3 +1,4 @@
+import type { WorkflowTypedInputProjection } from "./workflow-input.js";
 /**
  * workflow-run-finalization.ts — the ONE terminal sequence of a workflow run.
  *
@@ -109,6 +110,7 @@ export interface RunWorkflowScriptResult {
   /** Whether the caller supplied workspaceDir instead of accepting the default. */
   workspaceDirExplicit?: boolean;
   /** Exact semantic input identity, persisted for the owner-specific resume contract. */
+  typedInput?: WorkflowTypedInputProjection;
   semanticInputPresent?: boolean;
   semanticInputSha256?: string;
   lineage?: WorkflowRunLineage;

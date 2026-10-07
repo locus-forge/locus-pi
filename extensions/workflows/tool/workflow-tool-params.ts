@@ -75,6 +75,12 @@ export const WorkflowParams = Type.Object(
         description: "Optional human semantic request passed unchanged to runWorkflow(dsl, input).",
       }),
     ),
+    inputValue: Type.Optional(
+      Type.Unknown({
+        description:
+          "Explicit finite JSON input, mutually exclusive with input; requires the target's static meta.inputSchema.",
+      }),
+    ),
     items: Type.Optional(
       Type.Array(Type.String(), {
         description:

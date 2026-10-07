@@ -1,3 +1,4 @@
+import { snapshotWorkflowInput, type WorkflowInputValue } from "../runtime/workflow-input.js";
 import path from "node:path";
 import type { ExtensionContext } from "../../_shared/host/pi-api.js";
 import { formatDuration } from "../../_shared/agent-runtime/agent-live-panel.js";
@@ -12,7 +13,13 @@ import {
 import { workflowJournalFile } from "../runtime/workflow-run-layout.js";
 import { notifyOperator } from "../../_shared/operator/operator-notify.js";
 import { type WorkflowTranscriptAnnouncement, type WorkflowTranscriptCompletion } from "../command/receipts.js";
-import { workflowCompletionPresentation } from "../command/completion-presentation.js";
+import {
+  workflowCompletionPresentation,
+  workflowInputPresentation,
+  firstTranscriptLine,
+  compactTranscriptText,
+  shortWorkflowRunId,
+} from "../command/completion-presentation.js";
 
 export { registerWorkflowTranscriptRenderers } from "../command/completion-presentation.js";
 
@@ -24,14 +31,14 @@ export { registerWorkflowTranscriptRenderers } from "../command/completion-prese
  * unbounded without weakening the digest contract.
  */
 const TRANSCRIPT_AGENT_ROW_LIMIT = 20;
-const TRANSCRIPT_LINE_MAX_CHARS = 160;
-const TRANSCRIPT_ANSWER_MAX_CHARS = 96;
 
 export type WorkflowTranscriptSurfaceMode = "command" | "tool";
 
 export interface WorkflowTranscriptOptions {
   /** Semantic run input. On a continuation run this is the operator's answer. */
   input?: string;
+  inputValue?: WorkflowInputValue;
+  operatorAnswer?: string;
 }
 
 export interface WorkflowTranscript {
@@ -67,6 +74,8 @@ export function createWorkflowTranscript(
   surface: WorkflowTranscriptSurfaceMode,
   options: WorkflowTranscriptOptions = {},
 ): WorkflowTranscript {
+  const inputSnapshot = snapshotWorkflowInput(options);
+  options = { ...options, ...inputSnapshot };
   const safeTarget = safeTranscriptTarget(targetLabel);
   let startedAt: number | undefined;
   let announced = false;
@@ -238,7 +247,7 @@ export function createWorkflowTranscript(
       }
       const headerLines = [
         workflowRunHeader(safeTarget, res.runId, terminalStamp(disposition.status), Date.now()),
-        ...formatContinuationLine(res, options.input),
+        ...workflowInputPresentation(res, options),
       ];
       completion = {
         eventKind: "workflow_end",
@@ -357,29 +366,11 @@ function clockStamp(at: number): string {
   return `${hours}:${minutes}`;
 }
 
-function shortWorkflowRunId(runId: string): string {
-  const compact = runId.replace(/[^a-zA-Z0-9]/gu, "");
-  if (compact === "") return runId;
-  return compact.slice(-4);
-}
-
 /**
  * A continuation run is legible on its own: it names the run it continues and
  * the answer that unblocked it. The questions stay in the source run's block,
  * which is directly above this one in the same scrollback.
  */
-function formatContinuationLine(res: RunWorkflowScriptResult, input: string | undefined): string[] {
-  const originRunId = res.continuation?.originRunId;
-  if (originRunId === undefined || originRunId === "") return [];
-  const answer = (input ?? "").trim();
-  const answerPart = answer === "" ? "" : ` · operator answered: "${compactTranscriptText(truncateAnswer(answer))}"`;
-  return [firstTranscriptLine(`↳ continues run #${shortWorkflowRunId(originRunId)}${answerPart}`)];
-}
-
-function truncateAnswer(value: string): string {
-  const line = value.replace(/\s+/gu, " ").trim();
-  return line.length <= TRANSCRIPT_ANSWER_MAX_CHARS ? line : `${line.slice(0, TRANSCRIPT_ANSWER_MAX_CHARS - 3)}...`;
-}
 
 /**
  * The moment a human is blocking the run gets its own block: blank lines, an
@@ -503,15 +494,6 @@ function safeTranscriptTarget(value: string): string {
   if (path.isAbsolute(value)) return path.basename(value);
   if (path.win32.isAbsolute(value)) return path.win32.basename(value);
   return compactTranscriptText(value);
-}
-
-function compactTranscriptText(value: string): string {
-  const line = firstTranscriptLine(value);
-  return line.length <= TRANSCRIPT_LINE_MAX_CHARS ? line : `${line.slice(0, TRANSCRIPT_LINE_MAX_CHARS - 3)}...`;
-}
-
-function firstTranscriptLine(value: string): string {
-  return (value.split(/\r?\n/u, 1)[0] ?? "").trim();
 }
 
 /** Identity comes from this attempt, never the most recent sibling or an inferred stage. */
