@@ -2,11 +2,11 @@
 title: Workflow file format
 type: guide
 status: active
-updated: "2026-10-02T22:53:27Z"
-source_commit: "0d098c9e06d1"
+updated: "2026-10-07T19:05:59Z"
+source_commit: "87298468676c"
 update_event: "user_request"
-context: "changes=L files=29"
-description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
+context: "changes=S files=3"
+description: "Text-first workflow authoring and explicit parameterized input contracts"
 ---
 
 # Workflow file format
@@ -30,16 +30,19 @@ a create-and-run request passes the checked file to the run skill.
 
 A workflow is a single ESM module `<name>.workflow.mjs` with two exports:
 
-- `export const meta = { name, description, phases? }` — catalog metadata only.
+- `export const meta = { ... }` — workflow descriptions and explicit source/input declarations.
   `name` should match the saved file's `<name>` so it resolves by bare name;
   `description` appears in `/workflows list` and `/workflows info <name>`;
   optional `phases` declares the pipeline's shape before the run (see "Declared
-  phases" below). Metadata does not declare the execution graph, agents,
-  permissions, or runtime model, and nothing in it is enforced at runtime.
+  phases" below). These descriptive fields do not select the execution graph,
+  agents, permissions, or runtime model. Optional `profile` and `identityCoverage`
+  declare source-checking and dependency-identity policies. Optional `inputSchema`
+  declares validation for parameterized JSON input; it is checked before entry.
 - `export default async function runWorkflow(dsl, input) { ... }` — executable
   behavior. `dsl` is the intended authoring handle; `input` is the run's task,
-  absent or semantic text by default; explicit typed input follows the [DSL contract](dsl.md#typed-workflow-input). Whatever
-  the function returns is written to `result.json` as `result`.
+  absent or unchanged semantic text by default. When workflow code needs fixed
+  parameters, explicit typed input follows the [DSL contract](dsl.md#typed-workflow-input).
+  Whatever the function returns is written to `result.json` as `result`.
   Trusted JavaScript can still use host capabilities allowed by its identity mode,
   so `dsl`-only is a convention, not enforcement.
 

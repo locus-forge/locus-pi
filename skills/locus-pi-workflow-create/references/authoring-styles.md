@@ -1,9 +1,9 @@
 ---
-updated: "2026-10-02T22:53:28Z"
-source_commit: "0d098c9e06d1"
+updated: "2026-10-07T19:05:59Z"
+source_commit: "87298468676c"
 update_event: "user_request"
-context: "changes=L files=29"
-description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
+context: "changes=S files=3"
+description: "Keep ordinary authoring text-first and choose typed parameters for code consumers"
 ---
 
 # Choose style, detail, size and executors separately
@@ -31,7 +31,8 @@ A fixed control skeleton does not require precomputed implementation work. The e
 ## Folder-level context
 
 Ordinary `input` is one unchanged semantic string, not an `args` protocol to parse.
-Explicit typed input uses the separate [DSL contract](dsl.md#typed-workflow-input); readable prompts need no JSON migration.
+Choose [typed input](dsl.md#typed-workflow-input) when workflow code consumes fixed structured parameters.
+Keep ordinary requests passed whole to agents in semantic text.
 
 Use one short shared working context in the existing semantic input or an author-owned prompt string,
 then append each role's responsibility. It is not a new DSL `preamble` option, a detailed solution,
