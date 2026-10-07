@@ -62,7 +62,7 @@ block on missing required prerequisites or handoff files. Worker status:\n${work
 
 The developer writes product files/result; the reviewer writes only its review artifact.
 Both reopen exact files. Source routes `choice`, never report text.
-The shared design contract owns text wrapping and SVG only on explicit request.
+[Optional starters](../../extensions/workflows/references/examples/starters/README.md); SVG only on explicit request.
 
 ## Calls and handoffs
 
