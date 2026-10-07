@@ -392,6 +392,7 @@ export interface WorkflowRuntimeOptions {
   replay?: WorkflowReplayController;
   artifactPorts?: WorkflowArtifactPorts;
   replaySourceRunId?: string;
+  retainLogicalCallIdentity?: boolean;
   now?: () => string; // default () => new Date().toISOString()
   onEvent?: (line: WorkflowJournalLine) => void; // progress callback (UI streaming)
   /** Runner-owned sink for one out-of-band operator handoff declaration. */
@@ -576,6 +577,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
     currentPhase,
     activeGroupFields: () => groups.activeGroupFields(),
     journalBudgetStop,
+    retainLogicalCallIdentity: options.retainLogicalCallIdentity === true,
     ...(options.artifactPorts === undefined ? {} : { artifactPorts: options.artifactPorts }),
     ...(options.replaySourceRunId === undefined ? {} : { replaySourceRunId: options.replaySourceRunId }),
   });

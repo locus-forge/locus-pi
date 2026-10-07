@@ -37,29 +37,22 @@ export type WorkflowReplayNotRecordedReason = "identity-coverage-unproven" | "re
 
 /** Agent seq is admission order in v4; historical v3 seq was completion order. */
 export type WorkflowReplayEntry =
-  | {
+  | ({
       v: WorkflowReplaySchemaVersion;
       seq: number;
       kind: "agent";
       node?: string;
-      key: string;
       /** Return-contract version of choice/structured calls, separate from log v.
        *  Absent for plain text and old records predating contract v2. */
       rcv?: number;
-      ok: true;
-      text: string;
-      structuredReceipt?: AgentStructuredReceipt;
-    }
-  | {
-      v: WorkflowReplaySchemaVersion;
-      seq: number;
-      kind: "agent";
-      node?: string;
-      /** Omitted only for an unreadable retired-native row; never accepted as a request identity. */
-      key?: string;
-      rcv?: number;
-      ok: false;
-    }
+    } & (
+      | { ok: true; key: string; text: string; structuredReceipt?: AgentStructuredReceipt }
+      | {
+          ok: false;
+          /** Omitted only for an unreadable retired-native row; never accepted as a request identity. */
+          key?: string;
+        }
+    ))
   | { v: WorkflowReplaySchemaVersion; seq: number; kind: WorkflowReplayValueKind; value: number };
 
 /** Implicit return-contract version of records predating rcv. These versions are
@@ -214,8 +207,8 @@ export function readWorkflowReplayLog(projectRoot: string, runId: string): Workf
 }
 
 export interface CreateWorkflowReplayControllerOptions {
-  /** Completed typed runs have no unrecorded suffix to execute. */
-  requireRecordedComplete?: boolean;
+  /** Present for typed replay; only journal-confirmed failed ordinals may retry. */
+  typedReplayRetryOrdinals?: readonly number[];
   /** Only for a journal-verified, non-overlapping serial prefix (including v3).
    *  Crash recovery must not duplicate that confirmed prefix on mismatch. */
   requireRecordedPrefix?: boolean;
@@ -243,7 +236,7 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
   readonly #replayEnabled: boolean;
   readonly #sourceScriptChanged: boolean;
   readonly #requireRecordedPrefix: boolean;
-  readonly #requireRecordedComplete: boolean;
+  readonly #typedRetryOrdinals: ReadonlySet<number> | undefined;
   #readCursor = 0;
   readonly #valueCursors = new Map<WorkflowReplayValueKind, number>();
   #diverged = false;
@@ -274,9 +267,10 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
     this.#replayEnabled = options.recorded !== undefined;
     this.#sourceScriptChanged = options.sourceScriptChanged === true;
     this.#requireRecordedPrefix = options.requireRecordedPrefix === true;
-    this.#requireRecordedComplete = options.requireRecordedComplete === true;
-    if (this.#requireRecordedComplete && options.recorded === undefined)
-      throw new Error("Completed typed replay requires its recorded execution");
+    this.#typedRetryOrdinals =
+      options.typedReplayRetryOrdinals === undefined ? undefined : new Set(options.typedReplayRetryOrdinals);
+    if (this.#typedRetryOrdinals !== undefined && options.recorded === undefined)
+      throw new Error("Typed replay requires its recorded execution");
     const agents = new Map<number, WorkflowReplayAgentEntry | undefined>();
     let extent = 0;
     for (const entry of recorded) {
@@ -325,19 +319,15 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
       if (structured)
         throw new Error(`replay-contract-failure: v${call.returnContractVersion} prefix unavailable (${reason})`);
       if (this.#strictRefusal !== undefined) throw new Error(this.#strictRefusal);
-      this.#freshCalls += 1;
-      return { replayed: false, reason };
+      return this.#fresh(reason);
     };
-    if (!this.#replayEnabled) {
-      this.#freshCalls += 1;
-      return { replayed: false, reason: "no-record" };
-    }
+    if (!this.#replayEnabled) return this.#fresh("no-record");
     if (this.#diverged) {
       if (structured) throw new Error(`replay-contract-failure: v${call.returnContractVersion} prefix diverged`);
-      this.#freshCalls += 1;
-      return { replayed: false, reason: "diverged" };
+      return this.#fresh("diverged");
     }
 
+    if (entry === undefined && this.#canExtend(ordinal, this.#recordedAgentExtent)) return this.#fresh("no-record");
     if (entry === undefined)
       return miss(ordinal < this.#recordedAgentExtent ? "recorded-sequence-invalid" : "no-record");
     // Only interrupted recovery confirms serial v3 launch order against its journal.
@@ -357,6 +347,7 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
         ? miss("return-contract-changed")
         : miss("key-mismatch");
     }
+    if (!structured && !entry.ok && this.#typedRetryOrdinals?.has(ordinal)) return this.#fresh("recorded-failure");
     if (!entry.ok) return miss("recorded-failure");
     if (!call.replayable) return miss("side-effecting-call");
 
@@ -366,6 +357,15 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
       text: entry.text,
       ...(entry.structuredReceipt === undefined ? {} : { structuredReceipt: entry.structuredReceipt }),
     };
+  }
+
+  #canExtend(ordinal: number, extent: number): boolean {
+    return this.#typedRetryOrdinals !== undefined && this.#freshCalls > 0 && ordinal >= extent;
+  }
+
+  #fresh(reason: WorkflowReplayMissReason): WorkflowReplayAgentLookup {
+    this.#freshCalls += 1;
+    return { replayed: false, reason };
   }
 
   recordAgentAttempt(
@@ -383,20 +383,16 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
     const key = hashCanonicalRequest(call.canonicalRequest);
     const node = call.node === undefined ? {} : { node: call.node };
     const rcv = call.returnContractVersion === undefined ? {} : { rcv: call.returnContractVersion };
+    const identity = { v: WORKFLOW_REPLAY_SCHEMA_VERSION, seq, kind: "agent" as const, ...node, key, ...rcv };
     this.#append(
       outcome.ok
         ? {
-            v: WORKFLOW_REPLAY_SCHEMA_VERSION,
-            seq,
-            kind: "agent",
-            ...node,
-            key,
-            ...rcv,
+            ...identity,
             ok: true,
             text: outcome.text,
             ...(outcome.structuredReceipt === undefined ? {} : { structuredReceipt: outcome.structuredReceipt }),
           }
-        : { v: WORKFLOW_REPLAY_SCHEMA_VERSION, seq, kind: "agent", ...node, key, ...rcv, ok: false },
+        : { ...identity, ok: false },
     );
   }
 
@@ -405,7 +401,12 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
     const ordinal = this.#valueCursors.get(kind) ?? 0;
     this.#valueCursors.set(kind, ordinal + 1);
     const recorded = this.#replayEnabled && !this.#diverged ? this.#recordedValues.get(kind)?.get(ordinal) : undefined;
-    if (this.#replayEnabled && !this.#diverged && recorded === undefined) {
+    if (
+      this.#replayEnabled &&
+      !this.#diverged &&
+      recorded === undefined &&
+      !this.#canExtend(ordinal, this.#recordedValues.get(kind)?.size ?? 0)
+    ) {
       this.#refusePrefix(this.#readCursor, undefined, "recorded-sequence-invalid");
       if (this.#strictRefusal !== undefined) throw new Error(this.#strictRefusal);
     }
@@ -424,13 +425,13 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
   }
 
   assertComplete(): void {
-    if (!this.#requireRecordedComplete) return;
+    if (this.#typedRetryOrdinals === undefined) return;
     if (this.#strictRefusal !== undefined) throw new Error(this.#strictRefusal);
     if (
-      this.#readCursor !== this.#recordedAgentExtent ||
-      [...this.#recordedValues].some(([kind, rows]) => (this.#valueCursors.get(kind) ?? 0) !== rows.size)
+      this.#readCursor < this.#recordedAgentExtent ||
+      [...this.#recordedValues].some(([kind, rows]) => (this.#valueCursors.get(kind) ?? 0) < rows.size)
     )
-      throw new Error("Completed typed replay ended before consuming its recorded execution");
+      throw new Error("Typed replay ended before consuming its recorded execution");
   }
 
   /** Every known refusal closes reuse before throwing or returning to trusted callers. */
@@ -440,8 +441,8 @@ class FileBackedWorkflowReplayController implements WorkflowReplayController {
       this.#divergedAtCall = ordinal;
       this.#divergedAtNode = node;
     }
-    if (this.#requireRecordedComplete || (this.#requireRecordedPrefix && ordinal < this.#recordedAgentExtent))
-      this.#strictRefusal ??= `${this.#requireRecordedComplete ? "Completed typed replay" : "Interrupted recovery"} refused prefix divergence at call ${ordinal}: ${reason}`;
+    if (this.#typedRetryOrdinals !== undefined || (this.#requireRecordedPrefix && ordinal < this.#recordedAgentExtent))
+      this.#strictRefusal ??= `${this.#typedRetryOrdinals !== undefined ? "Typed replay" : "Interrupted recovery"} refused prefix divergence at call ${ordinal}: ${reason}`;
   }
 
   #append(entry: WorkflowReplayEntry): void {

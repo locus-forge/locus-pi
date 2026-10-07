@@ -161,7 +161,10 @@ checkpoints use v4 and recovery identity v2. Legacy v3/text/v1 records keep thei
 existing format. Typed resume repeats the original value and verifies schema,
 source, ordered items, resolved launch inputs, projection and completed replay
 evidence. Changed, missing or damaged authority/known-call records refuse fresh
-work; a proven run with no agent work can still resume. Resume of a continuation
+work; a proven run with no agent work can still resume. Failed calls retry only
+when the retained logical-call identity and final attempt confirm failure; physical
+parallel completion order cannot authorize a retry. Missing typed logical identity
+refuses reuse. Resume of a continuation
 restores its original answer without requesting a new claim or answer.
 
 Physical-call accounting and any declared deadline remain process-local to the

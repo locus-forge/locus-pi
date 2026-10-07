@@ -47,7 +47,7 @@ import {
   type WorkflowReplayRefusalReason,
 } from "./workflow-replay.js";
 import { readWorkflowRunTextFile } from "./workflow-run-layout.js";
-import { assertCompletedTypedReplayEvidence } from "./workflow-interrupted-recovery.js";
+import { readTypedReplayRetryOrdinals } from "./workflow-interrupted-recovery.js";
 import { projectWorkflowDisposition } from "./workflow-outcome.js";
 import {
   isPostCodeReviewTargetProjection,
@@ -307,7 +307,7 @@ export interface WorkflowReplayPlan {
   record: boolean;
   /** Recorded entries to replay from. Present only when replay is active. */
   recorded?: readonly WorkflowReplayEntry[];
-  requireRecordedComplete?: true;
+  typedReplayRetryOrdinals?: readonly number[];
   sourceRunId?: string;
   refusedReason?: WorkflowReplayRefusalReason;
   notRecordedReason?: WorkflowReplayNotRecordedReason;
@@ -394,14 +394,12 @@ export function planWorkflowReplay(input: PlanWorkflowReplayInput): WorkflowRepl
   // recorded node name mandatory for the rest of the run.
   const sourceScriptChanged = sourceSha256 !== scriptIdentity.scriptSha256;
   const recorded = readWorkflowReplayLog(projectRoot, resumeFromRunId);
-  if (
-    sourceResult.typedInput !== undefined &&
-    input.interruptedRecovery !== true &&
-    projectWorkflowDisposition({ ...sourceResult, ok: sourceResult.ok === true, result: sourceResult.result })
-      .status === "completed"
-  ) {
-    assertCompletedTypedReplayEvidence(projectRoot, resumeFromRunId, scriptIdentity, recorded);
-    return { record, recorded, sourceRunId: resumeFromRunId, requireRecordedComplete: true };
+  if (sourceResult.typedInput !== undefined && input.interruptedRecovery !== true) {
+    const retryable = readTypedReplayRetryOrdinals(projectRoot, resumeFromRunId, scriptIdentity, recorded);
+    const completed =
+      projectWorkflowDisposition({ ...sourceResult, ok: sourceResult.ok === true, result: sourceResult.result })
+        .status === "completed";
+    return { record, recorded, sourceRunId: resumeFromRunId, typedReplayRetryOrdinals: completed ? [] : retryable };
   }
   if (recorded.length === 0) return refuse("no-recorded-calls");
   return { record, recorded, sourceRunId: resumeFromRunId, ...(sourceScriptChanged ? { sourceScriptChanged } : {}) };

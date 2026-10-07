@@ -221,15 +221,18 @@ function standardValueProvenance(
     if (context) duplicateOwners.add(declaration.id());
     const literalContext =
       context &&
+      declaration.parent()?.children()[0]?.kind() === "const" &&
       scope !== undefined &&
       scope.id() !== runBody?.id() &&
       nodeWithinStandardNode(scope, runBody) &&
       standardBindingOf(name, lexicalBindings)?.bindingId === declaration.id() &&
+      standardBindingOf(name, lexicalBindings)?.scopeId === scope.id() &&
       structuredLiteralValue(declaration.field("value") ?? undefined) !== undefined;
+    if (literalContext) duplicateOwners.delete(declaration.id());
     if (scope !== undefined && ((!context && value === undefined) || literalContext))
       literalShadows.push({ name: name.text(), scopeId: scope.id(), bindingId: declaration.id() });
   }
-  if ([...duplicateOwners].some((id) => !literalShadows.some((shadow) => shadow.bindingId === id)))
+  if (duplicateOwners.size > 0)
     errors.add("standard profile gives every semantic or runtime-owned value binding one unique name", runEntry);
   return { literalShadows, provenance, carryAssignments };
 }

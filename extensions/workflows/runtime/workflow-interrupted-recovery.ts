@@ -171,20 +171,25 @@ export function confirmedRecoveryAgentCount(entries: readonly WorkflowReplayEntr
   return entries.filter((entry) => entry.kind === "agent").length;
 }
 
-/** Completed typed replay proves complete recorded work; legacy fallback remains in resume. */
-export function assertCompletedTypedReplayEvidence(
+/** Typed replay corroborates every logical call; only real failed calls can be retried. */
+export function readTypedReplayRetryOrdinals(
   projectRoot: string,
   runId: string,
   scriptIdentity: WorkflowScriptIdentity,
   recorded: readonly WorkflowReplayEntry[],
-): void {
+): readonly number[] {
   const runDir = resolveWorkflowRunDir(projectRoot, runId);
   const journal = readWorkflowRunJournalState(projectRoot, runId, runDir);
   const counts = JSON.parse(readWorkflowRunTextFile(runDir, workflowResultFile(runDir))).replay;
   const agentRows = recorded.filter((entry) => entry.kind === "agent");
   const starts = journal.lines.filter((line) => line.kind === "agent_start");
-  const ends = journal.lines.filter((line) => line.kind === "agent_end");
-  const calls = new Set(starts.map((line) => line.logicalCallId ?? line.callId));
+  const ends = journal.lines.filter((line) => line.kind === "agent_end" || line.kind === "error");
+  const calls = new Set(
+    journal.lines
+      .filter((line) => line.kind === "agent_queued" || line.kind === "agent_start")
+      .map((line) => line.logicalCallId),
+  );
+  const terminalByCall = new Map(ends.map((line) => [line.logicalCallId, line]));
   const raw = workflowRunFileExists(runDir, workflowReplayFile(runDir))
     ? readWorkflowRunTextFile(runDir, workflowReplayFile(runDir))
     : "";
@@ -206,6 +211,11 @@ export function assertCompletedTypedReplayEvidence(
     counts.replayedCalls < 0 ||
     counts.freshCalls + counts.replayedCalls !== agentRows.length ||
     calls.size !== agentRows.length ||
+    calls.has(undefined) ||
+    agentRows.some((entry) => {
+      const terminal = terminalByCall.get(`logical-${String(entry.seq + 1).padStart(4, "0")}`);
+      return terminal === undefined || entry.ok !== (terminal.kind === "agent_end" && terminal.status === "completed");
+    }) ||
     starts.some((start) => !ends.some((end) => end.callId === start.callId)) ||
     rows.length !== recorded.length ||
     (raw !== "" && !raw.endsWith("\n")) ||
@@ -219,4 +229,5 @@ export function assertCompletedTypedReplayEvidence(
     )
   )
     throw new Error("typed input replay evidence is missing, damaged or incomplete");
+  return agentRows.filter((entry) => !entry.ok).map((entry) => entry.seq);
 }

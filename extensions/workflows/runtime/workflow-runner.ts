@@ -764,7 +764,9 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     replayController = createWorkflowReplayController({
       runDir,
       ...(interruptedRecovery ? { requireRecordedPrefix: true } : {}),
-      ...(replayPlan.requireRecordedComplete ? { requireRecordedComplete: true } : {}),
+      ...(replayPlan.typedReplayRetryOrdinals === undefined
+        ? {}
+        : { typedReplayRetryOrdinals: replayPlan.typedReplayRetryOrdinals }),
       ...(replayPlan.recorded === undefined ? {} : { recorded: replayPlan.recorded }),
       ...(replayPlan.sourceScriptChanged === true ? { sourceScriptChanged: true } : {}),
     });
@@ -913,6 +915,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     ...(boundContinuation !== undefined ? { continuation: boundContinuation } : {}),
     ...(resumeFromRunId === undefined ? {} : { replaySourceRunId: resumeFromRunId }),
     ...(replayController !== undefined ? { replay: replayController } : {}),
+    retainLogicalCallIdentity: typedInput !== undefined,
     ...(opts.input !== undefined ? { args: opts.input } : {}),
     items,
     // The execution-tree axes live in sharedExecution above. Only per-call

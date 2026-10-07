@@ -54,6 +54,7 @@ export interface WorkflowAgentAttemptDeps {
   readonly journalBudgetStop: <T>(check: () => T, phase: string | undefined) => T;
   readonly artifactPorts?: WorkflowArtifactPorts | undefined;
   readonly replaySourceRunId?: string | undefined;
+  readonly retainLogicalCallIdentity?: boolean;
 }
 
 /**
@@ -120,12 +121,12 @@ export function createWorkflowAgentAttempt(
    */
   async function runPhysicalAgentAttempt(input: PhysicalAgentAttemptInput): Promise<PhysicalAgentAttempt> {
     const { permissionMode, workspaceMode, opts, checkSchema, replayedText, attempt, attempts } = input;
-    // Emitted only when a retry budget was actually declared, so every journal written
-    // before `attempts` existed stays byte-identical and absence still means "one attempt".
-    // The three travel together: an ordinal with no logical call to belong to cannot be
-    // grouped, and a reader falling back to (agent, label, phase, group) would mis-attribute
-    // two `parallel()` calls that agree on all four.
-    const attemptFields = attempts > 1 ? { attempt, attempts, logicalCallId: input.logicalCallId } : {};
+    // Typed replay needs logical admission identity even when async receipt reuse
+    // reorders physical starts. Legacy single-attempt evidence remains unchanged.
+    const attemptFields =
+      attempts > 1 || deps.retainLogicalCallIdentity === true
+        ? { attempt, attempts, logicalCallId: input.logicalCallId }
+        : {};
     // Allocate evidence identity before queueing. The root owner charges a fresh
     // invocation atomically only after admission, immediately before the runner.
     const invocation = sharedExecution.createInvocation(
