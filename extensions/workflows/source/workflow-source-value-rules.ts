@@ -14,6 +14,11 @@
  */
 import type { SgNode } from "@ast-grep/napi";
 import {
+  isStructuredArrayMap,
+  isStructuredProvenance,
+  validateStructuredValueUses,
+} from "./workflow-source-structured-rules.js";
+import {
   staticObjectKey,
   /** Named for the standard grammar this checker validates; the unwrapping itself is lexical. */
   unwrapParentheses as unwrapStandardParentheses,
@@ -134,6 +139,7 @@ export function validateStandardCalls(
     if (
       directDsl === undefined &&
       !isVisibleCollectionCall(call, visibleCollections, dslBindings) &&
+      !isStructuredArrayMap(call, dslBindings, bindingModel) &&
       !isBoundaryInputNormalization(call)
     ) {
       errors.add("standard profile calls only direct DSL primitives and visible map/prompt-join operations", call);
@@ -245,13 +251,14 @@ export function validateStandardValueUses(
 ): void {
   if (runEntry === undefined) return;
   const { literalShadows, provenance } = bindingModel;
+  validateStructuredValueUses(root, dslBindings, bindingModel, errors);
 
   for (const call of root.findAll({ rule: { kind: "call_expression" } })) {
     const callee = unwrapStandardParentheses(callCallee(call));
     if (callee === undefined) continue;
     const method = directStandardDslCall(callee, dslBindings);
     if (method === undefined) continue;
-    const value = standardDslCallProvenance(method, call);
+    const value = standardDslCallProvenance(method, call, provenance.structuredCalls);
     if (value.kind === "unclassified-dsl-value") {
       errors.add("standard profile rejects DSL calls without an explicit return classification", call);
     } else if (value.kind === "void-value" && !isDiscardedStandardCall(call)) {
@@ -275,7 +282,7 @@ export function validateStandardValueUses(
       dslBindings,
       literalShadows,
     );
-    if (owner === undefined || owner.kind === "known-value") continue;
+    if (owner === undefined || owner.kind === "known-value" || isStructuredProvenance(owner)) continue;
     if (
       owner.kind === "opaque-value" ||
       owner.kind === "map-item" ||
@@ -316,6 +323,11 @@ export function validateStandardValueUses(
     ...root.findAll({ rule: { kind: "ternary_expression" } }),
   ]) {
     if (isInsideBoundaryInputDefault(expression)) continue;
+    if (
+      expression.kind() === "ternary_expression" &&
+      standardExpressionProvenance(expression, provenance, dslBindings, literalShadows)?.contextSelection
+    )
+      continue;
     if (
       expression.kind() === "binary_expression" &&
       expression.field("operator")?.text() === "+" &&
@@ -361,7 +373,12 @@ export function validateStandardValueUses(
   ]) {
     if (isInsideLiteralShadow(identifier, literalShadows)) continue;
     const value = provenance.get(identifier.text());
-    if (value === undefined || ["known-collection", "known-value", "runtime-control"].includes(value.kind)) continue;
+    if (
+      value === undefined ||
+      isStructuredProvenance(value) ||
+      ["known-collection", "known-value", "runtime-control"].includes(value.kind)
+    )
+      continue;
     if (isStandardBindingOccurrence(identifier) || isDirectProvenanceAlias(identifier)) continue;
     const carry = identifier.ancestors().find((ancestor) => bindingModel.carryAssignments.has(ancestor.id()));
     if (

@@ -1,3 +1,6 @@
+import { workflowSourceDeclaresDataflow } from "../source/profiles/workflow-source-profile.js";
+import { verifyWorkflowPersistedSnapshot } from "./workflow-persisted-binding.js";
+import { assessWorkflowStructuredReplayCoverage } from "./workflow-script-identity.js";
 /**
  * workflow-run-resume.ts — Resume authority: what a stopped run proves about itself.
  *
@@ -17,7 +20,11 @@ import { realpathSync } from "node:fs";
 import type { WorkflowContinuation } from "./workflow-artifacts.js";
 import type { ResolvedWorkflowTarget } from "./workflow-discovery.js";
 import type { WorkflowHandoffClaimLease } from "./workflow-handoff.js";
-import { readWorkflowRunResult, workflowPersistedResultInvalidity } from "./workflow-journal.js";
+import {
+  readWorkflowRunResult,
+  readWorkflowRunJournalState,
+  workflowPersistedResultInvalidity,
+} from "./workflow-journal.js";
 import type { WorkflowRunResultEnvelope } from "./workflow-journal.js";
 import {
   readWorkflowLaunchBinding,
@@ -40,6 +47,8 @@ import {
   type WorkflowReplayRefusalReason,
 } from "./workflow-replay.js";
 import { readWorkflowRunTextFile } from "./workflow-run-layout.js";
+import { readTypedReplayRetryOrdinals } from "./workflow-interrupted-recovery.js";
+import { projectWorkflowDisposition } from "./workflow-outcome.js";
 import {
   isPostCodeReviewTargetProjection,
   workflowTargetIdentityKey,
@@ -48,6 +57,7 @@ import {
 import {
   assessWorkflowReplaySafety,
   sha256WorkflowBytes,
+  verifyWorkflowScriptSnapshot,
   type WorkflowReplaySafety,
   type WorkflowScriptIdentity,
 } from "./workflow-script-identity.js";
@@ -297,6 +307,7 @@ export interface WorkflowReplayPlan {
   record: boolean;
   /** Recorded entries to replay from. Present only when replay is active. */
   recorded?: readonly WorkflowReplayEntry[];
+  typedReplayRetryOrdinals?: readonly number[];
   sourceRunId?: string;
   refusedReason?: WorkflowReplayRefusalReason;
   notRecordedReason?: WorkflowReplayNotRecordedReason;
@@ -314,6 +325,7 @@ export interface PlanWorkflowReplayInput {
   target: ResolvedWorkflowTarget;
   resumeFromRunId?: string;
   resumeSourceResult?: WorkflowRunResultEnvelope;
+  interruptedRecovery?: true;
 }
 
 /**
@@ -347,6 +359,15 @@ export function planWorkflowReplay(input: PlanWorkflowReplayInput): WorkflowRepl
   });
 
   const sourceResult = input.resumeSourceResult ?? readWorkflowRunResult(projectRoot, resumeFromRunId);
+  assertDataflowReplaySource(input, sourceResult);
+  if (
+    sourceResult?.typedInput !== undefined &&
+    (!coverageProven ||
+      replaySafety === "unproven" ||
+      !readWorkflowStructuredCoverage(scriptIdentity) ||
+      sourceResult.scriptIdentity?.scriptSha256 !== scriptIdentity.scriptSha256)
+  )
+    throw new Error("typed input resume requires identical retained source and proven callable coverage");
   const sourceSha256 = sourceResult?.scriptIdentity?.scriptSha256;
   if (
     sourceResult === null ||
@@ -373,8 +394,47 @@ export function planWorkflowReplay(input: PlanWorkflowReplayInput): WorkflowRepl
   // recorded node name mandatory for the rest of the run.
   const sourceScriptChanged = sourceSha256 !== scriptIdentity.scriptSha256;
   const recorded = readWorkflowReplayLog(projectRoot, resumeFromRunId);
+  if (sourceResult.typedInput !== undefined && input.interruptedRecovery !== true) {
+    const retryable = readTypedReplayRetryOrdinals(projectRoot, resumeFromRunId, scriptIdentity, recorded);
+    const completed =
+      projectWorkflowDisposition({ ...sourceResult, ok: sourceResult.ok === true, result: sourceResult.result })
+        .status === "completed";
+    return { record, recorded, sourceRunId: resumeFromRunId, typedReplayRetryOrdinals: completed ? [] : retryable };
+  }
   if (recorded.length === 0) return refuse("no-recorded-calls");
   return { record, recorded, sourceRunId: resumeFromRunId, ...(sourceScriptChanged ? { sourceScriptChanged } : {}) };
+}
+
+/** Dataflow resume never takes the legacy edited-source or fresh-call fallback. */
+function assertDataflowReplaySource(input: PlanWorkflowReplayInput, source: WorkflowRunResultEnvelope | null): void {
+  const current = input.scriptIdentity;
+  verifyWorkflowScriptSnapshot(current);
+  const currentText = readWorkflowRunTextFile(path.dirname(current.snapshotPath), current.snapshotPath);
+  const currentDataflow = workflowSourceDeclaresDataflow(currentText);
+  const recorded = source?.scriptIdentity;
+  let recordedDataflow = false;
+  if (recorded?.executionSource === "snapshot") {
+    verifyWorkflowPersistedSnapshot(input.projectRoot, input.resumeFromRunId!, recorded);
+    recordedDataflow = workflowSourceDeclaresDataflow(
+      readWorkflowRunTextFile(path.dirname(recorded.snapshotPath), recorded.snapshotPath),
+    );
+  }
+  if (!currentDataflow && !recordedDataflow) return;
+  if (
+    recorded === undefined ||
+    source?.scriptIdentityInvalid !== undefined ||
+    source?.runUnbound !== undefined ||
+    source?.runIdInvalid !== undefined ||
+    recorded.executionSource !== "snapshot" ||
+    recorded.scriptSha256 !== current.scriptSha256
+  )
+    throw new Error(
+      "dataflow-v1 resume refused: complete retained source identity changed or is unavailable (including helper, comment and profile edits)",
+    );
+  if (!readWorkflowStructuredCoverage(current))
+    throw new Error(
+      "dataflow-v1 resume refused: source is valid for fresh execution but structured callable coverage is unproven",
+    );
 }
 
 /** Static replay-safety of the exact bytes this run executes; unreadable reads as unproven. */
@@ -385,6 +445,17 @@ export function readWorkflowReplaySafety(scriptIdentity: WorkflowScriptIdentity)
     ).replaySafety;
   } catch {
     return "unproven";
+  }
+}
+
+/** Reads the admitted immutable snapshot; uncovered closures refuse only v4 resume. */
+export function readWorkflowStructuredCoverage(identity: WorkflowScriptIdentity): boolean {
+  try {
+    return assessWorkflowStructuredReplayCoverage(
+      readWorkflowRunTextFile(path.dirname(identity.snapshotPath), identity.snapshotPath),
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -415,7 +486,7 @@ export function describeWorkflowReplayPlan(plan: WorkflowReplayPlan): string | u
     return `replay: active source=${plan.sourceRunId ?? "?"} recordedCalls=${plan.recorded.length}`;
   }
   if (plan.refusedReason !== undefined) {
-    return `replay: refused source=${plan.sourceRunId ?? "?"} reason=${plan.refusedReason} — every call runs fresh`;
+    return `replay: refused source=${plan.sourceRunId ?? "?"} reason=${plan.refusedReason} — legacy calls run fresh; structured v4 requires a committed receipt`;
   }
   if (plan.notRecordedReason !== undefined) {
     return `replay: not recorded reason=${plan.notRecordedReason} — this run cannot be resumed`;

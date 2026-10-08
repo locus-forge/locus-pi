@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { WorkflowAgentResult } from "../../../../../extensions/workflows/runtime/workflow-runtime.js";
 import { runStarter } from "./starter-fixture.js";
 import { orchestrationOnlyWorkflowSourceShapeDiagnostics } from "../../../../../extensions/workflows/tool/workflow-source-shape.js";
+import { checkWorkflowSourceText } from "../../../../../extensions/workflows/tool/workflow-source-check-tool.js";
+import { staticWorkflowMeta } from "../../../../../extensions/workflows/catalog/workflow-meta.js";
 
 const base = "extensions/workflows/references/examples/starters";
 const starters = [
@@ -19,8 +21,12 @@ const originalWork = "First complete handoff\n  required evidence: missing\narti
 const correctedWork = "Corrected complete handoff\n  verified: required check\nartifact: changed-source.ts\n";
 
 function checkSource(source: string, label: string): void {
+  const diagnostics =
+    staticWorkflowMeta(source).profile === "dataflow-v1"
+      ? checkWorkflowSourceText(source, "dataflow-v1")
+      : orchestrationOnlyWorkflowSourceShapeDiagnostics(source);
   expect(
-    orchestrationOnlyWorkflowSourceShapeDiagnostics(source).filter((diagnostic) => diagnostic.severity === "error"),
+    diagnostics.filter((diagnostic) => diagnostic.severity === "error"),
     label,
   ).toEqual([]);
   execFileSync(process.execPath, ["--input-type=module", "--check"], { input: source });
@@ -32,7 +38,7 @@ beforeAll(() => {
 });
 
 describe("small agentic starters with real runtime and scripted children", () => {
-  it("checks complete current authoring snippets with Node and the actual orchestration-only checker", () => {
+  it("checks complete current authoring snippets with Node and their explicitly matching source modes", () => {
     const references = "skills/locus-pi-workflow-create/references";
     const documents = [
       "docs/workflows/create.md",
@@ -41,7 +47,7 @@ describe("small agentic starters with real runtime and scripted children", () =>
       "skills/locus-pi-workflow-create-detailed/SKILL.md",
       "skills/locus-pi-workflow-create-detailed/references/worked-decisions.md",
       ...readdirSync(references)
-        .filter((file) => file.endsWith(".md"))
+        .filter((file) => file.endsWith(".md") && file !== "dsl.md")
         .map((file) => `${references}/${file}`),
     ];
     let checked = 0;
@@ -56,15 +62,35 @@ describe("small agentic starters with real runtime and scripted children", () =>
     expect(checked).toBeGreaterThan(0);
   });
 
-  it("runs the identical early lesson module with whole handoffs and ordinary exact-file writes", async () => {
-    const purpose = "Complete purpose evidence\n";
-    const commands = "Complete commands evidence\n";
-    const guide = "Complete project guide\n";
-    const got = await runStarter("project-tour", { purpose: [purpose], commands: [commands], compose: [guide] });
-    expect(got.seen.map((request) => request.label)).toEqual(["purpose", "commands", "compose"]);
-    expect(got.seen[2]!.prompt).toContain(`${purpose}\n\n${commands}`);
-    expect(got.result).toBe(guide);
-    expect(got.files["guide.md"]).toBe(guide);
+  it("keeps optional parallel writer artifacts separate and merges only after both finish", async () => {
+    const answers = { purpose: [""], commands: [""], compose: [""] };
+    let releasePurpose!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      releasePurpose = resolve;
+    });
+    const finished: string[] = [];
+    const got = await runStarter("project-tour", answers, async (request, _, folder) => {
+      const label = request.label!;
+      if (label === "purpose") await ready;
+      if (label === "purpose" || label === "commands") {
+        const file = path.join(folder, `${label}.md`);
+        expect(request.prompt).toContain(`write only assigned ${label}.md`);
+        writeFileSync(file, `Full ${label} evidence, retained only in the file.`);
+        answers[label][0] = `Written: ${file}`;
+        finished.push(label);
+        if (label === "commands") releasePurpose();
+      } else {
+        expect(finished).toEqual(["commands", "purpose"]);
+        const reports = ["purpose", "commands"].map((name) => readFileSync(path.join(folder, `${name}.md`), "utf8"));
+        for (const report of reports) expect(request.prompt).not.toContain(report);
+        expect(request.prompt).toContain(`${answers.purpose[0]}\n\n${answers.commands[0]}`);
+        writeFileSync(path.join(folder, "guide.md"), reports.join("\n"));
+        answers.compose[0] = `Written: ${path.join(folder, "guide.md")}`;
+      }
+    });
+    expect(got.result).toBe(answers.compose[0]);
+    expect(got.files["guide.md"]).toContain(got.files["purpose.md"]);
+    expect(got.files["guide.md"]).toContain(got.files["commands.md"]);
     expect(got.artifacts.every((artifact) => artifact.kind === "answer")).toBe(true);
   });
 
@@ -196,91 +222,108 @@ describe("small agentic starters with real runtime and scripted children", () =>
     expect(seen).toEqual(["inspect"]);
   });
 
-  it("accepts the exact first handoff with disclosed optional coverage and no extra router", async () => {
-    const work = "Complete result\nOptional browser check unavailable; required checks passed.\n";
-    const got = await runStarter(
-      "evaluator-optimizer",
-      { implement: [work], review: ["accept"] },
-      (request, _, workspace) => {
-        if (request.label === "review")
-          writeFileSync(
-            path.join(workspace, "findings.md"),
-            "Required evidence met; optional browser check not performed.",
-          );
-      },
-    );
-    expect(got.seen.map((request) => request.label)).toEqual(["implement", "review"]);
-    expect(got.seen[1]!.prompt).toContain(work);
-    expect(got.seen[1]!.returnContract).toBeDefined();
-    expect(got.primary).toEqual([work]);
-    expect(got.files["findings.md"]).toContain("not performed");
-    expect(got.journal.filter((line) => line.choiceDecision)).toHaveLength(1);
-  });
+  it.each([
+    { choices: ["accept"], status: "accepted", rounds: 1 },
+    { choices: ["revise", "accept"], status: "accepted", rounds: 2 },
+    { choices: ["revise", "revise"], status: "incomplete", rounds: 2 },
+    { choices: ["blocked"], status: "blocked", rounds: 1 },
+  ])(
+    "runs the primary artifact-backed loop through $choices with no unreviewed fix",
+    async ({ choices, status, rounds }) => {
+      const task =
+        "Original Task: implement the requested behavior.\n  Preserve this exact Task and its required checks.\n";
+      const answers = { implement: ["", ""], review: choices };
+      const fullReviews: string[] = [];
+      const got = await runStarter(
+        "evaluator-optimizer",
+        answers,
+        (request, occurrence, folder) => {
+          const product = path.join(path.dirname(folder), "product");
+          const internal = path.join(product, "actor-selected-module.ts");
+          const handoffPath = path.join(folder, "implementation.md");
+          const reviewPath = path.join(folder, "findings.md");
+          expect(request.prompt).toContain(task);
+          expect(request.prompt).toContain(`Orchestration/evidence folder: ${folder}`);
+          if (request.label === "implement") {
+            if (occurrence > 0) {
+              expect(readFileSync(reviewPath, "utf8")).toBe(fullReviews[occurrence - 1]);
+              expect(readFileSync(handoffPath, "utf8")).toContain("Revision: 1");
+              expect(request.prompt).not.toContain(fullReviews[occurrence - 1]);
+            }
+            mkdirSync(product, { recursive: true });
+            writeFileSync(internal, `export const value = ${occurrence + 1};\n`);
+            writeFileSync(
+              handoffPath,
+              `Complete result\nChanged: ${internal}\nRevision: ${occurrence + 1}\nActual checks and remaining work.\n`,
+            );
+            expect(readFileSync(handoffPath, "utf8")).toContain(internal);
+            answers.implement[occurrence] = `Implemented pass ${occurrence + 1}; result: ${handoffPath}`;
+          } else {
+            expect(request.prompt).toContain("Do not edit product source");
+            expect(request.prompt).toContain("Write only assigned findings.md");
+            expect(request.prompt).toContain(answers.implement[occurrence]);
+            const result = readFileSync(handoffPath, "utf8");
+            expect(request.prompt).not.toContain(result);
+            const discovered = /^Changed: (.+)$/mu.exec(result)![1]!;
+            const beforeReview = readFileSync(discovered, "utf8");
+            expect(beforeReview).toBe(`export const value = ${occurrence + 1};\n`);
+            const review =
+              `Revision: ${occurrence + 1}; decision: ${choices[occurrence]}\n` +
+              `Prior findings: ${occurrence ? "R1 verified on correction" : "none"}\n` +
+              "Optional check unavailable; required evidence disposition is explicit.\n" +
+              "Detailed evidence. ".repeat(500);
+            writeFileSync(reviewPath, review);
+            expect(readFileSync(reviewPath, "utf8")).toBe(review);
+            fullReviews.push(review);
+            expect(readFileSync(discovered, "utf8")).toBe(beforeReview);
+          }
+        },
+        [],
+        task,
+      );
+      expect(got.seen.map((request) => request.label)).toEqual(
+        Array.from({ length: rounds }, () => ["implement", "review"]).flat(),
+      );
+      expect(got.result).toMatchObject({ ok: status === "accepted", status, handoff: answers.implement[rounds - 1] });
+      expect(got.counts).toEqual({ implement: rounds, review: rounds });
+      expect(got.files["findings.md"]).toBe(fullReviews[rounds - 1]);
+      expect(got.files["implementation.md"]).toContain(`Revision: ${rounds}`);
+      expect(got.journal.filter((line) => line.choiceDecision)).toHaveLength(rounds);
+      expect(got.primary).toEqual([]);
+      expect(got.published).toEqual([]);
+      expect(readFileSync(`${base}/evaluator-optimizer.workflow.mjs`, "utf8")).not.toContain(
+        "actor-selected-module.ts",
+      );
+      if (status === "incomplete") expect(got.result).toMatchObject({ reason: "correction_allowance" });
+    },
+  );
 
-  it("passes whole feedback/work into correction, then freshly reviews before publication", async () => {
-    const findings =
-      "R2: missing required check\n  preserve the existing artifact\nexact correction: exercise changed caller\n";
-    const got = await runStarter(
-      "evaluator-optimizer",
-      { implement: [originalWork, correctedWork], review: ["revise", "accept"] },
-      (request, occurrence, workspace) => {
-        if (request.label === "review") {
-          expect(request.prompt).toContain(occurrence === 0 ? originalWork : correctedWork);
-          writeFileSync(path.join(workspace, "findings.md"), occurrence === 0 ? findings : "R2 evidenced; accepted.");
-        }
-        if (request.label === "implement" && occurrence === 1) {
-          expect(request.prompt).toContain(originalWork);
-          expect(request.prompt).toContain("findings.md");
-          expect(readFileSync(path.join(workspace, "findings.md"), "utf8")).toBe(findings);
-        }
-      },
-    );
-    expect(got.seen.map((request) => request.label)).toEqual(["implement", "review", "implement", "review"]);
-    expect(got.primary).toEqual([correctedWork]);
-    expect(got.published).toEqual([originalWork, correctedWork]);
-    expect(got.journal.filter((line) => line.choiceDecision)).toHaveLength(2);
-  });
-
-  it("preserves latest reviewed work and required residuals on exhaustion without another worker", async () => {
-    const got = await runStarter(
-      "evaluator-optimizer",
-      { implement: [originalWork, correctedWork], review: ["revise"] },
-      (request, _, workspace) => {
-        if (request.label === "review")
-          writeFileSync(
-            path.join(workspace, "findings.md"),
-            "R3 remains unmet; next action: verify required integration.",
-          );
-      },
-    );
-    expect(got.result).toMatchObject({
-      ok: false,
-      status: "incomplete",
-      reason: "correction_allowance",
-      currentWork: correctedWork,
-      findings: "findings.md",
+  it("delivers the requirement/evidence instruction contract to the actual reviewer call", async () => {
+    // Protect shipped instructions, not a scripted actor's ability to judge compliance.
+    await runStarter("evaluator-optimizer", { implement: [originalWork], review: ["blocked"] }, (request) => {
+      if (request.label !== "review") return;
+      const prompt = request.prompt.replace(/\s+/gu, " ");
+      expect(prompt).toContain("Verify each Task requirement");
+      expect(prompt).toContain("equal outputs do not prove reuse or state transitions");
+      expect(prompt).toContain("verified/unmet/unverified requirements");
     });
-    expect(got.counts).toEqual({ implement: 2, review: 2 });
-    expect(got.files["findings.md"]).toContain("R3 remains unmet");
-    expect(got.artifacts.at(-1)!.text).toBe(correctedWork);
-    expect(got.artifacts.some((artifact) => artifact.kind === "primary")).toBe(false);
   });
 
-  it("stops for missing required prerequisites while retaining the produced work", async () => {
+  it("lets a reviewer block on a missing result file despite a successful-looking worker answer", async () => {
     const got = await runStarter(
       "evaluator-optimizer",
-      { implement: [originalWork], review: ["blocked"] },
-      (request, _, workspace) => {
-        if (request.label === "review")
-          writeFileSync(
-            path.join(workspace, "findings.md"),
-            "Required service unavailable; reconnect it before recheck.",
-          );
+      { implement: ["All done"], review: ["blocked"] },
+      (request, _, folder) => {
+        if (request.label === "review") {
+          expect(existsSync(path.join(folder, "implementation.md"))).toBe(false);
+          expect(request.prompt).toContain("block on missing required prerequisites or handoff files");
+          writeFileSync(path.join(folder, "findings.md"), "Blocked: assigned result file is missing.");
+        }
       },
     );
-    expect(got.result).toMatchObject({ ok: false, status: "blocked", currentWork: originalWork });
+    expect(got.result).toMatchObject({ ok: false, status: "blocked" });
     expect(got.counts).toEqual({ implement: 1, review: 1 });
-    expect(got.artifacts.some((artifact) => artifact.kind === "primary")).toBe(false);
+    expect(got.files["findings.md"]).toContain("missing");
   });
 
   it("propagates execution errors instead of manufacturing a favorable review", async () => {

@@ -285,12 +285,12 @@ export function writeWorkflowRunFile(
   runDir: string,
   filePath: string,
   bytes: string | NodeJS.ArrayBufferView,
-  options: { durable?: boolean; exclusive?: boolean } = {},
+  options: { durable?: boolean; exclusive?: boolean; mode?: 0o600 } = {},
 ): void {
   assertWorkflowRunFilePath(runDir, filePath, false);
   const flags =
     constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW | (options.exclusive === true ? constants.O_EXCL : 0);
-  const descriptor = openSync(filePath, flags, 0o666);
+  const descriptor = openSync(filePath, flags, options.mode ?? 0o666);
   try {
     verifyOpenedWorkflowRunFile(runDir, filePath, descriptor);
     if (options.exclusive !== true) ftruncateSync(descriptor, 0);

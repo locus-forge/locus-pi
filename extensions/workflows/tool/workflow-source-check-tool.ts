@@ -1,5 +1,6 @@
 /** Pi-native boundary for the standard workflow source-shape validator. */
 
+import { dataflowWorkflowSourceDiagnostics } from "../source/profiles/workflow-source-dataflow.js";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -24,9 +25,9 @@ const WorkflowSourceCheckParams = Type.Object(
       maxLength: 4096,
     }),
     mode: Type.Optional(
-      Type.Union([Type.Literal("compatibility"), Type.Literal("orchestration-only")], {
+      Type.Union([Type.Literal("compatibility"), Type.Literal("orchestration-only"), Type.Literal("dataflow-v1")], {
         description:
-          "Use orchestration-only for newly authored workflows; compatibility preserves the broader validator for existing reviewed source.",
+          "Use dataflow-v1 only with literal meta.profile dataflow-v1; orchestration-only restricts standard source; compatibility preserves existing reviewed source.",
       }),
     ),
   },
@@ -39,7 +40,7 @@ export function registerWorkflowSourceCheckTool(pi: ExtensionAPI): void {
     name: "workflow_check_source",
     label: "workflow source check",
     description:
-      "Validate one project workflow source up to 512 KiB without importing or executing it. The default compatibility mode accepts the full standard grammar; orchestration-only mode restricts newly authored source to prompts, agent edges, DSL control flow, and in-memory text publication. The path must stay inside the current project.",
+      "Validate one project workflow source up to 512 KiB without importing or executing it. The default compatibility mode accepts the full standard grammar; orchestration-only mode restricts newly authored source to prompts, agent edges, DSL control flow, and in-memory text publication. The explicit dataflow-v1 mode requires its matching literal profile and checks synchronous data helpers with visible owned DSL work. The path must stay inside the current project.",
     parameters: WorkflowSourceCheckParams,
     approval: "read",
     formatApprovalDetails: (args) => {
@@ -65,7 +66,11 @@ export function registerWorkflowSourceCheckTool(pi: ExtensionAPI): void {
         const source = readFileSync(sourcePath, "utf8");
         const diagnostics = checkWorkflowSourceText(source, mode);
         const shapeLabel =
-          mode === "orchestration-only" ? "orchestration-only workflow source" : "standard workflow source";
+          mode === "dataflow-v1"
+            ? "dataflow-v1 workflow source"
+            : mode === "orchestration-only"
+              ? "orchestration-only workflow source"
+              : "standard workflow source";
         const errorDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity === "error");
         const errorCount = new Set(errorDiagnostics.map((diagnostic) => diagnostic.message)).size;
         const warningCount = diagnostics.length - errorDiagnostics.length;
@@ -110,15 +115,17 @@ ${diagnostics.map((diagnostic) => formatWorkflowSourceDiagnostic(displayPath, di
 /** Check these bytes without importing them; publication uses this same host gate. */
 export function checkWorkflowSourceText(
   source: string,
-  mode: "compatibility" | "orchestration-only",
+  mode: "compatibility" | "orchestration-only" | "dataflow-v1",
 ): WorkflowSourceDiagnostic[] {
   if (Buffer.byteLength(source) > MAX_WORKFLOW_SOURCE_BYTES) {
     throw new Error(`source exceeds the ${MAX_WORKFLOW_SOURCE_BYTES}-byte validation limit`);
   }
   const diagnostics =
-    mode === "orchestration-only"
-      ? orchestrationOnlyWorkflowSourceShapeDiagnostics(source)
-      : standardWorkflowSourceShapeDiagnostics(source);
+    mode === "dataflow-v1"
+      ? dataflowWorkflowSourceDiagnostics(source)
+      : mode === "orchestration-only"
+        ? orchestrationOnlyWorkflowSourceShapeDiagnostics(source)
+        : standardWorkflowSourceShapeDiagnostics(source);
   const syntax = spawnSync(process.execPath, ["--input-type=module", "--check"], {
     input: source,
     encoding: "utf8",

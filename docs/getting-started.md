@@ -4,11 +4,11 @@ type: guide
 status: active
 owner: locus-pi maintainers
 tags: [installation, getting-started]
-updated: "2026-09-29T12:16:18Z"
-source_commit: "35d8e1d2589d"
+updated: "2026-10-07T21:05:25Z"
+source_commit: "f94a891581d1"
 update_event: "user_request"
-context: "changes=XL files=30"
-description: "Raise the supported Pi floor to the first release with the built-in thinking selector."
+context: "changes=XL files=32 task=T-149"
+description: "Describe the sequential first workflow taught by the create lesson"
 ---
 
 # Getting started
@@ -95,7 +95,7 @@ configured model provider.
 
 Next, [create and save your first workflow](workflows/create.md#your-first-workflow),
 then follow [run and inspect](workflows/running.md#run-a-saved-workflow). The first example
-runs two agents in parallel and combines their results.
+runs implementation and review in sequence, with one reviewed correction if needed.
 
 Pi loads the package skills by default. If you use the Workflow-only filter,
 use the copyable example or enable the skills before asking Pi to author a workflow.

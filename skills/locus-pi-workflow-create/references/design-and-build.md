@@ -1,14 +1,16 @@
 ---
-updated: "2026-10-02T22:53:29Z"
-source_commit: "0d098c9e06d1"
+updated: "2026-10-07T15:24:00Z"
+source_commit: "f6f04156193e"
 update_event: "user_request"
-context: "changes=L files=29"
+context: "compact design, conditional references and optional SVG"
 description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
 ---
 
 # Design, review, Build
 
-Audience: the author after a graph pattern has been selected. This file owns the authoring process and design record, not the DSL grammar or runtime defaults.
+Read the sections needed for the current authoring step: [design contract](#design-contract),
+[working context](#folder-level-context), [brief detail](#procedural-briefs), or [Build checks](#build-checks).
+This file owns the process, design record and child briefs; the DSL owns grammar and runtime defaults.
 
 ## Authoring is continuous by default
 
@@ -41,90 +43,227 @@ build-only compatibility route with `Build approved design: <exact design path>`
 or `Build design: <exact design path>`.
 
 If design review or Build discovers a material algorithm mismatch, update and
-re-review the design before
-building; never hide the change in source. Ask the user only when resolving the
+re-review the design before building; never hide the change in source. Ask the user only when resolving the
 mismatch would change the requested result, not for routine authoring choices.
 
 ## Design contract
 
-The design is short Markdown a reader can approve without opening JavaScript:
+Keep one short record of the decisions needed to build and review the graph.
+Reference the unchanged Task; do not copy its requirements into a second specification
+or prewrite the product solution. Describe each dependency once, using an edge list
+or a node table, not both plus a numbered algorithm and a separate mechanisms list.
 
 ```markdown
 # Design: <name>
 
-Purpose: <one sentence>
-Input: <semantic text or none>
-Primary deliverable: <requested artifact and location>; accompanying report: <if needed>
-Authoring route: <ordinary or explicitly selected detailed lesson; not a runtime field>
-Evidence boundary: <semantic input, caller items, author-known prompt material, or child inspection>
-Approach: <task need and semantic approach(s); omit any unnecessary roles>
-Graph: <fixed for known scope/stages; replan when observed results must change remaining work>
-Brief detail: <outcome-led by default, or procedural with reason>
-Context: <repository checkout, task directory, output location; agents discover files>
-Executors: <responsibility roles and verified model routes; no unverified engine names>
-Verification: <required evidence, available or discoverable child capabilities, optional checks and delivery effects>
-
-Namespace: `runnable root` (include the `<name>` entry below) or `group-only`
-(omit the root entry; children remain directly runnable)
+Task: <unchanged request or exact source; additional evidence separately>
+Deliverable: <requested artifact and exact location>
+Context: <verified checkout/branch, delegated product root and exact shared paths>
 
 ## Entries
 
-| Ref              | Entry kind    | Responsibility         | Invoked by |
-| ---------------- | ------------- | ---------------------- | ---------- |
-| `<name>`         | runnable root | <standard entry point> | operator   |
-| `<name>/<child>` | direct child  | <one bounded subtask>  | `<node>`   |
+| Ref            | Entry kind    | Responsibility         | Invoked by |
+| -------------- | ------------- | ---------------------- | ---------- |
+| <name>         | runnable root | <entry responsibility> | operator   |
+| <name>/<child> | direct child  | <bounded subtask>      | <node>     |
+
+Graph: <each role's input, output, consumer and choice destination, once>
+Handoffs: <exact Task/shared file paths, writers and readers; disjoint parallel scopes>
+Bounds: <literal loop/group bounds with reasons; worst-case calls including saved children>
+Evidence: <Task-derived criteria, required checks, optional checks and completion owner>
+Exits: <accept, correct/recheck, blocked and exhausted routes; preserve work on non-success>
+Review: <design checked against Task and source contract; material issues resolved>
+```
 
 For `group-only`, omit the `<name>` row entirely. Declare every direct child
 that Build must create; do not declare grandchildren or an implicit root.
+Omit unused child rows and mechanisms. Add model-route or procedural-brief decisions
+only when they differ from authorized defaults. No default-value checklist is needed.
+For budgets, launch defaults apply; every other undeclared workflow budget axis is unbounded.
+An author-selected budget axis needs a consumer and a one-line reason, not a copied sample number.
 
-1. <numbered algorithm>
+Use the already selected pattern, without a mandatory planner or arbiter.
+Known work can use one implement → review → bounded correction → fresh review loop,
+including substantive implementation. Split stages only for real dependencies,
+separate ownership or evidence that changes remaining work; keep integration QA when required.
+Count orchestration machinery, not agents. A coherent additional subtask is not a defect.
+Pattern-specific decisions below apply only when that mechanism is used.
 
-| Node     | Responsibility         | Receives      | Returns                                | Next       |
-| -------- | ---------------------- | ------------- | -------------------------------------- | ---------- |
-| `<node>` | <one coherent subtask> | <exact input> | <complete text, choice, or named file> | <consumer> |
+## Choose style, detail, size and executors separately
 
-Concurrency: <groups or none>
-Loop bounds: <bounds or none>
-Budgets: <axis=value with a one-line reason, or none — launch defaults apply; every other undeclared workflow budget axis is unbounded>
-Named files: <each exact caller-assigned destination in prompts, its writer and its readers, or none>
-File boundary: workflow source performs no file reads; name any child-owned source inspection
-Worst-case calls: <exact formula including saved children>
-Failure exits: <fail-closed exits>
-Mechanisms: <parallel barriers, choices, loops, human gates; no agent-count penalty>
-Status: REVIEWED — ready for build.
+These are design-time choices written in the reviewed design. They are not new fields in `workflow`, `meta`, or `agent()`.
+
+| Choice                | Default                        | Explicit alternative                                                                                                             |
+| --------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| Authoring lesson      | Ordinary                       | Explicitly selected detailed walkthrough; see the [selection owner](../../../docs/workflows/create.md#choose-an-authoring-route) |
+| Graph                 | `fixed` for known scope/stages | Replan when observed results must change remaining work; combine forms as needed                                                 |
+| Agent brief detail    | `outcome-led`                  | `procedural` for a concrete tool constraint or observed failure                                                                  |
+| Advisory graph size   | Fit the requested outcome      | State an agent-count preference in the authoring request; preserve required checks                                               |
+| Executor/model effort | Existing session/user routing  | Explicit verified `modelRole` or `model` under existing APIs                                                                     |
+
+Example authoring requests:
+
+> Create a workflow for task directory `.tasks/example`. Use adaptive slices and outcome-led briefs. Implement the user-selected specification; define initial slices and completion outcomes while authoring. Build the source; do not run it.
+
+> Create a fixed workflow for this exact three-stage export. Use procedural briefs because the importer requires the documented command order. Do not run it.
+
+The graph must support the user-selected model, including arbitration of review findings; it must not require a particular brand or tier. Preserve existing session/user routing; this is not permission to change models or billing routes. Outcome-led briefs state role, expected result, SOURCES and essential constraints. They give the agent enough context and leave method selection to it. Use headings when helpful, not as a repeated template. Never remove acceptance criteria or unresolved risks to shorten a prompt. [Procedural briefs](#procedural-briefs) explains that detail choice; graph style remains an independent choice.
+
+A fixed control skeleton does not require precomputed implementation work. The existing worker → evaluator → correction loop can leave internal design to its worker; plan/replan lets observed evidence change remaining work. Use a planner only when that responsibility is needed. Known, separable tasks may keep granular per-item or per-file work fixed.
+
+## Executor selection
+
+Pi already has responsibility roles and concrete selectors. Omit `model`, `modelRole`, `requireModelRole`, and effort selectors by default. Use `{ modelRole: "reviewer" }` only when the user or project explicitly requests that routing and the role exists in the global user model table. A configured role alone does not authorize choosing it. Model-less calls follow user routing, including an assigned `agent` role, and otherwise inherit the session model. If a particular route is essential, use `requireModelRole: true` so an unassigned role fails instead of inheriting silently. Configure roles through `/model-roles` or `~/.pi/agent/model-roles/config.json`, the only persistent model-role authority; project-local role files are not read. A role name is a configuration key, not proof of Claude, Codex, subscription billing or reviewer independence.
+
+An explicit verified condition can select an author-owned options record at a visible callsite; do not add `chooseEngine`/`agentOpts` wrappers or parse model prose to choose a provider. Pi has no built-in live-load scheduler for choosing an engine. Resolve availability in the design or global user configuration or through a real `choice` edge when the task requires it. Do not invent automatic failover or silently change a required executor.
+
+Keep literal responsibility labels (`review`, `correct`) and human work titles. Name a provider/model in a title only when its route was verified. Confirm `executedModel` and recorded fallback evidence when evaluating a run. Different role names alone are not different engines. The generic references deliberately inherit the session model and promise independent sessions/roles, not cross-provider review.
+
+## What Claude's medium actually means
+
+Claude Code calls the setting **Dynamic workflow size**, key `workflowSizeGuideline`. Values are `small` (aim below 5 agents), `medium` (below 15, default), `large` (below 50), and `unrestricted` (no guideline). It advises the author about agent count; it is not prompt length, reasoning effort, tokens, or an enforced run limit. See the [official size documentation](https://code.claude.com/docs/en/workflows#set-a-size-guideline).
+
+Locus Pi does not implement that setting. State a size preference in the authoring request if wanted. Record the chosen graph and worst-case calls in the design; never cut required review/QA to satisfy a cosmetic target. Explicit run budgets (unbounded when undeclared) and task-derived slice/correction bounds remain separate. Procedural prompts being better for weaker models is an evaluation hypothesis, not a supported guarantee.
+
+## Briefs and context
+
+The [working-context contract](#folder-level-context) owns clean-child
+context. Give each child the complete relevant original Task or its unchanged accessible
+source, current evidence and role-specific duties. Keep the original Task authoritative,
+not repeated task copies or cumulative handoff history. Corrections need complete actionable
+findings. Remove mechanical headings, repeated criteria and tool choreography that add no
+information; do not turn workflow bookkeeping into product requirements.
+
+Assign exact paths and writers/readers to shared handoffs and Task-required outputs.
+Delegate product internals within the product root, respecting narrower Task bounds such as
+an `index.html`-only product and preserving unrelated work. A product-read-only
+reviewer may write its assigned report, not product files. The reviewer inspects the full
+current diff with its own tools, including uncommitted work and every in-scope path;
+the producer need not rebuild the change as an evidence bundle. Commit only when authorized.
+
+A choice belongs only at a real routing edge; narrative travels whole without an invented
+length cap. No brief requests a character, word, line or item count without a consumer
+requirement. The [120-column readability rule](#text-readability)
+wraps new author-owned prose; it never caps an answer or changes protected payload bytes.
+Create SVG only on explicit request. The [optional diagram appendix](../../../docs/workflows/authoring.md#workflow-diagram-contract)
+owns its artifact and visual checks; ordinary Build does not require a diagram.
+
+## Folder-level context
+
+Ordinary `input` is one unchanged semantic string, not an `args` protocol to parse.
+Choose [typed input](dsl.md#typed-workflow-input) when workflow code consumes fixed structured parameters.
+Keep ordinary requests passed whole to agents in semantic text.
+
+Use one short shared working context in the existing semantic input or an author-owned prompt string,
+then append each role's responsibility. It is not a new DSL `preamble` option, a detailed solution,
+or another task specification. Preserve the complete original Task or direct each child to its unchanged
+source; list additional evidence separately. Children do not inherit the parent conversation.
+
+The native Pi child bridge already injects **actual execution pwd** (including a selected worktree)
+and **source project root** before the author's unchanged prompt. Use those facts; do not restate guessed
+cwd/root values or call unavailable path helpers in orchestration-only source. It does **not** inject the
+requested Git branch, Task source, delegated product root or author-owned evidence destinations.
+Record those after inspection during authoring; each child verifies the requested checkout/branch
+against its actual context before writing. A branch mismatch is a blocker, not permission to switch it.
+Run Pi in the intended repository; a prompt destination never changes cwd or selected worktree.
+
+Example input context after inspection (replace these illustrative paths/branch with actual verified values):
+
+```text
+Original Task: <complete unchanged request; task source below contains its supporting specification>
+Expected checkout: /work/widget; branch: task/widget-fix
+Task source: /work/widget/.tasks/widget-fix/task.md
+Product root: /work/widget (preserve unrelated files and narrower Task restrictions)
+Orchestration/evidence folder: /work/widget/.tasks/widget-fix/orchestration
+implementation.md: /work/widget/.tasks/widget-fix/orchestration/implementation.md (developer writes; reviewer reads)
+findings.md: /work/widget/.tasks/widget-fix/orchestration/findings.md (reviewer writes; developer reads on correction)
 ```
 
-Count orchestration machinery, not agents. More agents are fine when the task
-really decomposes into more coherent subtasks.
+The developer may choose internal product files. It writes its full result and actual check evidence to
+`implementation.md`, then returns a short status and exact path. The reviewer reopens that file and
+actual changes, writes only `findings.md`, then returns its declared `choice`. No source-side file parsing,
+second JSON protocol, cumulative review transcript or duplicate solution is needed. Missing/ambiguous
+assignments fail closed. Readers never reconstruct a missing artifact from the returned status.
 
-Review whether each brief gives the agent enough to complete its task. Remove
-mechanical headings, repeated completion criteria, tool choreography and
-general policy that add no task-specific information.
-Give each clean child the complete relevant Task, exact paths, evidence and
-constraints in its own brief; do not assume it inherits the parent conversation.
-When a role needs a write boundary, permit both its product work and assigned
-evidence: "Write product code only under the assigned product root. Also write
-the exact evidence files explicitly assigned to your role. No other writes are permitted."
-For a review edge, let the reviewer inspect the full current diff with its own tools.
-Commit only within existing task authorization; require it to account for every
-in-scope path in that diff before a favorable verdict. Do not have the producer
-rebuild the change as an evidence bundle for the reviewer to read.
-For each choice, named file or author-selected limit, identify the consuming edge
-and why it needs that contract. Plain narrative is passed whole without an
-invented length cap; a choice belongs only at a real routing edge. Two review
-checks apply to every design:
+Keep this author-owned orchestration folder separate from runtime-owned journals and checkpoints.
+`--workspace-dir` selects confined native coordination only; it is not the product/evidence destination.
+Native run evidence stays under `outputs/` and `runtime/`; children must not modify it. The primary
+[sequential starter](../../../extensions/workflows/references/examples/starters/evaluator-optimizer.workflow.mjs)
+uses this contract. The optional [parallel tour](../../../extensions/workflows/references/examples/starters/project-tour.workflow.mjs)
+adds distinct `purpose.md`/`commands.md` writer paths and one `guide.md` merge owner.
+For richer adaptive work assign each shared queue, slice, review and final handoff explicitly;
+consumers reopen the same files after dependencies finish. See [runtime inputs](../../../docs/workflows/authoring.md#workflow-input-and-host-continuation).
 
-- **No invented size policy.** Every budget axis carries a one-line reason. A
-  number with no owner is removed, not lowered.
-- **No prompt-side size request.** No brief asks for a character, word, line or
-  item count the consumer did not declare. "Keep it short" is the removed policy
-  rewritten in English.
+## Text readability
 
-Use the already selected pattern card as an algorithm, not a full workflow to copy blindly.
+Write new author-owned design, Task, ContextRules and workflow text blocks with physical
+lines of at most 120 Unicode code points, including indentation. Wrap prose at word boundaries;
+preserve paragraphs, lists, code fences and meaningful Markdown hard breaks. ContextRules is
+ordinary prompt prose, not a new runtime field. This is formatting, not a cap on answer length.
+
+Do not reflow the original Task, opaque inputs/results, frozen evaluation inputs or reviewed
+prompt bytes. A newly authored Task may be wrapped before approval and freezing; later changes
+need an explicitly identified new input version. Reference an unchanged accessible Task source
+instead of copying it merely to satisfy width. Never truncate content or normalize input at runtime.
+
+Use lossless source literals where possible; [source boundary](source-boundary.md#readable-string-literals)
+shows the supported forms. Exact commands, paths, URLs and code tokens must retain their values.
+For a protected payload or indivisible token over 120 columns, keep the bytes and record that
+specific exception or use display-only soft wrapping. Existing eval/replay snapshots are not
+formatting targets: even unchanged prompt values do not preserve changed source-byte identity.
+
+## Procedural briefs
+
+Use when a concrete interface requires an exact sequence, or a measured failure shows that an outcome-led brief omits information the worker needs. This detail choice can be used with a fixed graph or an adaptive queue. It does not imply a model tier.
+
+Outcome-led default:
+
+> Review this slice against the accepted design. SOURCES: task directory, actual diff and baseline. Return confirmed defects with evidence and bounded fix instructions. Preserve all acceptance criteria. Do not edit source.
+
+Procedural alternative for a repository whose verification contract fixes the sequence:
+
+> Verify this slice using the repository's documented release check. SOURCES: task directory, actual diff and baseline. Run the schema migration dry check before the integration suite because the suite consumes its generated fixture. Record each command and exit. A failed migration check blocks the suite and is not a passing verification. Return requirement coverage and unresolved failures. Do not modify production data.
+
+The additional sequence is justified by a consumer dependency, not a desire to control every tool call. Do not invent commands, budgets, repeated headings, acknowledgements or compatibility layers. Keep only the procedure that changes correctness. Never silently fall back to this style because an executor is called “weak”; compare both brief styles on the same accepted task and verified executor before making that claim.
+
+### When verification needs a search or service probe
+
+Choose checks that resolve uncertainty about the requested outcomes.
+Start with focused normal, failure and boundary cases. Expand verification
+for a concrete unresolved question; explain what the added check establishes.
+
+Bound large searches so they can terminate. Use exhaustive enumeration when
+the task requires it and the chosen bounds make completion attainable.
+Do not replace a behavior check with a search for an entire successful
+user journey when that journey is not required evidence.
+
+For a service probe, define the observed response and cleanup before
+starting. Stop the process you started and confirm it exits. A foreground
+server remaining alive is not a completed check.
+
+For fixed work use [fixed graph](agentic-approaches.md#fixed-graph); for implementation with remaining-plan changes use [adaptive slices](agentic-approaches.md#adaptive-slices).
+
+## Review decisions and completion
+
+The author checks the design before source: requested output, dependencies, ownership,
+bounds and failure exits. A separate design-review agent is not required by default.
+After Build, review the actual source against this record; a correct design does not prove
+that its implementation has the same edges. Keep any independent review required by the Task
+or selected authoring workflow. Do not add another reviewer merely to restate the design.
 
 For each acceptance edge, trace blocking criteria to the request or an
 authoritative contract and identify evidence an available child can obtain.
+Account for every original requirement as verified, unmet or unverified in the
+existing review artifact. For required reuse or state transitions, inspect the
+transition the Task names, including already-created state when relevant.
+Choose evidence that distinguishes the required behavior from a violation that
+could produce the same output: deterministic recreation does not prove reuse.
+A successful command or file presence alone cannot close unrelated requirements.
 A product requirement does not by itself require one particular verification method.
+Keep verification task-derived: use controlled fixtures for required behavior,
+not an unrequested solver or optimization goal. Bound costly checker commands
+with a task-justified limit; exhaustion leaves required evidence incomplete.
+Nonblocking suggestions do not become acceptance criteria.
 Do not assume the author's tools are available to children; assign any needed
 capability discovery to an existing worker or reviewer.
 
@@ -156,8 +295,7 @@ Walk terminal paths for a produced artifact with an optional check unavailable, 
 confirmed defect and an explicitly required verifier unavailable. Delivery reports the
 artifact's location, actual checks, known issues and unverified behavior. Non-success
 preserves any produced artifact with the unmet requirement; it does not claim acceptance.
-The author owns this design review. Operator changes to a generated workflow are not
-evidence that the authoring skill produced a correct design.
+Operator changes to a generated workflow are not evidence that the authoring skill produced a correct design.
 
 ## Build checks
 
@@ -186,10 +324,11 @@ namespace has no root source and never receives a fake one. It then checks:
   same validator is `npm run check:workflow-source -- --mode orchestration-only <exact-path>`.
 - every built source uses only the orchestration-only DSL subset and contains no
   file, path, artifact-consumption, clock, or randomness primitive.
-- no source carries `handoffs`, `schema`, `validate`, `output`, `repair`,
-  `returnVia`, `maxItemChars`, `maxAnswerChars` or `schemaMaxLength` (the runtime
-  refuses each by name before any child starts), and no size or budget number the
-  design did not justify.
+- no source carries removed `handoffs`, `output`, `returnVia`, `maxItemChars`,
+  `maxAnswerChars` or `schemaMaxLength`, or ordinary-source forbidden `validate`,
+  `repair` or `outputTransport`; a `schema` call follows the literal declaration and
+  bounded consumption rules in [source boundary](source-boundary.md), and no size or
+  budget number appears without a consumer requirement or design justification.
 
 Read checker diagnostics as `path:line:column [CODE] message`. Any error fails
 Build. Warning-only output remains a successful check, but Build must report the
@@ -204,16 +343,13 @@ unmet required evidence returns `{ ok: false, status: "failed" }` with the lates
 artifact and evidence; do not publish it as accepted or silently start a fresh run.
 An optional check not performed does not, by itself, make a completed implementation fail.
 
-The packaged `task/plan` writes the whole caller-assigned `workflow.mjs` in one author
-call, then runs at most three independent reviews with at most two revisions.
-The packaged `task/plan-light`, for lighter author models, creates a minimal
-runnable caller-assigned `workflow.mjs`, then grows it through at most six complete
-graph-node slices. An owner re-cuts the source-free remaining queue after each
-accepted slice. Independent mechanical and design gates share one cumulative
-correction per slice; final whole-file gates run after the queue is empty. The exact routes and terminal reasons live in the
-[task authoring manual](../../../examples/workflows/task/README.md).
-
-The caller assigns one exact workflow.mjs path and the design, review, log and source-slice record paths in the whole semantic input. Agents write those files directly. The same source is used by Node, the project-confined native checker, reviewer and launcher; source outside the checker's existing boundary fails explicitly. Checks retain the actual source path, checked-byte SHA-256 and tool outcomes. Before launch, reopen the assigned regular nonempty source, compare the persisted reviewed/check evidence and repeat current required checks after correction or replay. Failed/exhausted review, missing or drifted source forbids execution. Native completion and returned prose never attest file delivery, and there is no publication prerequisite.
+The packaged `task/plan` and `task/plan-light` own their authoring review loops and
+caller-assigned source/evidence paths in the [task authoring manual](../../../examples/workflows/task/README.md).
+They do not inherit an extra design-review stage from this lesson. Use the same exact source
+for Node, the project-confined checker, reviewer and launcher. Retain its path, checked-byte
+SHA-256 and actual outcomes. Before launch, reopen the regular nonempty source and compare
+reviewed evidence; correction or replay requires current checks. Missing, drifted or failed
+source forbids execution. Native completion prose does not attest file delivery.
 
 A successful Build returns `/workflows run <name>` (or the qualified child ref).
 Create-only stops there. Create-and-run continues through
@@ -223,7 +359,14 @@ approval and external-effect boundaries intact.
 
 ## Pattern-specific design decisions
 
-For adaptive slices, name the queue owner, cumulative slice allowance, correction/recheck edge, scope-change exit and required final QA. Re-cut after each accepted slice, including the apparent last one, so an empty queue cannot hide unmet requirements. For fixed graphs, do not add a judge or semantic retry that the request did not require. For refinement, record the completion authority, immutable criteria, measured evidence, literal round cap, no-progress rule, exact handoff and terminal outcomes. For decomposition, record local concurrency, global budget and key ownership. Human continuation names two runs and a verified artifact handoff, never a suspended JavaScript stack.
+Read only the card needed by the selected graph:
+
+- Adaptive slices: queue owner, cumulative allowance, correction/recheck, scope-change exit and final QA.
+  Re-cut after every accepted slice, including the apparent last one; an empty queue does not prove completion.
+- Fixed graph: known dependencies and bounds, with no unrequested judge or semantic retry.
+- Refinement: completion authority, immutable criteria, measured evidence, round cap and no-progress rule.
+- Decomposition: local concurrency, shared budget and key ownership; disjoint write scopes.
+- Human continuation: two runs and a verified artifact handoff, not a suspended JavaScript stack.
 
 Budget values and failure dispositions belong to the [runtime reference](../../../docs/workflows/index.md); source provenance, mutation and permitted DSL methods belong to [source contract](../../../docs/workflows/source-shape.md#machine-enforced-standard-source-shape). Read the relevant sections before Build. Do not duplicate those invariants in another skill.
 

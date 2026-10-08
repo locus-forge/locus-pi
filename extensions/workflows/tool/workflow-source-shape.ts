@@ -2,23 +2,18 @@
  * tool/workflow-source-shape.ts — the strict authoring checker for a published
  * `.workflow.mjs` source, and the order its checks run in.
  *
- * This is the runtime boundary, not only an authoring aid: the workflow tool,
- * the `check:workflow-source` gate and interrupted-run recovery all decide what
- * to do with a source by what this module returns. It parses once, reads the
- * lexical facts, classifies provenance, applies the permitted-use rules, and
- * publishes one deduplicated, ordered diagnostic list.
- *
- * The module surface checks stay here because they are the profile itself —
- * what the top level may hold, which statements the run body permits, that the
- * source imports nothing, that policy is not hidden in a helper, that every
- * identifier has a declared root, and that literal `phase()` calls agree with
- * `meta.phases`. The facts they read live in `source/workflow-source-*.ts`; no
- * module under `source/` imports this one back.
+ * Ordered diagnostics serve the workflow tool, repository gate and recovery.
+ * Lexical/provenance facts live under `source/`, without importing this facade.
  */
+import {
+  validateStandardPhaseDeclarations,
+  validateOrchestrationOnlyAgentLabel,
+} from "../source/profiles/workflow-source-profile.js";
 import { Lang, parse, type SgNode } from "@ast-grep/napi";
 import { validateStandardAgentOptions } from "../source/workflow-source-agent-options.js";
 import {
   exportedMetaObject,
+  escapedWorkflowIdentifiers,
   staticObjectKey,
   staticStringValue,
   /** Named for the standard grammar this checker validates; the unwrapping itself is lexical. */
@@ -36,15 +31,19 @@ import {
   containsStandardEdgeCall,
   directStandardDslCall,
   isStandardBindingOccurrence,
-  isTrustedStandardPhaseCall,
   isVisibleInlineEdgeCallback,
   nodeWithinStandardNode,
   standardCallArguments,
   standardDslBindings,
   standardLexicalBindings,
-  standardPhaseDslBindings,
 } from "../source/workflow-source-bindings.js";
 import { standardBindingModel } from "../source/workflow-source-provenance.js";
+import {
+  standardStructuredDeclarations,
+  workflowSourceInputSchema,
+  workflowTypedInputIssues,
+  type StandardStructuredDeclarations,
+} from "../source/workflow-source-structured.js";
 import {
   validateStandardCalls,
   validateStandardExpressions,
@@ -106,10 +105,28 @@ export function standardWorkflowSourceShapeDiagnostics(source: string): Workflow
     return diagnostics.values();
   }
 
+  try {
+    workflowSourceInputSchema(root);
+  } catch (error) {
+    diagnostics.add(
+      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.policy,
+      "error",
+      error instanceof Error ? error.message : String(error),
+      root,
+    );
+    return diagnostics.values();
+  }
   const runEntry = validateStandardTopLevel(root, diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.topLevel, root));
+  for (const node of workflowTypedInputIssues(root, runEntry))
+    diagnostics
+      .sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.policy)
+      .add(
+        "typed workflow input requires a plain parameter; context requires a closed optional port and a proven presence guard",
+        node,
+      );
   validateStandardStatements(runEntry, diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.statement, runEntry ?? root));
   validateStandardDependencies(root, diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.import, root));
-  validateStandardOwnedPolicy(
+  const structured = validateStandardOwnedPolicy(
     root,
     runEntry,
     diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.policy, runEntry ?? root),
@@ -125,6 +142,7 @@ export function standardWorkflowSourceShapeDiagnostics(source: string): Workflow
     runEntry,
     dslBindings,
     diagnostics.sink(WORKFLOW_SOURCE_DIAGNOSTIC_CODES.binding, runEntry ?? root),
+    structured.calls,
   );
   const protectedBindings = new Set([...dslBindings, ...bindingModel.collections.names, "Error"]);
   validateStandardExpressions(
@@ -200,65 +218,6 @@ function orchestrationOnlyDslMethod(call: SgNode): string | undefined {
     return callee.field("property")?.text();
   }
   return undefined;
-}
-
-/**
- * Every `agent()` declares a literal `label`, and no two declare the same one.
- *
- * This is the rule that makes a generated workflow repairable. The replay record
- * addresses a call by `(phase, label, occurrence)`, so a call with no label
- * cannot be located after the source is edited, and two call sites sharing one
- * label collapse into the same address: delete the first and the second slides
- * onto its position and is handed its recorded answer. Neither the request key
- * nor the recorded name can tell those two apart at run time, so the source
- * checker is where the case is closed.
- */
-function validateOrchestrationOnlyAgentLabel(
-  call: SgNode,
-  firstCallSiteByLabel: Map<string, SgNode>,
-  diagnostics: WorkflowSourceDiagnosticBag,
-): void {
-  const options = unwrapStandardParentheses(standardCallArguments(call)[1]);
-  const choices =
-    options?.kind() === "object"
-      ? options.children().find((child) => child.kind() === "pair" && staticObjectKey(child.field("key")) === "choices")
-      : undefined;
-  if (choices !== undefined)
-    diagnostics.add(
-      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.authoringSubset,
-      "error",
-      "agent() uses singular choice: [...]; choices is not a supported option",
-      choices,
-    );
-  const labelNode =
-    options?.kind() === "object"
-      ? options
-          .children()
-          .find((child) => child.kind() === "pair" && staticObjectKey(child.field("key")) === "label")
-          ?.field("value")
-      : undefined;
-  const label = staticStringValue(unwrapStandardParentheses(labelNode ?? undefined));
-  if (label === undefined || label === "") {
-    diagnostics.add(
-      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.agentLabelMissing,
-      "error",
-      "agent() must declare a literal label; a call without one cannot be resumed after the source is repaired",
-      call,
-    );
-    return;
-  }
-  const first = firstCallSiteByLabel.get(label);
-  if (first !== undefined) {
-    diagnostics.add(
-      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.agentLabelDuplicate,
-      "error",
-      `agent() label "${label}" is already used in this file; two call sites sharing a label are one address on resume`,
-      labelNode ?? call,
-      [{ message: `first used here`, node: first }],
-    );
-    return;
-  }
-  firstCallSiteByLabel.set(label, labelNode ?? call);
 }
 
 /** Legacy message-only projection retained for existing tests and automation. */
@@ -392,8 +351,9 @@ function validateStandardOwnedPolicy(
   root: SgNode,
   runEntry: SgNode | undefined,
   errors: WorkflowSourceDiagnosticSink,
-): void {
+): StandardStructuredDeclarations {
   validateStandardAgentOptions(root, runEntry, errors);
+  const structured = standardStructuredDeclarations(root, runEntry, errors);
   const dslBindings = standardDslBindings(runEntry);
   for (const statement of root.findAll({ rule: { kind: "try_statement" } })) {
     errors.add("standard profile owns no try/catch recovery", statement);
@@ -402,6 +362,7 @@ function validateStandardOwnedPolicy(
     errors.add("standard profile owns no class helpers", declaration);
   }
   for (const pair of root.findAll({ rule: { kind: "pair" } })) {
+    if (structured.schemaNodes.has(pair.id())) continue;
     const key = staticObjectKey(pair.field("key"));
     if (key === "schema" || key === "validate") errors.add(`standard profile owns no raw ${key}`, pair);
     if (key === "outputDir") {
@@ -472,9 +433,12 @@ function validateStandardOwnedPolicy(
       method,
     );
   }
+  return structured;
 }
 
 function validateStandardIdentifierRoots(root: SgNode, errors: WorkflowSourceDiagnosticSink): void {
+  for (const node of escapedWorkflowIdentifiers(root))
+    errors.add("standard profile spells lexical identifiers without Unicode escapes", node);
   const bindings = standardLexicalBindings(root);
   const approvedGlobals = new Set(["Error"]);
   for (const rootValue of [
@@ -515,126 +479,6 @@ function validateStandardIdentifierRoots(root: SgNode, errors: WorkflowSourceDia
   }
 }
 
-interface StandardDeclaredPhase {
-  title: string;
-  node: SgNode;
-}
-
-interface StandardCalledPhase {
-  title: string;
-  node: SgNode;
-}
-
-function validateStandardPhaseDeclarations(
-  root: SgNode,
-  runEntry: SgNode | undefined,
-  diagnostics: WorkflowSourceDiagnosticBag,
-): void {
-  if (runEntry === undefined) return;
-  const meta = root
-    .children()
-    .map((statement) => exportedMetaObject(statement))
-    .find((value) => value !== undefined);
-  const phasesPair = meta
-    ?.children()
-    .find((child) => child.kind() === "pair" && staticObjectKey(child.field("key")) === "phases");
-  const phasesNode = phasesPair?.field("value");
-  if (phasesNode?.kind() !== "array") return;
-
-  const declared = phasesNode.children().flatMap((child): StandardDeclaredPhase[] => {
-    if (child.kind() !== "object") return [];
-    const titlePair = child
-      .children()
-      .find((entry) => entry.kind() === "pair" && staticObjectKey(entry.field("key")) === "title");
-    const titleNode = titlePair?.field("value");
-    const title = staticStringValue(titleNode);
-    return title === undefined || titleNode == null ? [] : [{ title, node: titleNode }];
-  });
-  if (declared.length === 0) return;
-
-  const lexicalBindings = standardLexicalBindings(runEntry);
-  const phaseBindings = standardPhaseDslBindings(runEntry, lexicalBindings);
-  const calledByTitle = new Map<string, StandardCalledPhase>();
-  for (const call of runEntry.findAll({ rule: { kind: "call_expression" } })) {
-    const callee = unwrapStandardParentheses(callCallee(call));
-    if (callee === undefined || !isTrustedStandardPhaseCall(call, callee, lexicalBindings, phaseBindings)) continue;
-    const argument = unwrapStandardParentheses(standardCallArguments(call)[0]);
-    const title = staticStringValue(argument);
-    if (title !== undefined && argument !== undefined && !calledByTitle.has(title))
-      calledByTitle.set(title, { title, node: argument });
-  }
-  const called = [...calledByTitle.values()];
-  const declaredByTitle = new Map<string, StandardDeclaredPhase>();
-  const firstDeclaredByFoldedTitle = new Map<string, StandardDeclaredPhase>();
-  for (const phase of declared) {
-    const foldedTitle = phase.title.toLowerCase();
-    const first = firstDeclaredByFoldedTitle.get(foldedTitle);
-    if (first !== undefined) {
-      const exact = first.title === phase.title;
-      diagnostics.add(
-        WORKFLOW_SOURCE_DIAGNOSTIC_CODES.phaseDuplicateDeclaration,
-        "error",
-        exact
-          ? `meta.phases repeats title "${phase.title}"`
-          : `meta.phases title "${phase.title}" duplicates "${first.title}" by case`,
-        phase.node,
-        [{ message: `first declared as "${first.title}" here`, node: first.node }],
-      );
-    } else {
-      firstDeclaredByFoldedTitle.set(foldedTitle, phase);
-    }
-    if (!declaredByTitle.has(phase.title)) declaredByTitle.set(phase.title, phase);
-  }
-
-  for (const phase of called) {
-    if (declaredByTitle.has(phase.title)) continue;
-    const caseMatch = declared.find((candidate) => candidate.title.toLowerCase() === phase.title.toLowerCase());
-    if (caseMatch !== undefined) {
-      diagnostics.add(
-        WORKFLOW_SOURCE_DIAGNOSTIC_CODES.phaseCaseMismatch,
-        "error",
-        `meta.phases title "${caseMatch.title}" differs from literal phase("${phase.title}") only by case`,
-        phase.node,
-        [{ message: `declared as "${caseMatch.title}" here`, node: caseMatch.node }],
-      );
-      continue;
-    }
-    diagnostics.add(
-      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.phaseUndeclared,
-      "error",
-      `literal phase("${phase.title}") is absent from non-empty meta.phases`,
-      phase.node,
-      [{ message: "meta.phases is declared here", node: phasesNode }],
-    );
-  }
-
-  for (const phase of declaredByTitle.values()) {
-    const exactCall = calledByTitle.get(phase.title);
-    const caseCall = called.find((candidate) => candidate.title.toLowerCase() === phase.title.toLowerCase());
-    if (exactCall !== undefined || caseCall !== undefined) continue;
-    diagnostics.add(
-      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.phaseUnusedDeclaration,
-      "warning",
-      `meta.phases title "${phase.title}" has no literal phase("${phase.title}") call`,
-      phase.node,
-    );
-  }
-
-  const declaredTitles = [...declaredByTitle.keys()];
-  const calledTitles = [...calledByTitle.keys()];
-  const sameExactSet =
-    declaredTitles.length === calledTitles.length && declaredTitles.every((title) => calledByTitle.has(title));
-  if (sameExactSet && declaredTitles.some((title, index) => title !== calledTitles[index])) {
-    diagnostics.add(
-      WORKFLOW_SOURCE_DIAGNOSTIC_CODES.phaseOrderDrift,
-      "warning",
-      "meta.phases order differs from first literal phase() occurrence",
-      phasesNode,
-      called[0] === undefined ? undefined : [{ message: "first literal phase() occurrence", node: called[0].node }],
-    );
-  }
-}
-
 function isLiteralConstDeclaration(statement: SgNode): boolean {
   if (!statement.children().some((child) => child.kind() === "const")) return false;
   const declarations = statement.children().filter((child) => child.kind() === "variable_declarator");
@@ -647,7 +491,20 @@ function isExactLiteralMetaExport(statement: SgNode, meta: SgNode): boolean {
   const declaration = statement.children().find((child) => child.kind() === "lexical_declaration");
   if (declaration === undefined || !declaration.children().some((child) => child.kind() === "const")) return false;
   const variables = declaration.children().filter((child) => child.kind() === "variable_declarator");
-  return variables.length === 1 && variables[0]?.field("name")?.text() === "meta" && isStaticAuthoringLiteral(meta);
+  return (
+    variables.length === 1 &&
+    variables[0]?.field("name")?.text() === "meta" &&
+    meta
+      .children()
+      .every((node) =>
+        node.kind() === "pair" && staticObjectKey(node.field("key")) === "inputSchema"
+          ? workflowSourceInputSchema(statement.parent()!) !== undefined
+          : ["{", "}", ",", "comment"].includes(String(node.kind())) ||
+            (node.kind() === "pair" &&
+              staticObjectKey(node.field("key")) !== undefined &&
+              isStaticAuthoringLiteral(node.field("value"))),
+      )
+  );
 }
 
 function staticMetaProfile(meta: SgNode): string | undefined {
@@ -658,7 +515,10 @@ function staticMetaProfile(meta: SgNode): string | undefined {
 }
 
 function isStaticAuthoringLiteral(node: SgNode | null | undefined): boolean {
+  node = unwrapStandardParentheses(node ?? undefined);
   if (node == null) return false;
+  if (node.kind() === "unary_expression")
+    return ["+", "-"].includes(node.field("operator")?.text() ?? "") && node.field("argument")?.kind() === "number";
   if (["false", "null", "number", "regex", "string", "true", "undefined"].includes(String(node.kind()))) return true;
   if (node.kind() === "template_string") return staticStringValue(node) !== undefined;
   if (node.kind() !== "array" && node.kind() !== "object") return false;

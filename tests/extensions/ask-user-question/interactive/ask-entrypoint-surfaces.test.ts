@@ -28,13 +28,18 @@ describe("ask-user-question uncovered surfaces", () => {
       ],
     });
 
-    // A timeout is not a cancellation: the recommended option is recorded as
-    // the answer and the tool reports success.
+    // Legacy automatic selection remains available, with explicit timeout
+    // provenance rather than a fabricated human answer.
     expect(result.isError).not.toBe(true);
     expect(result.details?.selectedOptions).toEqual(["hold"]);
     expect(h.entries[0]).toMatchObject({
       type: "decision",
-      data: { decisionId: "ask-deploy", answer: { selectedOptions: ["hold"] }, status: "answered" },
+      data: {
+        decisionId: "ask-deploy",
+        answer: { selectedOptions: ["hold"] },
+        status: "timed-out",
+        metadata: { answerSource: "automatic", timedOut: true },
+      },
     });
   });
 

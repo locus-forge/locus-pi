@@ -1,4 +1,5 @@
 /** Static agent declarations reuse the pure runtime option contract without executing source. */
+import { normalizeWorkflowStructuredContract } from "../runtime/structured-results/schema.js";
 import type { SgNode } from "@ast-grep/napi";
 import {
   normalizeAgentChoices,
@@ -30,9 +31,9 @@ export function validateStandardAgentOptions(
     if (report && reportValue !== "report") errors.add('agent result must be the static literal "report"', report);
     for (const pair of pairs) {
       const key = staticObjectKey(pair.field("key")) ?? "";
-      if (REMOVED_AGENT_OPTION_NAMES.includes(key))
+      if (key !== "schema" && REMOVED_AGENT_OPTION_NAMES.includes(key))
         errors.add(
-          `agent ${key} was removed: return exact text or one choice; write files at exact caller-assigned destinations in prompts`,
+          `agent ${key} was removed: use exact text, choice or a supported schema declaration; the runtime owns correction`,
           pair,
         );
       else if (report && (key === "choice" || key === "choiceFallback"))
@@ -79,4 +80,45 @@ function staticChoiceStrings(node: SgNode | undefined): string[] | undefined {
     awaitingValue = false;
   }
   return values;
+}
+
+/** Static profile declarations use the existing value/wire contracts; never invoke a validator. */
+export function validateDataflowAgentOptions(
+  call: SgNode,
+  literal: (node: SgNode | null | undefined) => unknown,
+  errors: WorkflowSourceDiagnosticSink,
+): void {
+  const options = unwrapParentheses(standardCallArguments(call)[1]);
+  if (options?.kind() !== "object") {
+    errors.add("dataflow-v1 agent requires a direct static options object", call);
+    return;
+  }
+  const fields = new Map<string, SgNode>();
+  for (const child of options.children()) {
+    if (["{", "}", ",", "comment"].includes(String(child.kind()))) continue;
+    const key = child.kind() === "pair" ? staticObjectKey(child.field("key")) : undefined;
+    if (key === undefined || fields.has(key)) {
+      errors.add("agent options require unique static keys without spread or shorthand", child);
+      continue;
+    }
+    fields.set(key, child);
+    if (key !== "schema" && REMOVED_AGENT_OPTION_NAMES.includes(key)) errors.add(`agent ${key} was removed`, child);
+  }
+  const value = (name: string) => literal(fields.get(name)?.field("value"));
+  const has = (name: string) => fields.has(name);
+  try {
+    if (has("schema")) {
+      if (["choice", "choiceFallback", "result"].some(has))
+        throw new Error("agent schema cannot combine with choice, choiceFallback or result");
+      normalizeWorkflowStructuredContract(value("schema"));
+    }
+    if (has("result") && (value("result") !== "report" || has("choice") || has("choiceFallback")))
+      throw new Error('agent result must be "report" and cannot combine with choice');
+    if (has("choice")) {
+      const choices = normalizeAgentChoices(value("choice"));
+      if (has("choiceFallback")) normalizeAgentChoiceFallback(value("choiceFallback"), choices);
+    } else if (has("choiceFallback")) throw new Error("agent choiceFallback requires choice");
+  } catch (error) {
+    errors.add(error instanceof Error ? error.message : String(error), options);
+  }
 }

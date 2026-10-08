@@ -1,48 +1,37 @@
 export const meta = {
   name: "evaluator-optimizer",
-  description: "Implement known scope with reviewer-owned feedback and one correction/recheck",
+  description: "Implement a task, review the actual change, and correct once if needed.",
   profile: "standard",
 };
 
-export default async function run({ agent, publishArtifact, publishPrimaryArtifact }, input) {
-  // Teaching allowance: initial work plus one correction, each followed by review.
-  // Choose a task-derived allowance in the design; this is not a global retry default.
-  let previousWork = "";
+export default async function run({ agent }, input) {
+  const context = `Use injected pwd/project root for execution context; verify the requested checkout and branch.
+The input supplies the original Task, sources, product root and exact orchestration file paths.
+Read those sources; missing or conflicting context/paths means blocked. Do not guess destinations.`;
+  // Teaching bound: initial implementation plus one correction, both independently reviewed.
   for (let round = 0; round < 2; round += 1) {
     const work = await agent(
-      `Implement the requested behavior and required checks in the existing checkout. Preserve unrelated work; do not commit. Inspect the actual state. ` +
-        `On a correction pass, read findings.md at its exact caller-assigned path and address its concrete findings. Write the complete handoff to the assigned implementation.md using ordinary file tools. Return changed paths, artifact locations, actual checks and remaining work. ` +
-        `Every named file means its exact path assigned in this whole input, preferably absolute; missing or ambiguous assignments are unmet required evidence. Never guess a runtime folder or fallback file. Original request:\n${input}\nPrevious complete handoff:\n${previousWork}`,
-      { label: "implement", title: "Implement or correct the requested behavior" },
+      `${context}\nOriginal Task and working context:\n${input}
+Implement the Task in its assigned product root; choose internal files within its bounds.
+Preserve unrelated work; do not commit. On correction, read the assigned findings.md and implementation.md.
+Write the complete result, changed paths, actual checks and remaining work to assigned implementation.md;
+read it back. Return only a short status and its exact path. This is pass ${round + 1}.`,
+      { label: "implement", title: "Implement or correct the task" },
     );
     const decision = await agent(
-      `Independently inspect the complete current diff, including uncommitted work, and actual evidence against the original request. Do not edit product source. ` +
-        `Read prior findings.md if present, then replace it with criteria, observed defects, missing required evidence, optional checks not performed, and actionable feedback. Retain prior check outcomes and their dispositions. ` +
-        `Choose accept only when required behavior and evidence are established; disclose unavailable optional checks without claiming they passed. ` +
-        `Choose revise for correctable findings, or blocked for a concrete unavailable required prerequisite. Do not weaken the criteria. ` +
-        `Every named file means its exact path assigned in this whole input, preferably absolute; missing or ambiguous assignments are unmet required evidence. Never guess a runtime folder or fallback file. Original request:\n${input}\nComplete worker handoff:\n${work}`,
-      {
-        label: "review",
-        title: "Review the actual change and choose the next action",
-        choice: ["accept", "revise", "blocked"],
-      },
+      `${context}\nOriginal Task and working context:\n${input}
+Read assigned implementation.md, then inspect the complete actual diff and required evidence.
+Verify each Task requirement; equal outputs do not prove reuse or state transitions.
+Do not edit product source. Write only assigned findings.md: verified/unmet/unverified requirements, defects,
+checks, prior finding dispositions and next action, keep optional checks separate. Read it back.
+Accept only verified requirements; revise correctable defects;
+block on missing required prerequisites or handoff files. Worker status:\n${work}`,
+      { label: "review", title: "Review the change", choice: ["accept", "revise", "blocked"] },
     );
-    const evidence = publishArtifact(`reviewed-work-${round + 1}.md`, work);
-    if (decision === "accept") return publishPrimaryArtifact("implementation.md", work);
-    if (decision === "blocked") {
-      return { ok: false, status: "blocked", evidence, findings: "findings.md", currentWork: work };
-    }
+    if (decision === "accept") return { ok: true, status: "accepted", handoff: work };
+    if (decision === "blocked") return { ok: false, status: "blocked", handoff: work };
     if (round === 1) {
-      return {
-        ok: false,
-        status: "incomplete",
-        reason: "correction_allowance",
-        evidence,
-        findings: "findings.md",
-        currentWork: work,
-        next_action: "Inspect findings.md and the preserved change before choosing further work.",
-      };
+      return { ok: false, status: "incomplete", reason: "correction_allowance", handoff: work };
     }
-    previousWork = work;
   }
 }

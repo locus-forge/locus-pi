@@ -54,6 +54,7 @@ export interface WorkflowAgentAttemptDeps {
   readonly journalBudgetStop: <T>(check: () => T, phase: string | undefined) => T;
   readonly artifactPorts?: WorkflowArtifactPorts | undefined;
   readonly replaySourceRunId?: string | undefined;
+  readonly retainLogicalCallIdentity?: boolean;
 }
 
 /**
@@ -120,28 +121,19 @@ export function createWorkflowAgentAttempt(
    */
   async function runPhysicalAgentAttempt(input: PhysicalAgentAttemptInput): Promise<PhysicalAgentAttempt> {
     const { permissionMode, workspaceMode, opts, checkSchema, replayedText, attempt, attempts } = input;
-    // Emitted only when a retry budget was actually declared, so every journal written
-    // before `attempts` existed stays byte-identical and absence still means "one attempt".
-    // The three travel together: an ordinal with no logical call to belong to cannot be
-    // grouped, and a reader falling back to (agent, label, phase, group) would mis-attribute
-    // two `parallel()` calls that agree on all four.
-    const attemptFields = attempts > 1 ? { attempt, attempts, logicalCallId: input.logicalCallId } : {};
-    // Global per-run cap across all agent() calls (including those nested in
-    // parallel()/pipeline()). Count BEFORE doing any work so the attempt that breaches
-    // the cap is itself counted, and throw a typed error that bubbles past grouped
-    // contexts to exit the run. Cyclic workflows are allowed up to the cap.
-    const reservation = opts?.[FUSION_INVOCATION_RESERVATION];
-    if (reservation !== undefined) {
-      sharedExecution.consumeReservation(reservation);
-    }
-    // A replayed attempt calls no model. Charging it against `totalAgents` would let a
-    // `--resume` of a completed run die on a cap the original run satisfied, which is
-    // why the two are counted apart and only the fresh one is charged. Both still take
-    // a sequence number, because that number is the attempt's identity.
-    const physicalInvocation = journalBudgetStop(
-      () => sharedExecution.spendInvocation(replayedText === undefined ? "fresh" : "replayed"),
-      currentPhase(),
+    // Typed replay needs logical admission identity even when async receipt reuse
+    // reorders physical starts. Legacy single-attempt evidence remains unchanged.
+    const attemptFields =
+      attempts > 1 || deps.retainLogicalCallIdentity === true
+        ? { attempt, attempts, logicalCallId: input.logicalCallId }
+        : {};
+    // Allocate evidence identity before queueing. The root owner charges a fresh
+    // invocation atomically only after admission, immediately before the runner.
+    const invocation = sharedExecution.createInvocation(
+      replayedText === undefined ? "fresh" : "replayed",
+      opts?.[FUSION_INVOCATION_RESERVATION],
     );
+    const physicalInvocation = invocation.identity.sequence;
     // Refuse an already-expired attempt before it occupies a concurrency slot or
     // inflates the gate-owned peak. Fresh work checks again after any queue wait,
     // immediately before execution; a replay has no gate and this is its only check.
@@ -195,6 +187,7 @@ export function createWorkflowAgentAttempt(
         status: "completed",
         summary: "Replayed from a recorded run.",
         text: replayedText,
+        ...(input.replayedAcceptance === undefined ? {} : { outputAcceptance: input.replayedAcceptance }),
         diagnostics: [],
         ...workflowExecutionIdentity(req),
         permissionMode,
@@ -205,27 +198,11 @@ export function createWorkflowAgentAttempt(
       };
     } else {
       try {
-        // The leaf-agent permit, taken directly: this is ONE child, so there was never a
-        // group of thunks to schedule. The width the deleted single-thunk scheduler call
-        // declared was a formality — `sharedExecution` is the gate that actually bounds
-        // simultaneous leaf agents, and it is acquired and released right here.
-        await sharedExecution.acquireAgent();
-        try {
+        finalResult = await invocation.run(async () => {
           executionStartedAtMs = Date.now();
-          // The run deadline can pass WHILE this call waits for a concurrency slot,
-          // so this second check is the one that most often fires — and it fired
-          // silently, ending the run with a bare error and no line saying which axis
-          // stopped it or that the answers already received were kept.
-          journalBudgetStop(() => {
-            sharedExecution.assertDeadline();
-          }, currentPhase());
           emitAdmission("agent_start");
-          finalResult = await agentRunner(req);
-        } finally {
-          // Released on every exit — answer, refusal, throw, cancellation and the deadline
-          // that fired while this call was queued alike.
-          sharedExecution.releaseAgent();
-        }
+          return agentRunner(req);
+        });
       } catch (err) {
         const durationMs = Date.now() - executionStartedAtMs;
         // A thrown transport failure never reaches an `agent_end`, so this IS the terminal
@@ -253,6 +230,9 @@ export function createWorkflowAgentAttempt(
           message: err instanceof Error ? err.message : String(err),
           durationMs,
         });
+        journalBudgetStop(() => {
+          throw err;
+        }, currentPhase());
         throw err;
       }
     }
@@ -385,7 +365,22 @@ export function createWorkflowAgentAttempt(
       ...(finalResult.status !== "completed" ? { failureCause: workflowAgentFailureCause(finalResult) } : {}),
       // Choice verdict for THIS attempt; absent on every call that declared no choice.
       ...(schemaCheck !== undefined ? { schemaValidation: schemaCheck.validation } : {}),
-      ...(finalResult.outputAcceptance === undefined ? {} : { outputAcceptance: finalResult.outputAcceptance }),
+      ...(finalResult.outputAcceptance === undefined
+        ? {}
+        : {
+            outputAcceptance: {
+              attempts: finalResult.outputAcceptance.attempts,
+              ...(finalResult.outputAcceptance.source === "native"
+                ? { source: "native" as const, contractVersion: 5 as const }
+                : {
+                    source: "tool" as const,
+                    toolName: finalResult.outputAcceptance.toolName,
+                    ...(finalResult.outputAcceptance.structuredReceipt === undefined
+                      ? {}
+                      : { contractVersion: 4 as const }),
+                  }),
+            },
+          }),
       permissionMode: finalResult.permissionMode ?? permissionMode,
       workspaceMode: finalResult.workspaceMode ?? workspaceMode,
       ...activeGroupFields(),

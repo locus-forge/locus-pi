@@ -19,11 +19,13 @@
 
 import { DEFAULT_WORKFLOW_CONCURRENCY, assertWorkflowBudgetValue } from "./workflow-budget.js";
 
-/** Fusion's pre-paid slice of the `totalAgents` axis, held while one panel runs. */
-export interface WorkflowInvocationReservation {
-  remaining: number;
-  active: boolean;
-}
+import {
+  createExecutionState,
+  type ExecutionState,
+  type ExecutionReservation,
+} from "../../_shared/runtime/execution-state.js";
+
+export type WorkflowInvocationReservation = ExecutionReservation;
 
 /** Thrown by agentDsl() when a run exceeds maxTotalAgentInvocations. Bubbles past
  *  grouped contexts (parallel/pipeline) so a cyclic/runaway workflow exits the run
@@ -73,191 +75,51 @@ export function isRunLevelWorkflowFailure(err: unknown): boolean {
   return err instanceof WorkflowInvocationCapError || err instanceof WorkflowRunDeadlineError;
 }
 
-/** Shared by every real saved child. Workflow source receives only the DSL. */
-export interface WorkflowSharedExecutionState {
-  /** The run's ONE effective leaf-agent width; also the default `parallel()` width. */
+/** The workflow facade preserves budget policy and typed failures; the shared owner
+ * holds every counter, reservation, permit, and physical launch identity. */
+export interface WorkflowSharedExecutionState extends ExecutionState {
   readonly concurrency: number;
-  /** Explicit fresh-child cap, or `undefined` for an unbounded axis. */
   readonly maxTotalAgentInvocations: number | undefined;
   readonly runtimeMs: number | undefined;
-  reserve(count: number): WorkflowInvocationReservation;
-  consumeReservation(reservation: WorkflowInvocationReservation): void;
-  releaseReservation(reservation: WorkflowInvocationReservation): void;
-  /** `undefined` when the axis is unbounded: nothing remains to run out. */
-  remainingAgentInvocations(): number | undefined;
-  /**
-   * Take the next physical attempt number, charging the `totalAgents` axis only
-   * for attempts that actually start a child.
-   *
-   * `kind` is the whole point: a replayed call projects a recorded answer and calls
-   * no model, so charging it would let a `--resume` of a finished run die on a cap
-   * the original run satisfied. The returned sequence number still counts every
-   * attempt, because it is this attempt's identity (`call-0007`), not its price.
-   */
-  spendInvocation(kind: "fresh" | "replayed"): number;
-  /** Fresh attempts charged so far, and replayed ones observed but not charged. */
-  invocationCounts(): { fresh: number; replayed: number };
-  assertDeadline(): void;
-  acquireAgent(): Promise<void>;
-  releaseAgent(): void;
-  peakAgentConcurrency(): number;
 }
 
-interface AgentConcurrencyGate {
-  acquire(): Promise<void>;
-  release(): void;
-  /**
-   * High-water mark of simultaneously EXECUTING leaf agents.
-   *
-   * Gate-owned rather than derived from the journal, and that is the whole point:
-   * `agent_start` is emitted before `acquire()`, so counting overlapping
-   * start/end intervals counts children that are still queued. That number is
-   * demand, not concurrency, and printing it beside a concurrency limit would
-   * read as a limit breach that never happened.
-   */
-  peak(): number;
-}
-
-class CountingAgentConcurrencyGate implements AgentConcurrencyGate {
-  private inUse = 0;
-  private peakInUse = 0;
-  private readonly waiters: Array<() => void> = [];
-
-  constructor(private readonly maxConcurrentAgents: number) {}
-
-  acquire(): Promise<void> {
-    if (this.inUse < this.maxConcurrentAgents) {
-      this.enter();
-      return Promise.resolve();
-    }
-    return new Promise((resolve) => {
-      this.waiters.push(() => {
-        this.enter();
-        resolve();
-      });
-    });
-  }
-
-  release(): void {
-    this.inUse -= 1;
-    const next = this.waiters.shift();
-    if (next !== undefined) next();
-  }
-
-  peak(): number {
-    return this.peakInUse;
-  }
-
-  private enter(): void {
-    this.inUse += 1;
-    if (this.inUse > this.peakInUse) this.peakInUse = this.inUse;
-  }
-}
-
-function createAgentConcurrencyGate(maxConcurrentAgents: number): AgentConcurrencyGate {
-  if (!Number.isInteger(maxConcurrentAgents) || maxConcurrentAgents < 1) {
-    throw new Error("maxConcurrentAgents must be a positive integer when provided");
-  }
-  return new CountingAgentConcurrencyGate(maxConcurrentAgents);
-}
-
-/**
- * Create the one physical execution budget shared by a root and every saved child.
- *
- * Two of the three axes here are OPTIONAL and unbounded when absent: an undeclared
- * `maxTotalAgentInvocations` refuses nobody and an undeclared `runtimeMs` arms no
- * clock. The launch resolver supplies the headless cap; this host-agnostic owner
- * only defaults the queueing width.
- */
 export function createWorkflowSharedExecutionState(input: {
   maxConcurrentAgents?: number;
   maxTotalAgentInvocations?: number;
   runtimeMs?: number;
   nowMs?: () => number;
+  signal?: AbortSignal;
 }): WorkflowSharedExecutionState {
   const concurrency = input.maxConcurrentAgents ?? DEFAULT_WORKFLOW_CONCURRENCY;
-  const gate = createAgentConcurrencyGate(concurrency);
-  const maxTotalAgentInvocations = resolveMaxTotalAgentInvocations(input.maxTotalAgentInvocations);
-  const nowMs = input.nowMs ?? (() => Date.now());
-  /** Physical attempts, replayed included: this is attempt IDENTITY, not spend. */
-  let sequence = 0;
-  /** Attempts that actually started a child. The only number `totalAgents` bounds. */
-  let charged = 0;
-  let replayedCount = 0;
-  let reserved = 0;
-  let started: number | undefined;
-  let deadline: number | undefined;
-  if (input.runtimeMs !== undefined) {
-    assertWorkflowBudgetValue("runtimeMs", input.runtimeMs);
-    started = nowMs();
-    deadline = started + input.runtimeMs;
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
+    throw new Error("maxConcurrentAgents must be a positive integer when provided");
   }
-  const remaining = (): number | undefined =>
-    maxTotalAgentInvocations === undefined ? undefined : maxTotalAgentInvocations - charged - reserved;
-
-  return {
-    concurrency,
-    maxTotalAgentInvocations,
-    runtimeMs: input.runtimeMs,
-    reserve(count) {
-      const left = remaining();
-      if (left !== undefined && count > left) {
-        // A `totalAgents` refusal, not a Fusion configuration error: the panel is
-        // well-formed and the run simply has no room left for it. Typed so the journal
-        // names the axis and says the answers already received are kept.
-        throw new WorkflowInvocationCapError(
-          maxTotalAgentInvocations ?? 0,
-          `fusion needs up to ${count} agent invocation(s), but only ${left} remain in this run`,
-        );
-      }
-      reserved += count;
-      return { remaining: count, active: true };
-    },
-    consumeReservation(reservation) {
-      if (!reservation.active || reservation.remaining < 1) {
-        throw new WorkflowInvocationCapError(maxTotalAgentInvocations ?? 0);
-      }
-      reservation.remaining -= 1;
-      reserved -= 1;
-    },
-    releaseReservation(reservation) {
-      if (!reservation.active) return;
-      reserved -= reservation.remaining;
-      reservation.remaining = 0;
-      reservation.active = false;
-    },
-    remainingAgentInvocations: () => remaining(),
-    spendInvocation(kind) {
-      if (kind === "replayed") {
-        replayedCount += 1;
-        sequence += 1;
-        return sequence;
-      }
-      // Checked BEFORE the child starts, so the call that would breach the cap never
-      // runs and everything already received stays exactly as it was.
-      if (maxTotalAgentInvocations !== undefined && charged + reserved >= maxTotalAgentInvocations) {
-        throw new WorkflowInvocationCapError(maxTotalAgentInvocations);
-      }
-      charged += 1;
-      sequence += 1;
-      return sequence;
-    },
-    invocationCounts: () => ({ fresh: charged, replayed: replayedCount }),
-    assertDeadline() {
-      if (deadline === undefined || started === undefined) return;
-      const current = nowMs();
-      if (current > deadline) throw new WorkflowRunDeadlineError(input.runtimeMs!, current - started);
-    },
-    acquireAgent: () => gate.acquire(),
-    releaseAgent: () => gate.release(),
-    peakAgentConcurrency: () => gate.peak(),
-  };
-}
-
-function resolveMaxTotalAgentInvocations(maxTotalAgentInvocations: number | undefined): number | undefined {
-  if (maxTotalAgentInvocations === undefined) return undefined;
-  if (!Number.isInteger(maxTotalAgentInvocations) || maxTotalAgentInvocations < 1) {
+  if (
+    input.maxTotalAgentInvocations !== undefined &&
+    (!Number.isSafeInteger(input.maxTotalAgentInvocations) || input.maxTotalAgentInvocations < 1)
+  ) {
     throw new Error("maxTotalAgentInvocations must be a positive integer when provided");
   }
-  return maxTotalAgentInvocations;
+  if (input.runtimeMs !== undefined) assertWorkflowBudgetValue("runtimeMs", input.runtimeMs);
+  const owner = createExecutionState({
+    concurrency,
+    ...(input.maxTotalAgentInvocations === undefined ? {} : { totalAgents: input.maxTotalAgentInvocations }),
+    ...(input.runtimeMs === undefined ? {} : { runtimeMs: input.runtimeMs }),
+    ...(input.nowMs === undefined ? {} : { nowMs: input.nowMs }),
+    ...(input.signal === undefined ? {} : { signal: input.signal }),
+    capError: (cap, requested, remaining) =>
+      new WorkflowInvocationCapError(
+        cap,
+        requested === undefined
+          ? undefined
+          : `fusion needs up to ${requested} agent invocation(s), but only ${remaining} remain in this run`,
+      ),
+    deadlineError: (runtimeMs, elapsed) => new WorkflowRunDeadlineError(runtimeMs, elapsed),
+  });
+  return {
+    ...owner,
+    concurrency,
+    maxTotalAgentInvocations: input.maxTotalAgentInvocations,
+    runtimeMs: input.runtimeMs,
+  };
 }

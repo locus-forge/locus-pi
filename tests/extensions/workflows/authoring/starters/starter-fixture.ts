@@ -21,14 +21,17 @@ export async function runStarter(
   answers: Record<string, Array<string | WorkflowAgentResult>>,
   effect?: ChildEffect,
   items: string[] = [],
+  taskInput = input,
 ) {
   return temporaryValue(async (root) => {
     const workspace = path.join(root, "workspace");
     mkdirSync(workspace);
-    const assigned = path.join(root, "assigned-files");
+    const assigned = path.join(root, "orchestration");
     mkdirSync(assigned);
     const names = [
       "guide.md",
+      "purpose.md",
+      "commands.md",
       "audit.md",
       "implementation.md",
       "findings.md",
@@ -37,7 +40,7 @@ export async function runStarter(
       "delivery.md",
       "document.md",
     ];
-    const wholeInput = `${input}\nExact file destinations:\n${names.map((file) => `${file}: ${path.join(assigned, file)}`).join("\n")}`;
+    const wholeInput = `${taskInput}\nExpected checkout: ${root}\nProduct root: ${path.join(root, "product")}\nOrchestration/evidence folder: ${assigned}\nExact file destinations:\n${names.map((file) => `${file}: ${path.join(assigned, file)}`).join("\n")}`;
     const seen: WorkflowAgentRequest[] = [];
     const counts: Record<string, number> = {};
     const store = createWorkflowArtifactStore({ projectRoot: root, runId: name, runDir: tempRun(root, name) });
@@ -59,17 +62,13 @@ export async function runStarter(
         const answer = script![occurrence] ?? script!.at(-1)!;
         if (typeof answer !== "string") return answer;
         const written =
-          name === "project-tour" && label === "compose"
-            ? "guide.md"
-            : name === "caller-audit" && label === "synthesize"
-              ? "audit.md"
-              : name === "evaluator-optimizer" && label === "implement"
-                ? "implementation.md"
-                : name === "plan-replan" && label === "deliver"
-                  ? "delivery.md"
-                  : (name === "reflection" || name === "parallel-reflection") && label === "revise"
-                    ? "document.md"
-                    : undefined;
+          name === "caller-audit" && label === "synthesize"
+            ? "audit.md"
+            : name === "plan-replan" && label === "deliver"
+              ? "delivery.md"
+              : (name === "reflection" || name === "parallel-reflection") && label === "revise"
+                ? "document.md"
+                : undefined;
         if (written) {
           expect(request.prompt).toMatch(/(?:Write|write).*?(?:assigned|exact)/su);
           writeFileSync(path.join(assigned, written), answer);

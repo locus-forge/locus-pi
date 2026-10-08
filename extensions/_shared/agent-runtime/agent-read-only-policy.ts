@@ -16,18 +16,15 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Stats } from "node:fs";
-
-export interface ReadOnlyAgentToolResult {
-  content: Array<{ type: "text"; text: string }>;
-  details?: Record<string, unknown>;
-  isError?: boolean;
-}
-
+import type { ReadOnlyAgentToolResult } from "./output-acceptance/agent-output-contract.js";
+export type { ReadOnlyAgentToolResult } from "./output-acceptance/agent-output-contract.js";
 export interface ReadOnlyAgentCustomTool {
   name: string;
   label: string;
   description: string;
   parameters: Record<string, unknown>;
+  /** Optional Pi 1.0 sampling hint; canonical raw validation remains authoritative. */
+  constrainedSampling?: { type: "json_schema"; strict: "prefer" };
   execute(
     toolCallId: string,
     input: unknown,

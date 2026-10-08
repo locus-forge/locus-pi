@@ -2,11 +2,11 @@
 title: Replay recorded workflow calls
 type: guide
 status: active
-updated: "2026-09-22T17:02:17Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=46"
-description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
+updated: "2026-10-06T14:26:20Z"
+source_commit: "35b4a1294375"
+update_event: "review_refresh"
+context: "changes=XL files=34 task=T-147"
+description: "Explain complete source binding and bounded callable coverage for dataflow replay"
 ---
 
 # Replay recorded workflow calls
@@ -34,7 +34,11 @@ the last stage of a long pipeline no longer pays for the earlier stages.
 
 ### What is compared
 
-The key is the call's ordinal position plus its canonical resolved request.
+The key is the call's admission ordinal plus its canonical resolved request.
+The runtime allocates one receipt before the first await and carries it through
+transport retries and settlement. New version-4 replay records keep that ordinal
+in `seq`, even when parallel children finish in reverse order. Reading uses the
+stored ordinal, never the line's position in the file.
 It includes the prompt, catalog `agent`, `maxToolCalls`, `timeoutMs`, `maxTurns`,
 declared model and role selectors, `label`, `phase`, workspace and execution
 identity, mapped item identity, and the `ask` declaration. A call that may block
@@ -47,6 +51,17 @@ It does not encode that contract by appending it to the prompt or parsing model
 text. Same-session clarification stays within the same logical call and does not
 create another replay ordinal. Transport retries also share that logical ordinal;
 see [the two retry loops](outcomes.md#the-two-retries-and-which-failure-each-one-owns).
+
+Structured calls also revalidate their committed receipt, full source and caller
+input; native v5 evidence cannot be reused. Replay-log v4 is separate from tool
+return-contract v4 and historical native return-contract v5. Native v5 evidence remains readable but cannot supply current tool acceptance or start a fresh retry. Structured intake detaches the
+recorded evidence; its declared return-contract version must match the call.
+Missing or unproven structured evidence refuses before child work, including
+historical log-v3 identity misses. Retired-native evidence in log v3 refuses execution before any call, because its settlement order does not prove admission order; passive historical readback stays available.
+If revalidation fails and the workflow catches it, subsequent prefix reuse still
+stops: ordinary suffix calls run fresh and structured suffix calls refuse. Calls
+already admitted concurrently retain their own settlement; this does not roll
+back their effects. Groups drain their started branches before ending the run.
 
 Each recorded agent line also carries a `node` name, `[phase, label, occurrence]`,
 absent when the call had no `label`. It is the readable identity of the completed
@@ -64,22 +79,32 @@ real changes the world the later recorded answers came from.
 
 ### Continuing a repaired workflow
 
-Changed source bytes do not end a resume. Repairing the stopped workflow in the
+Checked `dataflow-v1` source has a stricter fence: any complete source-byte change
+refuses resume before import or workflow effects, including comments, helpers and
+profile removal/downgrade. Both current and independently verified recorded
+snapshots are checked. Valid fresh source with unproven callable coverage also
+refuses resume; it never substitutes fresh child work. Unchanged source still
+requires current input/route and valid committed receipts. See the
+[dataflow source contract](source-shape.md#checked-dataflow-v1).
+
+For legacy source, changed source bytes do not end a resume. Repairing the stopped workflow in the
 same file and continuing under the original run id is the supported path: the
 completed nodes return their recorded answers, and the repaired node and its tail
 run fresh. Once the bytes differ, the node name becomes mandatory — a call the
 author never labeled cannot be located in a program that changed under it.
 
-| Miss                      | Meaning                                                               |
-| ------------------------- | --------------------------------------------------------------------- |
-| `no-record`               | the record has no entry at this position                              |
-| `unnamed-node`            | source changed and either the entry or the current call has no name   |
-| `node-mismatch`           | source changed and the names differ                                   |
-| `return-contract-changed` | the recorded choice-return contract predates the current version      |
-| `key-mismatch`            | the resolved request differs from the recorded one                    |
-| `recorded-failure`        | the recorded call failed; a failure is never served back as an answer |
-| `side-effecting-call`     | the call writes to a worktree, so its record cannot stand in for it   |
-| `diverged`                | the latch is already set by one of the above                          |
+| Miss                           | Meaning                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------ |
+| `invocation-identity-unproven` | a legacy v3 record has completion order but no proven admission identity |
+| `recorded-sequence-invalid`    | a recorded ordinal is duplicated or missing before later calls           |
+| `no-record`                    | the record has no entry at this position                                 |
+| `unnamed-node`                 | source changed and either the entry or the current call has no name      |
+| `node-mismatch`                | source changed and the names differ                                      |
+| `return-contract-changed`      | the recorded choice-return contract predates the current version         |
+| `key-mismatch`                 | the resolved request differs from the recorded one                       |
+| `recorded-failure`             | the recorded call failed; a failure is never served back as an answer    |
+| `side-effecting-call`          | the call writes to a worktree, so its record cannot stand in for it      |
+| `diverged`                     | the latch is already set by one of the above                             |
 
 A `fusion()` group standing after the divergence point runs as an ordinary fresh
 panel: the latch guarantees no later call can be served from the record, so every
@@ -207,13 +232,23 @@ A replayed call reports **no** token usage, so the run budget shown by
   fabricated and every surface marks it `replayed` — but if an early stage's
   answer must reflect your edit, change that stage's prompt or resume from
   further back.
-- **Parallel calls can miss the cache.** Replay matches recorded calls by
-  position as well as request. Concurrent calls can be recorded in a different
-  order from the next attempt's lookups, even with two branches. A mismatch
-  makes that call and the remaining calls fresh; it does not reuse a different
-  agent's answer. Check the new run's replay counts rather than assuming an
-  unchanged parallel workflow will reuse its results. Sequential pipelines have
-  a stable call order.
+- **Parallel completion order does not change identity.** Version-4 records use
+  admission order. Identical parallel requests retain their own answers even when
+  the second child finishes first. Different admission order or changed business
+  keys still ends reuse at the first differing request.
+- **Legacy v3 records stay readable, but normal resume runs fresh.** Their `seq`
+  described completion order, which cannot prove which identical parallel call
+  produced an answer. They are never silently sorted into an invented launch
+  order; the journal names `invocation-identity-unproven`. Only explicit
+  interrupted recovery can reuse a legacy prefix after its existing journal
+  checks prove fully confirmed, labelled, non-overlapping serial execution.
+- **Damaged logs never compact ordinals.** Missing or duplicate agent, clock and
+  random positions end reuse at the first unproven position. A malformed row with
+  a readable position invalidates that position and its suffix; an unreadable row
+  stops the reader before later physical rows. The proven prefix can still replay.
+  A missing clock/random value is produced fresh and ends subsequent reuse too.
+  An append failure likewise leaves a gap; it cannot shift a later answer into
+  the failed call's place. Historical files are never rewritten.
 - **Resume is not Pi session continuation.** The child session is not resumed;
   only the workflow-level answer is reused.
 - **A recorded failure is not replayed.** It keeps its ordinal so the prefix
@@ -225,3 +260,12 @@ A replayed call reports **no** token usage, so the run budget shown by
   predecessor that executed again.
 - Recording is skipped entirely for `unproven` and `entry-only` scripts, so those
   runs write no `replay.ndjson` and cannot be resumed.
+
+## Refused replay stays refused
+
+A rejected offered replay closes prefix reuse before returning control, including
+when its caller catches the error. Rejected offers are not counted as successfully
+replayed calls. If a confirmed interrupted-recovery prefix is refused, later agent
+and recorded-value requests remain blocked; catching that failure cannot repeat
+previously confirmed effects. This does not block normal continuation after an
+entire confirmed prefix succeeds: its new, unrecorded suffix may execute normally.

@@ -174,7 +174,7 @@ describe("dsl.fusion", () => {
 
   it("replays a whole recorded panel under a totalAgents budget too small to run it fresh", async () => {
     // `totalAgents` bounds the children a run STARTS, and a replayed leg starts none —
-    // which is why `spendInvocation("replayed")` charges nothing. The panel reservation
+    // which is why replayed invocation identities charge nothing. The panel reservation
     // used to be taken for the whole worst case before replay or fresh was known, so a
     // resume was billed again for work the original run had already paid for: three
     // recorded legs were refused under `totalAgents: 1` before the first record lookup.
@@ -279,7 +279,10 @@ describe("dsl.fusion", () => {
     // latched on every miss, this exact resume replayed the whole fusion tail.
     // Losing that is a deliberate tightening: the tail's answers were produced
     // after the failed node behaved differently.
-    sourceController.recordAgentAttempt({ canonicalRequest: "stage-a" }, { ok: false });
+    sourceController.recordAgentAttempt(
+      sourceController.beginAgentAttempt({ canonicalRequest: "stage-a", replayable: true }),
+      { ok: false },
+    );
     const source = createWorkflowRuntime({
       runId: "fusion-failure-source",
       replay: sourceController,

@@ -4,11 +4,11 @@ type: guide
 status: active
 owner: locus-pi maintainers
 tags: [workflows, authoring]
-updated: "2026-10-02T22:53:27Z"
-source_commit: "0d098c9e06d1"
+updated: "2026-10-07T21:05:26Z"
+source_commit: "f94a891581d1"
 update_event: "user_request"
-context: "changes=L files=29"
-description: "Teach ordinary and detailed workflow authoring with shared Pi contracts"
+context: "changes=XL files=32 task=T-149"
+description: "Route working context and patterns through consolidated skill sections"
 ---
 
 # Create a workflow with an agent
@@ -33,13 +33,13 @@ With package skills enabled, choose either explicit invocation for the same task
 Ordinary:
 
 ```text
-/skill:locus-pi-workflow-create Create a project-tour workflow: two agents read README.md and package.json in parallel, then a third combines their notes into a getting-started guide. Do not modify project files during the run. Build and check the workflow, but do not run it yet.
+/skill:locus-pi-workflow-create Create an evaluator-optimizer workflow for the Task in .tasks/example/task.md: implement, independently review, and allow one correction followed by fresh review. Record verified working context and exact result/review paths in an orchestration folder. Build and check the workflow, but do not run it yet.
 ```
 
 Detailed:
 
 ```text
-/skill:locus-pi-workflow-create-detailed Create a project-tour workflow: two agents read README.md and package.json in parallel, then a third combines their notes into a getting-started guide. Do not modify project files during the run. Build and check the workflow, but do not run it yet.
+/skill:locus-pi-workflow-create-detailed Create an evaluator-optimizer workflow for the Task in .tasks/example/task.md: implement, independently review, and allow one correction followed by fresh review. Record verified working context and exact result/review paths in an orchestration folder. Build and check the workflow, but do not run it yet.
 ```
 
 **An explicit skill invocation selects its named entry and wins over route wording
@@ -66,9 +66,9 @@ selection, not a deterministic language classifier or a model-quality guarantee.
 
 ## Ask Pi to create it
 
-The resulting files belong under `.locus-pi/workflows/project-tour/`: a
-`project-tour.design.md` description and `project-tour.workflow.mjs` source.
-Review them, then use `/workflows run project-tour`. See [run and inspect](running.md#run-a-saved-workflow)
+The resulting files belong under `.locus-pi/workflows/evaluator-optimizer/`: a
+`evaluator-optimizer.design.md` description and `evaluator-optimizer.workflow.mjs` source.
+Review them, then use `/workflows run evaluator-optimizer -- <original Task and verified context>`. See [run and inspect](running.md#run-a-saved-workflow)
 for progress, results, and stopping a run. A request to create **and run** continues
 through the [run skill](../../skills/locus-pi-workflow-run/SKILL.md).
 
@@ -87,50 +87,68 @@ by hand or ask Pi to create it with the installed workflow-create skill.
 The same saved source can run repeatedly; its stages can branch on agent results
 or create parallel work when the task calls for it.
 
-This small example reads a project from two angles in parallel, then asks a
-third agent to combine the notes. Use a project containing `README.md` and
-`package.json`; adapt the prompts for other projects.
+Start with a sequential implementer/reviewer loop. The developer owns product changes and its result
+artifact; the reviewer writes only its findings artifact and returns the next action. One correction is
+illustrative: choose a Task-derived bound. Every correction is reviewed before acceptance.
 
-Create `.locus-pi/workflows/project-tour/project-tour.workflow.mjs`:
+Supply the original Task plus [verified working context and exact paths](../../skills/locus-pi-workflow-create/references/design-and-build.md#folder-level-context)
+as semantic input. The native child already receives actual pwd and source project root. Authoring adds
+verified branch, Task source, product root and a separate orchestration/evidence folder. It does not add a
+solution or parse a new input protocol.
+
+Create `.locus-pi/workflows/evaluator-optimizer/evaluator-optimizer.workflow.mjs`:
 
 ```js
 export const meta = {
-  name: "project-tour",
-  description: "Read a project and explain where to start.",
+  name: "evaluator-optimizer",
+  description: "Implement a task, review the actual change, and correct once if needed.",
   profile: "standard",
 };
 
-export default async function run({ agent, parallel, publishPrimaryArtifact }) {
-  const notes = await parallel([
-    () =>
-      agent("Read README.md for the project purpose. Do not modify files.", {
-        label: "purpose",
-        title: "Read project purpose",
-      }),
-    () =>
-      agent("Read package.json for development commands. Do not modify files.", {
-        label: "commands",
-        title: "Read development commands",
-      }),
-  ]);
-  const guide = await agent(
-    `Combine these complete notes into a getting-started guide. Preserve uncertainty; do not modify files.\n${notes.join("\n\n")}`,
-    { label: "compose", title: "Write getting-started guide" },
-  );
-  return publishPrimaryArtifact("guide.md", guide);
+export default async function run({ agent }, input) {
+  const context = `Use injected pwd/project root for execution context; verify the requested checkout and branch.
+The input supplies the original Task, sources, product root and exact orchestration file paths.
+Read those sources; missing or conflicting context/paths means blocked. Do not guess destinations.`;
+  // Teaching bound: initial implementation plus one correction, both independently reviewed.
+  for (let round = 0; round < 2; round += 1) {
+    const work = await agent(
+      `${context}\nOriginal Task and working context:\n${input}
+Implement the Task in its assigned product root; choose internal files within its bounds.
+Preserve unrelated work; do not commit. On correction, read the assigned findings.md and implementation.md.
+Write the complete result, changed paths, actual checks and remaining work to assigned implementation.md;
+read it back. Return only a short status and its exact path. This is pass ${round + 1}.`,
+      { label: "implement", title: "Implement or correct the task" },
+    );
+    const decision = await agent(
+      `${context}\nOriginal Task and working context:\n${input}
+Read assigned implementation.md, then inspect the complete actual diff and required evidence.
+Verify each Task requirement; equal outputs do not prove reuse or state transitions.
+Do not edit product source. Write only assigned findings.md: verified/unmet/unverified requirements, defects,
+checks, prior finding dispositions and next action, keep optional checks separate. Read it back.
+Accept only verified requirements; revise correctable defects;
+block on missing required prerequisites or handoff files. Worker status:\n${work}`,
+      { label: "review", title: "Review the change", choice: ["accept", "revise", "blocked"] },
+    );
+    if (decision === "accept") return { ok: true, status: "accepted", handoff: work };
+    if (decision === "blocked") return { ok: false, status: "blocked", handoff: work };
+    if (round === 1) {
+      return { ok: false, status: "incomplete", reason: "correction_allowance", handoff: work };
+    }
+  }
 }
 ```
 
-`agent()` gives each child its own task. `parallel()` waits for both notes, in
-their declared order, before the final agent starts. The workflow passes those
-notes to the final agent unchanged. Titles describe the work in the live panel; labels identify calls for replay.
-No agent profiles or model assignments are required for this example.
+`agent()` returns a short status/path here; the reviewer’s `choice` returns one exact declared string.
+Consumers reopen the full artifacts using tools. Source never reads files or concatenates full reviews.
+The two clean sessions inherit configured model routing; no particular model or independent provider is required.
+For independent work, the [optional parallel tour](../../extensions/workflows/references/examples/starters/project-tour.workflow.mjs)
+assigns separate `purpose.md` and `commands.md` writers before one `guide.md` merge owner.
 
 Before running, ask Pi to check the file with `workflow_check_source`:
 
 ```json
 {
-  "path": ".locus-pi/workflows/project-tour/project-tour.workflow.mjs",
+  "path": ".locus-pi/workflows/evaluator-optimizer/evaluator-optimizer.workflow.mjs",
   "mode": "orchestration-only"
 }
 ```
@@ -153,6 +171,26 @@ The author writes and reviews a `.design.md` file, builds the declared
 it does not execute its agents. Ask for `design only` to stop before source is
 built. The task directory is the entry context; agents find `task.md`, the
 accepted design and relevant artifacts inside it.
+
+For known work, keep the design compact and describe each dependency once. For example:
+
+```text
+Task: /project/task.md, unchanged; product root /project/app
+Entries: fix, runnable root
+Graph: implement -> review; revise -> implement; accept -> return
+Handoffs: /project/review/implementation.md (worker writes; reviewer reads)
+         /project/review/findings.md (reviewer writes; correction reads)
+Bound: 2 worker/review rounds, one task-justified correction; max 4 calls
+Evidence: every Task criterion verified against current files
+Exits: missing required prerequisite or exhausted correction -> non-success
+```
+
+The [design contract](../../skills/locus-pi-workflow-create/references/design-and-build.md)
+owns author review and the final comparison with actual source. It does not require a separate
+design-review agent. Retain independent review where required by the Task or authoring workflow.
+Create SVG only on explicit request; the [optional appendix](authoring.md#workflow-diagram-contract)
+contains its checks. The [readability rule](../../skills/locus-pi-workflow-create/references/design-and-build.md#text-readability)
+wraps new author-owned prose to 120 columns while preserving frozen Task/input bytes.
 
 The authoring `.design.md` describes the workflow graph. In the adaptive references,
 the design entry later produces the task-change proposal in `artifacts/design.md`.
@@ -262,19 +300,20 @@ when planning execution. Two practical consequences for authoring:
   sentence naming the failing check". Do not write "keep this under 2000 characters"
   as a stand-in for a limit the runtime no longer has; it buys nothing and costs the
   part of the answer the stage was for.
-- When a real consumer has a limit, state that requirement in the prompt; when it
-  must be checked, have the agent write a exact caller-assigned file and give a separate
-  verifier stage that file. No call option bounds an answer: the removed `output`,
-  `schema` and `maxAnswerChars` options are refused by name before a child starts.
+- When a real consumer has a limit, state that requirement in the prompt. A literal
+  structured `schema` can enforce supported consumer-declared JSON constraints; it adds
+  no package size default. For files or semantic requirements, give a separate verifier
+  the exact caller-assigned file. Removed `output` and `maxAnswerChars` are refused by name
+  before a child starts; see [structured results](agent-results.md#structured-results-v4).
 
 The full statement, including how budgets and unsupported capabilities behave, is in
 [output acceptance](agent-results.md#the-principle).
 
 ### Use the references
 
-The [approach index](../../skills/locus-pi-workflow-create/references/INDEX.md)
+The [approach index](../../skills/locus-pi-workflow-create/references/agentic-approaches.md#choose-an-approach)
 starts from task needs and maps them to supported graph forms. The
-[adaptive pattern](../../skills/locus-pi-workflow-create/references/adaptive-slices.md)
+[adaptive pattern](../../skills/locus-pi-workflow-create/references/agentic-approaches.md#adaptive-slices)
 links executable design and implementation examples. They are teaching sources,
 not names installed in the Package command catalog. Copy and adapt them into
 `.locus-pi/workflows/<name>/` through the authoring skill. Match filenames,

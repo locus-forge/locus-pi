@@ -2,10 +2,10 @@
 title: Launch and operate a workflow
 type: guide
 status: active
-updated: "2026-09-22T17:02:17Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=46"
+updated: "2026-10-06T17:57:00Z"
+source_commit: "94268a7fa802"
+update_event: "review_refresh"
+context: "changes=XL task=T-148"
 description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
@@ -19,16 +19,17 @@ recorded-call replay, or operator continuation.
 
 ## Run a saved workflow
 
-After [creating and checking project-tour](create.md#your-first-workflow),
+After [creating and checking evaluator-optimizer](create.md#your-first-workflow),
+supply the original Task and verified working context with exact orchestration paths;
 start Pi in that project and run:
 
 ```text
-/workflows run project-tour
+/workflows run evaluator-optimizer -- <original Task and verified working context>
 ```
 
 Wait for Pi to finish its current response before launching. The command returns
 to the editor while the agents work. The live panel shows their progress and the
-run ID; two exploration agents run together, followed by the summary agent.
+run ID; implementation is followed by review, with one correction and fresh review when needed.
 
 - Open `/ps`, select an agent with Up/Down, and press Enter to read its output.
   Esc returns without stopping the run. This viewer is available with the full
@@ -51,6 +52,12 @@ truncated. The native workflow tool's operator card also renders this exact text
 without clipping, while its model-facing content remains bounded. Structured
 (non-text) results stay in `runtime/result.json`, which already pretty-prints them.
 
+`runtime/result.json` is authoritative. The reader opens `workflow-result.md`
+only when it matches the envelope's prose exactly, including the terminal newline
+added by the writer when needed. A missing readable copy falls back to the envelope;
+a conflicting copy reports an invalid result. Without a readable envelope, an
+orphan Markdown copy is not accepted. Readback never repairs or rewrites either file.
+
 A run that ends badly and produced **no** prose result — a script returning a
 structured `{ ok: false }` is the common case — gets the same treatment against a
 different command. Its verdict line carries the failure summary and is clipped
@@ -68,15 +75,17 @@ reported as missing when runs were found.
 
 ## Run again or resume
 
-| What you want                       | Command                                        | What happens                                                                        |
-| ----------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Read the current project again      | `/workflows run project-tour`                  | A fresh run with a new workspace; agents execute again.                             |
-| Reuse eligible recorded steps       | `/workflows run project-tour --resume <runId>` | A new attempt in the original workspace; matching recorded answers can be reused.   |
-| Answer a workflow's pending handoff | `/workflows continue <runId>`                  | Opens an actionable operator handoff; after your answer, starts a continuation run. |
+| What you want                       | Command                                                                                               | What happens                                                                        |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Implement and review a task again   | `/workflows run evaluator-optimizer -- <original Task and verified working context>`                  | A fresh run with a new workspace; agents execute again.                             |
+| Reuse eligible recorded steps       | `/workflows run evaluator-optimizer --resume <runId> -- <original Task and verified working context>` | A new attempt in the original workspace; matching recorded answers can be reused.   |
+| Answer a workflow's pending handoff | `/workflows continue <runId>`                                                                         | Opens an actionable operator handoff; after your answer, starts a continuation run. |
 
 Use the full run ID from the run directory name (for example,
 `20260922-120027-07ef`), not the short `#07ef` badge shown in the panel.
 
+For resume, repeat the identical original semantic input, including Task, working context and exact artifact paths,
+so matching calls remain eligible for reuse. The resume flag does not restore omitted input.
 Resume reuses answers, not file changes or a fresh reading of the project. Use a
 fresh run when you want new observations. After repairing a workflow, check the
 replay markers to see what was actually reused. Parallel calls can change order
@@ -137,6 +146,30 @@ If either option is repeated, the last supplied value wins. Use the conventional
 `--workspace-dir`, `--`, or another option-looking token; the entire remainder
 after the delimiter is forwarded byte-for-byte as semantic input. The delimiter
 works the same way for `/workflows run`.
+
+For a [typed-input workflow](dsl.md#typed-workflow-input), put every option before
+`--input-json`, then supply the complete raw JSON tail:
+`/workflows run typed-review --resume <runId> --input-json {"task":"Review","ids":["A","B"]}`.
+The tail is parsed once; missing/invalid JSON, repeated typed options or mixed
+text and JSON refuse. Shell quoting, stdin and JSON files are not input channels.
+`-- --input-json literal text` retains the exact legacy text form.
+
+Typed launches use private `launch-binding.v4` authority containing one canonical
+value/schema and, when admitted, the exact operator context. Its initial fenced
+write uses mode `0600`; result metadata contains identities/digests only. Typed
+checkpoints use v4 and recovery identity v2. Legacy v3/text/v1 records keep their
+existing format. Typed resume repeats the original value and verifies schema,
+source, ordered items, resolved launch inputs, projection and completed replay
+evidence. Changed, missing or damaged authority/known-call records refuse fresh
+work; a proven run with no agent work can still resume. Failed calls retry only
+when the retained logical-call identity and final attempt confirm failure; physical
+parallel completion order cannot authorize a retry. Missing typed logical identity
+refuses reuse. Resume of a continuation
+restores its original answer without requesting a new claim or answer.
+
+Physical-call accounting and any declared deadline remain process-local to the
+current root and its inherited children. Ordinary resume creates fresh execution
+state; durable cross-restart quota/deadline continuity is not provided here.
 
 Direct typed `/workflows <subcommand>` forms retain argument completion for
 workflow names, persisted run ids, `last`, and replay ids. Completion does not
@@ -214,8 +247,9 @@ The project-local state map is:
 | `.locus-pi/workflow-output-state/` | Historical output-lease records; no new runs allocate them.                                                                                           |
 | `.locus-pi/logs/errors.jsonl`      | Shared host error journal. Deleting the journal loses diagnostics but does not change ownership.                                                      |
 
-The two lease roots intentionally remain separate because they fence different
-write targets. There is no legacy-to-new migration in this release.
+Only `workflow-state` allocates active leases. Retained `workflow-output-state`
+records remain historical evidence; the runtime neither migrates them nor uses
+them to lock caller-assigned agent-file destinations.
 
 ### No-operator mode — `--no-operator` / `--operator`
 

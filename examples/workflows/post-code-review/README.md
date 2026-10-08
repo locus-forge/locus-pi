@@ -58,8 +58,10 @@ entries:
 Run the parent with the target and exact report destinations in one whole input:
 
 ```text
-/workflows run post-code-review -- Review the current diff. Assign exact absolute paths for review-scope.md, review-boundaries.md, review-simplicity.md, review-contracts.md, review-style.md, review-necessity.md and post-code-review.md.
+/workflows run post-code-review -- Review the current diff. Reports: review-scope.md: /project/reports/review-scope.md; review-boundaries.md: /project/reports/review-boundaries.md; review-simplicity.md: /project/reports/review-simplicity.md; review-contracts.md: /project/reports/review-contracts.md; review-style.md: /project/reports/review-style.md; review-necessity.md: /project/reports/review-necessity.md; post-code-review.md: /project/reports/post-code-review.md
 ```
+
+Replace `/project/reports/` with your intended absolute report directory before launch; keep all seven distinct file assignments in the input.
 
 Before launch, assign the portable `smol` role through `/model-roles`. Every
 review child declares `requireModelRole: true`; `smol:high` and `smol:xhigh`

@@ -1,7 +1,7 @@
 # locus-pi workflow skills
 
 The npm package is the canonical source for four workflow skills.
-Pi loads them directly from `package.json#pi.skills`. External agents use managed
+Pi discovers them directly from `package.json#pi.skills`. External agents use managed
 symlinks; they do not receive copied skill text that can drift from the package.
 
 | Skill                               | Owns                                                                                  | Native Pi/API route                                                     | External agent route                                                 |
@@ -38,8 +38,21 @@ set back after an unexpected filesystem error.
 
 ## Find the installed workflow documentation
 
+Both authoring entries require the [co-located DSL/API reference](locus-pi-workflow-create/references/dsl.md)
+before source is written. It contains every runtime method, signature, example and source-mode constraint.
+`docs/workflows/dsl.md` is canonical; `npm run build:catalogs` generates this version-matched projection
+and `check:generated` rejects drift. Both this copy and the canonical document ship in the npm package.
+Codex and Claude Code reach the same files through their managed skill links, in either user or project scope.
+
+Pi initially advertises each skill's name, description and `SKILL.md` location. For a matching ordinary
+request, the agent reads that entry; an explicit `/skill:locus-pi-workflow-create` or
+`/skill:locus-pi-workflow-create-detailed` invocation inserts the selected `SKILL.md` body into the request.
+Neither discovery nor explicit invocation recursively loads linked files. The authoring instructions
+then require the agent to read the linked co-located DSL and selected references before writing source.
+Child agents receive the context their workflow prompts supply; references are not silently injected.
+
 The [workflow manual](../docs/workflows/index.md) ships in the same npm package.
-Pi loads these skills through `package.json#pi.skills`. Codex and Claude Code may
+Pi discovers these skills through `package.json#pi.skills`. Codex and Claude Code may
 expose a managed directory symlink as the skill's location. Resolve the physical
 `SKILL.md` **before** following any package-relative link; then resolve
 `../../docs/workflows/index.md` from its parent directory. Do not use the caller's

@@ -2,11 +2,11 @@
 title: Workflow budgets and constraints
 type: guide
 status: active
-updated: "2026-09-22T16:20:57Z"
-source_commit: "54dea11dbe11"
+updated: "2026-10-06T12:27:00Z"
+source_commit: "fee5f591caaf"
 update_event: "user_request"
-context: "changes=XL files=71 task=T-101"
-description: "Clarify the documentation entry points, canonical workflow guides, and installed example navigation."
+context: "bounded schema authoring on the standard-tool contract"
+description: "Execution budgets, package defaults, and bounded workflow controls."
 ---
 
 # Workflow budgets and constraints
@@ -41,7 +41,7 @@ Workflow launch defaults are mode-scoped: every run defaults to `concurrency = 4
 | Workflow `turns`            | Unbounded                                    | `budget.turns` or `agent({ maxTurns })`: cumulative SDK model cycles per physical child, including ordinary work and clarification. The next generation beyond the cap is refused.                                                                                                                       |
 | Transport attempts          | 1 attempt                                    | `agent({ attempts })` is a positive safe integer including the first child. Eligible transport retries start fresh children and consume `totalAgents`; provider errors are not automatically retried.                                                                                                    |
 | Choice-return attempts      | 2 submissions: initial + 1 clarification     | Package-owned and not configurable; `repair` is removed and refused by name. Correction stays in the same child and shares its turns/tools/deadline. The applied allowance is journaled.                                                                                                                 |
-| Output size and item count  | No runtime size ceiling                      | None: an agent returns exact text or one declared choice. State a length requirement in the prompt. `maxAnswerChars`, `maxItemChars`, `schemaMaxLength` and `budget.answerChars` are removed and refused by name. Input, parent context and text artifact content have no package size budget.           |
+| Output size and item count  | No runtime size ceiling                      | None: text, choice or schema-bound JSON. State a length requirement in the prompt. `maxAnswerChars`, `maxItemChars`, `schemaMaxLength` and `budget.answerChars` are removed and refused by name. Input, parent context and text artifact content have no package size budget.                            |
 | Output shape and minima     | Always validated                             | Nonblank answers and exact choice membership remain. `choice` needs at least 2 options; Fusion at least 2 members. These are contract requirements, not spend budgets.                                                                                                                                   |
 | Saved-workflow nesting      | Root plus one saved-child level              | The existing `invokeWorkflow()` depth guard refuses deeper saved composition. `subflow()` is in-run grouping and does not add a saved level. This guard remains a separate structural constraint.                                                                                                        |
 | Direct child delegation     | Leaf children (`depth=0`, `maxDepth=1`)      | `spawn_agent` is removed from child tools; descendants cannot start an independent delegation tree outside shared workflow accounting.                                                                                                                                                                   |
@@ -69,6 +69,12 @@ action may already have started. Workflow budget stops retain the named
 retains its `host-turn-timeout` failure and evidence. Neither is a verdict that earlier
 answers were wrong. Root and saved children use one physical-attempt counter, and
 Fusion reservations use that same allowance. A fully replayed panel consumes none.
+Physical attempt identities are allocated before queueing, while the fresh-child charge
+happens only after concurrency admission and the final cancellation/deadline check.
+A cancelled or expired queued attempt retains its terminal evidence and consumes no
+fresh-child allowance; a child that actually starts consumes one even if it fails.
+The shared execution owner is an internal prerequisite for deeper delegation. The
+published direct-spawn and saved-child depth guards remain in force.
 
 **Compatibility.** Readers preserve historical budget values, including `unbounded`,
 and still read results that predate the budget field. Reading an old result never
@@ -86,7 +92,8 @@ reported tokens and gate-owned peak concurrency. `agent_queued` is demand;
 and tools have no durable measured totals and print as `not recorded`, never `0`.
 
 **Source owners.** [Budget resolution](../../extensions/workflows/runtime/workflow-budget.ts),
-[root launch](../../extensions/workflows/runtime/workflow-runner.ts), [shared enforcement](../../extensions/workflows/runtime/workflow-execution-state.ts),
+[root launch](../../extensions/workflows/runtime/workflow-runner.ts), [workflow enforcement policy](../../extensions/workflows/runtime/workflow-execution-state.ts),
+[shared execution owner](../../extensions/_shared/runtime/execution-state.ts),
 [standalone tasks](../../extensions/agents/run/run-launcher.ts), [SDK child execution](../../extensions/_shared/agent-runtime/agent-sdk-host.ts),
 [return clarification](../../extensions/workflows/runtime/workflow-return.ts) and [saved composition](../../extensions/workflows/runtime/workflow-saved-child.ts).
 

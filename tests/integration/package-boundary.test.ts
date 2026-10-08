@@ -18,7 +18,7 @@ import {
   listPackagedWorkflowEntries,
   packagedWorkflowNames,
 } from "../../extensions/workflows/runtime/workflow-discovery.js";
-import { verifyInstalledWorkflowDocs } from "../docs/helpers/installed-workflow-docs.js";
+import { installedSkillSelectionScript, verifyInstalledWorkflowDocs } from "../docs/helpers/installed-workflow-docs.js";
 import { deadMarkdownLinks } from "../../scripts/markdown-links.js";
 import { installedStandardSource, RETIRED_DSL_PROBES } from "./fixtures/package-source-probes.js";
 
@@ -46,12 +46,7 @@ function recursiveTypeScriptFiles(directory: string): string[] {
     return entry.isFile() && entry.name.endsWith(".ts") ? [absolute] : [];
   });
 }
-/**
- * The Package registry is the examples directory itself, so this list is not the
- * registry — it is the reviewed snapshot of what that directory currently holds.
- * A file added or removed there fails here on purpose: adding a Package workflow
- * is cheap, but it is still a public-surface change somebody has to look at.
- */
+/** Reviewed snapshot of the directory-owned Package registry; additions/removals require public-surface review. */
 const EXPECTED_PACKAGE_WORKFLOW_NAMES = [
   "live-smoke",
   "task/draft",
@@ -345,15 +340,20 @@ describe("npm public package boundary", () => {
       "schemas/extension-manifest.schema.json",
       "skills/",
     ]);
-    // Directory-owned means the dotfiles inside a listed directory ship with it:
-    // `skills/.ignore` rides along under `skills/` and is counted here.
-    // Four location/tool owners were extracted without widening the directory-owned allowlist;
-    // removing the shaped-result schema owner (workflow-schema.ts) took one file out;
-    // the child-task-note owner remains under location-state/; the removed bound-directory owner does not ship.
-    // Four agentic starters and their two guides add six teaching resources.
-    // Two authoring lessons share contracts; detailed has one conditional case reference and two new starters.
-    // Agent-option policy leaves the checker facade under the same packaged extensions owner.
-    expect(dryRun.files).toHaveLength(265);
+    // Six-file authoring consolidates nine reference leaves without changing the allowlist.
+    expect(dryRun.files).toHaveLength(273);
+    for (const filename of [
+      "extensions/workflows/source/workflow-source-structured.ts",
+      "extensions/workflows/source/workflow-source-structured-rules.ts",
+      "extensions/workflows/source/workflow-source-provenance-query.ts",
+      "extensions/_shared/agent-runtime/output-acceptance/agent-output-contract.ts",
+      "extensions/_shared/agent-runtime/output-acceptance/agent-output-admission.ts",
+      ...["schema", "return", "receipt", "source-coverage", "types"].map(
+        (name) => `extensions/workflows/runtime/structured-results/${name}.ts`,
+      ),
+      ...["budget", "scheduler", "state"].map((name) => `extensions/_shared/runtime/execution-${name}.ts`),
+    ])
+      expect(dryRun.files.map((file) => file.path)).toContain(filename);
     expect(dryRun.files.map((file) => file.path)).not.toContain(
       "extensions/workflows/runtime/location-state/workflow-bound-directory.ts",
     );
@@ -546,11 +546,17 @@ describe("npm public package boundary", () => {
         const loaded = await import(workflow.url);
         if (typeof loaded.default !== "function") throw new Error(\`Missing workflow export: \${workflow.url}\`);
         if (loaded.meta?.name !== workflow.name) throw new Error(\`Wrong workflow name: \${workflow.url}\`);
-      }`;
+      }
+      ${installedSkillSelectionScript(packageRoot, temporaryRoot)}`;
 
       execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", loadScript], {
         cwd: packageRoot,
         encoding: "utf8",
+        env: {
+          ...process.env,
+          HOME: path.join(temporaryRoot, "pi-home"),
+          XDG_CONFIG_HOME: path.join(temporaryRoot, "pi-config"),
+        },
       });
     } finally {
       rmSync(temporaryRoot, { recursive: true, force: true });

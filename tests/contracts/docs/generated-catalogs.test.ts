@@ -5,6 +5,8 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   GENERATED_DOCUMENTS,
+  DSL_REFERENCE_SOURCE,
+  DSL_REFERENCE_PROJECTION,
   generatedPublicCatalogFiles,
   staleGeneratedFiles,
   type GeneratedFile,
@@ -31,6 +33,8 @@ function fixtureRoot(): string {
   for (const relativePath of [
     "package.json",
     CATALOG_FILE,
+    DSL_REFERENCE_SOURCE,
+    DSL_REFERENCE_PROJECTION,
     ...GENERATED_DOCUMENTS.map((document) => document.file),
     ...defaultExtensionManifests().map(({ id }) => `extensions/${id}/manifest.json`),
   ]) {
@@ -71,6 +75,19 @@ describe("generated public catalogs", () => {
 
   it("keeps every committed generated file equal to a fresh render", async () => {
     expect(await staleGeneratedFiles(root, await generatedPublicCatalogFiles(root))).toEqual([]);
+  });
+
+  it("regenerates the complete installed API projection when its canonical source changes", async () => {
+    const fixture = fixtureRoot();
+    const canonical = path.join(fixture, DSL_REFERENCE_SOURCE);
+    writeFileSync(canonical, readFileSync(canonical, "utf8") + "\nCanonical reference update.\n");
+    const files = await generatedPublicCatalogFiles(fixture);
+    expect(files.find((file) => file.path === DSL_REFERENCE_PROJECTION)?.content).toContain(
+      "Canonical reference update.",
+    );
+    expect(await staleGeneratedFiles(fixture, files)).toContain(
+      `${DSL_REFERENCE_PROJECTION}: differs from the generated content`,
+    );
   });
 
   it("publishes the six active extensions exactly once each", async () => {

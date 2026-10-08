@@ -15,6 +15,47 @@ afterEach(async () => {
 });
 
 describe("extension layer checker negative rules", () => {
+  it("keeps typed input admission inside the workflow facade and free of filesystem I/O", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, CROSS_FEATURE_READER),
+      '\nimport "../workflows/runtime/workflow-input.js";\n',
+      "utf8",
+    );
+    await expectRule(root, "rule 6 (feature-internal facade)");
+    await appendFile(
+      path.join(root, "extensions/workflows/runtime/workflow-input.ts"),
+      '\nimport "node:fs";\n',
+      "utf8",
+    );
+    await expectRule(root, "rule 7 (pure modules)");
+  });
+  it.each(["source/profiles/workflow-source-dataflow", "source/profiles/workflow-source-profile"])(
+    "rejects cross-feature imports of %s",
+    async (owner) => {
+      const root = await extensionFixture();
+      await appendFile(path.join(root, CROSS_FEATURE_READER), `\nimport "../workflows/${owner}.js";\n`, "utf8");
+      await expectRule(root, "rule 6 (feature-internal facade)");
+    },
+  );
+  it.each(["agent-output-admission", "agent-output-contract"])(
+    "rejects feature imports from nested output owner %s",
+    async (name) => {
+      const root = await extensionFixture();
+      await appendFile(
+        path.join(root, `extensions/_shared/agent-runtime/output-acceptance/${name}.ts`),
+        '\nimport "../../../workflows/index.js";\n',
+      );
+      await expectRule(root, "rule 1 (no upward import)");
+    },
+  );
+  it("keeps a nested output owner's declared location strict", async () => {
+    const root = await extensionFixture();
+    const owner = "extensions/_shared/agent-runtime/output-acceptance/agent-output-contract.ts";
+    await cp(path.join(root, owner), path.join(root, "extensions/_shared/agent-runtime/agent-output-contract.ts"));
+    await rm(path.join(root, owner));
+    await expectRule(root, "rule 3 (complete ownership)");
+  });
   it("rejects a shared module importing feature code", async () => {
     const root = await extensionFixture();
     await appendFile(
@@ -24,6 +65,26 @@ describe("extension layer checker negative rules", () => {
     );
 
     await expectRule(root, "rule 1 (no upward import)");
+  });
+
+  it("keeps shared execution ownership below workflow feature policy", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, "extensions/_shared/runtime/execution-state.ts"),
+      '\nimport "../../workflows/runtime/workflow-budget.js";\n',
+      "utf8",
+    );
+    await expectRule(root, "rule 1 (no upward import)");
+  });
+
+  it("keeps shared execution ownership host-agnostic through the DSL closure", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, "extensions/_shared/runtime/execution-scheduler.ts"),
+      '\nimport { readFileSync } from "node:fs";\nvoid readFileSync;\n',
+      "utf8",
+    );
+    await expectRule(root, "rule 7 (pure modules)");
   });
 
   it("rejects a shared module importing a higher layer", async () => {
@@ -66,6 +127,25 @@ describe("extension layer checker negative rules", () => {
     await expectRule(root, "rule 5 (mutable module state)");
   });
 
+  it("rejects a cross-feature import of structured source coverage", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, CROSS_FEATURE_READER),
+      '\nimport "../workflows/runtime/structured-results/source-coverage.js";\n',
+      "utf8",
+    );
+    await expectRule(root, "rule 6 (feature-internal facade)");
+  });
+  it.each([
+    "source/workflow-source-structured",
+    "source/workflow-source-structured-rules",
+    "source/workflow-source-provenance-query",
+    "runtime/structured-results/types",
+  ])("rejects a cross-feature import of structured authoring owner %s", async (owner) => {
+    const root = await extensionFixture();
+    await appendFile(path.join(root, CROSS_FEATURE_READER), `\nimport "../workflows/${owner}.js";\n`, "utf8");
+    await expectRule(root, "rule 6 (feature-internal facade)");
+  });
   it("rejects a cross-feature import of source agent-option policy", async () => {
     const root = await extensionFixture();
     await appendFile(

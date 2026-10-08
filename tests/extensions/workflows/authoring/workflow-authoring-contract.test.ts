@@ -20,6 +20,14 @@ function source(relativePath: string): string {
   return readFileSync(path.join(root, relativePath), "utf8");
 }
 
+function sourceSection(relativePath: string, heading: string): string {
+  const text = source(relativePath);
+  const start = text.indexOf(`\n## ${heading}\n`);
+  expect(start, `${relativePath} section ${heading}`).toBeGreaterThanOrEqual(0);
+  const end = text.indexOf("\n## ", start + 1);
+  return text.slice(start, end < 0 ? undefined : end);
+}
+
 function standardSource(run: string, declarations = ""): string {
   return [
     'export const meta = { name: "contract-test", profile: "standard", description: "Contract test." };',
@@ -134,7 +142,8 @@ describe("readable workflow authoring references", () => {
     ];
     const snippets = documents.flatMap((relativePath) => declaredStandardDocSnippets(relativePath));
     for (const snippet of snippets) {
-      expect(snippet).not.toMatch(/\b(?:tools|readOnly|permissionMode|sandbox|schema|validate)\s*:/u);
+      expect(snippet).not.toMatch(/\b(?:tools|readOnly|permissionMode|sandbox|validate|repair|outputTransport)\s*:/u);
+      if (/\bschema\s*:/u.test(snippet)) expect(standardWorkflowSourceShapeErrors(snippet)).toEqual([]);
       expect(snippet).not.toMatch(/function\s+(?:parse|validate|render|repair|acknowledge)\w*/iu);
     }
   });
@@ -181,15 +190,17 @@ describe("readable workflow authoring references", () => {
     }
   });
 
-  it("checks canonical AUTHORING fragments and both complete teaching modules", () => {
-    const authoring = javascriptDocSnippets("docs/workflows/source-shape.md");
+  it("checks canonical standard AUTHORING fragments and both complete teaching modules", () => {
+    const authoring = javascriptDocSnippets("docs/workflows/source-shape.md").filter(
+      (snippet) => staticWorkflowMeta(snippet).profile !== "dataflow-v1",
+    );
     const lessons = ["locus-pi-workflow-create", "locus-pi-workflow-create-detailed"];
     expect(authoring).toHaveLength(2);
     for (const lesson of lessons) {
       const modules = javascriptDocSnippets(`skills/${lesson}/SKILL.md`);
       expect(modules).toHaveLength(1);
       expect(modules[0]!.trim()).toBe(
-        source("extensions/workflows/references/examples/starters/project-tour.workflow.mjs").trim(),
+        source("extensions/workflows/references/examples/starters/evaluator-optimizer.workflow.mjs").trim(),
       );
       expect(standardWorkflowSourceShapeErrors(modules[0]!)).toEqual([]);
     }
@@ -253,6 +264,44 @@ ${authoring[0] ?? ""}
     },
   );
 
+  it("separates Task deliverables, shared handoffs and delegated internals in both lessons", () => {
+    for (const lesson of ["locus-pi-workflow-create", "locus-pi-workflow-create-detailed"]) {
+      const text = source(`skills/${lesson}/SKILL.md`);
+      expect(text).toContain("original Task");
+      expect(text).toContain("Task authoritative");
+      expect(text).toMatch(/shared handoff/u);
+      expect(text).toContain("Task-required output");
+      expect(text).toMatch(/internal file/u);
+      expect(text).toMatch(/narrower Task bound/u);
+    }
+    const design = source("skills/locus-pi-workflow-create/references/design-and-build.md");
+    expect(design).toContain("an `index.html`-only product");
+    expect(design).toContain("reviewer may write its assigned report, not product files");
+    expect(design).toContain("without a mandatory planner");
+    expect(design).toContain("bookkeeping into product requirements");
+    expect(design).toContain("not repeated task");
+    expect(design).toContain("or cumulative handoff history");
+    expect(design).toContain("Bound costly checker commands");
+    expect(design).toContain("exhaustion leaves required evidence incomplete");
+    expect(design).toContain("Nonblocking suggestions do not become acceptance criteria");
+    const styles = sourceSection(
+      "skills/locus-pi-workflow-create/references/design-and-build.md",
+      "Choose style, detail, size and executors separately",
+    );
+    expect(styles).toContain("fixed control skeleton does not require precomputed implementation work");
+    expect(styles).toContain("granular per-item or per-file work fixed");
+    expect(styles).not.toContain("every exact agent-file destination");
+    const boundary = source("skills/locus-pi-workflow-create/references/source-boundary.md");
+    expect(boundary).toContain("source-context root alone grants no write permission");
+    expect(boundary).toContain("complete worker handoff can convey discovered paths");
+    for (const manual of ["evidence", "dsl"]) {
+      const text = source(`docs/workflows/${manual}.md`);
+      expect(text).toMatch(/[Ss]hared handoff/u);
+      expect(text).toContain("Task-required output");
+      expect(text).toContain("internal files within delegated product roots");
+    }
+  });
+
   it("keeps source grammar, labels, output and failure authority in canonical references", () => {
     const authoring =
       source("docs/workflows/source-shape.md") +
@@ -267,7 +316,9 @@ ${authoring[0] ?? ""}
     expect(authoring).toContain("literal `label`");
     expect(authoring).toContain("provenance");
     expect(authoring).toContain("Markdown/table/report renderers");
-    expect(authoring).toContain("raw `schema`");
+    expect(authoring).toContain("### Checked structured results");
+    expect(authoring).toContain("one unshadowed top-level literal `const`");
+    expect(authoring).toContain("`validate`, `repair` and `outputTransport` remain forbidden in both modes");
     expect(dsl).toContain("items()");
     expect(policy).toContain("## Run budget");
     expect(policy).toContain("No additional axis acquires a default without a separate policy decision.");
@@ -287,7 +338,7 @@ ${authoring[0] ?? ""}
       "skills/locus-pi-workflow-create/SKILL.md",
       "skills/locus-pi-workflow-create-detailed/SKILL.md",
       ...readdirSync(path.join(root, "skills/locus-pi-workflow-create/references"))
-        .filter((name) => name.endsWith(".md"))
+        .filter((name) => name.endsWith(".md") && name !== "dsl.md")
         .map((name) => `skills/locus-pi-workflow-create/references/${name}`),
     ];
     for (const relativePath of authoredDocs) {
@@ -298,10 +349,13 @@ ${authoring[0] ?? ""}
         expect(snippet, relativePath).not.toMatch(/\b(?:maxToolCalls|timeoutMs)\s*:/u);
       }
     }
-    const card = source("skills/locus-pi-workflow-create/references/fixed-graph.md");
+    const card = sourceSection("skills/locus-pi-workflow-create/references/agentic-approaches.md", "Fixed graph");
     expect(card).toContain("author-known");
     expect(card).toContain("do not encode them as newline/CSV/JSON");
-    const human = source("skills/locus-pi-workflow-create/references/human-continuation.md");
+    const human = sourceSection(
+      "skills/locus-pi-workflow-create/references/agentic-approaches.md",
+      "Human continuation",
+    );
     expect(human).toContain("integration/compatibility");
     expect(human).toContain("Do not label that example standard");
   });
@@ -338,56 +392,8 @@ ${authoring[0] ?? ""}
     expect(source("docs/workflows/agent-results.md")).toContain("## Removed shaped-result options");
   });
 
-  it("ships the graph cards and focused authoring references without empty redirects", () => {
-    const base = "skills/locus-pi-workflow-create/references";
-    const cards = ["fixed-graph.md", "bounded-refinement.md", "decomposition.md", "human-continuation.md"];
-    const index = source(`${base}/INDEX.md`);
-    for (const name of cards) {
-      expect(index).toContain(name);
-      const text = source(`${base}/${name}`);
-      for (const word of ["Use", "Avoid", "Graph", "Cost", "Handoff", "Failure", "Primitives"])
-        expect(text, name).toContain(word);
-      expect(text).toContain(".workflow.mjs");
-    }
-    // The six legacy redirect cards and large-agent-runs.md are gone, not renamed:
-    // a card that only points elsewhere is catalog noise, and fan-out is run-skill territory.
-    const retired = [
-      "sequential-text",
-      "fixed-fan-out",
-      "bounded-review-loop",
-      "bounded-candidate-search",
-      "dynamic-orchestrator-workers",
-      "human-gate",
-      "large-agent-runs",
-    ];
-    expect(readdirSync(path.join(root, base)).sort()).toEqual([
-      "INDEX.md",
-      "adaptive-slices.md",
-      "agentic-approaches.md",
-      "authoring-styles.md",
-      "bounded-refinement.md",
-      "decomposition.md",
-      "design-and-build.md",
-      "fixed-graph.md",
-      "human-continuation.md",
-      "procedural-briefs.md",
-      "repair-and-continue.md",
-      "source-boundary.md",
-      "structured-results.md",
-    ]);
-    for (const name of retired) expect(index, name).not.toContain(name);
-    // Return contracts refine a graph; the worked example must use the real standard DSL.
-    expect(index).toContain("structured-results.md");
-    const snippets = javascriptDocSnippets(`${base}/structured-results.md`);
-    expect(snippets.length).toBeGreaterThan(0);
-    for (const snippet of snippets) {
-      const workflow = standardSource(`export default async function run({ agent, input }) {\n${snippet}\n}`);
-      expect(standardWorkflowSourceShapeErrors(workflow)).toEqual([]);
-    }
-  });
-
   it("distinguishes recorded discovery replay from unsafe rediscovered checkpoint identity", () => {
-    const card = source("skills/locus-pi-workflow-create/references/decomposition.md");
+    const card = sourceSection("skills/locus-pi-workflow-create/references/agentic-approaches.md", "Decomposition");
     expect(card).toContain("dsl.items()");
     expect(card).toContain("exact caller-assigned file");
     expect(card).toContain("prefix");
@@ -439,7 +445,10 @@ ${authoring[0] ?? ""}
   });
 
   it("reviews every paid revision and reports cap/no-progress without a final unreviewed worker", () => {
-    const card = source("skills/locus-pi-workflow-create/references/bounded-refinement.md");
+    const card = sourceSection(
+      "skills/locus-pi-workflow-create/references/agentic-approaches.md",
+      "Bounded refinement",
+    );
     const example = source("extensions/workflows/references/examples/refinement.workflow.mjs");
     expect(card).toContain("3R");
     expect(card).toContain("cap/no-progress");

@@ -86,7 +86,16 @@ const SHARED_LAYER_MEMBERS: Record<SharedLayer, readonly string[]> = {
    *  `long-timer` is pure `setTimeout` arithmetic with no host binding at all, and both the
    *  agent host and the workflow runtime arm deadlines through it, so it sits at the lowest
    *  layer either of them can reach. */
-  runtime: ["session-core", "artifacts", "event-bus", "runtime-capabilities", "long-timer"],
+  runtime: [
+    "session-core",
+    "artifacts",
+    "event-bus",
+    "runtime-capabilities",
+    "long-timer",
+    "execution-budget",
+    "execution-scheduler",
+    "execution-state",
+  ],
   model: ["model-settings", "live-model-display", "workflow-model-resolve", "session-tool-transport"],
   "agent-runtime": [
     "agents",
@@ -102,6 +111,8 @@ const SHARED_LAYER_MEMBERS: Record<SharedLayer, readonly string[]> = {
     "agent-read-only-policy",
     "agent-runner",
     "agent-sdk-host",
+    "output-acceptance/agent-output-admission",
+    "output-acceptance/agent-output-contract",
     "agent-system-prompt",
     "fleet-menu",
   ],
@@ -127,6 +138,56 @@ interface FeatureInternalEntry {
 }
 
 const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
+  {
+    module: "extensions/workflows/runtime/workflow-input.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/runtime/workflow-runtime.ts",
+    reason: "Input admission and serialized JSON identity belong to workflows; other features consume the DSL facade.",
+  },
+  {
+    module: "extensions/workflows/source/workflow-source-structured.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/tool/workflow-source-shape.ts",
+    reason: "static schema decoding and shape facts are internal source proofs, not an evaluation API.",
+  },
+  {
+    module: "extensions/workflows/source/workflow-source-structured-rules.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/tool/workflow-source-shape.ts",
+    reason: "bounded structured value uses belong to the source-check diagnostic boundary.",
+  },
+  {
+    module: "extensions/workflows/source/workflow-source-provenance-query.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/tool/workflow-source-shape.ts",
+    reason: "binding-model queries are internal facts consumed by source diagnostics.",
+  },
+  {
+    module: "extensions/workflows/runtime/structured-results/types.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/runtime/workflow-runtime.ts",
+    reason: "schema-derived readonly outputs are exported through the public WorkflowDsl type owner.",
+  },
+  {
+    module: "extensions/workflows/source/profiles/workflow-source-dataflow.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/tool/workflow-source-check-tool.ts",
+    reason:
+      "Dataflow source policy is internal to workflow authoring and runtime admission; other features use source diagnostics.",
+  },
+  {
+    module: "extensions/workflows/source/profiles/workflow-source-profile.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/catalog/workflow-meta.ts",
+    reason:
+      "Full-source profile/module and shared phase/label policy belongs to workflows; catalog consumers use its public metadata projection.",
+  },
+  {
+    module: "extensions/workflows/runtime/structured-results/source-coverage.ts",
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/runtime/workflow-script-identity.ts",
+    reason: "v4 closure coverage is an internal AST policy; callers use the script identity assessment.",
+  },
   {
     module: "extensions/workflows/source/workflow-source-agent-options.ts",
     owner: "extensions/workflows",
@@ -277,6 +338,10 @@ const PURE_MODULE_FORBIDDEN_BUILTINS: ReadonlySet<string> = new Set([
  */
 const PURE_MODULES: readonly PureModuleEntry[] = [
   {
+    module: "extensions/workflows/runtime/workflow-input.ts",
+    reason: "Root, inline and saved inputs reuse one JSON/schema mechanism without filesystem or execution policy.",
+  },
+  {
     module: "extensions/workflows/runtime/workflow-runtime.ts",
     reason:
       "the DSL core reaches agents only through an injected runner, so it stays host-agnostic and unit-testable in isolation.",
@@ -358,6 +423,7 @@ if (process.argv[1] && path.resolve(fileURLToPath(import.meta.url)) === path.res
 
 interface Classification {
   readonly layer: SharedLayer;
+  readonly modulePath: string;
 }
 
 interface ImportEdge {
@@ -395,7 +461,7 @@ export async function checkExtensionLayers(root: string): Promise<void> {
     );
   }
   for (const [name, classification] of ledger) {
-    const expected = `${SHARED_DIR}/${classification.layer}/${name}.ts`;
+    const expected = `${SHARED_DIR}/${classification.layer}/${classification.modulePath}.ts`;
     const actual = byBasename.get(name);
     if (actual === undefined) {
       failures.push(
@@ -479,7 +545,8 @@ export async function checkExtensionLayers(root: string): Promise<void> {
 function buildLedger(failures: string[]): Map<string, Classification> {
   const ledger = new Map<string, Classification>();
   for (const [layer, members] of Object.entries(SHARED_LAYER_MEMBERS) as [SharedLayer, readonly string[]][]) {
-    for (const name of members) {
+    for (const modulePath of members) {
+      const name = path.basename(modulePath);
       const previous = ledger.get(name);
       if (previous) {
         failures.push(
@@ -487,7 +554,7 @@ function buildLedger(failures: string[]): Map<string, Classification> {
         );
         continue;
       }
-      ledger.set(name, { layer });
+      ledger.set(name, { layer, modulePath });
     }
   }
   return ledger;

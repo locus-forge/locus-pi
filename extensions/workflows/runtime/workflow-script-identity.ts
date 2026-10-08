@@ -1,7 +1,9 @@
+import { assertDataflowWorkflowSource } from "../source/profiles/workflow-source-dataflow.js";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Lang, parse, type SgNode } from "@ast-grep/napi";
+import { assessStructuredReplayClosure } from "./structured-results/source-coverage.js";
 import {
   exportedMetaObject,
   staticObjectKey,
@@ -329,25 +331,21 @@ function assessSourceIdentity(root: SgNode): WorkflowSourceIdentityAssessment {
  * which the run journal records; a direct `Date.now()` is not forbidden, it
  * simply makes the script unproven and therefore never replayed.
  *
- * Limits, stated plainly: this reads syntax, not behavior, and it is a filter
- * rather than a proof. It folds only what is decidable from the text — a root
- * reached through `globalThis`/`global`, a parenthesised constructor, a
- * destructured or aliased root, a named import of a nondeterministic `node:`
- * export. What it cannot see: access assembled at runtime
- * (`globalThis[key]` where `key` is computed elsewhere, `Reflect.get`, a root
- * threaded through a function parameter or property bag), a value smuggled in
- * through `process.env` or `argv`, and any nondeterminism inside an imported
- * module — which is exactly why `entry-only` coverage is treated as unproven by
- * the caller. The gate that actually prevents a wrong replay is the per-call
- * request key plus the prefix latch in the replay controller; this scan narrows
- * how often that gate is the only thing standing.
+ * This legacy syntax filter is not full dependency coverage. V4 additionally
+ * checks local bindings and supported intrinsic uses before claiming closure identity.
  */
 export function assessWorkflowReplaySafety(source: string): WorkflowReplaySafetyAssessment {
   return assessReplaySafety(parseWorkflowSource(source));
 }
 
+/** Conservative v4 closure coverage; does not alter legacy replay or fresh execution. */
+export function assessWorkflowStructuredReplayCoverage(source: string): boolean {
+  return assessStructuredReplayClosure(parseWorkflowSource(source));
+}
+
 export function createWorkflowScriptSnapshot(sourcePath: string, runDir: string): WorkflowScriptIdentity {
   const sourceBytes = readFileSync(sourcePath);
+  assertDataflowWorkflowSource(sourceBytes.toString("utf8"));
   const assessment = assessWorkflowSourceIdentity(sourceBytes.toString("utf8"));
   const scriptSha256 = sha256WorkflowBytes(sourceBytes);
   const snapshotPath = path.join(runDir, `script-${scriptSha256}.workflow.mjs`);

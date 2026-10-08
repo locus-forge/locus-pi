@@ -1,3 +1,4 @@
+import type { WorkflowInputValue } from "../runtime/workflow-input.js";
 /**
  * extensions/workflows/command/command-parser.ts — `/workflows` argument grammar.
  *
@@ -13,6 +14,8 @@ import type { WorkflowTargetIdentity } from "../runtime/workflow-saved-name.js";
 export interface ParsedRunCommand {
   scriptRef: string;
   input?: string;
+  inputValue?: WorkflowInputValue;
+  inputJSONError?: string;
   workspaceDir?: string;
   runName?: string;
   resumeFromRunId?: string;
@@ -31,7 +34,7 @@ export interface ParsedContinueCommand {
 }
 
 const WORKFLOW_RUN_OPTION_USAGE =
-  "[--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--force] [--no-operator|--operator] [--] [input]";
+  "[--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--force] [--no-operator|--operator] [--] [input] | --input-json <JSON tail>";
 
 /** Reclaim only a leaked lease whose matching terminal envelope proves the prior run settled. */
 export const WORKFLOW_RUN_FORCE_FLAG = "--force";
@@ -207,6 +210,7 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
       value === undefined ||
       value.value === "" ||
       value.value === "--" ||
+      value.value === "--input-json" ||
       WORKFLOW_RUN_OPTION_DESCRIPTORS.some((descriptor) => value.value === descriptor.name) ||
       value.value === WORKFLOW_RUN_FORCE_FLAG ||
       WORKFLOW_RUN_MODE_FLAGS.some((flag) => value.value === flag.name)
@@ -218,6 +222,27 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
     else resumeFromRunId = value.value;
     rest = value.rest.trimStart();
   }
+  const jsonOption = rest === "--input-json" || /^--input-json\s/u.test(rest);
+  if (jsonOption) {
+    const fields = {
+      scriptRef,
+      ...(workspaceDir === undefined ? {} : { workspaceDir }),
+      ...(runName === undefined ? {} : { runName }),
+      ...(resumeFromRunId === undefined ? {} : { resumeFromRunId }),
+      ...(force ? { force: true as const } : {}),
+      ...(noOperator === undefined ? {} : { noOperator }),
+    };
+    try {
+      return { ...fields, inputValue: JSON.parse(rest.slice("--input-json".length).trimStart()) as WorkflowInputValue };
+    } catch {
+      return {
+        ...fields,
+        inputJSONError: "--input-json requires one complete JSON value as the entire remaining tail",
+      };
+    }
+  }
+  if (!/^--(?:\s|$)/u.test(rest) && /(?:^|\s)--input-json(?:\s|$)/u.test(rest))
+    return { scriptRef, inputJSONError: "--input-json cannot be mixed with legacy text input" };
   if (rest === "--") {
     return {
       scriptRef,

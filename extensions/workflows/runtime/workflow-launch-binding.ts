@@ -1,3 +1,5 @@
+import { parseWorkflowTypedInput, workflowTypedInputProjection, type WorkflowTypedInput } from "./workflow-input.js";
+import { canonicalWorkflowJSON } from "./structured-results/schema.js";
 /**
  * Host-owned launch binding for resume, interrupted recovery and handoff admission.
  *
@@ -11,6 +13,8 @@ import { lstatSync, realpathSync, statSync } from "node:fs";
 import {
   assertWorkflowRunId,
   readWorkflowRunFile,
+  readWorkflowRunTextFile,
+  workflowStorageRootRunId,
   renameWorkflowRunFile,
   resolveWorkflowRunDir,
   workflowRunRuntimeFile,
@@ -26,12 +30,23 @@ import {
 } from "./workflow-output.js";
 import { parseWorkflowPersistedBinding } from "./workflow-persisted-binding.js";
 
+import { readWorkflowRunResult, workflowResultFile } from "./workflow-result.js";
+import { readWorkflowRunScriptSnapshot, readWorkflowRunJournalState } from "./workflow-journal.js";
+import {
+  readPersistedWorkflowOperatorHandoff,
+  assertWorkflowHandoffContinuationEligibility,
+} from "./workflow-handoff.js";
+import { workflowTargetIdentityKey } from "./workflow-saved-name.js";
+import { workflowSourceInputSchema } from "../source/workflow-source-structured.js";
+
 export const WORKFLOW_LAUNCH_BINDING_SCHEMA = "locus-pi.workflow-launch-binding.v3" as const;
+export const WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA = "locus-pi.workflow-launch-binding.v4" as const;
 const WORKFLOW_LAUNCH_BINDING_FILENAME = "launch-binding.json";
 const WORKFLOW_LAUNCH_BINDING_TEMP_FILENAME = "launch-binding.json.tmp";
 
 export interface WorkflowLaunchBinding {
-  schema: typeof WORKFLOW_LAUNCH_BINDING_SCHEMA;
+  schema: typeof WORKFLOW_LAUNCH_BINDING_SCHEMA | typeof WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA;
+  typedInput?: WorkflowTypedInput;
   runId: string;
   /** Exact launch inputs required for conservative interruption recovery. */
   recoveryInputSha256: string;
@@ -77,6 +92,7 @@ export function createWorkflowLaunchBinding(input: {
   workspace: WorkflowWorkspaceDirectory;
   workspaceExplicit: boolean;
   semanticInput: WorkflowLaunchBinding["semanticInput"];
+  typedInput?: WorkflowTypedInput;
 }): WorkflowLaunchBinding {
   const location = ({ absolutePath, relativePath, physicalPath, identity }: WorkflowWorkspaceDirectory) => ({
     absolutePath,
@@ -86,7 +102,7 @@ export function createWorkflowLaunchBinding(input: {
     physicalIdentitySchemaVersion: 1 as const,
   });
   return {
-    schema: WORKFLOW_LAUNCH_BINDING_SCHEMA,
+    schema: input.typedInput === undefined ? WORKFLOW_LAUNCH_BINDING_SCHEMA : WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA,
     runId: input.runId,
     rootLineageId: input.rootLineageId,
     recoveryInputSha256: input.recoveryInputSha256,
@@ -94,6 +110,7 @@ export function createWorkflowLaunchBinding(input: {
     scriptIdentity: input.scriptIdentity,
     workspace: { ...location(input.workspace), explicit: input.workspaceExplicit },
     semanticInput: input.semanticInput,
+    ...(input.typedInput === undefined ? {} : { typedInput: input.typedInput }),
   };
 }
 
@@ -123,7 +140,11 @@ export function writeWorkflowLaunchBinding(runDir: string, binding: WorkflowLaun
   if (workflowRunFileExists(runDir, destination)) {
     throw new Error("Workflow launch binding already exists and is immutable.");
   }
-  writeWorkflowRunFile(runDir, temporary, payload, { durable: true, exclusive: true });
+  writeWorkflowRunFile(runDir, temporary, payload, {
+    durable: true,
+    exclusive: true,
+    ...(binding.typedInput === undefined ? {} : { mode: 0o600 as const }),
+  });
   renameWorkflowRunFile(runDir, temporary, destination);
 }
 
@@ -159,6 +180,7 @@ export function projectWorkflowLaunchBindingOntoResult(
     workspaceDirExplicit: binding.workspace.explicit,
     semanticInputPresent: binding.semanticInput.present,
     semanticInputSha256: binding.semanticInput.sha256,
+    ...(binding.typedInput === undefined ? {} : { typedInput: workflowTypedInputProjection(binding.typedInput) }),
   };
 }
 
@@ -183,8 +205,145 @@ export function workflowLaunchBindingMatchesResult(
     result.outputSource === undefined &&
     result.primaryFile === undefined &&
     result.semanticInputPresent === binding.semanticInput.present &&
-    result.semanticInputSha256 === binding.semanticInput.sha256
+    result.semanticInputSha256 === binding.semanticInput.sha256 &&
+    (binding.typedInput === undefined
+      ? result.typedInput === undefined
+      : result.typedInput !== undefined &&
+        canonicalWorkflowJSON(result.typedInput) ===
+          canonicalWorkflowJSON(workflowTypedInputProjection(binding.typedInput)))
   );
+}
+
+/** Corroborate a completed typed slot through already admitted ancestry; never grants a skip. */
+export function hasPriorCompletedTypedChild(options: {
+  projectRoot: string;
+  sourceRunId?: string | undefined;
+  rootLineageId: string;
+  workspaceIdentity: string;
+  itemKey: string;
+  targetKey: string;
+}): boolean {
+  const { projectRoot, rootLineageId, workspaceIdentity, itemKey, targetKey } = options;
+  let sourceId = options.sourceRunId;
+  const seen = new Set<string>(),
+    pending = new Set<string>();
+  while (sourceId !== undefined) {
+    assertWorkflowRunId(sourceId);
+    if (seen.has(sourceId)) throw new Error("typed child prior navigation cycle");
+    seen.add(sourceId);
+    const parentDir = resolveWorkflowRunDir(projectRoot, sourceId);
+    const binding = readWorkflowLaunchBinding(projectRoot, sourceId, parentDir);
+    const result = readWorkflowRunResult(projectRoot, sourceId, parentDir);
+    if (
+      binding === null ||
+      binding.rootLineageId !== rootLineageId ||
+      binding.workspace.physicalIdentity !== workspaceIdentity ||
+      !workflowLaunchBindingMatchesResult(binding, result)
+    )
+      throw new Error("typed child prior parent authority unproven");
+    const raw = JSON.parse(readWorkflowRunTextFile(parentDir, workflowResultFile(parentDir)));
+    const refs = raw.childRuns === undefined ? [] : raw.childRuns;
+    if (
+      !isRecord(raw) ||
+      !Array.isArray(refs) ||
+      refs.some(
+        (ref) =>
+          !isRecord(ref) ||
+          typeof ref.key !== "string" ||
+          typeof ref.status !== "string" ||
+          !["running", "completed", "skipped", "awaiting_operator", "cancelled", "failed"].includes(ref.status),
+      )
+    )
+      throw new Error("typed child navigation is malformed");
+    const journal = readWorkflowRunJournalState(projectRoot, sourceId, parentDir);
+    if (journal.diagnostics.length > 0) throw new Error("typed child prior journal is damaged");
+    const runtimeLogs = journal.lines.filter((line) => line.kind === "log" && line.source === "runtime");
+    const endPrefix = `[workflow:child-end] key=${JSON.stringify(itemKey)} runId=`;
+    for (const { message } of runtimeLogs) {
+      if (!message?.startsWith(endPrefix) || !message.endsWith(" status=completed")) continue;
+      const runId = assertWorkflowRunId(message.slice(endPrefix.length, -" status=completed".length));
+      const startPrefix = `[workflow:child-start] key=${JSON.stringify(itemKey)} runId=${runId} childScriptSha256=`;
+      const start = runtimeLogs.find((row) => row.message?.startsWith(startPrefix));
+      if (start === undefined) throw new Error("typed child completed journal has no source-bound start");
+      refs.push({
+        key: itemKey,
+        status: "completed",
+        runId,
+        childScriptSha256: start.message!.slice(startPrefix.length),
+      });
+    }
+    for (const ref of refs) {
+      if (ref.key !== itemKey || !["completed", "skipped"].includes(ref.status)) continue;
+      const childId = assertWorkflowRunId(ref.status === "skipped" ? ref.sourceRunId : ref.runId);
+      const childDir = resolveWorkflowRunDir(projectRoot, childId);
+      const child = readWorkflowRunResult(projectRoot, childId, childDir);
+      if (child?.target === undefined || child.scriptIdentity === undefined)
+        throw new Error("typed child prior reference unproven");
+      if (
+        workflowTargetIdentityKey(child.target, {
+          projectRoot: projectRoot,
+          resolvedPath: child.scriptIdentity.sourcePath,
+        }) !== targetKey
+      )
+        continue;
+      const snapshot = readWorkflowRunScriptSnapshot(projectRoot, childId, childDir);
+      if (snapshot.kind !== "ready") throw new Error("typed child retained source unproven");
+      const schema = workflowSourceInputSchema(snapshot.source);
+      if (schema === undefined && child.typedInput === undefined) continue;
+      const lineage = JSON.parse(readWorkflowRunTextFile(childDir, workflowResultFile(childDir))).lineage;
+      if (
+        !isRecord(lineage) ||
+        child.ok !== true ||
+        !isRecord(child.disposition) ||
+        child.disposition.status !== "completed" ||
+        child.workspacePhysicalIdentity !== workspaceIdentity ||
+        lineage.depth !== 1 ||
+        lineage.parentItemKey !== itemKey ||
+        lineage.rootRunId !== lineage.parentRunId ||
+        snapshot.sha256 !== ref.childScriptSha256 ||
+        schema === undefined
+      )
+        throw new Error("prior completed typed child evidence unproven");
+      if (ref.status === "skipped") {
+        pending.add(childId);
+        continue;
+      }
+      if (
+        lineage.parentRunId !== sourceId ||
+        [...pending].some((id) => id !== childId) ||
+        workflowStorageRootRunId(projectRoot, childId) !== workflowStorageRootRunId(projectRoot, sourceId)
+      )
+        throw new Error("typed child owning completion unproven");
+      return true;
+    }
+    if (sourceId === binding.rootLineageId) break;
+    const resume = raw.resumeFromRunId !== undefined;
+    const continuation = isRecord(raw.continuation) ? raw.continuation : undefined;
+    if (resume === (raw.continuation !== undefined)) throw new Error("typed child prior ancestry is missing or mixed");
+    const next = assertWorkflowRunId(resume ? raw.resumeFromRunId : continuation?.originRunId);
+    if (
+      !runtimeLogs.some((line) =>
+        resume
+          ? line.resumeFromRunId === next
+          : canonicalWorkflowJSON(line.continuation ?? null) === canonicalWorkflowJSON(raw.continuation),
+      )
+    )
+      throw new Error("typed child prior ancestry journal is unproven");
+    if (!resume) {
+      const handoff = readPersistedWorkflowOperatorHandoff(projectRoot, next);
+      if (
+        handoff.status !== "ready" ||
+        !Array.isArray(continuation?.artifacts) ||
+        canonicalWorkflowJSON(continuation.artifacts.map((ref: { sourceRef?: unknown }) => ref?.sourceRef)) !==
+          canonicalWorkflowJSON(handoff.handoff.continuationArtifactRefs)
+      )
+        throw new Error("typed child prior handoff is unproven");
+      assertWorkflowHandoffContinuationEligibility(handoff.handoff, binding, projectRoot);
+    }
+    sourceId = next;
+  }
+  if (pending.size > 0) throw new Error("typed child skipped completion has no authenticated owner");
+  return false;
 }
 
 function parseWorkflowLaunchBinding(
@@ -204,8 +363,11 @@ function parseWorkflowLaunchBinding(
       "semanticInput",
       "recoveryInputSha256",
       "rootLineageId",
+      ...(value.schema === WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA ? ["typedInput"] : []),
     ]) ||
-    value.schema !== WORKFLOW_LAUNCH_BINDING_SCHEMA ||
+    ![WORKFLOW_LAUNCH_BINDING_SCHEMA, WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA].includes(
+      value.schema as typeof WORKFLOW_LAUNCH_BINDING_SCHEMA,
+    ) ||
     value.runId !== runId
   ) {
     throw new Error("workflow launch binding schema or run id is invalid");
@@ -237,9 +399,18 @@ function parseWorkflowLaunchBinding(
   }
   if (typeof value.recoveryInputSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(value.recoveryInputSha256))
     throw new Error("workflow recovery input identity is invalid");
+  const typedInput =
+    value.schema === WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA ? parseWorkflowTypedInput(value.typedInput) : undefined;
+  if (typedInput?.operatorContext !== undefined) assertWorkflowRunId(typedInput.operatorContext.originRunId);
+  if (
+    typedInput !== undefined &&
+    (value.semanticInput.present ||
+      value.semanticInput.sha256 !== "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+  )
+    throw new Error("typed input cannot carry legacy text identity");
   assertWorkflowRunId(value.rootLineageId);
   return {
-    schema: WORKFLOW_LAUNCH_BINDING_SCHEMA,
+    schema: typedInput === undefined ? WORKFLOW_LAUNCH_BINDING_SCHEMA : WORKFLOW_TYPED_LAUNCH_BINDING_SCHEMA,
     recoveryInputSha256: value.recoveryInputSha256 as string,
     rootLineageId: value.rootLineageId as string,
     runId,
@@ -247,6 +418,7 @@ function parseWorkflowLaunchBinding(
     scriptIdentity: parsed.scriptIdentity as WorkflowScriptIdentity,
     workspace: value.workspace,
     semanticInput: value.semanticInput,
+    ...(typedInput === undefined ? {} : { typedInput }),
   };
 }
 

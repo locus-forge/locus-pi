@@ -1,3 +1,13 @@
+import {
+  snapshotWorkflowInput,
+  workflowTypedInputProjection,
+  type WorkflowInputValue,
+  type WorkflowTypedInput,
+} from "./workflow-input.js";
+import { canonicalWorkflowJSON, normalizeWorkflowStructuredContract } from "./structured-results/schema.js";
+import { assertDataflowWorkflowSource } from "../source/profiles/workflow-source-dataflow.js";
+import { readWorkflowStructuredCoverage } from "./workflow-run-resume.js";
+import { readAgentSdkHostVersion } from "../../_shared/agent-runtime/agent-sdk-host.js";
 /**
  * workflow-runner.ts — Constrained script loader + executor (trusted-script loader).
  *
@@ -61,7 +71,7 @@ import {
 } from "./workflow-journal.js";
 import type { WorkflowRunResultEnvelope, WorkflowRunSummary } from "./workflow-journal.js";
 import type { ResolvedWorkflowTarget } from "./workflow-discovery.js";
-import { createWorkflowReplayController, type WorkflowReplayController } from "./workflow-replay.js";
+import { createWorkflowReplayController } from "./workflow-replay.js";
 import { admitWorkflowRun } from "./workflow-run-admission.js";
 import {
   describeWorkflowReplayPlan,
@@ -142,11 +152,21 @@ export { assertWorkflowTargetBinding } from "./workflow-run-admission.js";
 // ---------------------------------------------------------------------------
 
 export interface WorkflowScriptModule {
-  default?: (dsl: WorkflowDsl, input?: string) => Promise<unknown> | unknown;
-  runWorkflow?: (dsl: WorkflowDsl, input?: string) => Promise<unknown> | unknown;
+  default?: (
+    dsl: WorkflowDsl,
+    input?: WorkflowInputValue,
+    context?: Readonly<{ operatorAnswer: string }>,
+  ) => Promise<unknown> | unknown;
+  runWorkflow?: (
+    dsl: WorkflowDsl,
+    input?: WorkflowInputValue,
+    context?: Readonly<{ operatorAnswer: string }>,
+  ) => Promise<unknown> | unknown;
   meta?: {
     name?: string;
     description?: string;
+    inputSchema?: unknown;
+    profile?: import("../catalog/workflow-meta.js").WorkflowAuthoringProfile;
     identityCoverage?: "self-contained-static" | "entry-only";
   };
 }
@@ -164,6 +184,9 @@ export interface RunWorkflowScriptOptions {
   targetBinding?: ResolvedWorkflowTarget;
   /** Optional bounded human semantic request. */
   input?: string;
+  inputValue?: WorkflowInputValue;
+  /** Host-only accepted ordinary answer; requires the real matching handoff claim. */
+  operatorAnswer?: string;
   /** Optional exact text work units, separate from semantic input. */
   items?: readonly string[];
   /** Optional project-relative host-selected workflow workspace. */
@@ -236,6 +259,9 @@ export async function loadWorkflowScript(
     const subject = executionSource === "snapshot" ? "snapshot" : "source";
     throw new Error(`Workflow script ${subject} hash mismatch: expected ${expectedSha256}, got ${actualSha256}`);
   }
+  const dataflow = assertDataflowWorkflowSource(scriptBytes.toString("utf8"));
+  if (dataflow && (expectedSha256 === undefined || executionSource !== "snapshot"))
+    throw new Error("dataflow-v1 loading requires an independently hashed retained snapshot");
   const scriptUrl = pathToFileURL(scriptPath);
   scriptUrl.searchParams.set("sha256", actualSha256);
   if (cacheScope !== undefined) scriptUrl.searchParams.set("run", cacheScope);
@@ -259,6 +285,10 @@ export async function loadWorkflowScript(
       "Workflow meta.outputDir was removed: assign exact file destinations in agent prompts; execution cwd and native workspace remain separate",
     );
   }
+  if (!dataflow && mod.meta?.profile === "dataflow-v1")
+    throw new Error(
+      "dataflow-v1 requires checked static profile admission; dynamic metadata cannot opt in during import",
+    );
   return mod;
 }
 
@@ -274,6 +304,13 @@ async function importWorkflowModule(specifier: string): Promise<WorkflowScriptMo
 // ---------------------------------------------------------------------------
 
 export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise<RunWorkflowScriptResult> {
+  let inputFailure: unknown;
+  try {
+    const inputSnapshot = snapshotWorkflowInput(opts);
+    opts = { ...opts, ...inputSnapshot };
+  } catch (error) {
+    inputFailure = error;
+  }
   const projectRoot = getProjectRoot(opts.ctx);
   const workingDirectory = getWorkingDirectory(opts.ctx);
   const inheritedCoordination = opts[RUN_COORDINATION];
@@ -344,13 +381,14 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
 
   const requestedResumeFromRunId = opts.resumeFromRunId;
   const requestedSemanticInput = workflowSemanticInputIdentity(opts.input);
+  let typedInput: WorkflowTypedInput | undefined;
   let resumeFromRunId: string | undefined;
   let resumeSourceRunSummary: WorkflowRunSummary | null | undefined;
   let resumeSourceWorkspace: WorkflowResumeWorkspaceIdentity | undefined;
   let resumeSourceBinding: WorkflowResumeSourceBinding | undefined;
   let interruptedRecovery = false;
   let replayPlan: WorkflowReplayPlan | undefined;
-  let replayController: WorkflowReplayController | undefined;
+  let replayController: ReturnType<typeof createWorkflowReplayController> | undefined;
   let resourceLoader: WorkflowResourceLoader | undefined;
   let workspaceManager: WorkflowWorkspaceManager | undefined;
   let runtime: WorkflowRuntime | undefined;
@@ -417,6 +455,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     | "workspaceDirExplicit"
     | "semanticInputPresent"
     | "semanticInputSha256"
+    | "typedInput"
     | "lineage"
     | "childRuns"
     | "storageRootRunId"
@@ -457,6 +496,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
             semanticInputPresent: requestedSemanticInput.present,
             semanticInputSha256: requestedSemanticInput.sha256,
           }),
+      ...(typedInput === undefined ? {} : { typedInput: workflowTypedInputProjection(typedInput) }),
       lineage,
       storageRootRunId,
       ...(childRuns.length === 0 ? {} : { childRuns: [...childRuns] }),
@@ -496,6 +536,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   });
 
   try {
+    if (inputFailure !== undefined) throw inputFailure;
     items = snapshotWorkflowItems(opts.items);
     try {
       opts.onRunStart?.({ runId, runDir });
@@ -564,7 +605,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     return finishRun({ ok: false, result: undefined, journal: currentJournal(), error, ...resultMetadata() });
   }
 
-  const admission = admitWorkflowRun({
+  const admission = await admitWorkflowRun({
     projectRoot,
     workingDirectory,
     runId,
@@ -582,6 +623,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   // Everything admission established stands whether it admitted or refused: a
   // refusal's terminal result projects the same workspace and handoff facts the
   // refusal itself already committed to.
+  typedInput = admission.typedInput;
   interruptedRecovery = admission.interruptedRecovery;
   resumeSourceWorkspace = admission.resumeSourceWorkspace;
   resumeSourceBinding = admission.resumeSourceBinding;
@@ -600,6 +642,16 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   }
   const target = admission.target;
   const scriptIdentity = admission.scriptIdentity;
+  const failExecution = (error: string) =>
+    finishRun({
+      ok: false,
+      result: undefined,
+      journal: currentJournal(runtime),
+      error,
+      target,
+      scriptIdentity,
+      ...resultMetadata(),
+    });
   // The admitted workspace, proven present by the verdict above. `stableWorkspace`
   // stays the mutable projection the terminal-result closures read.
   const admittedWorkspace = admission.stableWorkspace;
@@ -618,6 +670,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
           scriptSha256: scriptIdentity.scriptSha256,
           recoveryInputSha256: workflowRecoveryInputHash({
             ...(opts.input === undefined ? {} : { input: opts.input }),
+            ...(typedInput === undefined ? {} : { typedInput }),
             items,
             budget,
             ...(noOperator === undefined ? {} : { noOperator }),
@@ -636,6 +689,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
         // here is unbounded in the shared state — no counter, no clock — which is
         // the same thing the run header prints as `unbounded`.
         sharedExecution: createWorkflowSharedExecutionState({
+          signal: opts.signal,
           maxConcurrentAgents: budget.concurrency,
           ...(budget.totalAgents === undefined ? {} : { maxTotalAgentInvocations: budget.totalAgents }),
           ...(budget.runtimeMs === undefined ? {} : { runtimeMs: budget.runtimeMs }),
@@ -674,16 +728,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     });
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    const journalLines = currentJournal(runtime);
-    return finishRun({
-      ok: false,
-      result: undefined,
-      journal: journalLines,
-      error,
-      target,
-      scriptIdentity,
-      ...resultMetadata(),
-    });
+    return failExecution(error);
   }
   const executionCoordination = coordination;
   if (opts.operatorHandoffClaim !== undefined) {
@@ -691,16 +736,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
       assertWorkflowHandoffClaimEligibility(opts.operatorHandoffClaim, { target, scriptIdentity });
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      const journalLines = currentJournal(runtime);
-      return finishRun({
-        ok: false,
-        result: undefined,
-        journal: journalLines,
-        error,
-        target,
-        scriptIdentity,
-        ...resultMetadata(),
-      });
+      return failExecution(error);
     }
   }
 
@@ -711,38 +747,26 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
       target,
       ...(resumeFromRunId === undefined ? {} : { resumeFromRunId }),
       ...(resumeSourceBinding === undefined ? {} : { resumeSourceResult: resumeSourceBinding.result }),
+      ...(interruptedRecovery ? { interruptedRecovery: true } : {}),
     });
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     emitPrelude({ ts: new Date().toISOString(), runId, kind: "error", source: "runtime", message: error });
-    return finishRun({
-      ok: false,
-      result: undefined,
-      journal: currentJournal(runtime),
-      error,
-      target,
-      scriptIdentity,
-      ...resultMetadata(),
-    });
+    return failExecution(error);
   }
   if (
     interruptedRecovery &&
     (!replayPlan.record || replayPlan.recorded === undefined || replayPlan.refusedReason !== undefined)
   ) {
-    return finishRun({
-      ok: false,
-      result: undefined,
-      journal: currentJournal(runtime),
-      error: "Interrupted recovery could not activate exact prefix replay",
-      target,
-      scriptIdentity,
-      ...resultMetadata(),
-    });
+    return failExecution("Interrupted recovery could not activate exact prefix replay");
   }
   if (replayPlan.record) {
     replayController = createWorkflowReplayController({
       runDir,
       ...(interruptedRecovery ? { requireRecordedPrefix: true } : {}),
+      ...(replayPlan.typedReplayRetryOrdinals === undefined
+        ? {}
+        : { typedReplayRetryOrdinals: replayPlan.typedReplayRetryOrdinals }),
       ...(replayPlan.recorded === undefined ? {} : { recorded: replayPlan.recorded }),
       ...(replayPlan.sourceScriptChanged === true ? { sourceScriptChanged: true } : {}),
     });
@@ -784,16 +808,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     artifactStore = createWorkflowArtifactStore({ projectRoot, runId, runDir });
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    const journalLines = currentJournal(runtime);
-    return finishRun({
-      ok: false,
-      result: undefined,
-      journal: journalLines,
-      error,
-      target,
-      scriptIdentity,
-      ...resultMetadata(),
-    });
+    return failExecution(error);
   }
   if (opts.continuation !== undefined) {
     try {
@@ -810,15 +825,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       emitPrelude({ ts: new Date().toISOString(), runId, kind: "error", source: "runtime", message: error });
-      return finishRun({
-        ok: false,
-        result: undefined,
-        journal: currentJournal(runtime),
-        error,
-        target,
-        scriptIdentity,
-        ...resultMetadata(),
-      });
+      return failExecution(error);
     }
   }
   if (opts.operatorHandoffClaim !== undefined) {
@@ -828,15 +835,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       emitPrelude({ ts: new Date().toISOString(), runId, kind: "error", source: "runtime", message: error });
-      return finishRun({
-        ok: false,
-        result: undefined,
-        journal: currentJournal(runtime),
-        error,
-        target,
-        scriptIdentity,
-        ...resultMetadata(),
-      });
+      return failExecution(error);
     }
   }
   const agentBridgeOptions: WorkflowAgentBridgeOptions = {
@@ -860,6 +859,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     parentRunId: runId,
     parentTarget: target,
     parentScriptSha256: scriptIdentity.scriptSha256,
+    sourceRunId: opts.operatorHandoffClaim?.sourceRunId ?? resumeFromRunId,
     coordination: executionCoordination,
     childRuns,
     // Recursion is injected, so the child owner never imports this module and
@@ -872,7 +872,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
         ...(request.name === undefined ? {} : { name: request.name }),
         ...(request.scriptPath === undefined ? {} : { scriptPath: request.scriptPath }),
         ...(request.targetBinding === undefined ? {} : { targetBinding: request.targetBinding }),
-        ...(request.input === undefined ? {} : { input: request.input }),
+        ...snapshotWorkflowInput(request),
         items: request.items,
         ...(opts.createExecutor === undefined ? {} : { createExecutor: opts.createExecutor }),
         ...(opts.resolveModel === undefined ? {} : { resolveModel: opts.resolveModel }),
@@ -884,7 +884,25 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   });
   runtime = createWorkflowRuntime({
     runId,
+    signal: opts.signal,
     agentRunner,
+    structuredReplayHostVersion: readAgentSdkHostVersion,
+    structuredSourceIdentity: {
+      sha256: scriptIdentity.scriptSha256,
+      covered:
+        readWorkflowStructuredCoverage(scriptIdentity) &&
+        replayPlan.record &&
+        scriptIdentity.identityCoverage === "self-contained-static" &&
+        scriptIdentity.builtinImports.length === 0 &&
+        scriptIdentity.unboundDependencies.length === 0,
+      inputSha256: workflowRecoveryInputHash({
+        ...(opts.input === undefined ? {} : { input: opts.input }),
+        ...(typedInput === undefined ? {} : { typedInput }),
+        items,
+        budget,
+        ...(noOperator === undefined ? {} : { noOperator }),
+      }),
+    },
     preflightAgentRequests,
     journal,
     projectRoot,
@@ -897,6 +915,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     ...(boundContinuation !== undefined ? { continuation: boundContinuation } : {}),
     ...(resumeFromRunId === undefined ? {} : { replaySourceRunId: resumeFromRunId }),
     ...(replayController !== undefined ? { replay: replayController } : {}),
+    retainLogicalCallIdentity: typedInput !== undefined,
     ...(opts.input !== undefined ? { args: opts.input } : {}),
     items,
     // The execution-tree axes live in sharedExecution above. Only per-call
@@ -927,16 +946,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     );
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    const journalLines = currentJournal(runtime);
-    return finishRun({
-      ok: false,
-      result: undefined,
-      journal: journalLines,
-      error,
-      target,
-      scriptIdentity,
-      ...resultMetadata(),
-    });
+    return failExecution(error);
   }
 
   const entry =
@@ -968,7 +978,26 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     // SDK/host machinery we never get a handle to (e.g. a dead-model auth error
     // firing on a detached emit path). Without this run-scoped net those would hit
     // Node's default handler and KILL the whole pi process — the Iskhod-1 defect.
-    result = await runGuardedAgainstHostCrash(() => Promise.resolve(entry(runtime!.dsl, opts.input)));
+    const loadedSchema =
+      mod.meta !== undefined && Object.hasOwn(mod.meta, "inputSchema")
+        ? normalizeWorkflowStructuredContract(mod.meta.inputSchema).schema
+        : undefined;
+    if (
+      (loadedSchema === undefined) !== (typedInput === undefined) ||
+      (typedInput !== undefined && canonicalWorkflowJSON(loadedSchema) !== canonicalWorkflowJSON(typedInput.schema))
+    )
+      throw new Error("meta.inputSchema must match the statically admitted typed input schema");
+    result = await runGuardedAgainstHostCrash(() =>
+      Promise.resolve(
+        entry(
+          runtime!.dsl,
+          typedInput === undefined ? opts.input : typedInput.value,
+          typedInput?.operatorContext === undefined
+            ? undefined
+            : Object.freeze({ operatorAnswer: typedInput.operatorContext.operatorAnswer }),
+        ),
+      ),
+    );
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     if (err instanceof WorkflowAgentExecutionError) {
@@ -998,15 +1027,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     replayPlan?.recorded !== undefined &&
     (replayController?.counts().replayedCalls ?? 0) < confirmedRecoveryAgentCount(replayPlan.recorded)
   ) {
-    return finishRun({
-      ok: false,
-      result: undefined,
-      journal: currentJournal(runtime),
-      error: "Interrupted recovery ended before consuming the confirmed prefix",
-      target,
-      scriptIdentity,
-      ...resultMetadata(),
-    });
+    return failExecution("Interrupted recovery ended before consuming the confirmed prefix");
   }
   const semanticOk = prepared.diagnostic === undefined && !isWorkflowResultExplicitFailure(prepared.value);
   try {
@@ -1014,17 +1035,10 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     // that last script-owned callback, then enter the synchronous persistence
     // path without yielding. Read-only mode alone is not immutable to the owner.
     verifyWorkflowScriptSnapshot(scriptIdentity);
+    replayController?.assertComplete();
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    return finishRun({
-      ok: false,
-      result: undefined,
-      journal: journalLines,
-      error,
-      target,
-      scriptIdentity,
-      ...resultMetadata(),
-    });
+    return failExecution(error);
   }
   return finishRun({
     ok: semanticOk,

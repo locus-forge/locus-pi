@@ -2,18 +2,65 @@
 title: Workflow DSL reference
 type: guide
 status: active
-updated: "2026-09-22T17:05:40Z"
-source_commit: "5365d3f8cd9c"
-update_event: "cleanup"
-context: "changes=XL files=47"
-description: "Correct handoff contracts and keep operator and Fusion details with their owning guides."
+updated: "2026-10-07T19:05:59Z"
+source_commit: "87298468676c"
+update_event: "user_request"
+context: "changes=S files=3"
+description: "Workflow DSL with optional schema-checked parameters for source-owned control flow"
 ---
 
 # Workflow DSL reference
 
 [Workflow documentation](index.md) · [Create a workflow](create.md) · [Run a workflow](running.md) · [Runnable examples](../../examples/workflows/README.md)
 
-A workflow receives `dsl` and optional exact text `input` in its default async function. Destructure the methods you need; the examples below use that form. `Promise<T>` means await the result. Removed methods retain narrow throwing migration traps; they never resolve user files.
+A workflow receives `dsl` and optional exact text `input`, or an explicitly schema-validated readonly JSON value, in its default async function. Destructure the methods you need; the examples below use that form. `Promise<T>` means await the result. Removed methods retain narrow throwing migration traps; they never resolve user files.
+
+## Typed workflow input
+
+Keep ordinary agent tasks as semantic text passed whole to children. Choose typed
+input when workflow JavaScript consumes fixed parameters for routing or iteration,
+such as a supported mode, an exact revision or structured records from a programmatic
+caller. The schema checks those parameters before work starts. A simple list of
+exact text work units already has the separate [`items`](#items) input.
+
+Declare `meta.inputSchema` as a complete literal or one unshadowed top-level literal
+`const` using the [existing JSON schema dialect](agent-results.md#structured-results-v4).
+Supply explicit `inputValue` through the tool/direct runner, or terminal `--input-json`
+through the command. Input is detached and frozen before callbacks or awaits;
+normalization, compilation and validation finish before import, lease or agent work.
+Unsupported visible schema declarations refuse early. Opaque legacy metadata is
+checked after import and cannot opt into typed entry without static proof.
+
+```js
+export const meta = {
+  name: "typed-review",
+  profile: "dataflow-v1",
+  inputSchema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["task", "ids"],
+    properties: { task: { type: "string" }, ids: { type: "array", items: { type: "string" } } },
+  },
+};
+export default async function run({ agent }, input) {
+  return await agent(`Task: ${input.task}; ids: ${input.ids.join(",")}`, { label: "review" });
+}
+```
+
+Tool: `{name:"typed-review",inputValue:{task:"Review",ids:["A","B"]}}`.
+Command: `/workflows run typed-review --input-json {"task":"Review","ids":["A","B"]}`.
+Missing input, `inputValue:null`, a JSON string and legacy text remain distinct.
+Any own `input` field conflicts with `inputValue`, including `input:undefined`.
+There is no coercion, default insertion or unknown-property stripping. Typed
+input works without a child SDK call on the supported Pi peer floor.
+
+A validated operator continuation preserves the original JSON. Its typed root
+may receive `run(dsl,input,context)`, with absent context on ordinary launches
+and readonly `{operatorAnswer:string}` after an accepted handoff. Guard optional
+context before reading the answer. The answer is ordinary exact plaintext in
+private typed authority, separate from the JSON and bounded presentation;
+existing question/tool policies still apply. Inline and saved children receive
+only explicitly supplied input and do not inherit this context.
 
 ## DSL surface (v0)
 
@@ -45,22 +92,29 @@ A workflow receives `dsl` and optional exact text `input` in its default async f
 | [`random`](#random)                                 | Yes           | Yes                        | No                                              |
 | [`runWorkspaceDir`](#runworkspacedir)               | Always throws | No                         | No                                              |
 
+The explicit `dataflow-v1` profile/mode uses the orchestration-only method column
+and admits checked data transformations and static v4 declarations. It also
+requires owned awaiting, checked helper captures and complete source-byte identity
+on resume. Read the [dataflow contract and exact examples](source-shape.md#checked-dataflow-v1).
+Omitting the checker mode keeps standard compatibility behavior.
+
 Entries describe ordinary runtime behavior; a custom host that omits a required artifact store, resource loader, workspace manager, child runner, or operator callback fails with a named “not configured” error. Static checking proves source shape, not semantic correctness or successful execution.
 
 ## Agent calls
 
 ### agent
 
-**Signature:** `agent(prompt: string, options?) -> Promise<string>`; the `choice` overload narrows the result to one exact declared member. Run a clean child by default, or select a catalog persona with `agent`. Prompt must be nonblank task text; no implicit answer length limit exists. Ordinary success returns the exact non-empty final answer. Execution failures throw `WorkflowAgentExecutionError`; invalid declarations fail before a child starts.
+**Signature:** `agent(prompt: string, options?) -> Promise<string>`; the `choice` overload narrows the result to one exact declared member; `schema` calls return `Promise<WorkflowSchemaResult<Schema>>`, inferred as deeply readonly JSON from literal schemas. Run a clean child by default, or select a catalog persona with `agent`. Prompt must be nonblank task text; no implicit answer length limit exists. Ordinary success returns the exact non-empty final answer. Execution failures throw `WorkflowAgentExecutionError`; invalid declarations fail before a child starts.
 
-| Result mode / options                    | Result and defaults                                                                                  | Availability and important constraints                                                  |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Omit result options                      | Exact final text, `Promise<string>`                                                                  | All three modes; no parsing or truncation                                               |
-| `choice: ["accept", "revise"]`           | One exact member; a TypeScript readonly tuple infers its member union, dynamic lists return `string` | All three; at least two unique nonblank strings; no option-count or text-length ceiling |
-| `choiceFallback: "revise"` with `choice` | Declared member after the one same-session correction is exhausted                                   | Must belong to `choice`; never substitutes for transport or host failure                |
-| `result: "report"`                       | Opaque host-rendered observation, `Promise<string>`                                                  | All three; accepted answer or eligible terminal failure, not semantic approval          |
+| Result mode / options                    | Result and defaults                                                                                                | Availability and important constraints                                                             |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Omit result options                      | Exact final text, `Promise<string>`                                                                                | All three modes; no parsing or truncation                                                          |
+| `choice: ["accept", "revise"]`           | One exact member; a TypeScript readonly tuple infers its member union, dynamic lists return `string`               | All three; at least two unique nonblank strings; no option-count or text-length ceiling            |
+| `choiceFallback: "revise"` with `choice` | Declared member after the one same-session correction is exhausted                                                 | Must belong to `choice`; never substitutes for transport or host failure                           |
+| `result: "report"`                       | Opaque host-rendered observation, `Promise<string>`                                                                | All three; accepted answer or eligible terminal failure, not semantic approval                     |
+| `schema: literalOrTopLevelConst`         | Immutable finite JSON, v4; initial plus one package-owned correction; literal schemas infer deeply readonly values | Both checkers admit bounded schema-proven uses; Pi >=1.0.0 openai-codex with verified capabilities |
 
-A choice call uses `workflow_return` inside the same child session with one package-owned correction turn; exhaustion throws `SchemaValidationError` unless `choiceFallback` applies. A transport without the return-tool capability fails closed. `handoffs`, `schema`, `validate`, `output`, `repair` and `returnVia` were removed and are refused by name before any child starts; richer results live at exact caller-assigned file paths, and caller-owned work units come from [`items()`](#items). See [agent results](agent-results.md#removed-shaped-result-options).
+A choice call uses `workflow_return` inside the same child session with one package-owned correction turn; exhaustion throws `SchemaValidationError` unless `choiceFallback` applies. A transport without the return-tool capability fails closed. `handoffs`, `output` and `returnVia` remain removed. Standard compatibility and orchestration-only admit a literal `schema` or one unshadowed top-level literal schema `const` in direct options with distinct explicit properties. They reject options spreads, shorthand and computed keys on structured calls, and still refuse `validate`, `repair` and `outputTransport`. The [structured v4 contract](agent-results.md#structured-results-v4) preserves the standard return tool carrying the actual schema and Pi strict sampling where conversion preserves its semantics. `validate`, `repair` and `outputTransport` are removed runtime options, refused before work or replay. Use a schema only when source consumes proven fields or arrays; exact caller-assigned files remain useful for richer handoffs, and [`items()`](#items) carries caller-owned units.
 
 **Example — orchestration-only:** a complete module; every agent edge has a distinct literal label. Caller-supplied items go unchanged to each worker, reports stay opaque, and only the exact choice controls the branch.
 
@@ -85,14 +139,92 @@ export default async function run({ agent, items, parallel, publishPrimaryArtifa
 }
 ```
 
-**Example — removed schema, rejected by both source-check modes and by the runtime:** the profile is deliberately present to demonstrate the refusal; do not copy this declaration.
+**Example — literal schema, admitted by both source-check modes:** await a structured boolean before comparing its exact identity. This uses the same v4 tool route as the following record/array examples.
 
-<!-- dsl-example: rejected-schema -->
+<!-- dsl-example: structured-literal -->
+
+```js
+export const meta = { name: "classify-task", profile: "standard" };
+export default async ({ agent }, input) => {
+  const needsReview = await agent(`Does this task require review?\n${input}`, {
+    label: "classify",
+    schema: { type: "boolean" },
+  });
+  if (needsReview === true) return agent(input, { label: "review" });
+  return "No review requested";
+};
+```
+
+**Example — required fields from a top-level schema:** strings forward unchanged, and scalar fields interpolate directly into text sinks. Schema acceptance establishes shape, not the truth of the reviewer's finding.
+
+<!-- dsl-example: structured-record -->
+
+```js
+export const meta = { name: "review-record", profile: "standard" };
+const REVIEW_SCHEMA = {
+  type: "object",
+  properties: {
+    decision: { type: "string", enum: ["accept", "revise"] },
+    summary: { type: "string" },
+    count: { type: "integer", minimum: 0 },
+  },
+  required: ["decision", "summary", "count"],
+  additionalProperties: false,
+};
+export default async function run(dsl, input) {
+  const { agent, log, publishPrimaryArtifact } = dsl;
+  const review = await agent(`Review this task and return the requested record.\n${input}`, {
+    label: "review-record",
+    schema: REVIEW_SCHEMA,
+  });
+  log(`Reported findings: ${review.count}`);
+  if (review.decision === "revise") return agent(review.summary, { label: "explain-corrections" });
+  return publishPrimaryArtifact("review.md", review.summary);
+}
+```
+
+**Example — structured array scheduling:** the item schema proves each required `summary`. The resulting worker reports remain opaque. Do not index the array or assume a group result has the same schema.
+
+<!-- dsl-example: structured-array -->
+
+```js
+export const meta = { name: "review-findings", profile: "standard" };
+const FINDINGS_SCHEMA = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: { summary: { type: "string" } },
+    required: ["summary"],
+    additionalProperties: false,
+  },
+};
+export default async function run({ agent, parallel, log }, input) {
+  const findings = await agent(`Identify findings for independent review.\n${input}`, {
+    label: "findings",
+    schema: FINDINGS_SCHEMA,
+  });
+  log(`Findings to review: ${findings.length}`);
+  return parallel(findings.map((finding) => () => agent(finding.summary, { label: "review-finding" })));
+}
+```
+
+An awaited structured result may also be returned whole or kept through an unchanged alias.
+Only required named fields are readable; optional guards do not prove presence.
+All unchecked indexes, result destructuring, field mutation and arbitrary transformations
+remain rejected. Array `items` is optional in the runtime dialect, but an untyped item
+stays opaque. Map JSON values synchronously: Promise/function projections are refused,
+and `await` on the mapped array does not settle its elements. The example above passes
+branch functions directly to `parallel()`, which owns their execution and settlement.
+See the [source boundary](source-shape.md#checked-structured-results).
+
+**Example — removed validation callback, rejected by both source-check modes:** express constraints in the schema or domain decisions in workflow source; the runtime also refuses `validate`.
+
+<!-- dsl-example: rejected-structured-validator -->
 
 ```js expect-error
-export const meta = { name: "schema-compatibility", profile: "standard" };
+export const meta = { name: "validated-result", profile: "standard" };
 export default async function run({ agent }, input) {
-  return agent(input, { label: "classify", schema: { type: "boolean" } });
+  return agent(input, { label: "classify", schema: { type: "boolean" }, validate: () => [] });
 }
 ```
 
@@ -123,7 +255,7 @@ Output fields and their combinations are covered above. Additional call options:
 
 `strategy` defaults to `"replicate"`; `"roles"` requires a nonblank `lens` per member. `context` defaults to `{ mode: "prompt-only" }`; `{ mode: "provided", text }` passes explicit nonblank context. Optional `output` is an instruction for the judge only, defaulting to a direct answer in the question's format. `memberLimits` and `judgeLimits` accept `timeoutMs`, `maxTurns`, and `attempts` (1 by default), not answer length caps. Judge label defaults to `"judge"`. See [Fusion](fusion.md) for complete isolation and evidence behavior.
 
-**Example — runtime API, rejected by both source-check modes:** configure these three role names in the host before executing; this profile intentionally demonstrates the checker boundary.
+**Example — runtime API, rejected by standard and orchestration-only modes:** configure these three role names in the host before executing; this profile intentionally demonstrates the checker boundary.
 
 <!-- dsl-example: rejected-fusion -->
 
@@ -157,11 +289,11 @@ export default async function run({ fusion }, input) {
 
 ### workflow
 
-**Signature:** `workflow<T>(subFn: (dsl, input?: string) => Promise<T>, input?: string) -> Promise<T>`. Invoke an inline nested function with the same DSL and return its result; omitted nested input is `undefined`, not automatically the root input. Journals enter/exit but creates no saved child run, independent checkpoint, or new budget. Invalid non-text input and callback errors propagate. **Example:** `await workflow(async ({ agent }, request) => agent(request, { label: "nested-review" }), input)`. Keep the callback inline for standard source.
+**Signature:** `workflow<T>(subFn: (dsl, input?: string) => Promise<T>, input?: string) -> Promise<T>`. Invoke an inline nested function with the same DSL and return its result; omitted nested input is `undefined`, not automatically the root input. Journals enter/exit but creates no saved child run, independent checkpoint, or new budget. The typed overload `workflow(fn,{inputValue,inputSchema})` validates a closed two-field descriptor before calling `fn` with frozen JSON. Other invalid input and callback errors propagate. **Example:** `await workflow(async ({ agent }, request) => agent(request, { label: "nested-review" }), input)`. Keep the callback inline for standard source.
 
 ### invokeWorkflow
 
-**Signature:** `invokeWorkflow({ child | name | scriptPath | packageName, input?, items?, key, keys }) -> Promise<{ status: "completed" | "skipped", key, workspaceDir, runId?, sourceRunId? }>`. Exactly one target selector is required. `child` binds a sibling to the current root source; `name` uses saved-name precedence; `scriptPath` is project-relative; `packageName` requires the exact Package source. `input` is optional semantic text; `items` carries exact work units. `key` identifies this unit and `keys` is the complete frozen unique set. Children inherit the root native workspace; location overrides are rejected. Pass exact agent-file destinations in the same whole input. Completion returns a child run ID; a matching checkpoint returns `skipped` with `sourceRunId`.
+**Signature:** `invokeWorkflow({ child | name | scriptPath | packageName, input?, inputValue?, items?, key, keys }) -> Promise<{ status: "completed" | "skipped", key, workspaceDir, runId?, sourceRunId? }>`. Exactly one target selector is required. `child` binds a sibling to the current root source; `name` uses saved-name precedence; `scriptPath` is project-relative; `packageName` requires the exact Package source. `input` is optional semantic text; explicit `inputValue` requires the child’s own static schema and is validated before checkpoint reuse. `items` carries exact work units. `key` identifies this unit and `keys` is the complete frozen unique set. Children inherit the root native workspace; location overrides are rejected. Pass exact agent-file destinations in the same whole input. Completion returns a child run ID; a matching checkpoint returns `skipped` with `sourceRunId`.
 
 **Example:** `await invokeWorkflow({ child: "review", input, key: "review", keys: ["review"] })`. Do not invent a location or derive resumable keys from fresh model output. Missing selectors, invalid keys, directory overrides, grandchildren, and source cycles fail closed. [Saved-child details](#workspace-and-saved-child-contract) explain checkpointing and shared execution.
 
@@ -185,7 +317,7 @@ export default async function run({ fusion }, input) {
 
 Both text methods retain optional native evidence and support verified text continuation. They neither save an agent-owned file nor attest its existence. A requested report, intermediate handoff or generated source is written by its assigned agent through ordinary file tools at the exact destination in the prompt. The next consumer opens that same file.
 
-The former `{ workflowSource: relativePath }` overload is removed. Both source-check modes reject it; runtime use fails with migration guidance. Do not reconstruct source from an answer or copy an old runtime projection as a substitute.
+The former `{ workflowSource: relativePath }` overload is removed. All source-check modes reject it; runtime use fails with migration guidance. Do not reconstruct source from an answer or copy an old runtime projection as a substitute.
 
 **Example — removed source-file publication, rejected by both grammars:**
 
@@ -200,7 +332,7 @@ export default function run({ publishPrimaryArtifact }) {
 
 ### publishPrimaryFile
 
-**Signature:** `publishPrimaryFile(path: string) -> never`. **Removed:** a narrow trap always throws. Both source-check modes reject direct and destructured use. **Migration example:** prompt the writer with `Write /project/reports/review.md`, then have the reader open that exact file. Assign the exact destination in the writer's prompt; the reader verifies the file before using it. Native completion is not a generic file-existence, size or digest guarantee.
+**Signature:** `publishPrimaryFile(path: string) -> never`. **Removed:** a narrow trap always throws. All source-check modes reject direct and destructured use. **Migration example:** prompt the writer with `Write /project/reports/review.md`, then have the reader open that exact file. Assign the exact destination in the writer's prompt; the reader verifies the file before using it. Native completion is not a generic file-existence, size or digest guarantee.
 
 ### consumeTextArtifact
 
@@ -248,7 +380,7 @@ export default async function run({ continuationArtifacts, parallel, agent }) {
 
 ### outputDir
 
-**Signature:** `outputDir() -> never`. **Removed:** a narrow trap always throws. Both source-check modes reject direct and destructured use, and root/child `meta.outputDir` is refused before agent work. Literal metadata is checked before import; dynamically materialized trusted metadata is rejected on module load before its entry runs. **Migration example:** `Write /project/reports/result.md` in the agent prompt. Placement never changes cwd, tool resolution, loaded context or worktree selection.
+**Signature:** `outputDir() -> never`. **Removed:** a narrow trap always throws. All source-check modes reject direct and destructured use, and root/child `meta.outputDir` is refused before agent work. Literal metadata is checked before import; dynamically materialized trusted metadata is rejected on module load before its entry runs. **Migration example:** `Write /project/reports/result.md` in the agent prompt. Placement never changes cwd, tool resolution, loaded context or worktree selection.
 
 ### projectRoot
 
@@ -295,7 +427,7 @@ export default async function run({ agent, workspaceDir }, input) {
 
 Agents execute in their launch-selected inherited cwd or chosen worktree. The host labels the actual cwd separately from project root. File destinations do not rebase relative paths or change execution. Prefer absolute paths in prompts; every writer, reviewer, checker and downstream reader receives the same whole semantic input and exact destination. Source does not parse paths from opaque input.
 
-The caller assigns intermediate and final files; agents create them with ordinary write/bash tools. Do not use a native workspace as an implicit base, search fallback folders, reconstruct files from final prose or declare an output setting. Parallel writers receive distinct files and finish before the reader barrier. Roots sharing fixed domain files must be serialized by their operator; runtime leases do not lock arbitrary prompt destinations.
+The caller assigns exact shared handoff and Task-required output paths; agents create them with ordinary write/bash tools. Implementation actors may choose internal files within delegated product roots, subject to narrower Task boundaries and read-only reviewer roles. Do not use a native workspace as an implicit base, search fallback folders, reconstruct files from final prose or declare an output setting. Parallel writers receive distinct files and finish before the reader barrier. Roots sharing fixed domain files must be serialized by their operator; runtime leases do not lock arbitrary prompt destinations.
 
 The runtime workspace stays project-confined and owns native coordination, navigation and checkpoints. Fresh launches default to `.locus-pi/workspaces/<generated-run-name>`; `--run-name` selects a stable name and `--workspace-dir` an explicit confined native workspace. A legacy-only `.locus-pi/plans/<name>` stays at its physical identity, while ambiguous dual roots fail before work. The runtime never moves or deletes user files. Preserve native state and sibling-owned files; a single-report assignment never authorizes cleanup.
 
@@ -307,7 +439,7 @@ Replay reuses answers but never restores filesystem effects. New-format roots ge
 
 `invokeWorkflow()` accepts exactly one source-bound sibling `child`, saved
 `name`, project-relative `scriptPath`, or exact legacy `packageName`, optional
-semantic `input` and exact `items`, one safe item `key`, the complete unique
+semantic `input` or explicit schema-validated `inputValue`, and exact `items`, one safe item `key`, the complete unique
 `keys` list. Directory fields are forbidden: the child inherits the root's native workspace, while agent files use explicit prompt destinations. It starts a real depth-one child with an
 independent run directory, source snapshot, journal, result, and parent lineage.
 `child` resolves `<running-root>/<child>` inside the exact source and folder of
@@ -385,7 +517,7 @@ const answers = await dsl.parallel(
 );
 ```
 
-This is the existing `parallel` primitive, not a new `parallel.map`. `pipeline` retains its existing per-item stage semantics. Discovered model values are opaque and cannot be destructured like author-owned records; the standard source checker owns that distinction.
+This is the existing `parallel` primitive, not a new `parallel.map`. `pipeline` retains its existing per-item stage semantics. Plain model text and unproven composites are opaque and cannot be destructured like author-owned records. Structured results permit only their schema-proven operations and also cannot be destructured; the standard source checker owns that distinction.
 
 ## Queue, phases and inspection
 

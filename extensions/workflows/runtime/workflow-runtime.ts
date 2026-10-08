@@ -1,3 +1,5 @@
+import { snapshotWorkflowInput, prepareWorkflowTypedInput, type WorkflowInputValue } from "./workflow-input.js";
+import { immutableJSON } from "./structured-results/schema.js";
 /**
  * workflow-runtime.ts — DSL core (agent/fusion/phase/log) + journal mirror. The two
  * scheduling owners it composes sit beside it: the run's ONE execution budget — counter,
@@ -147,6 +149,8 @@ import {
   normalizeMaxTurns,
   normalizeTimeoutMs,
   type WorkflowAgentAnyOptions,
+  type WorkflowAgentStructuredOptions,
+  type WorkflowJSONSchema,
   type WorkflowAgentChoiceOptions,
   type WorkflowAgentOptions,
   type WorkflowAgentPreflight,
@@ -155,6 +159,7 @@ import {
   type WorkflowAgentResult,
   type WorkflowAgentRunner,
 } from "./workflow-agent-contract.js";
+import type { WorkflowReadonlyJSONValue, WorkflowSchemaResult } from "./structured-results/types.js";
 export {
   SchemaValidationError,
   WORKFLOW_SHAPED_TRANSPORT_REFUSAL,
@@ -164,6 +169,9 @@ export {
   workflowSlotKey,
 } from "./workflow-agent-contract.js";
 export type {
+  WorkflowAgentStructuredOptions,
+  WorkflowJSONSchema,
+  WorkflowJSONValue,
   WorkflowAgentChoiceOptions,
   WorkflowAgentOptions,
   WorkflowAgentPreflight,
@@ -173,18 +181,10 @@ export type {
   WorkflowAgentResult,
   WorkflowAgentRunner,
 } from "./workflow-agent-contract.js";
+export type { WorkflowReadonlyJSONValue, WorkflowSchemaResult } from "./structured-results/types.js";
 
-// The RESULT-MODE half of a call — plain text or one exact `choice`, the named refusal of
-// every removed shaped-result option, and accepting a choice ONLY from the confirmed
-// `workflow_return` receipt — is owned by `workflow-agent-output.ts`. It is its own owner
-// rather than part of the call because "which result mode was declared, and was this
-// choice accepted" is a different question from "which call is this, and may it repeat". The
-// core value-imports it, so rule 7 of `scripts/check-extension-layers.ts` holds it to the
-// same `node:fs`-free proof transitively, and every public name it took is re-exported
-// below under the identifier it has always had.
-// Every name it took was module-private here, so there is no re-export to keep: the
-// identifiers importers use — `SchemaValidationError`, `WorkflowOutputCapabilityError`,
-// the option types — are the contract's and are still re-exported above, unchanged.
+// Result declaration and receipt acceptance belong to workflow-agent-output.ts;
+// logical identity and physical retries belong to workflow-agent-call.ts.
 import { createWorkflowAgentOutput } from "./workflow-agent-output.js";
 
 export class WorkflowRunWorkspaceRemovedError extends Error {
@@ -240,6 +240,10 @@ export type {
 } from "./workflow-fusion.js";
 
 export interface WorkflowDsl {
+  agent<const Schema extends WorkflowJSONSchema>(
+    prompt: string,
+    opts: WorkflowAgentStructuredOptions & { schema: Schema },
+  ): Promise<WorkflowSchemaResult<Schema>>;
   /** Observe an exact answer or an eligible terminal failure as opaque host-rendered text. */
   agent(prompt: string, opts: WorkflowAgentReportOptions): Promise<string>;
   /** Run one child agent under a small runtime-owned exact-choice contract. */
@@ -295,12 +299,17 @@ export interface WorkflowDsl {
   random(): number;
   /** Run a nested workflow function with the same typed DSL handle. */
   workflow<T = unknown>(subFn: (dsl: WorkflowDsl, input?: string) => Promise<T>, input?: string): Promise<T>;
+  workflow<T = unknown>(
+    subFn: (dsl: WorkflowDsl, input: WorkflowInputValue) => Promise<T>,
+    input: { inputValue: WorkflowInputValue; inputSchema: WorkflowJSONSchema },
+  ): Promise<T>;
   /** Start one reviewed saved child workflow under the root execution's coordination context. */
   invokeWorkflow(input: WorkflowSavedChildInvocation): Promise<WorkflowSavedChildResult>;
 }
 
 interface WorkflowSavedChildInvocationFields {
   input?: string;
+  inputValue?: WorkflowInputValue;
   items?: readonly string[];
   /** Stable semantic identity for this item. Opaque payload does not redefine it. */
   key: string;
@@ -330,7 +339,11 @@ export type WorkflowSavedChildRunner = (input: WorkflowSavedChildInvocation) => 
 
 export interface WorkflowRuntimeOptions {
   runId: string;
+  /** Host cancellation stops new group branches and pipeline stages. */
+  signal?: AbortSignal;
   agentRunner: WorkflowAgentRunner;
+  structuredReplayHostVersion?: () => Promise<string | undefined>;
+  structuredSourceIdentity?: import("./structured-results/return.js").WorkflowStructuredSourceIdentity;
   args?: string;
   /** Exact text work units supplied by the invocation boundary. */
   items?: readonly string[];
@@ -379,6 +392,7 @@ export interface WorkflowRuntimeOptions {
   replay?: WorkflowReplayController;
   artifactPorts?: WorkflowArtifactPorts;
   replaySourceRunId?: string;
+  retainLogicalCallIdentity?: boolean;
   now?: () => string; // default () => new Date().toISOString()
   onEvent?: (line: WorkflowJournalLine) => void; // progress callback (UI streaming)
   /** Runner-owned sink for one out-of-band operator handoff declaration. */
@@ -453,6 +467,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
         : { maxTotalAgentInvocations: options.maxTotalAgentInvocations }),
       ...(options.runtimeMs === undefined ? {} : { runtimeMs: options.runtimeMs }),
       ...(options.nowMs === undefined ? {} : { nowMs: options.nowMs }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
 
   let totalFusionCalls = 0;
@@ -464,6 +479,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
   let _currentPhase: string | undefined;
   const groups: WorkflowGroupExecution = createWorkflowGroupExecution({
     runId,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
     now: nowFn,
     emit,
     sharedExecution,
@@ -561,6 +577,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
     currentPhase,
     activeGroupFields: () => groups.activeGroupFields(),
     journalBudgetStop,
+    retainLogicalCallIdentity: options.retainLogicalCallIdentity === true,
     ...(options.artifactPorts === undefined ? {} : { artifactPorts: options.artifactPorts }),
     ...(options.replaySourceRunId === undefined ? {} : { replaySourceRunId: options.replaySourceRunId }),
   });
@@ -570,6 +587,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
     now: nowFn,
     emit,
     ...(options.replay === undefined ? {} : { replay: options.replay }),
+    ...(options.replaySourceRunId === undefined ? {} : { replaySourceRunId: options.replaySourceRunId }),
     currentPhase,
     branchContext: () => groups.branchContext(),
     workspaceManagerConfigured: () => options.workspaceManager !== undefined,
@@ -583,6 +601,12 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
   // choice has a single definition that cannot reach back into the DSL it decides for.
   const resultMode = createWorkflowAgentOutput({
     runId,
+    ...(options.structuredReplayHostVersion === undefined
+      ? {}
+      : { structuredReplayHostVersion: options.structuredReplayHostVersion }),
+    ...(options.structuredSourceIdentity === undefined
+      ? {}
+      : { structuredSourceIdentity: options.structuredSourceIdentity }),
     now: nowFn,
     emit,
     currentPhase,
@@ -613,18 +637,15 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
   });
 
   /**
-   * `agent()` — exact text by default, one exact `choice` when workflow source must branch.
-   *
-   * Without a choice this is one child run resolving to the child's EXACT final text: no
-   * prompt augmentation, no parsing, no length policy, unchanged journal. A complete
-   * report comes back complete, however long it is. Anything richer than text belongs in
-   * an exact caller-assigned file destination in the prompt that the next agent reads, not a model-serialized value.
-   *
-   * With `choice` the child picks one declared string inside its own session through the
-   * `workflow_return` tool (see `workflow-agent-output.ts`). The general shaped results —
-   * `handoffs`, `schema`, `validate`, `output`, `repair`, `returnVia` — are removed and
-   * refused by name before a child starts.
+   * Exact full text by default; exact choice v3 or immutable JSON v4 when declared.
+   * The output owner validates declarations and accepts committed session receipts.
+   * Source-check profiles prove a bounded static schema/dataflow subset; runtime
+   * validation remains authoritative for every declaration.
    */
+  function agentDsl<const Schema extends WorkflowJSONSchema>(
+    prompt: string,
+    opts: WorkflowAgentStructuredOptions & { schema: Schema },
+  ): Promise<WorkflowSchemaResult<Schema>>;
   function agentDsl<const Choices extends readonly [string, string, ...string[]]>(
     prompt: string,
     opts: WorkflowAgentChoiceOptions<Choices>,
@@ -632,12 +653,13 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
   function agentDsl(prompt: string, opts: WorkflowAgentChoiceOptions): Promise<string>;
   function agentDsl(prompt: string, opts: WorkflowAgentReportOptions): Promise<string>;
   function agentDsl(prompt: string, opts?: WorkflowAgentOptions): Promise<string>;
-  async function agentDsl(prompt: string, opts?: WorkflowAgentAnyOptions): Promise<string> {
+  async function agentDsl(prompt: string, opts?: WorkflowAgentAnyOptions): Promise<string | WorkflowReadonlyJSONValue> {
     // Declaration dispatch, every refusal it fires, and the whole choice acceptance belong
-    // to `workflow-agent-output.ts`. This root only routes the two modes it names, so the
+    // to `workflow-agent-output.ts`. This root only routes the declared result modes, so the
     // plain call keeps returning the child's exact full text through the logical call.
-    if (resultMode.dispatchWorkflowAgentShape(opts) === "choice")
-      return resultMode.runChoiceAgent(prompt, opts as WorkflowAgentChoiceOptions);
+    const mode = resultMode.dispatchWorkflowAgentShape(opts);
+    if (mode === "structured") return resultMode.runStructuredAgent(prompt, opts as WorkflowAgentStructuredOptions);
+    if (mode === "choice") return resultMode.runChoiceAgent(prompt, opts as WorkflowAgentChoiceOptions);
     return (await runAgentAttempt(prompt, opts)).text;
   }
 
@@ -682,10 +704,28 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
   }
 
   async function workflowDsl<T = unknown>(
-    subFn: (dsl: WorkflowDsl, input?: string) => Promise<T>,
-    input?: string,
+    subFn:
+      | ((dsl: WorkflowDsl, input?: string) => Promise<T>)
+      | ((dsl: WorkflowDsl, input: WorkflowInputValue) => Promise<T>),
+    input?: string | { inputValue: WorkflowInputValue; inputSchema: WorkflowJSONSchema },
   ): Promise<T> {
-    assertWorkflowInput(input, "nested workflow input");
+    let value: WorkflowInputValue | undefined;
+    if (typeof input === "object" && input !== null) {
+      const descriptor = immutableJSON(input) as { inputValue: WorkflowInputValue; inputSchema: WorkflowJSONSchema };
+      if (
+        Array.isArray(descriptor) ||
+        Object.keys(descriptor).length !== 2 ||
+        !Object.hasOwn(descriptor, "inputValue") ||
+        !Object.hasOwn(descriptor, "inputSchema")
+      )
+        throw new Error(
+          "nested workflow input must be a string or the closed typed {inputValue,inputSchema} descriptor",
+        );
+      value = (await prepareWorkflowTypedInput(snapshotWorkflowInput(descriptor), descriptor.inputSchema))!.value;
+    } else {
+      assertWorkflowInput(input, "nested workflow input");
+      value = input;
+    }
     emit({
       ts: nowFn(),
       runId,
@@ -694,7 +734,7 @@ export function createWorkflowRuntime(options: WorkflowRuntimeOptions): Workflow
       message: "[workflow:enter]",
       ...(currentPhase() !== undefined ? { phase: currentPhase()! } : {}),
     });
-    const result = await subFn(dsl, input);
+    const result = await (subFn as (dsl: WorkflowDsl, value: WorkflowInputValue | undefined) => Promise<T>)(dsl, value);
     emit({
       ts: nowFn(),
       runId,

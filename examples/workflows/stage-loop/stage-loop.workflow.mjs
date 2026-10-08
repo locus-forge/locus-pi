@@ -2,7 +2,7 @@
 // One task stage, carried to a commit without a single `throw`.
 //
 // The stage is implement -> (review || gate) -> decision -> fix, at most three
-// rounds, then a commit. Context travels as paths: the caller passes the task
+// rounds, then a verified commit. Context travels as paths: the caller passes the task
 // file, every agent reads it and the earlier rounds' artifacts itself, and the
 // reviewer reads the working tree with its own tools instead of receiving a
 // pasted copy of the implementer's report. A stage that cannot finish returns
@@ -51,7 +51,7 @@ export default async function runWorkflow(dsl, input) {
     const verdict = await agent(
       `Choose the control identity these two reports support for the stage of ${task}. Do not overrule a failed check ` +
         `or missing evidence, and do not read "no findings" as "verified".\n` +
-        `Write the assigned round decision file with full evidence before returning the exact route token. Every named file means its unambiguous exact caller-assigned path; missing files or assignments are blocked without fallback. Whole input:\n${input}\nImplementation report:\n${work}\nReview:\n${opinions[0]}\nDeclared checks:\n${opinions[1]}`,
+        `Write the assigned round decision file with full evidence, current branch and pre-commit HEAD, and exact accepted owned-file changes before returning the exact route token. Every named file means its unambiguous exact caller-assigned path; missing files or assignments are blocked without fallback. Whole input:\n${input}\nImplementation report:\n${work}\nReview:\n${opinions[0]}\nDeclared checks:\n${opinions[1]}`,
       {
         label: "decision",
         title: `Stage gate (round ${round})`,
@@ -75,6 +75,24 @@ export default async function runWorkflow(dsl, input) {
           `Write the final assigned stage.md through ordinary file tools with the resulting commit, exact owned files and accepted stage summary. Return that complete handoff too.`,
         { label: "commit", title: `Commit the accepted stage (round ${round})` },
       );
+      const commitOutcome = await agent(
+        `Verify the commit outcome for the stage of ${task}. Read the task, assigned round decision file, stage.md and current Git evidence yourself. ` +
+          `Do not edit files or make a commit. Return committed only when a new commit on the assigned branch contains exactly ` +
+          `the accepted stage's owned changes, its parent is the decision file's pre-commit HEAD, and stage.md records that same commit, owned files and accepted summary. ` +
+          `The complete returned commit handoff must match the current assigned stage.md. ` +
+          `A refusal, failed commit, missing assignment/file, mismatched handoff or insufficient evidence is blocked; ` +
+          `the commit agent's prose alone is not proof. Whole input:\n${input}\nCommit report:\n${committed}`,
+        {
+          label: "verify-commit",
+          title: `Verify the stage commit (round ${round})`,
+          choice: ["committed", "blocked"],
+          choiceFallback: "blocked",
+        },
+      );
+      const commitEvidence = publishArtifact("commit.md", `Outcome: ${commitOutcome}\n\n${committed}`);
+      if (commitOutcome !== "committed") {
+        return { ok: false, status: "blocked", summary: "commit_blocked", evidence: commitEvidence };
+      }
       return publishPrimaryArtifact("stage.md", committed);
     }
     if (verdict === "blocked") return { ok: false, status: "blocked", summary: "gate_blocked", evidence };

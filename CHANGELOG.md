@@ -4,6 +4,41 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-10-08
+
+### Added
+
+- Opt-in schema-checked results for workflow agents and Fusion through Pi's
+  schema-shaped tool sampling. Ordinary calls retain their plain-text result;
+  choices retain exact declared string values.
+- Checked structured-result authoring and the `dataflow-v1` profile for
+  workflows that consume validated fields, arrays and locally owned data.
+  Replay verifies structured receipts and source identity before reuse.
+- Typed workflow input through `meta.inputSchema`, tool `inputValue` and
+  terminal `--input-json`. Inputs are detached, frozen and validated before
+  workflow execution; operator continuation preserves the original input.
+
+### Changed
+
+- Nested workflow execution shares admission, concurrency and budget
+  accounting. Parallel groups drain started work before terminal settlement,
+  and replay correlates results with their logical call identities.
+- Authoring guidance starts with a complete module and a compact reviewed
+  design, with focused references for file ownership, evidence, structured
+  results and repair. Required artifacts remain agent-written files at exact
+  caller-assigned paths.
+- Pi baseline checking and synchronization use one tooling policy while
+  retaining the pinned Pi 1.0.0 development baseline.
+
+### Fixed
+
+- Structured-result replay preserves failure and cancellation evidence and
+  refuses mismatched or unproven receipts instead of accepting stale results.
+- Question outcomes retain timeout and refusal provenance while masking
+  sensitive answers before persistence.
+- Workflow completion and reviewer instructions require evidence for the
+  actual requested result, including current file readback where applicable.
+
 ## [0.14.0] - 2026-10-04
 
 ### Changed
