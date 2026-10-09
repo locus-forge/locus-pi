@@ -42,6 +42,18 @@ describe("first implementation/review lesson", () => {
       "evidence that distinguishes the required behavior from a violation that could produce the same output",
     ]);
   });
+
+  it.each(createPaths)("keeps reusable source portable across runtime roots from %s", (createPath) => {
+    const prefix = createPath.includes("-detailed/") ? "../locus-pi-workflow-create/" : "";
+    const guide = linkedText(createPath, `${prefix}references/design-and-build.md`).replace(/\s+/gu, " ");
+    containsAll(guide, [
+      "one checked source will be reused from more than one runtime root",
+      "the injected execution `pwd` is the product root for each run",
+      "project-relative handoff destinations",
+      "must not contain the authoring session's absolute cwd",
+      "deliberately bound to one fixed checkout may retain verified absolute destinations",
+    ]);
+  });
 });
 
 describe("shipped workflow skill routes", () => {

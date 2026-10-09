@@ -167,7 +167,15 @@ Record those after inspection during authoring; each child verifies the requeste
 against its actual context before writing. A branch mismatch is a blocker, not permission to switch it.
 Run Pi in the intended repository; a prompt destination never changes cwd or selected worktree.
 
-Example input context after inspection (replace these illustrative paths/branch with actual verified values):
+Portability is a design choice. When one checked source will be reused from more than one runtime root,
+the injected execution `pwd` is the product root for each run. Use project-relative handoff destinations
+under that root and state which child writes and reads each one. Those destinations are exact when paired
+with the injected `pwd`; the design and source must not contain the authoring session's absolute cwd,
+attempt name or absolute handoff paths. Before accepting Build, compare every recorded root and handoff
+with the requested reuse. A workflow deliberately bound to one fixed checkout may retain verified absolute
+destinations, but the design must name that binding instead of presenting the source as reusable elsewhere.
+
+This is a fixed-checkout input example; replace its illustrative paths/branch with actual verified values:
 
 ```text
 Original Task: <complete unchanged request; task source below contains its supporting specification>
