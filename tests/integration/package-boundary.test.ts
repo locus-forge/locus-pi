@@ -48,6 +48,7 @@ function recursiveTypeScriptFiles(directory: string): string[] {
 }
 /** Reviewed snapshot of the directory-owned Package registry; additions/removals require public-surface review. */
 const EXPECTED_PACKAGE_WORKFLOW_NAMES = [
+  "adaptive-code-review",
   "live-smoke",
   "task/draft",
   "task/plan",
@@ -70,6 +71,7 @@ const PI_PACKAGES = [
   "@earendil-works/pi-tui",
 ] as const;
 const PACKAGE_WORKFLOW_PATHS = {
+  "adaptive-code-review": "examples/workflows/adaptive-code-review/adaptive-code-review.workflow.mjs",
   "live-smoke": "examples/workflows/live-smoke/live-smoke.workflow.mjs",
   "task/draft": "examples/workflows/task/draft.workflow.mjs",
   "task/plan": "examples/workflows/task/plan.workflow.mjs",
@@ -341,7 +343,7 @@ describe("npm public package boundary", () => {
       "skills/",
     ]);
     // Six-file authoring consolidates nine reference leaves without changing the allowlist.
-    expect(dryRun.files).toHaveLength(273);
+    expect(dryRun.files).toHaveLength(276);
     for (const filename of [
       "extensions/workflows/source/workflow-source-structured.ts",
       "extensions/workflows/source/workflow-source-structured-rules.ts",

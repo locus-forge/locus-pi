@@ -411,6 +411,7 @@ ${authoring[0] ?? ""}
     );
 
     expect(profiles).toEqual({
+      "adaptive-code-review": "dataflow-v1",
       "live-smoke": "standard",
       "task/draft": "standard",
       "task/plan": "standard",
@@ -425,7 +426,7 @@ ${authoring[0] ?? ""}
       "post-code-review/synthesis": "standard",
       "stage-loop": "standard",
     });
-    expect(packagedWorkflowNames()).toHaveLength(13);
+    expect(packagedWorkflowNames()).toHaveLength(14);
     for (const name of [
       "live-smoke",
       "task/draft",

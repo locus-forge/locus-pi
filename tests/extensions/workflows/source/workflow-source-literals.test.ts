@@ -88,6 +88,7 @@ describe("workflow source literals shared by every static reader", () => {
 
     expect(staticWorkflowMeta(source)).toEqual({
       description: "Line one",
+      info: [],
       profile: "standard",
       phases: [{ title: "Scope check" }],
     });

@@ -71,7 +71,12 @@ describe("static meta.phases", () => {
       `${" ".repeat(70 * 1024)}export const meta = { description: "too late", phases: [{ title: "late" }] };\n`,
     );
 
-    expect(readWorkflowMeta(file)).toEqual({ description: "no description", profile: "unclassified", phases: [] });
+    expect(readWorkflowMeta(file)).toEqual({
+      description: "no description",
+      profile: "unclassified",
+      phases: [],
+      info: [],
+    });
   });
 
   it("discards the whole declaration when any entry is not literal", () => {
@@ -99,8 +104,43 @@ describe("static meta.phases", () => {
       description: "No declaration.",
       profile: "unclassified",
       phases: [],
+      info: [],
     });
     expect(staticWorkflowMetaPhases('export const meta = { description: "x." };')).toEqual([]);
+  });
+});
+
+describe("static meta.info", () => {
+  it("reads complete literal operator sections without importing the module", () => {
+    const file = fixture(
+      [
+        "export const meta = {",
+        '  description: "Operator contract.",',
+        "  info: [",
+        '    { title: "Inputs", detail: "Typed   task and change context." },',
+        '    { title: "Artifact", detail: "One primary Markdown report." },',
+        "  ],",
+        "};",
+        'throw new Error("must not execute");',
+      ].join("\n"),
+      "info.workflow.mjs",
+    );
+
+    expect(readWorkflowMeta(file).info).toEqual([
+      { title: "Inputs", detail: "Typed task and change context." },
+      { title: "Artifact", detail: "One primary Markdown report." },
+    ]);
+  });
+
+  it("discards incomplete or dynamic info without affecting other metadata", () => {
+    for (const file of [
+      fixture('export const meta = { description: "d.", info: [{ title: "Inputs" }] };\n'),
+      fixture('export const meta = { description: "d.", info: [{ title: "Inputs", detail: value }] };\n'),
+      fixture('export const meta = { description: "d.", info: [{ title: "", detail: "x" }] };\n'),
+    ]) {
+      expect(readWorkflowMeta(file).info).toEqual([]);
+      expect(readWorkflowMeta(file).description).toBe("d.");
+    }
   });
 });
 

@@ -386,6 +386,7 @@ describe("consilium reference workflow", () => {
     // The registry scans only `examples/workflows/`, so this reference remains
     // available by explicit path and is unreachable by saved name.
     expect([...packagedWorkflowNames()].sort()).toEqual([
+      "adaptive-code-review",
       "live-smoke",
       "post-code-review",
       "post-code-review/boundaries",

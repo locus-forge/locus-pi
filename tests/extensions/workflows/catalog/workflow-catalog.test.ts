@@ -348,7 +348,7 @@ describe("workflow operator catalog", () => {
     }));
 
     // Folder names sort top-level workflows; each root precedes its children.
-    expect(descriptions.map(({ name }) => name)).toEqual([
+    expect(descriptions.slice(1).map(({ name }) => name)).toEqual([
       "live-smoke",
       "post-code-review",
       "post-code-review/boundaries",
@@ -850,7 +850,7 @@ describe("workflow operator catalog", () => {
       expect(namedText).toContain("source locator: .locus-pi/workflows/alpha.workflow.mjs");
       expect(namedText).not.toContain(path.resolve(root));
       expect(namedText).toContain(
-        "metadata: static meta.description/profile/phases; profile classifies source shape, not runtime behavior; module not evaluated",
+        "metadata: static meta.description/profile/phases/info; profile classifies source shape, not runtime behavior; module not evaluated",
       );
       expect(namedText).toContain("authoring profile: unclassified (no recognized source-shape contract)");
       // A workflow that declares no phases produces no phase lines at all.

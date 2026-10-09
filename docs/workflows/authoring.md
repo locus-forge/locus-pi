@@ -34,7 +34,8 @@ A workflow is a single ESM module `<name>.workflow.mjs` with two exports:
   `name` should match the saved file's `<name>` so it resolves by bare name;
   `description` appears in `/workflows list` and `/workflows info <name>`;
   optional `phases` declares the pipeline's shape before the run (see "Declared
-  phases" below). These descriptive fields do not select the execution graph,
+  phases" below); optional `info` declares workflow-specific operator guidance
+  rendered only by named info (see "Operator info" below). These descriptive fields do not select the execution graph,
   agents, permissions, or runtime model. Optional `profile` and `identityCoverage`
   declare source-checking and dependency-identity policies. Optional `inputSchema`
   declares validation for parameterized JSON input; it is checked before entry.
@@ -222,6 +223,12 @@ Titles exactly equal the literal `phase()` arguments they describe. Every
 packaged workflow with a non-empty declaration is regression-tested against its
 own unique literal calls in first-source order; workflows without a declaration
 remain valid.
+
+### Operator info
+
+Optional `meta.info` gives `/workflows info <name>` the workflow-specific contract an operator needs before launch. It is a literal array of `{ title, detail }` objects. Both fields must be non-empty static strings; one computed, spread, incomplete, or non-object entry discards the entire declaration instead of showing a partial contract. Details are whitespace-normalized but not shortened to the catalog description limit.
+
+Use sections for concrete workflow-specific facts such as inputs, automatic routing or selection, explicit overrides, required model roles/capabilities, final artifacts, and operator continuation. Keep generic DSL and trust behavior in the shared info block. `meta.info` is inert metadata: it does not change execution, validate the declared behavior, import the module, or replace co-located documentation and executable tests.
 
 Do not reconstruct evidence paths from a single run id. Use the returned `runDir`
 and the status/result commands; grouped children and resume attempts have their

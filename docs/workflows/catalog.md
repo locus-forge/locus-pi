@@ -66,6 +66,8 @@ directly addressable children:
 `post-code-review/simplicity`, `post-code-review/contracts`, `post-code-review/style`,
 `post-code-review/necessity`, and `post-code-review/synthesis`.
 
+`adaptive-code-review` is a separate root that preserves that fixed bundle. It accepts typed JSON, uses structured context and assignment selection to run only justified `code-standard` and `codebase-design` work, and publishes one primary review document. Its co-located manual and `/workflows info adaptive-code-review` describe the required `task`/`agent` model roles, structured-v4 host boundary, full-review override, and operator continuation.
+
 Fresh Package `post-code-review` children require an explicit `smol` role
 assignment. Their `smol:high` and `smol:xhigh` selectors use the same portable
 role with different reasoning effort. Unlike ordinary portable workflow stages,
@@ -231,7 +233,8 @@ catalog size instead of pretending the resolver is empty.
 
 Metadata comes from a bounded inert AST scan of the first 64 KiB. Only a top-level
 literal `export const meta = {...}` is considered; unquoted or quoted literal
-`description` keys with static string values are accepted. Comments, unrelated
+`description` keys with static string values are accepted, along with complete
+literal `phases` and `info` arrays. Comments, unrelated
 objects, computed keys, interpolation, imports, and runtime values are ignored.
 The scanner never executes the module and reports unavailable/non-static metadata
 explicitly.
@@ -242,7 +245,7 @@ metadata boundary, trusted-code limit, history, DSL primitives, catalog-agent
 selection, model-role metadata, and actual model routing. Named `info` uses the
 same first-wins resolver and adds the exact human source/path plus statically
 parsed `meta.description` and, when the workflow declares them, its
-`meta.phases`; an unknown name fails explicitly.
+`meta.phases` and workflow-specific `meta.info` sections; an unknown name fails explicitly.
 
 In an interactive Pi TUI with custom UI support, the command opens that complete
 block in a workflow-owned read-only scroll view. Up/Down moves one line,

@@ -22,8 +22,10 @@ import {
   readWorkflowMeta,
   staticWorkflowMeta,
   type WorkflowAuthoringProfile,
+  type WorkflowMetaInfoSection,
   type WorkflowMetaPhase,
 } from "./workflow-meta.js";
+import { declaredWorkflowMetaLines } from "./workflow-info-meta.js";
 
 const RECENT_WORKFLOW_LIMIT = 5;
 const HISTORICAL_WORKFLOW_DESCRIPTION = "historical run snapshot";
@@ -45,6 +47,7 @@ export interface WorkflowCatalogRow {
   description: string;
   profile: WorkflowAuthoringProfile;
   phases: WorkflowMetaPhase[];
+  info: WorkflowMetaInfoSection[];
 }
 
 export interface WorkflowCatalogCurrentRow extends WorkflowCatalogRow {
@@ -161,6 +164,7 @@ export function buildWorkflowCatalogModel(
         description: meta.description,
         profile: meta.profile,
         phases: meta.phases,
+        info: meta.info,
       };
     });
   });
@@ -389,9 +393,9 @@ export function buildWorkflowInfoBlock(projectRoot: string, workingDirectory: st
         `source: ${row.sourceLabel} (${row.source})`,
         `target: ${row.target.kind}:${row.target.ref}`,
         `authoring profile: ${authoringProfileExplanation(row.profile)}`,
-        "metadata: static meta.description/profile/phases; profile classifies source shape, not runtime behavior; module not evaluated",
+        "metadata: static meta.description/profile/phases/info; profile classifies source shape, not runtime behavior; module not evaluated",
         ...workflowCompositionDetailLines(row),
-        ...declaredPhaseLines(row.phases),
+        ...declaredWorkflowMetaLines(row.phases, row.info),
         ...workflowContractLines(),
         `source locator: ${row.sourceLocator}`,
       ],
@@ -415,21 +419,6 @@ export function buildWorkflowInfoBlock(projectRoot: string, workingDirectory: st
       "History: /workflows status [runId]",
     ],
   };
-}
-
-/**
- * Project a declared pipeline for `/workflows info <name>`. Nothing is emitted
- * when a workflow declares no phases, so the block that an existing workflow
- * produces is unchanged — `phases` is optional and must stay free.
- */
-function declaredPhaseLines(phases: readonly WorkflowMetaPhase[]): string[] {
-  if (phases.length === 0) return [];
-  return [
-    `phases: ${phases.length} declared before the run starts (declaration, not enforcement)`,
-    ...phases.map(
-      (phase, index) => `  ${index + 1}. ${phase.title}${phase.detail === undefined ? "" : ` — ${phase.detail}`}`,
-    ),
-  ];
 }
 
 function workflowContractLines(): string[] {
@@ -559,6 +548,7 @@ function recentWorkflowRows(projectRoot: string): WorkflowCatalogHistoryRow[] {
       description: meta?.description ?? HISTORICAL_WORKFLOW_DESCRIPTION,
       profile: meta?.profile ?? "unclassified",
       phases: meta?.phases ?? [],
+      info: meta?.info ?? [],
     });
     if (recent.length >= RECENT_WORKFLOW_LIMIT) break;
   }

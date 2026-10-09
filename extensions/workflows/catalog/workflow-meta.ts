@@ -3,7 +3,7 @@
  *
  * It owns everything that reads a workflow's declared `meta` without importing
  * or executing the module: the bounded prefix read, the tolerant literal parse,
- * and the description/profile/phases interpretation behind catalog rows,
+ * and the description/profile/phases/info interpretation behind catalog rows,
  * generated public catalogs and repository source checks. Its only workflows
  * import is the shared lexical layer in `source/workflow-source-literals.ts`,
  * so a script that only needs a description does not pull in the catalog's
@@ -28,12 +28,20 @@ export interface WorkflowMetaPhase {
   detail?: string;
 }
 
+/** One static operator-facing section rendered only by `/workflows info <name>`. */
+export interface WorkflowMetaInfoSection {
+  title: string;
+  detail: string;
+}
+
 /** Everything the bounded static scan accepts from one literal exported `meta`. */
 export interface WorkflowStaticMeta {
   description: string;
   profile: WorkflowAuthoringProfile;
   /** Empty when nothing was declared, or when a declaration was not fully literal. */
   phases: WorkflowMetaPhase[];
+  /** Empty when nothing was declared, or when a declaration was not fully literal. */
+  info: WorkflowMetaInfoSection[];
 }
 
 export type WorkflowAuthoringProfile = "standard" | "dataflow-v1" | "legacy" | "integration" | "unclassified";
@@ -50,13 +58,14 @@ export function readWorkflowMeta(file: string): WorkflowStaticMeta {
   try {
     source = readBoundedSource(file);
   } catch {
-    return { description: "description unavailable", profile: "unclassified", phases: [] };
+    return { description: "description unavailable", profile: "unclassified", phases: [], info: [] };
   }
   const meta = staticWorkflowMeta(source);
   return {
     description: meta.description ?? "no description",
     profile: meta.profile,
     phases: meta.phases,
+    info: meta.info,
   };
 }
 
@@ -95,10 +104,12 @@ export function staticWorkflowMeta(source: string): {
   description: string | undefined;
   profile: WorkflowAuthoringProfile;
   phases: WorkflowMetaPhase[];
+  info: WorkflowMetaInfoSection[];
 } {
   let description: string | undefined;
   let profile: WorkflowAuthoringProfile = "unclassified";
   let phases: WorkflowMetaPhase[] = [];
+  let info: WorkflowMetaInfoSection[] = [];
   try {
     const root = parse(Lang.JavaScript, source).root();
     for (const statement of root.findAll("export const meta = $META")) {
@@ -129,11 +140,14 @@ export function staticWorkflowMeta(source: string): {
           pairs.find((pair) => staticObjectKey(pair.field("key")) === "phases")?.field("value"),
         );
       }
+      if (info.length === 0) {
+        info = staticMetaInfo(pairs.find((pair) => staticObjectKey(pair.field("key")) === "info")?.field("value"));
+      }
     }
   } catch {
-    return { description: undefined, profile: "unclassified", phases: [] };
+    return { description: undefined, profile: "unclassified", phases: [], info: [] };
   }
-  return { description, profile, phases };
+  return { description, profile, phases, info };
 }
 
 /** Declared phases from one bounded source prefix; empty when nothing literal was declared. */
@@ -210,6 +224,34 @@ function staticMetaPhases(node: SgNode | null | undefined): WorkflowMetaPhase[] 
       continue;
     }
     declared.push({ title: title.trim() });
+  }
+  return declared;
+}
+
+/**
+ * Accept `info: [{ title: <static string>, detail: <static string> }, ...]`.
+ * One non-literal or incomplete entry discards the whole declaration, matching
+ * the fail-closed phase scanner without imposing the 96-character catalog-row cap.
+ */
+function staticMetaInfo(node: SgNode | null | undefined): WorkflowMetaInfoSection[] {
+  if (node == null || node.kind() !== "array") return [];
+  const declared: WorkflowMetaInfoSection[] = [];
+  for (const element of node.children()) {
+    if (isStructuralLiteralNode(element)) continue;
+    if (element.kind() !== "object") return [];
+    if (element.children().some((child) => !isStructuralLiteralNode(child) && child.kind() !== "pair")) return [];
+    const pairs = element.children().filter((child) => child.kind() === "pair");
+    const title = staticStringValue(
+      pairs.find((pair) => staticObjectKey(pair.field("key")) === "title")?.field("value"),
+    );
+    const detail = staticStringValue(
+      pairs.find((pair) => staticObjectKey(pair.field("key")) === "detail")?.field("value"),
+    );
+    if (title === undefined || detail === undefined) return [];
+    const normalizedTitle = title.trim();
+    const normalizedDetail = detail.replace(/\s+/gu, " ").trim();
+    if (normalizedTitle === "" || normalizedDetail === "") return [];
+    declared.push({ title: normalizedTitle, detail: normalizedDetail });
   }
   return declared;
 }

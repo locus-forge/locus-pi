@@ -138,6 +138,14 @@ Launch selectors choose native runtime coordination only. Assign every agent-wri
 
 For `post-code-review`, include exact destinations for the scope, four lane reports, necessity report and final report. Optionally name one exact caller-owned criteria file separately. Runtime neither seeds nor discovers criteria. Omitted criteria or an empty regular file means no additional criteria. Nonempty bytes are preserved as read-only guidance that cannot expand scope. A named missing, unreadable, nonregular or leaf-symlink file fails the style lane explicitly; no workspace fallback or empty substitute is used.
 
+`adaptive-code-review` is the typed adaptive alternative. Assign the required `task` and `agent` roles through `/model-roles`, then launch it with `--input-json`; ordinary text input is not accepted:
+
+```text
+/workflows run adaptive-code-review --input-json {"reviewMode":"adaptive","task":"Review the current change","change":"current diff","repositoryInstructions":"AGENTS.md","reviewScope":"changed code and callers"}
+```
+
+Use `"reviewMode":"full"` to require both `code-standard` and `codebase-design`; adaptive mode records why either lens was selected or skipped. Structured intake/selection require Pi >=1.0.0 and a compatible structured-v4 `task` route; inspect `/workflows info adaptive-code-review` for the exact model, artifact, failure, and continuation contract. Missing material context creates one actionable handoff, while complete no-operator runs do not ask.
+
 Before using a requested file, reopen its exact assigned path. Native completion and a persisted receipt establish run evidence, not filesystem delivery. For generated source require successful review, a regular nonempty assigned file, the same persisted checked/reviewed-byte SHA-256 and fresh Node/source checks immediately before execution, including after replay or correction. A missing or drifted file, failed review or exhausted correction prohibits execution even when another source exists elsewhere. Never search fallback folders or reconstruct source from prose.
 
 `--workspace-dir` and `--resume` may appear in either order before semantic input.
