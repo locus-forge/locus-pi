@@ -60,7 +60,7 @@ export function workflowUnknownCommandBlock(text: string, available: string[]): 
     primary: `Unknown workflow command: ${text}`,
     body: available.length === 0 ? [] : [`Available curated Package workflows: ${available.join(", ")}`],
     controls: [
-      `Usage: /workflows | dashboard | list [query] | info [name] | status [runId] | result [runId|last] | ${workflowRunUsage("<name|path>", "run")} | continue <runId> [--answer <text>] | stop [runId|last] | skills <sync|status|remove> [--host codex|claude|all] [--scope user|project]`,
+      `Usage: /workflows | list [query] | dashboard | info [name] | status [runId] | result [runId|last] | ${workflowRunUsage("<name|path>", "run")} | continue <runId> [--answer <text>] | stop [runId|last] | skills <sync|status|remove> [--host codex|claude|all] [--scope user|project]`,
     ],
   };
 }

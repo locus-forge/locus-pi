@@ -515,7 +515,7 @@ describe("/workflows help and unknown commands", () => {
     const widget = await runCommand(wideHarness(makeRoot()), "frobnicate");
 
     expect(widget).toContain("Unknown workflow command: frobnicate");
-    expect(widget).toContain("Usage: /workflows | dashboard | list [query]");
+    expect(widget).toContain("Usage: /workflows | list [query] | dashboard");
     expect(widget).not.toContain("Available curated Package workflows");
   });
 

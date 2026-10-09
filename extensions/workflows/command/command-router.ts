@@ -61,8 +61,8 @@ import { presentWorkflowSkillHostCommand } from "./skills.js";
 
 /** Canonical ordered root menu data for the `/workflows` command. */
 const WORKFLOW_MENU_DESCRIPTIONS = {
-  dashboard: "inspect persisted runs and evidence",
   list: "browse available workflows",
+  dashboard: "inspect persisted runs and evidence",
   info: "inspect one workflow's details",
   status: "view recent run progress",
   result: "read a finished run's output",

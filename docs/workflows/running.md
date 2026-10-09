@@ -98,7 +98,7 @@ See [replay details](replay.md) and [operator handoffs](recovery-and-continuatio
 ### `/workflows` command
 
 `/workflows` is the canonical visible workflow command. Bare `/workflows`
-opens its command menu with all nine exact verbs — `dashboard`, `list`, `info`,
+opens its command menu with all nine exact verbs — `list`, `dashboard`, `info`,
 `status`, `result`, `run`, `continue`, `stop`, and `skills` — and a description beside
 each verb when interactive select is available in TUI; RPC, headless hosts, and
 TUI without select receive the same help as a typed command fallback. Direct typed forms such as
@@ -107,8 +107,8 @@ emergency compatibility alias; every other operation uses `/workflows`.
 
 ```
 /workflows                        open the canonical command menu (or typed help fallback)
-/workflows dashboard              persisted run → stage → evidence viewer
 /workflows list [query]           current first-wins workflows + run-specific immutable history
+/workflows dashboard              persisted run → stage → evidence viewer
 /workflows info [name]            explain discovery, metadata, trust, DSL, agents, and model routing
 /workflows status [runId]         interactive persisted viewer and stage evidence
 /workflows result [runId|last]    whole text the run finished with, scrollable and untruncated

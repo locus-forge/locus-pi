@@ -6,8 +6,8 @@
 
 ```text
 /workflows
-/workflows dashboard
 /workflows list [query]
+/workflows dashboard
 /workflows info [name]
 /workflows status [runId]
 /workflows result [runId|last]
@@ -19,7 +19,7 @@
 
 Tools: `workflow`, read-only `workflow_check_source`, and opt-in `fusion`. Compatibility command: `/workflow-stop`.
 
-At normal interactive heights, `/workflows list` keeps the Project, User, Package, and History tabs directly below the catalog heading. The existing compact projection may omit the heading or put the selected row first when only a few lines fit. Wherever tabs are shown, the active tab uses the shared high-contrast purple selection background. The source view uses the same treatment for its left-to-right Back, Start, Edit, Review, and copy actions. A parent description starts one column to the right of its child's `└` branch, so the description remains attached to the parent instead of reading like a heading for the child. See the cross-extension [TUI visual language](../../docs/tui-design.md).
+At normal interactive heights, `/workflows list` keeps the Project, User, Package, and History tabs directly below the catalog heading and opens on Project whenever it contains a selectable workflow. The existing compact projection may omit the heading or put the selected row first when only a few lines fit. Wherever tabs are shown, the active tab uses the shared high-contrast purple selection background. The source view uses the same treatment for its left-to-right Start, Back, Edit, Review, and copy actions, with Start focused first for a ready current workflow. A parent description starts one column to the right of its child's `└` branch, so the description remains attached to the parent instead of reading like a heading for the child. See the cross-extension [TUI visual language](../../docs/tui-design.md).
 
 `/workflows skills` exposes the package's action-named workflow skills to
 external agents. Pi already discovers the packaged skills. The command manages

@@ -425,16 +425,16 @@ function activeCatalogTab(index: number): (typeof CATALOG_TABS)[number] {
 }
 
 function initialCatalogTabIndex(model: WorkflowCatalogModel): number {
-  let richestIndex = 0;
-  let richestCount = 0;
-  for (let index = 0; index < CATALOG_TABS.length - 1; index += 1) {
+  let preferredIndex = 0;
+  let preferredScore = selectableRows(model, "project").length > 0 ? Number.POSITIVE_INFINITY : 0;
+  for (let index = 1; index < CATALOG_TABS.length - 1; index += 1) {
     const count = selectableRows(model, CATALOG_TABS[index]!.id).length;
-    if (count > richestCount) {
-      richestIndex = index;
-      richestCount = count;
+    if (count > preferredScore) {
+      preferredIndex = index;
+      preferredScore = count;
     }
   }
-  if (richestCount > 0) return richestIndex;
+  if (preferredScore > 0) return preferredIndex;
   return model.history.length > 0 ? CATALOG_TABS.length - 1 : 0;
 }
 
@@ -450,7 +450,7 @@ function sourceActions(
   if (height <= 1) return ["back"];
   if (screen.selected.kind === "history") return ["back", "review"];
   if (screen.state.kind !== "ready") return ["back"];
-  return ["back", "start", "edit", "review", ...workflowCopyDestinations(screen.selected).map(copyDestinationAction)];
+  return ["start", "back", "edit", "review", ...workflowCopyDestinations(screen.selected).map(copyDestinationAction)];
 }
 
 function copyDestinationAction(destination: WorkflowCopyDestination): "copy-project" | "copy-personal" {

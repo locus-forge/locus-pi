@@ -113,9 +113,10 @@ JavaScript is not supported.
 by `/workflows run`: scan-based discovery for Project, User, and Package alike.
 It does not add a separate UI-only registry or change resolution semantics. The
 focused catalog presents `Project`, `User`, `Package`, and review-only `History`
-as persistent tabs. It opens on the current source with the most selectable
-workflows, resolving equal counts in Project, User, Package order; History is
-the fallback only when all current sources are empty. Tab or Right moves
+as persistent tabs. It opens on Project whenever that source has a selectable
+workflow for the current query. Otherwise it opens on the current source with
+the most selectable workflows, with User before Package when their counts tie;
+History is the fallback only when all current sources are empty. Tab or Right moves
 forward, Left moves back, and Up/Down
 selects only inside the active source. Every row leads with the workflow name and
 a compact source badge (`[P]`, `[U]`, or `[PKG]`); descriptions wrap at word
@@ -192,7 +193,7 @@ actions use the success color (normally green). `[VIEW]`, `Source:`, `Path:`, an
 the equivalent history metadata labels use the same semantic success styling so
 metadata stays distinct from highlighted code:
 
-- A ready current source offers `Back`, `Start`, `Edit`, and `Review`. A
+- A ready current source focuses `Start` first, followed by `Back`, `Edit`, and `Review`. A
   folder-owned Package namespace also offers `Copy to Project` and `Copy to
 User`; Project/User sources offer the opposite editable destination.
 - A history source offers `Back` and `Review`; it never offers `Start` or `Edit`.
