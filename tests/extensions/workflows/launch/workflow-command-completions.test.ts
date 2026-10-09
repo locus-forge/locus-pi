@@ -82,7 +82,7 @@ describe("workflow command argument completion", () => {
       (completion) => completion.label ?? completion.value,
     );
 
-    expect(labels).toEqual(["dashboard", "list", "info", "status", "result", "run", "continue", "stop", "skills"]);
+    expect(labels).toEqual(["list", "dashboard", "info", "status", "result", "run", "continue", "stop", "skills"]);
   });
 
   it("returns full argument strings for grammar-owned tokens and yields free text and paths", async () => {

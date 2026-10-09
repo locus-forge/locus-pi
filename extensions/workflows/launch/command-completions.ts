@@ -29,8 +29,8 @@ export function workflowArgumentCompletions(
 ): CommandArgumentCompletion[] | null {
   const prefix = rawPrefix.replace(/^\s+/u, "");
   const rootCommands: CommandArgumentCompletion[] = [
-    { value: "dashboard", label: "dashboard", description: "Open persisted run dashboard" },
     { value: "list ", label: "list", description: "Browse workflow catalog" },
+    { value: "dashboard", label: "dashboard", description: "Open persisted run dashboard" },
     { value: "info ", label: "info", description: "Show one workflow" },
     { value: "status ", label: "status", description: "Inspect persisted run status" },
     { value: "result ", label: "result", description: "Read a finished run result" },
