@@ -105,6 +105,25 @@ TUI without select receive the same help as a typed command fallback. Direct typ
 `/workflows run <name>` remain available. `/workflow-stop` remains the one
 emergency compatibility alias; every other operation uses `/workflows`.
 
+#### Start from the catalog
+
+`Start` restores editable text to the main editor; it never submits or starts a
+workflow by itself. For a workflow without `meta.inputSchema`, it restores the
+direct `/workflows run <name>` command. For a workflow with a statically admitted
+input schema, it instead restores a prompt for the installed
+`locus-pi-workflow-run` skill. The skill inspects the exact selected source,
+builds one explicit `inputValue`, shows its canonical JSON before calling the
+workflow tool, and asks only when a required value cannot be established. This
+classification follows the input contract, not whether the workflow is a flat,
+root, or child catalog entry.
+
+The workflow tool card shows a bounded canonical preview of the typed JSON from
+the current call, including on a pre-start validation failure. That display is current-session diagnostic
+context; accepted typed authority remains the private `launch-binding.json`,
+while persisted result projections retain identities rather than copying the
+value. The runtime still owns validation and never inserts defaults, coerces
+values, strips unknown properties, or converts legacy text into JSON.
+
 ```
 /workflows                        open the canonical command menu (or typed help fallback)
 /workflows dashboard              persisted run → stage → evidence viewer
@@ -152,6 +171,7 @@ For a [typed-input workflow](dsl.md#typed-workflow-input), put every option befo
 `/workflows run typed-review --resume <runId> --input-json {"task":"Review","ids":["A","B"]}`.
 The tail is parsed once; missing/invalid JSON, repeated typed options or mixed
 text and JSON refuse. Shell quoting, stdin and JSON files are not input channels.
+In particular, do not wrap the JSON tail in shell-style single quotes inside Pi.
 `-- --input-json literal text` retains the exact legacy text form.
 
 Typed launches use private `launch-binding.v4` authority containing one canonical

@@ -18,6 +18,7 @@ import { isWorkflowSavedName } from "../runtime/workflow-saved-name.js";
 import { WORKFLOW_SAVED_SOURCE_RELATIVE_ROOT } from "../runtime/workflow-run-layout.js";
 import type { OperatorBlock } from "../../_shared/operator/operator-ui.js";
 import { buildWorkflowRunCommand, formatWorkflowCommandToken, workflowRunUsage } from "../command/command-parser.js";
+import { workflowSourceInputSchema } from "../source/workflow-source-structured.js";
 import {
   readWorkflowMeta,
   staticWorkflowMeta,
@@ -299,10 +300,11 @@ export function readSelectedWorkflowSource(
 }
 
 /**
- * Deterministic editor handoff. Start uses the direct slash-command runtime
- * path; edit/review point at the packaged workflow-authoring skill because
- * they require source work. The pointer must stay something an installed
- * package actually provides.
+ * Deterministic editor handoff. Untyped Start uses the direct slash-command
+ * runtime path. Typed Start points at the packaged run skill so it can prepare
+ * one explicit inputValue before launch. Edit/review point at the packaged
+ * authoring skill because they require source work. Every pointer must stay
+ * something an installed package actually provides.
  * The returned text is editable but never submitted here.
  */
 export function buildWorkflowActionPrompt(intent: WorkflowBrowserIntent): string {
@@ -319,7 +321,18 @@ export function buildWorkflowActionPrompt(intent: WorkflowBrowserIntent): string
         `Current workflow start requires a ready source; received ${JSON.stringify(intent.sourceState.kind)}.`,
       );
     }
-    return buildWorkflowRunCommand(row.target);
+    if (workflowSourceInputSchema(intent.sourceState.source) === undefined) {
+      return buildWorkflowRunCommand(row.target);
+    }
+    return [
+      `Request: Prepare and start the exact current workflow ${JSON.stringify(row.name)} resolved from ${JSON.stringify(row.sourceLocator)}.`,
+      "Skill: locus-pi-workflow-run",
+      "",
+      "Input contract: The selected source declares meta.inputSchema. Inspect that exact static schema without importing the module. Build one explicit JSON inputValue from the user's launch intent and repository evidence, show its canonical JSON before the workflow tool call, and use inputValue rather than legacy input. Do not invent unresolved required values, defaults, coercions, or unknown properties. Re-resolve the named target before launch and refuse if source precedence changed.",
+      "",
+      "Additional launch instructions:",
+      "",
+    ].join("\n");
   }
   let request: string;
   if (row.kind === "current") {

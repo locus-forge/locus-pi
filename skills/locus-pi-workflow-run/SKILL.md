@@ -33,10 +33,30 @@ evidence and current Node/orchestration-only checks before launch, including aft
 Missing/drifted source or failed/exhausted review forbids execution; never guess another file or reconstruct prose.
 Check an existing session/run before replacing it; silence or a lost tool handle does not prove it stopped.
 
+## Choose the input contract before launch
+
+Inspect the exact resolved source without importing it. If it has no statically
+admitted `meta.inputSchema`, preserve the user's semantic text as `input`. If it
+declares `meta.inputSchema`, build one explicit JSON `inputValue` that satisfies
+that schema. Show its canonical JSON to the user before the workflow tool call;
+the workflow tool card shows a bounded canonical preview from the current call
+for diagnostics.
+Never put typed JSON into legacy `input`, parse prose into a hidden parameter
+protocol, or invent required values, defaults, coercions, or unknown properties.
+Ask for a required product choice only when the request and repository evidence
+cannot establish it.
+
+For a slash launch, typed input uses the complete raw `--input-json <JSON>` tail,
+with no shell quotes around the JSON inside Pi. On rejection, report the exact
+attempted canonical value together with the schema validation paths. A rejected
+pre-start value has no admitted launch binding, so do not claim it can be
+recovered from run evidence.
+
 ## Native Pi path
 
 Read the [workflow tool contract](../../docs/workflows/running.md#workflow-tool-programmatic).
-Supply exactly one of `name` or `scriptPath`, plus the original semantic `input` and required options.
+Supply exactly one of `name` or `scriptPath`, plus the explicit `input` or `inputValue`
+selected from the target's contract and any required options.
 Do not spawn Pi or translate the request into a slash command when the structured tool exists.
 Use `resumeFromRunId` only through [run recovery](references/recovery.md), not as a general retry switch.
 `continuation` carries a real operator answer to a recorded handoff; never synthesize that answer.

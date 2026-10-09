@@ -158,6 +158,33 @@ describe("workflow tool card", () => {
     expect(awaiting).toContain("│ ◐ waiting for operator decision");
   });
 
+  it("shows the canonical typed input for running and rejected calls without persisting it in result details", () => {
+    const tool = workflowTool();
+    const args = { name: "typed-review", inputValue: { task: "Review", reviewMode: "adaptive" } };
+    const runningResult: ToolResult = {
+      content: [{ type: "text", text: "streaming" }],
+      details: { workflowName: "typed-review", status: "running", agentRows: [] },
+    };
+    const running = plain(render(tool, runningResult, { expanded: true, isPartial: true }, args));
+    expect(running).toContain('│ input (JSON): {"reviewMode":"adaptive","task":"Review"}');
+    expect(runningResult.details).not.toHaveProperty("inputValue");
+
+    const rejected = plain(
+      render(
+        tool,
+        {
+          content: [{ type: "text", text: "workflow: typed input does not satisfy inputSchema: /reviewMode" }],
+          details: { owner: "workflows" },
+          isError: true,
+        },
+        { expanded: true, isPartial: false },
+        args,
+      ),
+    );
+    expect(rejected).toContain('│ input (JSON): {"reviewMode":"adaptive","task":"Review"}');
+    expect(rejected.join("\n")).toContain("typed input does not satisfy inputSchema");
+  });
+
   it("preserves workflow identity and state at narrow widths without overflowing", () => {
     const width = 28;
     const lines = render(

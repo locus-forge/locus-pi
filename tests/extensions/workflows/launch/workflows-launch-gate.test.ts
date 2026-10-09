@@ -127,6 +127,18 @@ describe("/workflows run launch gate", () => {
     expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
   });
 
+  it("shows canonical typed input in exec approval without adding it to untyped approvals", () => {
+    const h = registerHarness();
+    const tool = h.tools.get("workflow")!;
+
+    const typed = tool.formatApprovalDetails?.({
+      name: "typed-review",
+      inputValue: { task: "Review", reviewMode: "adaptive" },
+    });
+    expect(typed).toContain('Input (JSON): {"reviewMode":"adaptive","task":"Review"}');
+    expect(tool.formatApprovalDetails?.({ name: "live-smoke" })).not.toContain(expect.stringContaining("Input"));
+  });
+
   it.each(["current", "legacy"] as const)(
     "shows the selected %s named workspace in exec approval",
     async (workspaceKind) => {

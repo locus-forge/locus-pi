@@ -62,6 +62,8 @@ export interface WorkflowToolCardModel {
   status: WorkflowToolCardStatus;
   /** The operator-facing task the workflow is working on (its semantic input). */
   taskTitle?: string;
+  /** Bounded canonical typed-input preview from this call; never copied into persisted card details. */
+  inputJSON?: string;
   agents: readonly WorkflowToolCardAgent[];
   technicalLines?: readonly string[];
   modelText?: string;
@@ -150,6 +152,7 @@ export class WorkflowToolCardComponent implements CustomUiComponent {
     const technicalWidth = Math.max(1, safeWidth - 2);
     const lines = [
       this.#rail(this.#renderHeader(technicalWidth), safeWidth),
+      ...this.#renderInputJSON(technicalWidth, safeWidth),
       ...this.#renderTaskTitle(technicalWidth, safeWidth),
       ...this.#renderAgentRows(technicalWidth, safeWidth),
       ...(this.#model.technicalLines ?? []).flatMap((line) =>
@@ -158,6 +161,15 @@ export class WorkflowToolCardComponent implements CustomUiComponent {
     ];
     const modelLines = this.#renderModelText(safeWidth);
     return modelLines.length === 0 ? lines : [...lines, "", ...modelLines];
+  }
+
+  #renderInputJSON(width: number, totalWidth: number): string[] {
+    const value = this.#model.inputJSON;
+    if (value === undefined) return [];
+    const prefix = "input (JSON): ";
+    const text = `${this.#fg("dim", prefix)}${this.#fg("toolOutput", value)}`;
+    if (!this.#options.expanded) return [this.#rail(truncateToWidth(text, width), totalWidth)];
+    return wrapTextWithAnsi(text, width).map((line) => this.#rail(line, totalWidth));
   }
 
   invalidate(): void {

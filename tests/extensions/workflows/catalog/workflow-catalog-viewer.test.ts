@@ -759,6 +759,26 @@ describe("focused workflow catalog", () => {
     expect(existsSync(path.join(root, ".locus-pi", "runs"))).toBe(false);
   });
 
+  it("fills a typed Start handoff to the run skill without starting or sending", async () => {
+    const root = projectWithWorkflows({
+      typed:
+        'export const meta={description:"Typed",inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"],additionalProperties:false}}; export default()=>null;\n',
+    });
+    const harness = createHarness(root);
+    harness.ctx.hasUI = true;
+    harness.customInputQueue.push("left", "left", "enter", "tab", "enter");
+    workflows(harness.pi);
+
+    await harness.commands.get("workflows")!.handler("list", harness.ctx);
+
+    expect(harness.editorText).toContain('Request: Prepare and start the exact current workflow "typed"');
+    expect(harness.editorText).toContain("Skill: locus-pi-workflow-run");
+    expect(harness.editorText).toContain("use inputValue rather than legacy input");
+    expect(harness.sentMessages).toEqual([]);
+    expect(harness.sentUserMessages).toEqual([]);
+    expect(existsSync(path.join(root, ".locus-pi", "runs"))).toBe(false);
+  });
+
   it("never calls setEditorText before the custom browser promise resolves", async () => {
     const root = projectWithWorkflows({ alpha: source("alpha", "Alpha workflow") });
     const harness = createHarness(root);

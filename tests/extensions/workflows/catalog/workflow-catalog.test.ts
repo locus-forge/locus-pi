@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -701,6 +701,47 @@ describe("workflow operator catalog", () => {
 
       expect(start).toBe('/workflows run "alpha workflow"');
       expect(parseRunCommand(start.slice("/workflows ".length))).toEqual({ scriptRef: "alpha workflow" });
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("hands typed Start to the run skill instead of prefilling an invalid bare command", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "wf-catalog-typed-start-"));
+    const previousHome = process.env.HOME;
+    try {
+      process.env.HOME = path.join(root, "home");
+      const workflowDir = path.join(root, ".locus-pi", "workflows");
+      mkdirSync(workflowDir, { recursive: true });
+      writeFileSync(
+        path.join(workflowDir, "typed.workflow.mjs"),
+        'export const meta={inputSchema:{type:"object",properties:{reviewMode:{type:"string",enum:["adaptive","full"]}},required:["reviewMode"],additionalProperties:false}}; export default()=>null;\n',
+      );
+      const familyDir = path.join(workflowDir, "family");
+      mkdirSync(familyDir);
+      const typedSource =
+        'export const meta={inputSchema:{type:"string"}}; export default(_dsl,input){return input;}\n';
+      writeFileSync(path.join(familyDir, "family.workflow.mjs"), typedSource);
+      writeFileSync(path.join(familyDir, "child.workflow.mjs"), typedSource);
+      const model = buildWorkflowCatalogModel(root, root);
+
+      for (const name of ["typed", "family", "family/child"]) {
+        const row = model.current.find((candidate) => candidate.name === name)!;
+        const start = buildWorkflowActionPrompt({
+          action: "start",
+          row,
+          sourceState: { kind: "ready", row, path: row.target.path, source: readFileSync(row.target.path, "utf8") },
+        });
+
+        expect(start).toContain(`Request: Prepare and start the exact current workflow ${JSON.stringify(name)}`);
+        expect(start).toContain("Skill: locus-pi-workflow-run");
+        expect(start).toContain("declares meta.inputSchema");
+        expect(start).toContain("show its canonical JSON before the workflow tool call");
+        expect(start).toContain("use inputValue rather than legacy input");
+        expect(start).not.toContain(`/workflows run ${name}`);
+      }
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;

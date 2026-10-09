@@ -20,12 +20,7 @@ import { listWorkflowRunIds, readWorkflowRunResultText, resolveWorkflowRunId } f
 import { WORKFLOW_RUN_GROUP_STORAGE_PATTERN } from "../runtime/workflow-run-layout.js";
 import { WorkflowCatalogViewer, WorkflowInfoViewer } from "../catalog/catalog-viewer.js";
 import { workflowArgumentCompletions, workflowFlatCommandCompletions } from "../launch/command-completions.js";
-import {
-  buildWorkflowRunCommand,
-  formatWorkflowCommandToken,
-  parseContinueCommand,
-  parseWorkflowCommandToken,
-} from "./command-parser.js";
+import { formatWorkflowCommandToken, parseContinueCommand, parseWorkflowCommandToken } from "./command-parser.js";
 import type { WorkflowHandoffPumpResult } from "../operator/operator-handoff-controller.js";
 import { clearWorkflowWidget, presentWorkflowHandoffPumpResult } from "../operator/operator-surface.js";
 import {
@@ -53,6 +48,7 @@ import {
   buildWorkflowCatalogBlockFromModel,
   buildWorkflowCatalogModel,
   buildWorkflowInfoBlock,
+  readWorkflowCatalogSource,
   type WorkflowBrowserIntent,
 } from "../catalog/workflow-catalog.js";
 import type { WorkflowCommandLauncher } from "../launch/workflow-command-launcher.js";
@@ -199,7 +195,20 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
           }
           return;
         }
-        const prompt = buildWorkflowActionPrompt(intent);
+        let prompt: string;
+        try {
+          prompt = buildWorkflowActionPrompt(intent);
+        } catch (error) {
+          setOperatorWidget(
+            ctx,
+            "workflows",
+            workflowWarningBlock(
+              `Workflow action could not be prepared: ${errorMessage(error)}.`,
+              "No editor text was changed and no workflow was started.",
+            ),
+          );
+          return;
+        }
         await waitForNativeSelectorTeardown();
         fillWorkflowEditor(ctx, prompt);
         return;
@@ -467,8 +476,23 @@ async function openWorkflowCommandMenu(
     case "run": {
       const selected = await selectWorkflowTarget(ctx, projectRoot, workingDirectory, "run");
       if (selected !== undefined) {
+        const sourceState = readWorkflowCatalogSource(selected, projectRoot, workingDirectory);
+        let prompt: string;
+        try {
+          prompt = buildWorkflowActionPrompt({ action: "start", row: selected, sourceState });
+        } catch (error) {
+          setOperatorWidget(
+            ctx,
+            "workflows",
+            workflowWarningBlock(
+              `Workflow Start could not be prepared: ${errorMessage(error)}.`,
+              "No editor text was changed and no workflow was started.",
+            ),
+          );
+          return;
+        }
         await waitForNativeSelectorTeardown();
-        fillWorkflowEditor(ctx, buildWorkflowRunCommand(selected.target));
+        fillWorkflowEditor(ctx, prompt);
       }
       return;
     }
@@ -541,10 +565,7 @@ async function selectWorkflowTarget(
   projectRoot: string,
   workingDirectory: string,
   action: "info" | "run",
-): Promise<
-  | { name: string; ref: string; target: ReturnType<typeof buildWorkflowCatalogModel>["current"][number]["target"] }
-  | undefined
-> {
+): Promise<ReturnType<typeof buildWorkflowCatalogModel>["current"][number] | undefined> {
   let rows: ReturnType<typeof buildWorkflowCatalogModel>["current"];
   try {
     rows = buildWorkflowCatalogModel(projectRoot, workingDirectory).current.slice(0, WORKFLOW_MENU_OPTION_LIMIT);
@@ -575,7 +596,7 @@ async function selectWorkflowTarget(
   );
   if (!presentWorkflowMenuSelectionFailure(ctx, selected, `Retry /workflows ${action} <name>.`)) return undefined;
   const choice = choices.find((candidate) => candidate.label === selected.value);
-  if (choice !== undefined) return { name: choice.name, ref: choice.ref, target: choice.target };
+  if (choice !== undefined) return rows.find((row) => row.name === choice.name && row.target.ref === choice.ref);
   setOperatorWidget(
     ctx,
     "workflows",

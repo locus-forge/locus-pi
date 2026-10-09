@@ -13,6 +13,14 @@ Inside Pi:
 /workflows run <name> -- <semantic input>
 ```
 
+For a workflow with static `meta.inputSchema`, pass the complete raw JSON tail
+instead. These are Pi command bytes, not shell syntax, so do not wrap the JSON
+in single quotes:
+
+```text
+/workflows run <name> --input-json {"mode":"review","paths":["src/"]}
+```
+
 For a workflow that may continue normally, preserve the original input/workspace
 and add the run skill's exact `--resume <runId>` option. Never resume an orphaned
 call just because a previous session disappeared.

@@ -118,6 +118,48 @@ describe("/workflows help and unknown commands", () => {
     expect(run.selectCalls.flatMap((call) => call.options).every((option) => typeof option === "string")).toBe(true);
   });
 
+  it("uses the same typed Start handoff from the root command menu", async () => {
+    const root = makeRoot();
+    const workflowDir = path.join(root, ".locus-pi", "workflows");
+    mkdirSync(workflowDir, { recursive: true });
+    writeFileSync(
+      path.join(workflowDir, "typed.workflow.mjs"),
+      'export const meta={name:"typed",description:"Typed",inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"],additionalProperties:false}}; export default async()=>null;\n',
+      "utf8",
+    );
+
+    const run = createHarness(root);
+    run.selectQueue.push("run", "typed");
+    workflows(run.pi);
+    await run.commands.get("workflows")!.handler("", run.ctx);
+
+    expect(run.editorText).toContain('Request: Prepare and start the exact current workflow "typed"');
+    expect(run.editorText).toContain("Skill: locus-pi-workflow-run");
+    expect(run.editorText).toContain("show its canonical JSON before the workflow tool call");
+  });
+
+  it("keeps the editor unchanged when the selected typed contract is not statically admitted", async () => {
+    const root = makeRoot();
+    const workflowDir = path.join(root, ".locus-pi", "workflows");
+    mkdirSync(workflowDir, { recursive: true });
+    writeFileSync(
+      path.join(workflowDir, "invalid-typed.workflow.mjs"),
+      'const inputSchema={type:"string"}; export const meta={name:"invalid-typed",inputSchema}; export default async()=>null;\n',
+      "utf8",
+    );
+
+    const run = createHarness(root);
+    run.selectQueue.push("run", "invalid-typed");
+    workflows(run.pi);
+    await run.commands.get("workflows")!.handler("", run.ctx);
+
+    expect(run.editorText).toBe("");
+    expect(run.widgets.get("workflows")).toContain("Workflow Start could not be prepared");
+    expect(run.widgets.get("workflows")).toContain("meta.inputSchema requires one explicit");
+    expect(run.widgets.get("workflows")).toContain("static schema declaration");
+    expect(run.widgets.get("workflows")).toContain("No editor text was changed and no workflow was started");
+  });
+
   it("prefills post-code-review without a manual workspace", async () => {
     const root = makeRoot();
     const workflowDir = path.join(root, ".locus-pi", "workflows");

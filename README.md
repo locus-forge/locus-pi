@@ -131,6 +131,11 @@ Review `evaluator-optimizer.design.md` and `evaluator-optimizer.workflow.mjs` sa
 /workflows result last
 ```
 
+Catalog `Start` keeps this direct command for text-input workflows. When the
+selected workflow declares typed input, `Start` prepares an editable
+`locus-pi-workflow-run` handoff instead: the runner shows the canonical JSON it
+will send as `inputValue` before launch. See [Run and inspect](docs/workflows/running.md#start-from-the-catalog).
+
 [Create your first workflow](docs/workflows/create.md) explains the skill and includes
 complete copyable source. [Run and inspect](docs/workflows/running.md) covers progress,
 results, stopping, fresh runs, and replay. For Codex or Claude Code, see [skill installation](skills/README.md).
