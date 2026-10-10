@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { WorkflowCatalogViewer } from "../../../../extensions/workflows/catalog/catalog-viewer.js";
 import {
   buildWorkflowActionPrompt,
   buildWorkflowCatalogModel,
@@ -52,5 +53,28 @@ describe("workflow Start editor handoff", () => {
     expect(prompt).toContain("Do not call the workflow tool, submit the command, or start the workflow");
     expect(prompt).toContain("launches in a separate action");
     expect(prompt).not.toContain("Prepare and start");
+  });
+
+  it("describes typed Start as an editor handoff instead of a direct launch", () => {
+    const row = rowFor(
+      'export const meta={inputSchema:{type:"object",properties:{task:{type:"string"}},required:["task"]}}; export default()=>null;\n',
+      "typed",
+    );
+    const root = path.resolve(path.dirname(row.target.path), "..", "..");
+    const model = buildWorkflowCatalogModel(root, root);
+    const viewer = new WorkflowCatalogViewer(
+      { requestRender() {}, terminal: { rows: 12, columns: 120 } },
+      {},
+      {},
+      model,
+      root,
+      root,
+      () => {},
+    );
+
+    viewer.handleInput("enter");
+    const rendered = viewer.render(120).join("\n");
+    expect(rendered).toContain("Start fills editor; Edit/Review handoff");
+    expect(rendered).not.toContain("Start direct");
   });
 });

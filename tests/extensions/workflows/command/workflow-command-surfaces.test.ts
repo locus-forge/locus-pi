@@ -151,7 +151,7 @@ describe("/workflows help and unknown commands", () => {
     let selectCount = 0;
     run.ctx.ui.select = vi.fn(async () => {
       selectCount += 1;
-      if (selectCount === 1) return "run — start a workflow";
+      if (selectCount === 1) return "run — fill the editor for a workflow launch";
       return target.promise;
     });
     workflows(run.pi);
