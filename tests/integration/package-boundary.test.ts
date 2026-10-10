@@ -340,9 +340,11 @@ describe("npm public package boundary", () => {
       "schemas/extension-manifest.schema.json",
       "skills/",
     ]);
-    // Six-file authoring consolidates nine reference leaves without changing the allowlist.
-    expect(dryRun.files).toHaveLength(273);
+    // Typed Start adds one catalog prompt owner and one command error-boundary owner under the existing allowlist.
+    expect(dryRun.files).toHaveLength(275);
     for (const filename of [
+      "extensions/workflows/catalog/workflow-action-prompt.ts",
+      "extensions/workflows/command/workflow-editor-handoff.ts",
       "extensions/workflows/source/workflow-source-structured.ts",
       "extensions/workflows/source/workflow-source-structured-rules.ts",
       "extensions/workflows/source/workflow-source-provenance-query.ts",

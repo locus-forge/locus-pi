@@ -131,6 +131,11 @@ Review `evaluator-optimizer.design.md` and `evaluator-optimizer.workflow.mjs` sa
 /workflows result last
 ```
 
+Catalog `Start` keeps the direct command for text-input workflows. For typed
+input it prepares canonical JSON and an editable command without launching;
+the user reviews that value and starts the workflow separately. See
+[Run and inspect](docs/workflows/running.md#start-from-the-catalog).
+
 [Create your first workflow](docs/workflows/create.md) explains the skill and includes
 complete copyable source. [Run and inspect](docs/workflows/running.md) covers progress,
 results, stopping, fresh runs, and replay. For Codex or Claude Code, see [skill installation](skills/README.md).

@@ -1,4 +1,5 @@
 import { snapshotWorkflowInput, type WorkflowInputFields } from "../runtime/workflow-input.js";
+import { canonicalWorkflowJSON } from "../runtime/structured-results/schema.js";
 /**
  * Native workflow schema, approval, command-launcher dispatch and terminal result.
  * Cards own tool-call hierarchy; command widgets and overlays remain in /workflows.
@@ -86,10 +87,12 @@ function workflowApprovalDetails(args: unknown, projectRoot: string): string[] {
       ? (record.budget as Parameters<typeof resolveWorkflowBudget>[0])
       : undefined;
   const resolvedBudget = declaredBudget && resolveWorkflowBudget(declaredBudget).budget;
+  const inputJSON = workflowInputJSON(record);
   return [
     `Workflow: ${target}`,
     `Items: ${Array.isArray(record.items) ? String(record.items.length) : "none"}`,
     `Workflow workspace: ${workspace}`,
+    ...(inputJSON === undefined ? [] : [`Input (JSON): ${inputJSON}`]),
     ...(declaredBudget !== undefined && Object.keys(declaredBudget).length > 0
       ? [
           `Budget overrides: ${WORKFLOW_BUDGET_AXES.filter((axis) => declaredBudget?.[axis] !== undefined)
@@ -434,6 +437,7 @@ function renderWorkflowToolResultCard(
     typeof details.workflowName === "string" ? details.workflowName : workflowTargetLabel(renderContextArgs(context));
   const taskTitle =
     typeof details.taskTitle === "string" ? details.taskTitle : workflowTaskTitle(renderContextInput(context));
+  const inputJSON = workflowInputJSON(renderContextRecord(context));
   const status = workflowToolCardStatus(details.status, options.isPartial, context.isError || result.isError === true);
   const technicalLines: string[] = [];
   if (options.expanded) {
@@ -463,6 +467,7 @@ function renderWorkflowToolResultCard(
       workflowName,
       status,
       ...(taskTitle === undefined ? {} : { taskTitle }),
+      ...(inputJSON === undefined ? {} : { inputJSON }),
       agents: readWorkflowToolCardAgents(details.agentRows),
       technicalLines,
       ...(persistedResult?.kind === "model" ? { modelText: persistedResult.text } : {}),
@@ -506,10 +511,31 @@ function renderContextArgs(context: ToolRenderContext): { name?: string; scriptP
   };
 }
 
+function renderContextRecord(context: ToolRenderContext): Record<string, unknown> {
+  return context.args !== null && typeof context.args === "object" ? (context.args as Record<string, unknown>) : {};
+}
+
 function renderContextInput(context: ToolRenderContext): string | undefined {
   if (context.args === null || typeof context.args !== "object") return undefined;
   const input = (context.args as Record<string, unknown>).input;
   return typeof input === "string" ? input : undefined;
+}
+
+const WORKFLOW_INPUT_JSON_PREVIEW_MAX_CHARS = 4096;
+
+/** Current-call visibility only: persisted run/result projections retain identities, not the typed value. */
+function workflowInputJSON(record: Record<string, unknown>): string | undefined {
+  if (!Object.hasOwn(record, "inputValue")) return undefined;
+  const property = Object.getOwnPropertyDescriptor(record, "inputValue");
+  if (property === undefined || !("value" in property)) return "<unavailable: inputValue is not a data property>";
+  try {
+    const canonical = canonicalWorkflowJSON(property.value);
+    if (canonical.length <= WORKFLOW_INPUT_JSON_PREVIEW_MAX_CHARS) return canonical;
+    const omitted = canonical.length - WORKFLOW_INPUT_JSON_PREVIEW_MAX_CHARS;
+    return `${canonical.slice(0, WORKFLOW_INPUT_JSON_PREVIEW_MAX_CHARS)}… (+${omitted} chars)`;
+  } catch (error) {
+    return `<unavailable: ${error instanceof Error ? error.message : String(error)}>`;
+  }
 }
 
 const WORKFLOW_TASK_TITLE_MAX_CHARS = 96;

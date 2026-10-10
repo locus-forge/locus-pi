@@ -57,6 +57,12 @@ describe("shipped workflow skill routes", () => {
       "is not sandboxed",
       "create-and-run needs no repeat approval",
       "physical file before following relative links",
+      "Inspect the exact resolved source without importing it",
+      "preparation-only",
+      "return the canonical JSON",
+      "Do not call",
+      "launches in a separate action",
+      "do not wrap the JSON in shell quotes",
     ]);
     const external = linkedText(runPath, "../external-locus-pi/SKILL.md");
     containsAll(external, ["interactive Pi terminal retained by tmux", "Keep the", "terminal open"]);
