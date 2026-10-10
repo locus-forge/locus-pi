@@ -61,7 +61,7 @@ const WORKFLOW_MENU_DESCRIPTIONS = {
   info: "inspect one workflow's details",
   status: "view recent run progress",
   result: "read a finished run's output",
-  run: "start a workflow",
+  run: "fill the editor for a workflow launch",
   continue: "answer a pending handoff",
   stop: "stop an active run",
   skills: "install workflow skills for external agents",

@@ -525,7 +525,7 @@ function sourceFooter(
     `${actionBar(screen, actions, selected, theme)}${position === "" ? "" : ` ${position}`}`,
     screen.selected.kind === "history"
       ? `${controls} · Review handoff`
-      : `${controls} · Start direct; Edit/Review handoff`,
+      : `${controls} · Start fills editor; Edit/Review handoff`,
   ];
 }
 
