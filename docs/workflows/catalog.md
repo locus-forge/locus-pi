@@ -209,10 +209,14 @@ folder or compatible flat root is reported and never merged or overwritten.
 `Back` and cancellation return no intent. `Start`, `Edit`, and `Review` return a
 typed intent from the custom component. The `/workflows` command awaits the
 shared inline `ctx.ui.custom(..., { overlay:false })` surface, restores Pi's main
-editor, and only then calls `setEditorText()` once. `Start` prefills the direct
-`/workflows run <resolved-name>` command; submitting it reaches the runtime
-without a model planning or authoring turn, and optional semantic input can be
-appended on the same command line. `Edit` and `Review` still prefill the compact
+editor, and only then calls `setEditorText()` once. For an untyped source,
+`Start` prefills the direct `/workflows run <resolved-name>` command; submitting
+it reaches the runtime without a model planning or authoring turn, and optional
+semantic input can be appended on the same command line. For a source with a
+statically admitted `meta.inputSchema`, `Start` instead prefills a
+preparation-only `locus-pi-workflow-run` handoff. The skill returns canonical
+JSON and an editable `--input-json` command without launching, so the user can
+review the value and start it separately. `Edit` and `Review` still prefill the compact
 `Request: ...`, `Skill: locus-pi-workflow-create`, and
 `Additional instructions:` handoff because those actions require source work.
 The packaged skill owns workflow-authoring instructions. No global catalog

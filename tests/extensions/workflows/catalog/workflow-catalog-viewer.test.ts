@@ -734,8 +734,8 @@ describe("focused workflow catalog", () => {
     expect(after).toContain("// 03");
   });
 
-  it("fills the restored editor after Start selection without starting or sending", async () => {
-    const root = projectWithWorkflows({ alpha: source("alpha", "Alpha workflow") });
+  it("fills typed Start as preparation without starting or sending", async () => {
+    const root = projectWithWorkflows({ alpha: 'export const meta={inputSchema:{type:"string"}};\n' });
     const harness = createHarness(root);
     harness.ctx.hasUI = true;
     harness.customInputQueue.push("enter", "enter");
@@ -743,9 +743,8 @@ describe("focused workflow catalog", () => {
 
     await harness.commands.get("workflows")!.handler("list", harness.ctx);
 
-    expect(harness.editorText).toBe("/workflows run alpha");
-    expect(harness.sentMessages).toEqual([]);
-    expect(harness.sentUserMessages).toEqual([]);
+    expect(harness.editorText).toMatch(/Prepare typed input.*Do not call the workflow tool/su);
+    expect([harness.sentMessages, harness.sentUserMessages]).toEqual([[], []]);
     expect(existsSync(path.join(root, ".locus-pi", "runs"))).toBe(false);
   });
 

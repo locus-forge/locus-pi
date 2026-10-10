@@ -195,7 +195,7 @@ The checkout is probably registered in both user and project scope. Use `pi list
 
 ### `/workflows run` is rejected before a run starts
 
-Check the target name, required `--workspace-dir`, safe project-relative path rules, and whether the workflow needs structured fields available only through the `workflow` tool. Use `/workflows info <name>` for the live contract.
+Check the target name, required `--workspace-dir`, safe project-relative path rules, and whether the workflow declares `meta.inputSchema`. Typed workflows require tool `inputValue` or a raw `--input-json` tail; they never reinterpret legacy text. Programmatic tool launches show a bounded canonical preview beside schema validation errors; slash launches keep JSON visible in the editor and bypass tool approval/card. Use `/workflows info <name>` for the live contract and the [catalog Start guide](workflows/running.md#start-from-the-catalog) for assisted preparation.
 
 ### A workflow is awaiting operator input
 

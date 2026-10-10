@@ -98,23 +98,21 @@ function compactHarness(root: string): Harness {
 }
 
 describe("/workflows help and unknown commands", () => {
-  it("uses a workflow target chooser for run", async () => {
+  it("uses typed preparation from the workflow target chooser", async () => {
     const root = makeRoot();
     const workflowDir = path.join(root, ".locus-pi", "workflows");
     mkdirSync(workflowDir, { recursive: true });
     writeFileSync(
-      path.join(workflowDir, "alpha.workflow.mjs"),
-      'export const meta={name:"alpha",description:"Alpha workflow"}; export default async()=>null;\n',
+      path.join(workflowDir, "typed.workflow.mjs"),
+      'export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"],additionalProperties:false}}; export default async()=>null;\n',
       "utf8",
     );
-    const runId = "20260726-212752-98cc";
-    writeRun(root, runId);
-
     const run = createHarness(root);
-    run.selectQueue.push("run", "alpha");
+    run.selectQueue.push("run", "typed");
     workflows(run.pi);
     await run.commands.get("workflows")!.handler("", run.ctx);
-    expect(run.editorText).toBe("/workflows run alpha");
+    expect(run.editorText).toContain('Request: Prepare typed input for the exact current workflow "typed"');
+    expect(run.editorText).toContain("launches in a separate action");
     expect(run.selectCalls.flatMap((call) => call.options).every((option) => typeof option === "string")).toBe(true);
   });
 

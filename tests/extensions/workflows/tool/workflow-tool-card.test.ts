@@ -158,6 +158,28 @@ describe("workflow tool card", () => {
     expect(awaiting).toContain("│ ◐ waiting for operator decision");
   });
 
+  it("shows current-call typed JSON without persisting it in result details", () => {
+    const tool = workflowTool();
+    const inputValue = { task: "Review", mode: "adaptive" };
+    expect(tool.formatApprovalDetails?.({ name: "typed-review", inputValue })).toContain(
+      'Input (JSON): {"mode":"adaptive","task":"Review"}',
+    );
+    expect(tool.formatApprovalDetails?.({ name: "plain-review" })).not.toContain(
+      expect.stringContaining("Input (JSON)"),
+    );
+
+    const result: ToolResult = {
+      content: [{ type: "text", text: "streaming" }],
+      details: { workflowName: "typed-review", status: "running", agentRows: [] },
+    };
+    const lines = plain(
+      render(tool, result, { expanded: true, isPartial: true }, { name: "typed-review", inputValue }),
+    );
+
+    expect(lines).toContain('│ input (JSON): {"mode":"adaptive","task":"Review"}');
+    expect(result.details).not.toHaveProperty("inputValue");
+  });
+
   it("preserves workflow identity and state at narrow widths without overflowing", () => {
     const width = 28;
     const lines = render(
