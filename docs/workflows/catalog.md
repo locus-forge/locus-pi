@@ -214,9 +214,11 @@ editor, and only then calls `setEditorText()` once. For an untyped source,
 it reaches the runtime without a model planning or authoring turn, and optional
 semantic input can be appended on the same command line. For a source with a
 statically admitted `meta.inputSchema`, `Start` instead prefills a
-preparation-only `locus-pi-workflow-run` handoff. The skill returns canonical
-JSON and an editable `--input-json` command without launching, so the user can
-review the value and start it separately. `Edit` and `Review` still prefill the compact
+`/skill:locus-pi-workflow-run` invocation. Submitting it expands the installed
+skill, which prepares canonical JSON and calls the native `workflow` tool. Native
+exec approval displays that value as the separate user decision before trusted
+workflow execution; an unavailable tool fails visibly instead of falling back to
+Pi, a shell, or `/workflows`. `Edit` and `Review` still prefill the compact
 `Request: ...`, `Skill: locus-pi-workflow-create`, and
 `Additional instructions:` handoff because those actions require source work.
 The packaged skill owns workflow-authoring instructions. No global catalog

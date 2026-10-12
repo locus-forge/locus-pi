@@ -110,12 +110,15 @@ emergency compatibility alias; every other operation uses `/workflows`.
 `Start` restores editable text to the main editor; it never submits or starts a
 workflow by itself. For a workflow without `meta.inputSchema`, it restores the
 direct `/workflows run <name>` command. For a workflow with a statically admitted
-input schema, it restores a preparation-only prompt for the installed
-`locus-pi-workflow-run` skill. The skill inspects the exact selected source,
-returns canonical JSON plus an editable `--input-json` command, and stops. The
-user reviews that value and launches it in a separate action.
+input schema, it restores an explicit `/skill:locus-pi-workflow-run` request.
+After the user submits that request, Pi expands the installed skill; the agent
+inspects the exact selected source, prepares canonical `inputValue`, and calls the
+native `workflow` tool. Native exec approval displays that JSON before the user
+authorizes trusted workflow execution. If the tool is unavailable, this catalog
+route stops visibly; it does not invoke Pi, use a shell, or emit a `/workflows`
+fallback.
 
-Programmatic `workflow` tool launches additionally show a bounded canonical
+Programmatic `workflow` tool launches show a bounded canonical
 preview in native approval and the current-call tool card, including on a
 pre-start validation failure. The generated slash command bypasses model-tool
 approval and the tool card; its JSON remains visible in the editable command.

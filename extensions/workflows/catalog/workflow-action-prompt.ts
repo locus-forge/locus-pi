@@ -4,7 +4,8 @@ import type { WorkflowBrowserIntent } from "./workflow-catalog.js";
 
 /**
  * Deterministic editor handoff. Untyped Start restores the direct command.
- * Typed Start prepares a separate, reviewable command without launching it.
+ * Typed Start expands the run skill so the agent prepares typed input and calls
+ * the native workflow tool; its exec approval is the operator review boundary.
  * Edit and review continue through the packaged authoring skill.
  */
 export function buildWorkflowActionPrompt(intent: WorkflowBrowserIntent): string {
@@ -24,10 +25,9 @@ export function buildWorkflowActionPrompt(intent: WorkflowBrowserIntent): string
     const command = buildWorkflowRunCommand(row.target);
     if (workflowSourceInputSchema(intent.sourceState.source) === undefined) return command;
     return [
-      `Request: Prepare typed input for the exact current workflow ${JSON.stringify(row.name)} resolved from ${JSON.stringify(row.sourceLocator)}. Do not start it.`,
-      "Skill: locus-pi-workflow-run",
+      `/skill:locus-pi-workflow-run Start the exact current workflow ${JSON.stringify(row.name)} resolved from ${JSON.stringify(row.sourceLocator)}.`,
       "",
-      `Preparation-only mode: Inspect that exact source's static meta.inputSchema without importing the module. Build one explicit inputValue from the user's intent and repository evidence. Return its canonical JSON and one editable launch command beginning ${JSON.stringify(`${command} --input-json `)}. Do not call the workflow tool, submit the command, or start the workflow; the user reviews the JSON and launches in a separate action. Never invent unresolved required values, defaults, coercions, or unknown properties.`,
+      `This is an explicit programmatic run request from the interactive Pi catalog. Inspect that exact source's static meta.inputSchema without importing the module. Build one explicit inputValue from the user's intent and repository evidence, show its canonical JSON, then call the native workflow tool with name ${JSON.stringify(row.name)} and that inputValue. Native exec approval is the user's review step before trusted workflow execution. If the workflow tool is unavailable, report the missing prerequisite and stop. Do not invoke Pi, use a shell, emit or execute a /workflows command, or ask the user to run one. Never invent unresolved required values, defaults, coercions, or unknown properties; ask one focused question when a required value cannot be established.`,
       "",
       "Additional launch instructions:",
       "",

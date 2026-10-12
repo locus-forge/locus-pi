@@ -132,8 +132,9 @@ Review `evaluator-optimizer.design.md` and `evaluator-optimizer.workflow.mjs` sa
 ```
 
 Catalog `Start` keeps the direct command for text-input workflows. For typed
-input it prepares canonical JSON and an editable command without launching;
-the user reviews that value and starts the workflow separately. See
+input it expands the installed run skill: the agent prepares canonical JSON and
+calls the native `workflow` tool, whose exec approval shows the value before the
+user authorizes execution. It never falls back to a shell or slash command. See
 [Run and inspect](docs/workflows/running.md#start-from-the-catalog).
 
 [Create your first workflow](docs/workflows/create.md) explains the skill and includes

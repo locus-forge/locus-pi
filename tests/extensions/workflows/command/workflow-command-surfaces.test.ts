@@ -98,7 +98,7 @@ function compactHarness(root: string): Harness {
 }
 
 describe("/workflows help and unknown commands", () => {
-  it("uses typed preparation from the workflow target chooser", async () => {
+  it("uses a native typed-tool request from the workflow target chooser", async () => {
     const root = makeRoot();
     const workflowDir = path.join(root, ".locus-pi", "workflows");
     mkdirSync(workflowDir, { recursive: true });
@@ -111,8 +111,8 @@ describe("/workflows help and unknown commands", () => {
     run.selectQueue.push("run", "typed");
     workflows(run.pi);
     await run.commands.get("workflows")!.handler("", run.ctx);
-    expect(run.editorText).toContain('Request: Prepare typed input for the exact current workflow "typed"');
-    expect(run.editorText).toContain("launches in a separate action");
+    expect(run.editorText).toMatch(/^\/skill:locus-pi-workflow-run Start the exact current workflow "typed"/u);
+    expect(run.editorText).toContain('call the native workflow tool with name "typed" and that inputValue');
     expect(run.selectCalls.flatMap((call) => call.options).every((option) => typeof option === "string")).toBe(true);
   });
 
