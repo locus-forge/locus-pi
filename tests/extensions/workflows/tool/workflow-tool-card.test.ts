@@ -9,6 +9,7 @@ import type {
 import type { ToolDefinition } from "../../../../extensions/_shared/host/pi-api.js";
 import workflows from "../../../../extensions/workflows/index.js";
 import { agentLiveStore } from "../../../../extensions/_shared/agent-runtime/agent-live-store.js";
+import { workflowConfirmationDetails } from "../../../../extensions/workflows/tool/workflow-tool.js";
 import { snapshotWorkflowToolCardAgents } from "../../../../extensions/workflows/tool/workflow-tool-card.js";
 import { createHarness } from "../../../test-harness.js";
 
@@ -161,10 +162,10 @@ describe("workflow tool card", () => {
   it("shows current-call typed JSON without persisting it in result details", () => {
     const tool = workflowTool();
     const inputValue = { task: "Review", mode: "adaptive" };
-    expect(tool.formatApprovalDetails?.({ name: "typed-review", inputValue })).toContain(
+    expect(workflowConfirmationDetails({ name: "typed-review", inputValue }, process.cwd())).toContain(
       'Input (JSON): {"mode":"adaptive","task":"Review"}',
     );
-    expect(tool.formatApprovalDetails?.({ name: "plain-review" })).not.toContain(
+    expect(workflowConfirmationDetails({ name: "plain-review" }, process.cwd())).not.toContain(
       expect.stringContaining("Input (JSON)"),
     );
 

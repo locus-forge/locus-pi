@@ -1,7 +1,7 @@
 import { snapshotWorkflowInput, type WorkflowInputFields } from "../runtime/workflow-input.js";
 import { canonicalWorkflowJSON } from "../runtime/structured-results/schema.js";
 /**
- * Native workflow schema, approval, command-launcher dispatch and terminal result.
+ * Native workflow schema, interactive confirmation, command-launcher dispatch and terminal result.
  * Cards own tool-call hierarchy; command widgets and overlays remain in /workflows.
  */
 
@@ -59,7 +59,7 @@ import {
   removedWorkflowBudgetKeyMessage,
 } from "../runtime/workflow-budget.js";
 import { WorkflowParams } from "./workflow-tool-params.js";
-function workflowApprovalDetails(args: unknown, projectRoot: string): string[] {
+export function workflowConfirmationDetails(args: unknown, projectRoot: string): string[] {
   const record = args !== null && typeof args === "object" ? (args as Record<string, unknown>) : {};
   const target = String(record.name ?? record.scriptPath ?? record.script ?? "unspecified");
   let workspace: string;
@@ -108,7 +108,7 @@ function workflowApprovalDetails(args: unknown, projectRoot: string): string[] {
       : []),
     "Surface: trusted-file workflow runner",
     "Trust: reviewed JavaScript with full Node.js/module access in the Pi host process",
-    "Isolation: none — exec approval is consent, not a sandbox",
+    "Isolation: none — confirmation is consent, not a sandbox",
   ];
 }
 
@@ -132,10 +132,6 @@ export interface WorkflowToolDependencies {
 
 export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDependencies): void {
   const { commandLauncher } = deps;
-  let approvalProjectRoot = process.cwd();
-  pi.on("session_start", (_event, ctx) => {
-    approvalProjectRoot = getProjectRoot(ctx);
-  });
   registerToolWithErrorResults(pi, {
     name: "workflow",
     label: "workflow",
@@ -147,7 +143,7 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
       `Fresh workflows default to unique .locus-pi/workspaces/<generated-run-name> workspaces; runName selects .locus-pi/workspaces/<runName> for new names and ` +
       `reuses an existing legacy-only .locus-pi/plans/<runName>; resume repeats the original workspace. Root evidence is stored under ` +
       `${WORKFLOW_RUN_GROUP_STORAGE_PATTERN}{outputs,runtime}; saved children and resume attempts use ${WORKFLOW_NESTED_RUN_STORAGE_PATTERN}{outputs,runtime}. ` +
-      `The saved JavaScript executes with full Node.js/module access in the Pi host process; it is not sandboxed, and exec approval is consent rather than ` +
+      `The saved JavaScript executes with full Node.js/module access in the Pi host process; it is not sandboxed, and interactive confirmation is consent rather than ` +
       `capability isolation. A canonical folder <name>/ may own <name>.workflow.mjs plus direct child entries addressable as <name>/<child>, or may be group-only ` +
       `with direct children and no runnable root; the nearest Project namespace wins as a whole, then User, then Package. Existing flat Project/User files remain ` +
       `standalone compatibility entries. The DSL orchestrates sub-agents; bare agent() starts a clean child, while an explicit agent name selects a project or ` +
@@ -166,8 +162,6 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
         Object.hasOwn(input, "inputValue") ? { ...(args as object), ...input } : args,
       );
     },
-    approval: "exec",
-    formatApprovalDetails: (args) => workflowApprovalDetails(args, approvalProjectRoot),
     renderShell: "self",
     renderCall: () => new EmptyWorkflowToolCallComponent(),
     renderResult: renderWorkflowToolResultCard,
@@ -230,10 +224,31 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
       if (commandLauncher.currentLease(ctx) === undefined) {
         return errorResult("workflow: this extension session has already shut down", { owner: "workflows" });
       }
-      const transcript = createWorkflowTranscript(ctx, workflowTargetLabel(valid.value), "tool", {
-        ...snapshotWorkflowInput(valid.value as WorkflowInputFields),
-      });
       const workflowName = workflowTargetLabel(valid.value);
+      const launchInput = snapshotWorkflowInput(valid.value as WorkflowInputFields);
+      if (!isOneShotHostMode(ctx)) {
+        let confirmed: boolean;
+        try {
+          confirmed = await ctx.ui.confirm(
+            `Run trusted workflow ${JSON.stringify(workflowName)}?`,
+            workflowConfirmationDetails({ ...valid.value, ...launchInput }, getProjectRoot(ctx)).join("\n"),
+          );
+        } catch (error) {
+          return errorResult(
+            `workflow: interactive confirmation could not be opened: ${error instanceof Error ? error.message : String(error)}`,
+            { owner: "workflows" },
+          );
+        }
+        if (!confirmed) {
+          return textResult("workflow launch cancelled before execution", {
+            owner: "workflows",
+            workflowName,
+            status: "cancelled",
+            disposition: { status: "cancelled" },
+          });
+        }
+      }
+      const transcript = createWorkflowTranscript(ctx, workflowName, "tool", launchInput);
       const taskTitle = workflowTaskTitle(valid.value.input);
       let targetBinding: ResolvedWorkflowTarget | undefined;
       try {
@@ -258,7 +273,7 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
           ...(valid.value.scriptPath !== undefined ? { scriptPath: valid.value.scriptPath } : {}),
           ...(valid.value.script !== undefined ? { script: valid.value.script } : {}),
           ...(targetBinding === undefined ? {} : { targetBinding }),
-          ...snapshotWorkflowInput(valid.value as WorkflowInputFields),
+          ...launchInput,
           ...(valid.value.items !== undefined ? { items: valid.value.items } : {}),
           ...(valid.value.workspaceDir !== undefined ? { workspaceDir: valid.value.workspaceDir } : {}),
           ...(valid.value.runName !== undefined ? { runName: valid.value.runName } : {}),

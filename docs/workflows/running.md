@@ -110,18 +110,21 @@ emergency compatibility alias; every other operation uses `/workflows`.
 `Start` restores editable text to the main editor; it never submits or starts a
 workflow by itself. For a workflow without `meta.inputSchema`, it restores the
 direct `/workflows run <name>` command. For a workflow with a statically admitted
-input schema, it restores an explicit `/skill:locus-pi-workflow-run` request.
-After the user submits that request, Pi expands the installed skill; the agent
-inspects the exact selected source, prepares canonical `inputValue`, and calls the
-native `workflow` tool. Native exec approval displays that JSON before the user
-authorizes trusted workflow execution. If the tool is unavailable, this catalog
-route stops visibly; it does not invoke Pi, use a shell, or emit a `/workflows`
-fallback.
+input schema, it restores a complete explicit native-run request. After the user
+submits that request, the agent inspects the exact selected source, prepares
+canonical `inputValue`, and calls the native `workflow` tool. The tool's
+extension-owned interactive confirmation displays that JSON before the user
+authorizes trusted workflow execution. This catalog route does not require a
+loaded package skill. If the tool is unavailable, it stops visibly; it does not
+invoke Pi, use a shell, or emit a `/workflows` fallback.
 
-Programmatic `workflow` tool launches show a bounded canonical
-preview in native approval and the current-call tool card, including on a
-pre-start validation failure. The generated slash command bypasses model-tool
-approval and the tool card; its JSON remains visible in the editable command.
+Admitted programmatic `workflow` tool launches show a bounded canonical preview
+in interactive confirmation and the current-call tool card. A pre-start
+validation failure never reaches confirmation; its current-call error card keeps
+the attempted JSON visible. One-shot `print`/`json` hosts have no operator to
+confirm and require explicit non-interactive authorization from their caller. The
+generated slash command bypasses model-tool confirmation and the tool card; its
+JSON remains visible in the editable command.
 Preview display is diagnostic only: accepted typed authority remains the private
 `launch-binding.json`, while persisted results keep identities and digests instead
 of copying the value. Runtime validation never inserts defaults, coerces values,

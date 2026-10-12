@@ -54,11 +54,14 @@ builtins still allow filesystem, subprocess, network, dynamic code and other hos
 effects, including indirect loaders the AST policy cannot enumerate. Identity
 coverage is not isolation, runtime dependency closure or determinism.
 
-The model-callable `workflow` tool declares Pi `approval: "exec"`; its native
-approval details warn that the selected file has full host Node.js/module access
-and no sandbox. Approval records consent but does not constrain the module.
-`/workflows run` is an explicit operator command and does not pass through the
-tool-approval path; `locus-pi` adds no second launch prompt or `decision` entry.
+The model-callable `workflow` tool owns an awaited confirmation in interactive
+TUI and RPC sessions. It shows the target, workspace, bounded canonical typed
+input, and a warning that the selected file has full host Node.js/module access
+and no sandbox before it attaches or imports the workflow. Confirmation records
+consent but does not constrain the module. One-shot `print` and `json` hosts have
+no reachable operator and bypass that prompt; their caller must supply explicit
+non-interactive authorization. `/workflows run` is itself an explicit operator
+command and does not pass through the tool-confirmation path.
 
 ## Approval / trust discipline
 

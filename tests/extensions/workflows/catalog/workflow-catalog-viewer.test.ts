@@ -734,7 +734,7 @@ describe("focused workflow catalog", () => {
     expect(after).toContain("// 03");
   });
 
-  it("fills typed Start as an explicit run-skill invocation without submitting it", async () => {
+  it("fills typed Start as an explicit native-run request without submitting it", async () => {
     const root = projectWithWorkflows({ alpha: 'export const meta={inputSchema:{type:"string"}};\n' });
     const harness = createHarness(root);
     harness.ctx.hasUI = true;
@@ -743,7 +743,7 @@ describe("focused workflow catalog", () => {
 
     await harness.commands.get("workflows")!.handler("list", harness.ctx);
 
-    expect(harness.editorText).toMatch(/^\/skill:locus-pi-workflow-run Start.*call the native workflow tool/su);
+    expect(harness.editorText).toMatch(/^Start the exact current workflow.*call the native workflow tool/su);
     expect([harness.sentMessages, harness.sentUserMessages]).toEqual([[], []]);
     expect(existsSync(path.join(root, ".locus-pi", "runs"))).toBe(false);
   });

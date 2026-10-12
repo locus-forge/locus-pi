@@ -213,12 +213,13 @@ editor, and only then calls `setEditorText()` once. For an untyped source,
 `Start` prefills the direct `/workflows run <resolved-name>` command; submitting
 it reaches the runtime without a model planning or authoring turn, and optional
 semantic input can be appended on the same command line. For a source with a
-statically admitted `meta.inputSchema`, `Start` instead prefills a
-`/skill:locus-pi-workflow-run` invocation. Submitting it expands the installed
-skill, which prepares canonical JSON and calls the native `workflow` tool. Native
-exec approval displays that value as the separate user decision before trusted
-workflow execution; an unavailable tool fails visibly instead of falling back to
-Pi, a shell, or `/workflows`. `Edit` and `Review` still prefill the compact
+statically admitted `meta.inputSchema`, `Start` instead prefills a complete
+native-run request. Submitting it asks the agent to prepare canonical JSON and
+call the native `workflow` tool. The tool's extension-owned interactive
+confirmation displays that value as the separate user decision before trusted
+workflow execution; an unavailable tool fails visibly instead of falling back
+to Pi, a shell, or `/workflows`. This route does not require package skills.
+`Edit` and `Review` still prefill the compact
 `Request: ...`, `Skill: locus-pi-workflow-create`, and
 `Additional instructions:` handoff because those actions require source work.
 The packaged skill owns workflow-authoring instructions. No global catalog

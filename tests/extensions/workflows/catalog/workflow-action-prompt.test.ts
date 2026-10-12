@@ -40,19 +40,20 @@ describe("workflow Start editor handoff", () => {
     expect(startPrompt(rowFor("export default () => null;\n"))).toBe("/workflows run review");
   });
 
-  it("expands the run skill for one native typed-tool launch", () => {
+  it("requests one native typed-tool launch without requiring a skill command", () => {
     const prompt = startPrompt(
       rowFor(
         'export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"],additionalProperties:false}}; export default()=>null;\n',
       ),
     );
 
-    expect(prompt).toMatch(/^\/skill:locus-pi-workflow-run Start the exact current workflow "review"/u);
+    expect(prompt).toMatch(/^Start the exact current workflow "review"/u);
     expect(prompt).toContain("explicit programmatic run request from the interactive Pi catalog");
     expect(prompt).toContain('call the native workflow tool with name "review" and that inputValue');
-    expect(prompt).toContain("Native exec approval is the user's review step");
+    expect(prompt).toContain("interactive confirmation is the user's review step");
     expect(prompt).toContain("Do not invoke Pi, use a shell, emit or execute a /workflows command");
     expect(prompt).not.toContain("--input-json");
+    expect(prompt).not.toContain("/skill:");
     expect(prompt).not.toContain("preparation-only");
   });
 

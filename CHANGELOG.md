@@ -6,10 +6,11 @@ User-visible changes to the public package.
 
 ### Fixed
 
-- Typed catalog `Start` now expands the installed run skill and requests the
-  native `workflow` tool, whose exec approval shows canonical JSON before the
-  user authorizes execution. It no longer prepares a second slash command or
-  permits an agent to replace the native path with shell execution.
+- Typed catalog `Start` now requests the native `workflow` tool directly. The
+  tool shows canonical JSON in an extension-owned interactive confirmation
+  before it attaches or imports the workflow. The route no longer requires a
+  loaded skill command, prepares a second slash command, or permits shell
+  fallback.
 
 ## [0.14.1] - 2026-10-08
 

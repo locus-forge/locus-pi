@@ -45,10 +45,12 @@ When the request is preparation-only, return the canonical JSON and an exact
 editable `/workflows run ... --input-json <JSON>` command, then stop. Do not call
 the workflow tool, invoke Pi, submit the command, or start the workflow. The user
 reviews that value and launches in a separate action. For an explicit programmatic
-run request, show the canonical value before the tool call; native approval and the
-current-call tool card repeat a bounded preview without persisting the value in
-result details. A slash launch keeps the JSON visible in the editable command and
-bypasses model-tool approval and the tool card.
+run request, show the canonical value before the tool call; interactive
+confirmation and the current-call tool card repeat a bounded preview without persisting the value in
+result details. In an interactive TUI/RPC session the tool itself awaits the
+operator's confirmation before it attaches or imports the workflow. A slash
+launch keeps the JSON visible in the editable command and bypasses model-tool
+confirmation and the tool card.
 
 Typed slash input is the complete raw `--input-json <JSON>` tail. These are Pi
 command bytes, not shell syntax, so do not wrap the JSON in shell quotes. On
