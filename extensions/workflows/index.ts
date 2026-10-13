@@ -64,7 +64,6 @@ export default function workflows(pi: ExtensionAPI): void {
   const sessionRunIds = new Set<string>();
   const sessionPanels = new Set<WorkflowProgressComponent>();
   const catalogLaunches = new Map<string, NonNullable<ReturnType<typeof workflowCatalogLaunchSelection>>>();
-  const catalogGuardedNames = new Set<string>();
   let completionProjectRoot = process.cwd();
   let completionWorkingDirectory = completionProjectRoot;
   const rememberCompletionContext = (ctx: ExtensionContext): void => {
@@ -256,7 +255,6 @@ export default function workflows(pi: ExtensionAPI): void {
     disposeSessionPanels();
     sessionRunIds.clear();
     catalogLaunches.clear();
-    catalogGuardedNames.clear();
     rememberCompletionContext(ctx);
     commandLauncher.startSession(ctx);
   });
@@ -264,7 +262,6 @@ export default function workflows(pi: ExtensionAPI): void {
     resetWorkflowLiveExecutions();
     disposeSessionPanels();
     catalogLaunches.clear();
-    catalogGuardedNames.clear();
     await commandLauncher.shutdown();
     unpinTransientUiKey(pi, WORKFLOW_LIVE_WIDGET_KEY);
   });
@@ -281,7 +278,7 @@ export default function workflows(pi: ExtensionAPI): void {
         catalogLaunches.delete(catalogSelectionId);
         return { status: "selected", ...selected };
       }
-      if (name !== undefined && catalogGuardedNames.has(name)) {
+      if (name !== undefined && [...catalogLaunches.values()].some((selected) => selected.target.ref === name)) {
         return { status: "required", message: "catalogSelectionId is required for this catalog-selected workflow" };
       }
       return { status: "none" };
@@ -305,7 +302,6 @@ export default function workflows(pi: ExtensionAPI): void {
       const selected = workflowCatalogLaunchSelection(intent);
       if (selected === undefined || catalogSelectionId === undefined) return;
       catalogLaunches.set(catalogSelectionId, selected);
-      catalogGuardedNames.add(selected.target.ref);
     },
   });
 }

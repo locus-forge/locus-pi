@@ -136,7 +136,9 @@ input it restores a complete native-run request: the agent prepares canonical
 JSON and calls the `workflow` tool, whose interactive confirmation shows the
 value before the user authorizes execution. A one-use `catalogSelectionId`
 correlates that request with the extension-retained target and entry-byte digest,
-so unrelated calls cannot consume it and source drift is refused. It does not
+so unrelated calls cannot consume it and source drift is refused. The name guard
+lasts only while a matching selection remains outstanding; an explicitly reused
+ID still fails. It does not
 require package skills and never falls back to a shell or slash command. See
 [Run and inspect](docs/workflows/running.md#start-from-the-catalog).
 

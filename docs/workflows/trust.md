@@ -59,12 +59,15 @@ TUI and RPC sessions. It detaches the complete launch request, then shows the
 resolved source locator and entry SHA-256, effective workspace, bounded canonical
 typed input, and a warning that the selected file has full host Node.js/module
 access and no sandbox before it attaches or imports the workflow. Admission
-enforces the confirmed target and digest. Confirmation records consent but does
+enforces the confirmed target, digest, and displayed explicit, named, or resumed
+workspace selection. Confirmation records consent but does
 not constrain the module. Parent cancellation, a local five-minute timeout,
 operator refusal, and dialog failure all fail closed before attach. For typed
 catalog Start, a one-use `catalogSelectionId` looks up the selected target and
 entry-byte digest in extension-owned session state; unrelated calls cannot
-consume it, and missing, mismatched, or reused IDs are refused. One-shot `print`
+consume it, and missing or mismatched IDs are refused while that same-name
+selection remains outstanding. Consuming the last selection releases the name
+guard, while explicitly reusing an old ID remains refused. One-shot `print`
 and `json` hosts have no reachable
 operator and bypass that prompt; their caller must supply explicit non-interactive
 authorization. `/workflows run` is itself an explicit operator command and does

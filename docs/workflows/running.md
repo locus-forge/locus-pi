@@ -120,10 +120,13 @@ invoke Pi, use a shell, or emit a `/workflows` fallback.
 
 The extension retains the selected target and entry-byte digest behind a
 one-use `catalogSelectionId` written into the request. Unrelated tool calls do
-not consume it; missing, mismatched, or reused IDs fail closed. A new shadowing
-source or changed selected file is refused before confirmation; admission checks
-the digest again before module import, so editing the file while confirmation is
-open cannot switch the executed entry.
+not consume it. Missing or mismatched IDs fail closed while a same-name selection
+is outstanding. A matching ID is consumed once; after the last same-name
+selection is consumed, an independent tool call is allowed, while explicitly
+reusing an old ID still fails. A new shadowing source or changed selected file is
+refused before confirmation; admission checks the digest again before module
+import, so editing the file while confirmation is open cannot switch the
+executed entry.
 
 Programmatic `workflow` tool launches show a bounded canonical preview in
 interactive confirmation and the current-call tool card. Tool argument-shape and
@@ -402,7 +405,10 @@ In interactive TUI/RPC sessions, the tool detaches the complete validated launch
 request, resolves and hashes its source, and shows the effective workspace,
 safe source locator, entry SHA-256, and typed value in an extension-owned
 confirmation before attach or import. Admission enforces the same target and
-digest. Parent cancellation dismisses the prompt; a local race settles an
+digest and the displayed explicit, named, or resumed workspace selection. A
+relative workspace resolving elsewhere after a working-directory change, or a
+named workspace switching between the current and legacy roots, is refused
+before workspace creation. Parent cancellation dismisses the prompt; a local race settles an
 unanswered prompt after five minutes even if an adapter ignores its signal.
 Cancellation, timeout, operator refusal, or dialog failure returns a
 machine-readable tool error and starts no workflow.

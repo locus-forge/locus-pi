@@ -32,7 +32,11 @@ import {
 } from "../runtime/workflow-discovery.js";
 import { sha256WorkflowBytes } from "../runtime/workflow-script-identity.js";
 import type { WorkflowJournalLine } from "../runtime/workflow-runtime.js";
-import { resolveWorkflowWorkspaceDirectoryPath } from "../runtime/workflow-output.js";
+import {
+  resolveNamedWorkflowWorkspacePath,
+  resolveWorkflowWorkspaceDirectoryPath,
+} from "../runtime/workflow-output.js";
+import { readWorkflowResumeWorkspaceIdentity } from "../runtime/workflow-run-resume.js";
 import {
   formatOperatorScriptIdentity,
   safeOperatorSourceRef,
@@ -173,20 +177,27 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
       if (launch.workspaceDir !== undefined && launch.runName !== undefined) {
         return errorResult("workflow: runName and workspaceDir are mutually exclusive", { owner: "workflows" });
       }
-      let effectiveWorkspaceDir: string | undefined;
-      if (launch.workspaceDir !== undefined) {
-        try {
-          effectiveWorkspaceDir = resolveWorkflowWorkspaceDirectoryPath(
+      let expectedWorkspaceRelativePath: string | undefined;
+      try {
+        if (launch.workspaceDir !== undefined) {
+          expectedWorkspaceRelativePath = resolveWorkflowWorkspaceDirectoryPath(
             getProjectRoot(ctx),
             launch.workspaceDir,
             workflowTargetLabel(launch),
             getWorkingDirectory(ctx),
           ).relativePath;
-        } catch (error) {
-          return errorResult(`workflow: ${error instanceof Error ? error.message : String(error)}`, {
-            owner: "workflows",
-          });
+        } else if (launch.resumeFromRunId !== undefined) {
+          expectedWorkspaceRelativePath = readWorkflowResumeWorkspaceIdentity(
+            getProjectRoot(ctx),
+            launch.resumeFromRunId,
+          ).relativePath;
+        } else if (launch.runName !== undefined) {
+          expectedWorkspaceRelativePath = resolveNamedWorkflowWorkspacePath(getProjectRoot(ctx), launch.runName);
         }
+      } catch (error) {
+        return errorResult(`workflow: ${error instanceof Error ? error.message : String(error)}`, {
+          owner: "workflows",
+        });
       }
       if (commandLauncher.currentLease(ctx) === undefined) {
         return errorResult("workflow: this extension session has already shut down", { owner: "workflows" });
@@ -247,7 +258,7 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
             {
               ...launch,
               ...launchInput,
-              effectiveWorkspaceDir,
+              effectiveWorkspaceDir: expectedWorkspaceRelativePath,
               sourceLocator,
               scriptSha256: expectedScriptSha256,
             },
@@ -292,6 +303,7 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
           ...(launch.script !== undefined ? { script: launch.script } : {}),
           ...(targetBinding === undefined ? {} : { targetBinding }),
           ...(expectedScriptSha256 === undefined ? {} : { expectedScriptSha256 }),
+          ...(expectedWorkspaceRelativePath === undefined ? {} : { expectedWorkspaceRelativePath }),
           ...launchInput,
           ...(launch.items !== undefined ? { items: launch.items } : {}),
           ...(launch.workspaceDir !== undefined ? { workspaceDir: launch.workspaceDir } : {}),

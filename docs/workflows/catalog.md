@@ -221,9 +221,12 @@ workflow execution; an unavailable tool fails visibly instead of falling back
 to Pi, a shell, or `/workflows`. The request includes a one-use
 `catalogSelectionId` that looks up the selected target and entry-byte SHA-256 in
 extension-owned session state; unrelated tool calls do not consume it, while a
-missing, mismatched, or reused ID fails closed. The tool refuses precedence or
-byte drift before confirmation, and admission checks the digest again before
-import. This route does not require package skills.
+missing or mismatched ID fails closed while that workflow still has an
+outstanding selection. Each matching ID is consumed once; after the last one is
+consumed, an independent same-name tool call is allowed, while explicitly
+reusing an old ID still fails. The tool refuses precedence or byte drift before
+confirmation, and admission checks the digest again before import. This route
+does not require package skills.
 `Edit` and `Review` still prefill the compact
 `Request: ...`, `Skill: locus-pi-workflow-create`, and
 `Additional instructions:` handoff because those actions require source work.

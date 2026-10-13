@@ -199,8 +199,10 @@ Check the target name, required `--workspace-dir`, safe project-relative path ru
 
 Catalog Start also binds the selected target and entry-byte digest behind the
 one-use `catalogSelectionId` written into its request. Unrelated workflow calls
-cannot consume that identity. If the ID is missing, reused, mismatched, or its
-source changes before launch, refresh the catalog instead of confirming a
+cannot consume that identity. While the selection remains outstanding, a missing
+or mismatched ID is refused; an explicitly reused ID is always refused. After the
+last same-name selection is consumed, independent calls are allowed again. If
+the source changes before launch, refresh the catalog instead of confirming a
 different workflow.
 
 ### A workflow is awaiting operator input

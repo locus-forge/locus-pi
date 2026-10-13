@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import workflows from "../../../../extensions/workflows/index.js";
 import {
   createWorkflowWorktree,
   createWorkflowWorkspaceManager,
@@ -16,6 +17,7 @@ import {
   WORKFLOW_WORKSPACE_DIR_PATTERN,
 } from "../../../../extensions/workflows/runtime/workflow-workspace.js";
 import { project } from "../../../fixtures/workflow-durable-project.js";
+import { createHarness } from "../../../test-harness.js";
 
 function repository() {
   const root = mkdtempSync(path.join(tmpdir(), "locus-workflow-workspace-"));
@@ -177,6 +179,90 @@ describe("workflow runtime-owned workspace", () => {
 
     rmSync(path.join(baseDir, "agent-1"), { force: true });
     rmSync(outside, { recursive: true, force: true });
+  });
+});
+
+const confirmedWorkspaceRoots: string[] = [];
+
+function confirmedWorkspaceHarness() {
+  const root = mkdtempSync(path.join(tmpdir(), "workflow-tool-confirmed-workspace-"));
+  confirmedWorkspaceRoots.push(root);
+  const workflowDir = path.join(root, ".locus-pi", "workflows");
+  mkdirSync(workflowDir, { recursive: true });
+  writeFileSync(
+    path.join(workflowDir, "typed.workflow.mjs"),
+    'export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"],additionalProperties:false}}; export default () => "ok";\n',
+  );
+  const harness = createHarness(root);
+  workflows(harness.pi);
+  let resolveConfirmation: ((confirmed: boolean) => void) | undefined;
+  vi.spyOn(harness.ctx.ui, "confirm").mockImplementation(
+    () =>
+      new Promise<boolean>((resolve) => {
+        resolveConfirmation = resolve;
+      }),
+  );
+  return { root, harness, confirm: () => resolveConfirmation?.(true) };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  for (const root of confirmedWorkspaceRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+describe("workflow tool confirmed workspace identity", () => {
+  it("refuses a relative workspace that resolves differently after confirmation", async () => {
+    const { root, harness, confirm } = confirmedWorkspaceHarness();
+    const firstDirectory = path.join(root, "first");
+    const secondDirectory = path.join(root, "second");
+    mkdirSync(firstDirectory);
+    mkdirSync(secondDirectory);
+    harness.ctx.session!.workingDirectory = firstDirectory;
+
+    const pending = harness.tools
+      .get("workflow")!
+      .execute(
+        "workspace-cwd-drift",
+        { name: "typed", inputValue: { mode: "safe" }, workspaceDir: "./review" },
+        new AbortController().signal,
+        () => void 0,
+        harness.ctx,
+      );
+    harness.ctx.session!.workingDirectory = secondDirectory;
+    confirm();
+    const result = await pending;
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        'workflow workspace changed after confirmation: expected "first/review", got "second/review"',
+      ),
+    });
+    expect(existsSync(path.join(secondDirectory, "review"))).toBe(false);
+  });
+
+  it("refuses a runName whose current-versus-legacy selection changes after confirmation", async () => {
+    const { root, harness, confirm } = confirmedWorkspaceHarness();
+
+    const pending = harness.tools
+      .get("workflow")!
+      .execute(
+        "workspace-run-name-drift",
+        { name: "typed", inputValue: { mode: "safe" }, runName: "shared-review" },
+        new AbortController().signal,
+        () => void 0,
+        harness.ctx,
+      );
+    mkdirSync(path.join(root, ".locus-pi", "plans", "shared-review"), { recursive: true });
+    confirm();
+    const result = await pending;
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        'workflow workspace changed after confirmation: expected ".locus-pi/workspaces/shared-review", got ".locus-pi/plans/shared-review"',
+      ),
+    });
   });
 });
 

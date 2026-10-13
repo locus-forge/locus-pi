@@ -10,8 +10,10 @@ User-visible changes to the public package.
   tool shows canonical JSON in an extension-owned interactive confirmation
   before it attaches or imports the workflow. Every interactive call confirms a
   resolved source locator and entry-byte digest, then admission enforces that
-  digest. Typed catalog Start retains its exact selection behind a one-use
-  request ID, so unrelated calls cannot consume it. Full launch arguments are
+  digest and the displayed workspace selection. Typed catalog Start retains its
+  exact selection behind a one-use request ID, so unrelated calls cannot consume
+  it; the same-name guard is released after the last outstanding selection is
+  consumed, while an explicit reused ID still fails. Full launch arguments are
   detached before the dialog; confirmation is abort-aware, settles fail-closed
   after five minutes even if an adapter ignores the signal, and reports timeout
   or operator refusal as a machine-readable tool error. The

@@ -62,7 +62,7 @@ describe("/workflows root menu", () => {
     expect(existsSync(path.join(root, ".locus-pi", "runs"))).toBe(false);
   });
 
-  it("binds a typed Run selection outside editable text and refuses later source drift", async () => {
+  it("correlates each typed Run selection until consumption and then releases its name guard", async () => {
     const root = makeRoot();
     const workflowDir = path.join(root, ".locus-pi", "workflows");
     mkdirSync(workflowDir, { recursive: true });
@@ -77,8 +77,14 @@ describe("/workflows root menu", () => {
     workflows(h.pi);
 
     await h.commands.get("workflows")!.handler("", h.ctx);
-    const catalogSelectionId = /catalogSelectionId "([^"]+)"/u.exec(h.editorText)?.[1];
-    expect(catalogSelectionId).toBeDefined();
+    const firstCatalogSelectionId = /catalogSelectionId "([^"]+)"/u.exec(h.editorText)?.[1];
+    expect(firstCatalogSelectionId).toBeDefined();
+
+    h.selectQueue.push("run", "typed");
+    await h.commands.get("workflows")!.handler("", h.ctx);
+    const secondCatalogSelectionId = /catalogSelectionId "([^"]+)"/u.exec(h.editorText)?.[1];
+    expect(secondCatalogSelectionId).toBeDefined();
+    expect(secondCatalogSelectionId).not.toBe(firstCatalogSelectionId);
 
     const unrelated = await h.tools
       .get("workflow")!
@@ -98,8 +104,36 @@ describe("/workflows root menu", () => {
 
     const mismatch = await h.tools
       .get("workflow")!
-      .execute("mismatch", { name: "other", catalogSelectionId }, new AbortController().signal, () => void 0, h.ctx);
+      .execute(
+        "mismatch",
+        { name: "other", catalogSelectionId: firstCatalogSelectionId },
+        new AbortController().signal,
+        () => void 0,
+        h.ctx,
+      );
     expect(mismatch.content[0]).toMatchObject({ text: expect.stringContaining("does not match") });
+
+    const firstSelected = await h.tools
+      .get("workflow")!
+      .execute(
+        "first-selected",
+        { name: "typed", catalogSelectionId: firstCatalogSelectionId, inputValue: { mode: "safe" } },
+        new AbortController().signal,
+        () => void 0,
+        h.ctx,
+      );
+    expect(firstSelected.isError).not.toBe(true);
+
+    const stillGuarded = await h.tools
+      .get("workflow")!
+      .execute(
+        "still-guarded",
+        { name: "typed", inputValue: { mode: "safe" } },
+        new AbortController().signal,
+        () => void 0,
+        h.ctx,
+      );
+    expect(stillGuarded.content[0]).toMatchObject({ text: expect.stringContaining("catalogSelectionId is required") });
 
     writeFileSync(
       sourcePath,
@@ -109,7 +143,7 @@ describe("/workflows root menu", () => {
       .get("workflow")!
       .execute(
         "selected-drift",
-        { name: "typed", catalogSelectionId, inputValue: { mode: "safe" } },
+        { name: "typed", catalogSelectionId: secondCatalogSelectionId, inputValue: { mode: "safe" } },
         new AbortController().signal,
         () => void 0,
         h.ctx,
@@ -118,11 +152,23 @@ describe("/workflows root menu", () => {
     expect(h.editorText).toMatch(/^Start the exact current workflow "typed"/u);
     expect(result.isError).toBe(true);
     expect(result.content[0]).toMatchObject({ text: expect.stringContaining("entry bytes changed") });
+
+    const independent = await h.tools
+      .get("workflow")!
+      .execute(
+        "independent",
+        { name: "typed", inputValue: { mode: "safe" } },
+        new AbortController().signal,
+        () => void 0,
+        h.ctx,
+      );
+    expect(independent.isError).not.toBe(true);
+
     const reused = await h.tools
       .get("workflow")!
       .execute(
         "reused",
-        { name: "typed", catalogSelectionId, inputValue: { mode: "safe" } },
+        { name: "typed", catalogSelectionId: firstCatalogSelectionId, inputValue: { mode: "safe" } },
         new AbortController().signal,
         () => void 0,
         h.ctx,
