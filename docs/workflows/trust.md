@@ -55,14 +55,17 @@ effects, including indirect loaders the AST policy cannot enumerate. Identity
 coverage is not isolation, runtime dependency closure or determinism.
 
 The model-callable `workflow` tool owns an awaited confirmation in interactive
-TUI and RPC sessions. It shows the target, workspace, bounded canonical typed
-input, and a warning that the selected file has full host Node.js/module access
-and no sandbox before it attaches or imports the workflow. Confirmation records
-consent but does not constrain the module. Parent cancellation, five-minute
-timeout, operator refusal, and dialog failure all fail closed before attach. For
-typed catalog Start, the selected target and entry-byte digest are retained
-outside editable prompt text, checked before confirmation, and checked again by
-admission before import. One-shot `print` and `json` hosts have no reachable
+TUI and RPC sessions. It detaches the complete launch request, then shows the
+resolved source locator and entry SHA-256, effective workspace, bounded canonical
+typed input, and a warning that the selected file has full host Node.js/module
+access and no sandbox before it attaches or imports the workflow. Admission
+enforces the confirmed target and digest. Confirmation records consent but does
+not constrain the module. Parent cancellation, a local five-minute timeout,
+operator refusal, and dialog failure all fail closed before attach. For typed
+catalog Start, a one-use `catalogSelectionId` looks up the selected target and
+entry-byte digest in extension-owned session state; unrelated calls cannot
+consume it, and missing, mismatched, or reused IDs are refused. One-shot `print`
+and `json` hosts have no reachable
 operator and bypass that prompt; their caller must supply explicit non-interactive
 authorization. `/workflows run` is itself an explicit operator command and does
 not pass through the tool-confirmation path.

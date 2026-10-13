@@ -110,7 +110,7 @@ function workflowDefaultWorkspaceName(target: ResolvedWorkflowTarget): string {
 /** The launch request fields admission reads. Deliberately narrower than the runner's options. */
 export interface WorkflowRunAdmissionLaunch {
   targetBinding?: ResolvedWorkflowTarget;
-  /** Host-owned catalog entry-byte identity retained outside editable prompt text. */
+  /** Host-owned confirmed/catalog entry-byte identity retained outside model authority. */
   expectedScriptSha256?: string;
   name?: string;
   scriptPath?: string;
@@ -260,7 +260,7 @@ export async function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Pr
     assertWorkflowOutputDirRemoved(scriptIdentity.snapshotPath);
     if (opts.expectedScriptSha256 !== undefined && scriptIdentity.scriptSha256 !== opts.expectedScriptSha256) {
       throw new Error(
-        `workflow source changed after catalog selection: expected ${opts.expectedScriptSha256}, got ${scriptIdentity.scriptSha256}`,
+        `workflow source changed after confirmation or catalog selection: expected ${opts.expectedScriptSha256}, got ${scriptIdentity.scriptSha256}`,
       );
     }
     const schema = workflowSourceInputSchema(readFileSync(scriptIdentity.snapshotPath, "utf8"));

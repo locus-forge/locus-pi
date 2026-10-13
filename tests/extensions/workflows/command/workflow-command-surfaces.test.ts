@@ -112,7 +112,7 @@ describe("/workflows help and unknown commands", () => {
     workflows(run.pi);
     await run.commands.get("workflows")!.handler("", run.ctx);
     expect(run.editorText).toMatch(/^Start the exact current workflow "typed"/u);
-    expect(run.editorText).toContain('call the native workflow tool with name "typed" and that inputValue');
+    expect(run.editorText).toContain('call the native workflow tool with name "typed", catalogSelectionId');
     expect(run.selectCalls.flatMap((call) => call.options).every((option) => typeof option === "string")).toBe(true);
   });
 

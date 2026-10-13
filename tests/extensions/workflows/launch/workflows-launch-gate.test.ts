@@ -695,7 +695,7 @@ describe("/workflows run launch gate", () => {
       const tool = h.tools.get("workflow")!;
       const result = await tool.execute(
         "tool-full-result",
-        { name: "plan" },
+        { name: "live-smoke" },
         new AbortController().signal,
         () => void 0,
         h.ctx,
@@ -705,7 +705,7 @@ describe("/workflows run launch gate", () => {
       expect(result.details).not.toHaveProperty("humanResultText");
 
       const operatorText = tool.renderResult!(result, { expanded: true, isPartial: false }, renderTheme, {
-        args: { name: "plan" },
+        args: { name: "live-smoke" },
         toolCallId: "tool-full-result",
         invalidate() {},
         lastComponent: undefined,
@@ -758,14 +758,14 @@ describe("/workflows run launch gate", () => {
       const tool = h.tools.get("workflow")!;
       const result = await tool.execute(
         "tool-result-symlink",
-        { name: "plan" },
+        { name: "live-smoke" },
         new AbortController().signal,
         () => void 0,
         h.ctx,
       );
 
       const operatorText = tool.renderResult!(result, { expanded: true, isPartial: false }, renderTheme, {
-        args: { name: "plan" },
+        args: { name: "live-smoke" },
         toolCallId: "tool-result-symlink",
         invalidate() {},
         lastComponent: undefined,

@@ -53,7 +53,7 @@ import {
 import type { WorkflowCommandLauncher } from "../launch/workflow-command-launcher.js";
 import { handleWorkflowRunCommand } from "./run.js";
 import { presentWorkflowSkillHostCommand } from "./skills.js";
-import { fillWorkflowEditor, workflowEditorHandoff } from "./workflow-editor-handoff.js";
+import { fillWorkflowEditor, prepareWorkflowEditorHandoff } from "./workflow-editor-handoff.js";
 
 /** Canonical ordered root menu data for the `/workflows` command. */
 const WORKFLOW_MENU_DESCRIPTIONS = {
@@ -100,7 +100,7 @@ export interface WorkflowCommandRouterDependencies {
   completionContext: () => { projectRoot: string; workingDirectory: string };
   actionableRunIds: (projectRoot: string) => string[];
   /** Replace any prior catalog launch binding after a successful editor handoff. */
-  rememberCatalogLaunchSelection: (intent: WorkflowBrowserIntent | undefined) => void;
+  rememberCatalogLaunchSelection: (intent: WorkflowBrowserIntent, catalogSelectionId?: string) => void;
 }
 
 export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommandRouterDependencies): void {
@@ -111,7 +111,6 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
     const text = rawText.trim();
     const projectRoot = getProjectRoot(ctx);
     rememberCompletionContext(ctx);
-    rememberCatalogLaunchSelection(undefined);
 
     // Bare `/workflows` is the interactive command chooser. Noninteractive
     // hosts receive the same grammar as a read-only block instead of a prompt.
@@ -197,10 +196,12 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
           }
           return;
         }
-        const prompt = workflowEditorHandoff(ctx, intent);
-        if (prompt === undefined) return;
+        const prepared = prepareWorkflowEditorHandoff(ctx, intent);
+        if (prepared === undefined) return;
         await waitForNativeSelectorTeardown();
-        if (fillWorkflowEditor(ctx, prompt)) rememberCatalogLaunchSelection(intent);
+        if (fillWorkflowEditor(ctx, prepared.prompt)) {
+          rememberCatalogLaunchSelection(intent, prepared.catalogSelectionId);
+        }
         return;
       }
       const passive = buildWorkflowCatalogBlockFromModel(catalog, { compact: ctx.mode !== "tui" });
@@ -425,7 +426,7 @@ async function openWorkflowCommandMenu(
   workingDirectory: string,
   commandLauncher: WorkflowCommandLauncher,
   actionableRunIds: (projectRoot: string) => string[],
-  rememberCatalogLaunchSelection: (intent: WorkflowBrowserIntent | undefined) => void,
+  rememberCatalogLaunchSelection: (intent: WorkflowBrowserIntent, catalogSelectionId?: string) => void,
   route: (command: string) => Promise<void>,
 ): Promise<void> {
   const root = await requestWorkflowMenuSelection(
@@ -472,10 +473,12 @@ async function openWorkflowCommandMenu(
           row: selected,
           sourceState: readWorkflowCatalogSource(selected, projectRoot, workingDirectory),
         };
-        const prompt = workflowEditorHandoff(ctx, intent);
-        if (prompt === undefined) return;
+        const prepared = prepareWorkflowEditorHandoff(ctx, intent);
+        if (prepared === undefined) return;
         await waitForNativeSelectorTeardown();
-        if (fillWorkflowEditor(ctx, prompt)) rememberCatalogLaunchSelection(intent);
+        if (fillWorkflowEditor(ctx, prepared.prompt)) {
+          rememberCatalogLaunchSelection(intent, prepared.catalogSelectionId);
+        }
       }
       return;
     }

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -131,6 +131,7 @@ describe("workflow tool: continuation artifact refs", () => {
 });
 
 const confirmationRoots: string[] = [];
+const CATALOG_SELECTION_ID = "00000000-0000-4000-8000-000000000001";
 
 function typedConfirmationHarness(mode: "tui" | "rpc" | "json" = "tui") {
   const root = mkdtempSync(path.join(tmpdir(), "workflow-tool-confirmation-"));
@@ -153,7 +154,10 @@ function catalogSelectionHarness(
   const harness = createHarness(root);
   registerWorkflowTool(harness.pi, {
     commandLauncher: IDLE_LAUNCHER,
-    takeCatalogLaunchSelection: () => selection,
+    resolveCatalogLaunchSelection: ({ catalogSelectionId, name }) =>
+      catalogSelectionId === CATALOG_SELECTION_ID && name === selection.target.ref
+        ? { status: "selected", ...selection }
+        : { status: "invalid", message: "catalog selection mismatch" },
     onRunStarted: () => {},
     onRunCompleted: () => {},
   });
@@ -237,10 +241,7 @@ describe("workflow tool interactive confirmation", () => {
     try {
       const { harness } = typedConfirmationHarness("rpc");
       vi.spyOn(harness.ctx.ui, "confirm").mockImplementation(
-        (_title, _message, opts) =>
-          new Promise<boolean>((resolve) => {
-            opts?.signal?.addEventListener("abort", () => resolve(false), { once: true });
-          }),
+        (_title, _message, opts) => new Promise<boolean>(() => void opts),
       );
       const run = vi.spyOn(runner, "runWorkflowScript");
       const pending = harness.tools
@@ -283,6 +284,130 @@ describe("workflow tool interactive confirmation", () => {
       inputValue: { count: 2, mode: "safe" },
     });
     expect(result.isError).not.toBe(true);
+  });
+
+  it("detaches every launch argument before awaiting confirmation", async () => {
+    const { root, harness } = typedConfirmationHarness();
+    let resolveConfirmation: ((confirmed: boolean) => void) | undefined;
+    vi.spyOn(harness.ctx.ui, "confirm").mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveConfirmation = resolve;
+        }),
+    );
+    const run = vi.spyOn(runner, "runWorkflowScript").mockResolvedValue(completedRun(root));
+    const args = {
+      name: "typed",
+      inputValue: { mode: "safe" },
+      items: ["first"],
+      budget: { turns: 1 },
+    };
+
+    const pending = harness.tools
+      .get("workflow")!
+      .execute("detached", args, new AbortController().signal, () => void 0, harness.ctx);
+    args.name = "other";
+    args.items.push("late");
+    args.budget.turns = 9;
+    resolveConfirmation?.(true);
+    await pending;
+
+    expect(run.mock.calls[0]?.[0]).toMatchObject({
+      name: "typed",
+      items: ["first"],
+      budget: { turns: 1 },
+    });
+  });
+
+  it("refuses ordinary interactive entry-byte drift during confirmation before import", async () => {
+    const { root, harness } = typedConfirmationHarness();
+    const sourcePath = path.join(root, ".locus-pi", "workflows", "typed.workflow.mjs");
+    const marker = path.join(root, "imported.txt");
+    let resolveConfirmation: ((confirmed: boolean) => void) | undefined;
+    vi.spyOn(harness.ctx.ui, "confirm").mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveConfirmation = resolve;
+        }),
+    );
+
+    const pending = harness.tools
+      .get("workflow")!
+      .execute(
+        "ordinary-drift",
+        { name: "typed", inputValue: { mode: "safe" } },
+        new AbortController().signal,
+        () => void 0,
+        harness.ctx,
+      );
+    expect(harness.confirmCalls).toHaveLength(0);
+    writeFileSync(
+      sourcePath,
+      `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "imported"); export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"]}}; export default()=>"changed";\n`,
+    );
+    resolveConfirmation?.(true);
+    const result = await pending;
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({
+      text: expect.stringContaining("source changed after confirmation or catalog selection"),
+    });
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("refuses new precedence that appears while an ordinary confirmation is open", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "workflow-tool-direct-shadow-"));
+    confirmationRoots.push(root);
+    const harness = createHarness(root);
+    workflows(harness.pi);
+    let resolveConfirmation: ((confirmed: boolean) => void) | undefined;
+    vi.spyOn(harness.ctx.ui, "confirm").mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveConfirmation = resolve;
+        }),
+    );
+
+    const pending = harness.tools
+      .get("workflow")!
+      .execute("direct-shadow", { name: "live-smoke" }, new AbortController().signal, () => void 0, harness.ctx);
+    const workflowDir = path.join(root, ".locus-pi", "workflows");
+    mkdirSync(workflowDir, { recursive: true });
+    const marker = path.join(root, "shadow-imported.txt");
+    writeFileSync(
+      path.join(workflowDir, "live-smoke.workflow.mjs"),
+      `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "imported"); export default()=>"shadow";\n`,
+    );
+    resolveConfirmation?.(true);
+    const result = await pending;
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("target binding no longer matches") });
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("previews the effective project-relative workspace and bound source identity", async () => {
+    const { root, harness } = typedConfirmationHarness();
+    const nested = path.join(root, "nested");
+    mkdirSync(nested);
+    harness.ctx.session!.workingDirectory = nested;
+    harness.confirmQueue.push(false);
+
+    await harness.tools
+      .get("workflow")!
+      .execute(
+        "workspace-preview",
+        { name: "typed", inputValue: { mode: "safe" }, workspaceDir: "./review" },
+        new AbortController().signal,
+        () => void 0,
+        harness.ctx,
+      );
+
+    const message = harness.confirmCalls[0]?.message ?? "";
+    expect(message).toContain("Workflow workspace: nested/review");
+    expect(message).toContain("Source: .locus-pi/workflows/typed.workflow.mjs");
+    expect(message).toMatch(/Entry SHA-256: [a-f0-9]{64}/u);
+    expect(message).not.toContain("Workflow workspace: ./review");
   });
 
   it("fails closed when interactive confirmation cannot open", async () => {
@@ -337,10 +462,13 @@ describe("workflow tool interactive confirmation", () => {
     writeFileSync(path.join(workflowDir, "post-code-review.workflow.mjs"), 'export default () => "shadow";\n');
     const harness = catalogSelectionHarness(root, selection);
 
-    const result = await runTool(harness, "workflow", { name: "post-code-review" });
+    const result = await runTool(harness, "workflow", {
+      name: "post-code-review",
+      catalogSelectionId: CATALOG_SELECTION_ID,
+    });
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("changed before confirmation") });
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("binding no longer matches") });
     expect(harness.confirmCalls).toEqual([]);
   });
 
@@ -359,7 +487,7 @@ describe("workflow tool interactive confirmation", () => {
     writeFileSync(sourcePath, 'export default () => "changed";\n');
     const harness = catalogSelectionHarness(root, selection);
 
-    const result = await runTool(harness, "workflow", { name: "typed" });
+    const result = await runTool(harness, "workflow", { name: "typed", catalogSelectionId: CATALOG_SELECTION_ID });
 
     expect(result.isError).toBe(true);
     expect(result.content[0]).toMatchObject({ text: expect.stringContaining("entry bytes changed") });

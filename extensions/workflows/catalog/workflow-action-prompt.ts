@@ -30,7 +30,7 @@ export function workflowCatalogLaunchSelection(
  * tool; the tool's interactive confirmation is the operator review boundary.
  * Edit and review continue through the packaged authoring skill.
  */
-export function buildWorkflowActionPrompt(intent: WorkflowBrowserIntent): string {
+export function buildWorkflowActionPrompt(intent: WorkflowBrowserIntent, catalogSelectionId?: string): string {
   if (intent.action === "copy-project" || intent.action === "copy-personal") {
     throw new Error(`Workflow copy action ${JSON.stringify(intent.action)} does not produce an editor prompt.`);
   }
@@ -46,10 +46,11 @@ export function buildWorkflowActionPrompt(intent: WorkflowBrowserIntent): string
     }
     const command = buildWorkflowRunCommand(row.target);
     if (workflowSourceInputSchema(intent.sourceState.source) === undefined) return command;
+    if (catalogSelectionId === undefined) throw new Error("Typed catalog Start requires a host-owned selection id.");
     return [
       `Start the exact current workflow ${JSON.stringify(row.name)} resolved from ${JSON.stringify(row.sourceLocator)}.`,
       "",
-      `This is an explicit programmatic run request from the interactive Pi catalog. Inspect that exact source's static meta.inputSchema without importing the module. Build one explicit inputValue from the user's intent and repository evidence, show its canonical JSON, then call the native workflow tool with name ${JSON.stringify(row.name)} and that inputValue. The tool's interactive confirmation is the user's review step before trusted workflow execution. If the workflow tool is unavailable, report the missing prerequisite and stop. Do not invoke Pi, use a shell, emit or execute a /workflows command, or ask the user to run one. Never invent unresolved required values, defaults, coercions, or unknown properties; ask one focused question when a required value cannot be established.`,
+      `This is an explicit programmatic run request from the interactive Pi catalog. Inspect that exact source's static meta.inputSchema without importing the module. Build one explicit inputValue from the user's intent and repository evidence, show its canonical JSON, then call the native workflow tool with name ${JSON.stringify(row.name)}, catalogSelectionId ${JSON.stringify(catalogSelectionId)}, and that inputValue. The selection id is a one-use lookup key for the extension-owned target and entry digest; do not omit or alter it. The tool's interactive confirmation is the user's review step before trusted workflow execution. If the workflow tool is unavailable, report the missing prerequisite and stop. Do not invoke Pi, use a shell, emit or execute a /workflows command, or ask the user to run one. Never invent unresolved required values, defaults, coercions, or unknown properties; ask one focused question when a required value cannot be established.`,
       "",
       "Additional launch instructions:",
       "",

@@ -118,10 +118,12 @@ authorizes trusted workflow execution. This catalog route does not require a
 loaded package skill. If the tool is unavailable, it stops visibly; it does not
 invoke Pi, use a shell, or emit a `/workflows` fallback.
 
-The extension retains the selected target and entry-byte digest outside the
-editable prompt. A new shadowing source or changed selected file is refused
-before confirmation; admission checks the digest again before module import, so
-editing the file while confirmation is open cannot switch the executed entry.
+The extension retains the selected target and entry-byte digest behind a
+one-use `catalogSelectionId` written into the request. Unrelated tool calls do
+not consume it; missing, mismatched, or reused IDs fail closed. A new shadowing
+source or changed selected file is refused before confirmation; admission checks
+the digest again before module import, so editing the file while confirmation is
+open cannot switch the executed entry.
 
 Programmatic `workflow` tool launches show a bounded canonical preview in
 interactive confirmation and the current-call tool card. Tool argument-shape and
@@ -396,11 +398,14 @@ input.
 
 ### `workflow` tool (programmatic)
 
-In interactive TUI/RPC sessions, the tool validates its argument shape and any
-catalog-selected source identity, then opens an extension-owned confirmation
-before attach or import. Parent cancellation dismisses the prompt; an unanswered
-prompt times out after five minutes. Cancellation, timeout, operator refusal, or
-dialog failure returns a machine-readable tool error and starts no workflow.
+In interactive TUI/RPC sessions, the tool detaches the complete validated launch
+request, resolves and hashes its source, and shows the effective workspace,
+safe source locator, entry SHA-256, and typed value in an extension-owned
+confirmation before attach or import. Admission enforces the same target and
+digest. Parent cancellation dismisses the prompt; a local race settles an
+unanswered prompt after five minutes even if an adapter ignores its signal.
+Cancellation, timeout, operator refusal, or dialog failure returns a
+machine-readable tool error and starts no workflow.
 One-shot `print`/`json` launches stay headless because their caller owns explicit
 non-interactive authorization.
 

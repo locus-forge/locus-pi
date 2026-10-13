@@ -197,9 +197,11 @@ The checkout is probably registered in both user and project scope. Use `pi list
 
 Check the target name, required `--workspace-dir`, safe project-relative path rules, and whether the workflow declares `meta.inputSchema`. Typed workflows require tool `inputValue` or a raw `--input-json` tail; they never reinterpret legacy text. Interactive programmatic tool launches show a bounded canonical preview in confirmation and the current-call card; slash launches keep JSON visible in the editor and bypass both. Use `/workflows info <name>` for the live contract and the [catalog Start guide](workflows/running.md#start-from-the-catalog) for assisted preparation.
 
-Catalog Start also binds the selected target and entry-byte digest outside the
-editable prompt. If precedence or source bytes change before launch, refresh the
-catalog instead of confirming a different workflow.
+Catalog Start also binds the selected target and entry-byte digest behind the
+one-use `catalogSelectionId` written into its request. Unrelated workflow calls
+cannot consume that identity. If the ID is missing, reused, mismatched, or its
+source changes before launch, refresh the catalog instead of confirming a
+different workflow.
 
 ### A workflow is awaiting operator input
 

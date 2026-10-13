@@ -182,7 +182,7 @@ export interface RunWorkflowScriptOptions {
   script?: string;
   /** Host-owned resolved target; prevents launch-time raw-reference re-resolution. */
   targetBinding?: ResolvedWorkflowTarget;
-  /** Host-owned catalog entry-byte identity; admission refuses drift before import. */
+  /** Host-owned confirmed/catalog entry-byte identity; admission refuses drift before import. */
   expectedScriptSha256?: string;
   /** Optional bounded human semantic request. */
   input?: string;

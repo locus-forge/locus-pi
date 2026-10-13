@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ExtensionCommandContext } from "../../_shared/host/pi-api.js";
 import { setOperatorWidget } from "../../_shared/operator/widget-render.js";
 import {
@@ -6,6 +7,7 @@ import {
   type WorkflowBrowserIntent,
   type WorkflowCatalogCurrentRow,
 } from "../catalog/workflow-catalog.js";
+import { workflowCatalogLaunchSelection } from "../catalog/workflow-action-prompt.js";
 import { errorMessage, workflowWarningBlock } from "../operator/operator-ui.js";
 
 const WORKFLOW_EDITOR_PREFILL_RENDER_STATUS_KEY = "workflows:editor-prefill-render";
@@ -43,12 +45,24 @@ export function fillWorkflowEditor(ctx: ExtensionCommandContext, command: string
 export function workflowEditorHandoff(
   ctx: ExtensionCommandContext,
   intent: Exclude<WorkflowBrowserIntent, { action: "copy-project" | "copy-personal" }>,
+  catalogSelectionId?: string,
 ): string | undefined {
   try {
-    return buildWorkflowActionPrompt(intent);
+    return buildWorkflowActionPrompt(intent, catalogSelectionId);
   } catch (error) {
     return reportWorkflowEditorHandoffFailure(ctx, error);
   }
+}
+
+export function prepareWorkflowEditorHandoff(
+  ctx: ExtensionCommandContext,
+  intent: Exclude<WorkflowBrowserIntent, { action: "copy-project" | "copy-personal" }>,
+): { prompt: string; catalogSelectionId?: string } | undefined {
+  const catalogSelectionId = workflowCatalogLaunchSelection(intent) === undefined ? undefined : randomUUID();
+  const prompt = workflowEditorHandoff(ctx, intent, catalogSelectionId);
+  return prompt === undefined
+    ? undefined
+    : { prompt, ...(catalogSelectionId === undefined ? {} : { catalogSelectionId }) };
 }
 
 export function workflowStartEditorHandoff(
@@ -58,11 +72,11 @@ export function workflowStartEditorHandoff(
   workingDirectory: string,
 ): string | undefined {
   try {
-    return workflowEditorHandoff(ctx, {
+    return prepareWorkflowEditorHandoff(ctx, {
       action: "start",
       row,
       sourceState: readWorkflowCatalogSource(row, projectRoot, workingDirectory),
-    });
+    })?.prompt;
   } catch (error) {
     return reportWorkflowEditorHandoffFailure(ctx, error);
   }

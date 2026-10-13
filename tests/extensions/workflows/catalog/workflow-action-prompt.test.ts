@@ -13,6 +13,7 @@ import { workflowCatalogLaunchSelection } from "../../../../extensions/workflows
 
 const roots: string[] = [];
 const previousHome = process.env.HOME;
+const CATALOG_SELECTION_ID = "00000000-0000-4000-8000-000000000001";
 
 afterEach(() => {
   if (previousHome === undefined) delete process.env.HOME;
@@ -32,17 +33,20 @@ function rowFor(source: string, name = "review"): ReturnType<typeof buildWorkflo
 
 function startPrompt(row: ReturnType<typeof rowFor>): string {
   const source = readFileSync(row.target.path, "utf8");
-  return buildWorkflowActionPrompt({
-    action: "start",
-    row,
-    sourceState: {
-      kind: "ready",
+  return buildWorkflowActionPrompt(
+    {
+      action: "start",
       row,
-      path: row.target.path,
-      source,
-      scriptSha256: createHash("sha256").update(source).digest("hex"),
+      sourceState: {
+        kind: "ready",
+        row,
+        path: row.target.path,
+        source,
+        scriptSha256: createHash("sha256").update(source).digest("hex"),
+      },
     },
-  });
+    CATALOG_SELECTION_ID,
+  );
 }
 
 describe("workflow Start editor handoff", () => {
@@ -59,7 +63,9 @@ describe("workflow Start editor handoff", () => {
 
     expect(prompt).toMatch(/^Start the exact current workflow "review"/u);
     expect(prompt).toContain("explicit programmatic run request from the interactive Pi catalog");
-    expect(prompt).toContain('call the native workflow tool with name "review" and that inputValue');
+    expect(prompt).toContain('call the native workflow tool with name "review", catalogSelectionId');
+    expect(prompt).toContain(`catalogSelectionId "${CATALOG_SELECTION_ID}"`);
+    expect(prompt).toContain("do not omit or alter it");
     expect(prompt).toContain("interactive confirmation is the user's review step");
     expect(prompt).toContain("Do not invoke Pi, use a shell, emit or execute a /workflows command");
     expect(prompt).not.toContain("--input-json");

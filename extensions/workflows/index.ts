@@ -63,7 +63,8 @@ export default function workflows(pi: ExtensionAPI): void {
    */
   const sessionRunIds = new Set<string>();
   const sessionPanels = new Set<WorkflowProgressComponent>();
-  let pendingCatalogLaunch: ReturnType<typeof workflowCatalogLaunchSelection>;
+  const catalogLaunches = new Map<string, NonNullable<ReturnType<typeof workflowCatalogLaunchSelection>>>();
+  const catalogGuardedNames = new Set<string>();
   let completionProjectRoot = process.cwd();
   let completionWorkingDirectory = completionProjectRoot;
   const rememberCompletionContext = (ctx: ExtensionContext): void => {
@@ -254,24 +255,36 @@ export default function workflows(pi: ExtensionAPI): void {
     resetWorkflowLiveExecutions();
     disposeSessionPanels();
     sessionRunIds.clear();
-    pendingCatalogLaunch = undefined;
+    catalogLaunches.clear();
+    catalogGuardedNames.clear();
     rememberCompletionContext(ctx);
     commandLauncher.startSession(ctx);
   });
   pi.on("session_shutdown", async (_event, _ctx) => {
     resetWorkflowLiveExecutions();
     disposeSessionPanels();
-    pendingCatalogLaunch = undefined;
+    catalogLaunches.clear();
+    catalogGuardedNames.clear();
     await commandLauncher.shutdown();
     unpinTransientUiKey(pi, WORKFLOW_LIVE_WIDGET_KEY);
   });
 
   registerWorkflowTool(pi, {
     commandLauncher,
-    takeCatalogLaunchSelection: () => {
-      const selected = pendingCatalogLaunch;
-      pendingCatalogLaunch = undefined;
-      return selected;
+    resolveCatalogLaunchSelection: ({ catalogSelectionId, name }) => {
+      if (catalogSelectionId !== undefined) {
+        const selected = catalogLaunches.get(catalogSelectionId);
+        if (selected === undefined) return { status: "invalid", message: "catalog selection id is unknown or used" };
+        if (name !== selected.target.ref) {
+          return { status: "invalid", message: "catalog selection id does not match the requested workflow name" };
+        }
+        catalogLaunches.delete(catalogSelectionId);
+        return { status: "selected", ...selected };
+      }
+      if (name !== undefined && catalogGuardedNames.has(name)) {
+        return { status: "required", message: "catalogSelectionId is required for this catalog-selected workflow" };
+      }
+      return { status: "none" };
     },
     onRunStarted: (runId) => sessionRunIds.add(runId),
     onRunCompleted: (runId) => completedRunIds.add(runId),
@@ -288,8 +301,11 @@ export default function workflows(pi: ExtensionAPI): void {
       workingDirectory: completionWorkingDirectory,
     }),
     actionableRunIds: (projectRoot) => handoffController.eligibleRunIds(projectRoot),
-    rememberCatalogLaunchSelection: (intent) => {
-      pendingCatalogLaunch = intent === undefined ? undefined : workflowCatalogLaunchSelection(intent);
+    rememberCatalogLaunchSelection: (intent, catalogSelectionId) => {
+      const selected = workflowCatalogLaunchSelection(intent);
+      if (selected === undefined || catalogSelectionId === undefined) return;
+      catalogLaunches.set(catalogSelectionId, selected);
+      catalogGuardedNames.add(selected.target.ref);
     },
   });
 }

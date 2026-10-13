@@ -71,11 +71,36 @@ describe("/workflows root menu", () => {
       sourcePath,
       'export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"]}}; export default()=>"selected";\n',
     );
+    writeFileSync(path.join(workflowDir, "other.workflow.mjs"), 'export default()=>"other";\n');
     const h = createHarness(root);
     h.selectQueue.push("run", "typed");
     workflows(h.pi);
 
     await h.commands.get("workflows")!.handler("", h.ctx);
+    const catalogSelectionId = /catalogSelectionId "([^"]+)"/u.exec(h.editorText)?.[1];
+    expect(catalogSelectionId).toBeDefined();
+
+    const unrelated = await h.tools
+      .get("workflow")!
+      .execute("unrelated", { name: "other" }, new AbortController().signal, () => void 0, h.ctx);
+    expect(unrelated.isError).not.toBe(true);
+
+    const missingId = await h.tools
+      .get("workflow")!
+      .execute(
+        "missing-id",
+        { name: "typed", inputValue: { mode: "safe" } },
+        new AbortController().signal,
+        () => void 0,
+        h.ctx,
+      );
+    expect(missingId.content[0]).toMatchObject({ text: expect.stringContaining("catalogSelectionId is required") });
+
+    const mismatch = await h.tools
+      .get("workflow")!
+      .execute("mismatch", { name: "other", catalogSelectionId }, new AbortController().signal, () => void 0, h.ctx);
+    expect(mismatch.content[0]).toMatchObject({ text: expect.stringContaining("does not match") });
+
     writeFileSync(
       sourcePath,
       'export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"]}}; export default()=>"changed";\n',
@@ -84,7 +109,7 @@ describe("/workflows root menu", () => {
       .get("workflow")!
       .execute(
         "selected-drift",
-        { name: "typed", inputValue: { mode: "safe" } },
+        { name: "typed", catalogSelectionId, inputValue: { mode: "safe" } },
         new AbortController().signal,
         () => void 0,
         h.ctx,
@@ -92,8 +117,17 @@ describe("/workflows root menu", () => {
 
     expect(h.editorText).toMatch(/^Start the exact current workflow "typed"/u);
     expect(result.isError).toBe(true);
-    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("changed before confirmation") });
-    expect(h.confirmCalls).toEqual([]);
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("entry bytes changed") });
+    const reused = await h.tools
+      .get("workflow")!
+      .execute(
+        "reused",
+        { name: "typed", catalogSelectionId, inputValue: { mode: "safe" } },
+        new AbortController().signal,
+        () => void 0,
+        h.ctx,
+      );
+    expect(reused.content[0]).toMatchObject({ text: expect.stringContaining("unknown or used") });
   });
 
   it("routes a descriptive root selection back to its exact verb", async () => {

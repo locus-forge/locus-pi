@@ -39,7 +39,7 @@ describe("workspace admission before execution", () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result.error).toContain("workflow source changed after catalog selection");
+    expect(result.error).toContain("workflow source changed after confirmation or catalog selection");
     expect(existsSync(marker)).toBe(false);
   });
 
