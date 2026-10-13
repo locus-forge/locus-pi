@@ -137,8 +137,9 @@ JSON and calls the `workflow` tool, whose interactive confirmation shows the
 value before the user authorizes execution. A one-use `catalogSelectionId`
 correlates that request with the extension-retained target and entry-byte digest,
 so unrelated calls cannot consume it and source drift is refused. A newer Start
-supersedes the previous editor handoff, and the next submitted input retires an
-ID it does not carry; explicit reuse still fails. It does not
+supersedes the previous unsubmitted editor handoff, while steering and follow-up
+input preserve an already submitted request until its tool call; the next idle
+input retires an ID it does not carry. Explicit reuse still fails. It does not
 require package skills and never falls back to a shell or slash command. See
 [Run and inspect](docs/workflows/running.md#start-from-the-catalog).
 

@@ -199,12 +199,13 @@ Check the target name, required `--workspace-dir`, safe project-relative path ru
 
 Catalog Start also binds the selected target and entry-byte digest behind the
 one-use `catalogSelectionId` written into its request. Unrelated workflow calls
-cannot consume that identity. A newer Start supersedes the earlier editor
-handoff, and the next submitted user input retires the selection unless it
-carries the exact ID. While that submitted catalog request remains outstanding,
-a missing or mismatched ID is refused; an explicitly reused ID is always refused.
-If the source changes before launch, refresh the catalog instead of confirming a
-different workflow.
+cannot consume that identity. A newer Start supersedes an earlier unsubmitted
+editor handoff. Steering and follow-up input during the active request preserve
+its submitted ID until the tool call; the next idle user input retires the
+selection unless it carries the exact ID. While that submitted catalog request
+remains outstanding, a missing or mismatched ID is refused; an explicitly reused
+ID is always refused. If the source changes before launch, refresh the catalog
+instead of confirming a different workflow.
 
 ### A workflow is awaiting operator input
 

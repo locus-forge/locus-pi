@@ -65,8 +65,9 @@ not constrain the module. Parent cancellation, a local five-minute timeout,
 operator refusal, and dialog failure all fail closed before attach. For typed
 catalog Start, a one-use `catalogSelectionId` looks up the selected target and
 entry-byte digest in extension-owned session state; unrelated calls cannot
-consume it. A newer Start supersedes the previous editor handoff, and the next
-submitted user input retires a selection whose ID it does not carry. Missing or
+consume it. A newer Start supersedes the previous unsubmitted editor handoff.
+Steering and follow-up input preserve an already submitted selection until its
+tool call; the next idle user input retires an ID it does not carry. Missing or
 mismatched IDs are refused while the submitted catalog request remains
 outstanding, and explicitly reusing an old ID remains refused. One-shot `print`
 and `json` hosts have no reachable

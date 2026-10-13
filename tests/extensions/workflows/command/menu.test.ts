@@ -212,6 +212,54 @@ describe("/workflows root menu", () => {
     expect(abandoned.content[0]).toMatchObject({ text: expect.stringContaining("unknown or used") });
   });
 
+  it("retains a submitted selection through steering, follow-up, and a newer editor handoff", async () => {
+    const root = makeRoot();
+    const workflowDir = path.join(root, ".locus-pi", "workflows");
+    mkdirSync(workflowDir, { recursive: true });
+    writeFileSync(
+      path.join(workflowDir, "typed.workflow.mjs"),
+      'export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"]}}; export default()=>"selected";\n',
+    );
+    const h = createHarness(root);
+    h.selectQueue.push("run", "typed");
+    workflows(h.pi);
+
+    await h.commands.get("workflows")!.handler("", h.ctx);
+    const submittedId = /catalogSelectionId "([^"]+)"/u.exec(h.editorText)?.[1];
+    await emit(h, "input", { text: h.editorText, source: "interactive" });
+    await emit(h, "input", { text: "Use safe mode.", source: "interactive", streamingBehavior: "steer" });
+    await emit(h, "input", { text: "Keep the exact scope.", source: "rpc", streamingBehavior: "followUp" });
+
+    h.selectQueue.push("run", "typed");
+    await h.commands.get("workflows")!.handler("", h.ctx);
+    const newerEditorId = /catalogSelectionId "([^"]+)"/u.exec(h.editorText)?.[1];
+    expect(newerEditorId).not.toBe(submittedId);
+
+    const submitted = await h.tools
+      .get("workflow")!
+      .execute(
+        "submitted-after-steer",
+        { name: "typed", catalogSelectionId: submittedId, inputValue: { mode: "safe" } },
+        new AbortController().signal,
+        () => void 0,
+        h.ctx,
+      );
+    expect(submitted.isError).not.toBe(true);
+
+    const newerStillPending = await h.tools
+      .get("workflow")!
+      .execute(
+        "newer-still-pending",
+        { name: "typed", inputValue: { mode: "safe" } },
+        new AbortController().signal,
+        () => void 0,
+        h.ctx,
+      );
+    expect(newerStillPending.content[0]).toMatchObject({
+      text: expect.stringContaining("catalogSelectionId is required"),
+    });
+  });
+
   it("routes a descriptive root selection back to its exact verb", async () => {
     const h = createHarness(makeRoot());
     h.selectQueue.push("status — view recent run progress");

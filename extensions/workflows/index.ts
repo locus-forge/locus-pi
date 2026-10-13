@@ -64,6 +64,7 @@ export default function workflows(pi: ExtensionAPI): void {
   const sessionRunIds = new Set<string>();
   const sessionPanels = new Set<WorkflowProgressComponent>();
   const catalogLaunches = new Map<string, NonNullable<ReturnType<typeof workflowCatalogLaunchSelection>>>();
+  const submittedCatalogLaunches = new Set<string>();
   let completionProjectRoot = process.cwd();
   let completionWorkingDirectory = completionProjectRoot;
   const rememberCompletionContext = (ctx: ExtensionContext): void => {
@@ -242,9 +243,13 @@ export default function workflows(pi: ExtensionAPI): void {
   registerTransientUiCleanup(pi, WORKFLOW_LIVE_WIDGET_KEY, cleanupTransientSurface);
   pi.on("turn_end", (_event, ctx) => cleanupCompletedSurface(ctx));
   pi.on("input", (event) => {
-    if (event.source === "extension" || typeof event.text !== "string") return;
+    if (event.source === "extension" || event.streamingBehavior !== undefined || typeof event.text !== "string") return;
     for (const catalogSelectionId of catalogLaunches.keys()) {
-      if (!event.text.includes(catalogSelectionId)) catalogLaunches.delete(catalogSelectionId);
+      if (event.text.includes(catalogSelectionId)) submittedCatalogLaunches.add(catalogSelectionId);
+      else {
+        catalogLaunches.delete(catalogSelectionId);
+        submittedCatalogLaunches.delete(catalogSelectionId);
+      }
     }
   });
   pi.on("agent_settled", (_event, ctx) => {
@@ -261,6 +266,7 @@ export default function workflows(pi: ExtensionAPI): void {
     disposeSessionPanels();
     sessionRunIds.clear();
     catalogLaunches.clear();
+    submittedCatalogLaunches.clear();
     rememberCompletionContext(ctx);
     commandLauncher.startSession(ctx);
   });
@@ -268,6 +274,7 @@ export default function workflows(pi: ExtensionAPI): void {
     resetWorkflowLiveExecutions();
     disposeSessionPanels();
     catalogLaunches.clear();
+    submittedCatalogLaunches.clear();
     await commandLauncher.shutdown();
     unpinTransientUiKey(pi, WORKFLOW_LIVE_WIDGET_KEY);
   });
@@ -282,6 +289,7 @@ export default function workflows(pi: ExtensionAPI): void {
           return { status: "invalid", message: "catalog selection id does not match the requested workflow name" };
         }
         catalogLaunches.delete(catalogSelectionId);
+        submittedCatalogLaunches.delete(catalogSelectionId);
         return { status: "selected", ...selected };
       }
       if (name !== undefined && [...catalogLaunches.values()].some((selected) => selected.target.ref === name)) {
@@ -307,7 +315,9 @@ export default function workflows(pi: ExtensionAPI): void {
     rememberCatalogLaunchSelection: (intent, catalogSelectionId) => {
       const selected = workflowCatalogLaunchSelection(intent);
       if (selected === undefined || catalogSelectionId === undefined) return;
-      catalogLaunches.clear();
+      for (const retainedId of catalogLaunches.keys()) {
+        if (!submittedCatalogLaunches.has(retainedId)) catalogLaunches.delete(retainedId);
+      }
       catalogLaunches.set(catalogSelectionId, selected);
     },
   });

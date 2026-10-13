@@ -120,14 +120,16 @@ invoke Pi, use a shell, or emit a `/workflows` fallback.
 
 The extension retains the selected target and entry-byte digest behind a
 one-use `catalogSelectionId` written into the request. Unrelated tool calls do
-not consume it. A newer Start supersedes the previous editor handoff. The next
-submitted user input retains only the exact ID it carries and retires an
-abandoned selection, so a later independent same-name call is allowed. Missing
-or mismatched IDs fail closed while the submitted catalog request remains
-outstanding; a matching ID is consumed once, and explicitly reusing an old ID
-still fails. A new shadowing source or changed selected file is refused before
-confirmation; admission checks the digest again before module import, so editing
-the file while confirmation is open cannot switch the executed entry.
+not consume it. A newer Start supersedes the previous unsubmitted editor
+handoff. Idle input that submits the request retains the exact ID it carries;
+steering and follow-up input during that active request preserve it until the
+tool call. The next idle user input retires an abandoned submitted selection, so
+a later independent same-name call is allowed. Missing or mismatched IDs fail
+closed while the submitted catalog request remains outstanding; a matching ID
+is consumed once, and explicitly reusing an old ID still fails. A new shadowing
+source or changed selected file is refused before confirmation; admission checks
+the digest again before module import, so editing the file while confirmation is
+open cannot switch the executed entry.
 
 Programmatic `workflow` tool launches show a bounded canonical preview in
 interactive confirmation and the current-call tool card. Tool argument-shape and

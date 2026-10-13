@@ -221,14 +221,15 @@ workflow execution; an unavailable tool fails visibly instead of falling back
 to Pi, a shell, or `/workflows`. The request includes a one-use
 `catalogSelectionId` that looks up the selected target and entry-byte SHA-256 in
 extension-owned session state; unrelated tool calls do not consume it. A newer
-Start supersedes the previous editor handoff. On the next submitted user input,
-the extension retains only the exact ID present in that input and retires an
-abandoned selection, so an independent later same-name call is not blocked.
-Missing or mismatched IDs fail closed while the submitted catalog request remains
-outstanding; each retained ID is consumed once, and explicitly reusing an old ID
-still fails. The tool refuses precedence or byte drift before confirmation, and
-admission checks the digest again before import. This route does not require
-package skills.
+Start supersedes the previous unsubmitted editor handoff. The idle input that
+submits the request retains the exact ID it carries; steering and follow-up input
+during that active request do not retire it. The next idle user input retires an
+abandoned submitted selection, so an independent later same-name call is not
+blocked. Missing or mismatched IDs fail closed while the submitted catalog
+request remains outstanding; each retained ID is consumed once, and explicitly
+reusing an old ID still fails. The tool refuses precedence or byte drift before
+confirmation, and admission checks the digest again before import. This route
+does not require package skills.
 `Edit` and `Review` still prefill the compact
 `Request: ...`, `Skill: locus-pi-workflow-create`, and
 `Additional instructions:` handoff because those actions require source work.
