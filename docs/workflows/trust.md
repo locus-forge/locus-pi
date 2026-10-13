@@ -60,7 +60,7 @@ resolved source locator and entry SHA-256, effective workspace, bounded canonica
 typed input, and a warning that the selected file has full host Node.js/module
 access and no sandbox before it attaches or imports the workflow. Admission
 enforces the confirmed target, digest, and displayed explicit, named, or resumed
-workspace selection. Confirmation records consent but does
+workspace selection, including its owning project root. Confirmation records consent but does
 not constrain the module. Parent cancellation, a local five-minute timeout,
 operator refusal, and dialog failure all fail closed before attach. For typed
 catalog Start, a one-use `catalogSelectionId` looks up the selected target and

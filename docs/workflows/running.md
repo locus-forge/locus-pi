@@ -408,7 +408,9 @@ confirmation before attach or import. Admission enforces the same target and
 digest and the displayed explicit, named, or resumed workspace selection. A
 relative workspace resolving elsewhere after a working-directory change, or a
 named workspace switching between the current and legacy roots, is refused
-before workspace creation. Parent cancellation dismisses the prompt; a local race settles an
+before workspace creation. The host-owned absolute workspace expectation also
+refuses the same relative path if the session changes to another project root.
+Parent cancellation dismisses the prompt; a local race settles an
 unanswered prompt after five minutes even if an adapter ignores its signal.
 Cancellation, timeout, operator refusal, or dialog failure returns a
 machine-readable tool error and starts no workflow.

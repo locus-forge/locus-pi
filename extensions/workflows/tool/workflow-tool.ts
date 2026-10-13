@@ -177,22 +177,31 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
       if (launch.workspaceDir !== undefined && launch.runName !== undefined) {
         return errorResult("workflow: runName and workspaceDir are mutually exclusive", { owner: "workflows" });
       }
-      let expectedWorkspaceRelativePath: string | undefined;
+      const projectRoot = getProjectRoot(ctx);
+      const workingDirectory = getWorkingDirectory(ctx);
+      let expectedWorkspacePath: ReturnType<typeof resolveWorkflowWorkspaceDirectoryPath> | undefined;
       try {
         if (launch.workspaceDir !== undefined) {
-          expectedWorkspaceRelativePath = resolveWorkflowWorkspaceDirectoryPath(
-            getProjectRoot(ctx),
+          expectedWorkspacePath = resolveWorkflowWorkspaceDirectoryPath(
+            projectRoot,
             launch.workspaceDir,
             workflowTargetLabel(launch),
-            getWorkingDirectory(ctx),
-          ).relativePath;
+            workingDirectory,
+          );
         } else if (launch.resumeFromRunId !== undefined) {
-          expectedWorkspaceRelativePath = readWorkflowResumeWorkspaceIdentity(
-            getProjectRoot(ctx),
-            launch.resumeFromRunId,
-          ).relativePath;
+          expectedWorkspacePath = resolveWorkflowWorkspaceDirectoryPath(
+            projectRoot,
+            readWorkflowResumeWorkspaceIdentity(projectRoot, launch.resumeFromRunId).relativePath,
+            workflowTargetLabel(launch),
+            workingDirectory,
+          );
         } else if (launch.runName !== undefined) {
-          expectedWorkspaceRelativePath = resolveNamedWorkflowWorkspacePath(getProjectRoot(ctx), launch.runName);
+          expectedWorkspacePath = resolveWorkflowWorkspaceDirectoryPath(
+            projectRoot,
+            resolveNamedWorkflowWorkspacePath(projectRoot, launch.runName),
+            workflowTargetLabel(launch),
+            workingDirectory,
+          );
         }
       } catch (error) {
         return errorResult(`workflow: ${error instanceof Error ? error.message : String(error)}`, {
@@ -229,19 +238,14 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
                 : { script: launch.script! };
           targetBinding =
             catalogSelection === undefined
-              ? resolveWorkflowTarget(request, getProjectRoot(ctx), getWorkingDirectory(ctx))
-              : assertResolvedWorkflowTargetBinding(
-                  catalogSelection.target,
-                  request,
-                  getProjectRoot(ctx),
-                  getWorkingDirectory(ctx),
-                );
+              ? resolveWorkflowTarget(request, projectRoot, workingDirectory)
+              : assertResolvedWorkflowTargetBinding(catalogSelection.target, request, projectRoot, workingDirectory);
           const currentSha256 = sha256WorkflowBytes(readFileSync(targetBinding.path));
           if (catalogSelection !== undefined && currentSha256 !== catalogSelection.scriptSha256) {
             throw new Error("workflow entry bytes changed after catalog selection");
           }
           expectedScriptSha256 = catalogSelection?.scriptSha256 ?? currentSha256;
-          sourceLocator = safeWorkflowSourceLocator(targetBinding, getProjectRoot(ctx));
+          sourceLocator = safeWorkflowSourceLocator(targetBinding, projectRoot);
         } catch (error) {
           return errorResult(
             `workflow: source could not be bound before confirmation: ${error instanceof Error ? error.message : String(error)}`,
@@ -258,11 +262,11 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
             {
               ...launch,
               ...launchInput,
-              effectiveWorkspaceDir: expectedWorkspaceRelativePath,
+              effectiveWorkspaceDir: expectedWorkspacePath?.relativePath,
               sourceLocator,
               scriptSha256: expectedScriptSha256,
             },
-            getProjectRoot(ctx),
+            projectRoot,
           ),
         );
         if (refused !== undefined) return refused;
@@ -286,8 +290,8 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
               : launch.scriptPath !== undefined
                 ? { scriptPath: launch.scriptPath }
                 : { script: launch.script! },
-            getProjectRoot(ctx),
-            getWorkingDirectory(ctx),
+            projectRoot,
+            workingDirectory,
           );
         } catch {
           // Preserve the runner's durable failed-run evidence for resolution errors.
@@ -303,7 +307,9 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
           ...(launch.script !== undefined ? { script: launch.script } : {}),
           ...(targetBinding === undefined ? {} : { targetBinding }),
           ...(expectedScriptSha256 === undefined ? {} : { expectedScriptSha256 }),
-          ...(expectedWorkspaceRelativePath === undefined ? {} : { expectedWorkspaceRelativePath }),
+          ...(expectedWorkspacePath === undefined
+            ? {}
+            : { expectedWorkspaceAbsolutePath: expectedWorkspacePath.absolutePath }),
           ...launchInput,
           ...(launch.items !== undefined ? { items: launch.items } : {}),
           ...(launch.workspaceDir !== undefined ? { workspaceDir: launch.workspaceDir } : {}),

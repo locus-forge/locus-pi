@@ -185,7 +185,7 @@ export interface RunWorkflowScriptOptions {
   /** Host-owned confirmed/catalog entry-byte identity; admission refuses drift before import. */
   expectedScriptSha256?: string;
   /** Host-owned interactive workspace selection; admission refuses drift before creating it. */
-  expectedWorkspaceRelativePath?: string;
+  expectedWorkspaceAbsolutePath?: string;
   /** Optional bounded human semantic request. */
   input?: string;
   inputValue?: WorkflowInputValue;

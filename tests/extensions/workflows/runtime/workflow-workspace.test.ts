@@ -234,9 +234,7 @@ describe("workflow tool confirmed workspace identity", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]).toMatchObject({
-      text: expect.stringContaining(
-        'workflow workspace changed after confirmation: expected "first/review", got "second/review"',
-      ),
+      text: expect.stringContaining("workflow workspace changed after confirmation"),
     });
     expect(existsSync(path.join(secondDirectory, "review"))).toBe(false);
   });
@@ -259,10 +257,34 @@ describe("workflow tool confirmed workspace identity", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]).toMatchObject({
-      text: expect.stringContaining(
-        'workflow workspace changed after confirmation: expected ".locus-pi/workspaces/shared-review", got ".locus-pi/plans/shared-review"',
-      ),
+      text: expect.stringContaining("workflow workspace changed after confirmation"),
     });
+  });
+
+  it("refuses the same relative workspace under a different project root after confirmation", async () => {
+    const { harness, confirm } = confirmedWorkspaceHarness();
+    const otherRoot = mkdtempSync(path.join(tmpdir(), "workflow-tool-other-project-"));
+    confirmedWorkspaceRoots.push(otherRoot);
+
+    const pending = harness.tools
+      .get("workflow")!
+      .execute(
+        "workspace-project-drift",
+        { name: "live-smoke", workspaceDir: "reviews/approved" },
+        new AbortController().signal,
+        () => void 0,
+        harness.ctx,
+      );
+    harness.ctx.session!.projectRoot = otherRoot;
+    harness.ctx.session!.workingDirectory = otherRoot;
+    confirm();
+    const result = await pending;
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({
+      text: expect.stringContaining("workflow workspace changed after confirmation"),
+    });
+    expect(existsSync(path.join(otherRoot, "reviews", "approved"))).toBe(false);
   });
 });
 

@@ -112,7 +112,7 @@ export interface WorkflowRunAdmissionLaunch {
   targetBinding?: ResolvedWorkflowTarget;
   /** Host-owned confirmed/catalog entry-byte identity retained outside model authority. */
   expectedScriptSha256?: string;
-  expectedWorkspaceRelativePath?: string;
+  expectedWorkspaceAbsolutePath?: string;
   name?: string;
   scriptPath?: string;
   script?: string;
@@ -523,11 +523,9 @@ export async function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Pr
         workingDirectory,
         { runId },
       );
-    const expectedWorkspace = opts.expectedWorkspaceRelativePath;
-    if (expectedWorkspace !== undefined && candidateWorkspacePath.relativePath !== expectedWorkspace)
-      throw new Error(
-        `workflow workspace changed after confirmation: expected ${JSON.stringify(expectedWorkspace)}, got ${JSON.stringify(candidateWorkspacePath.relativePath)}`,
-      );
+    const expectedWorkspace = opts.expectedWorkspaceAbsolutePath;
+    if (expectedWorkspace !== undefined && candidateWorkspacePath.absolutePath !== expectedWorkspace)
+      throw new Error("workflow workspace changed after confirmation");
     const reusesLegacyWorkspace = isLegacyWorkflowWorkspacePath(candidateWorkspacePath.relativePath);
     if (
       resumeSourceWorkspace !== undefined &&
