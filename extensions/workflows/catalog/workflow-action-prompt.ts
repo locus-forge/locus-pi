@@ -1,6 +1,28 @@
 import { buildWorkflowRunCommand } from "../command/command-parser.js";
 import { workflowSourceInputSchema } from "../source/workflow-source-structured.js";
+import type { ResolvedWorkflowTarget } from "../runtime/workflow-discovery.js";
 import type { WorkflowBrowserIntent } from "./workflow-catalog.js";
+
+/** Exact source retained outside editable prompt text for a typed catalog Start. */
+export function workflowCatalogLaunchSelection(
+  intent: WorkflowBrowserIntent,
+): { target: ResolvedWorkflowTarget; scriptSha256: string } | undefined {
+  if (
+    intent.action !== "start" ||
+    intent.row.kind !== "current" ||
+    intent.sourceState.kind !== "ready" ||
+    workflowSourceInputSchema(intent.sourceState.source) === undefined
+  ) {
+    return undefined;
+  }
+  if (intent.sourceState.scriptSha256 === undefined) {
+    throw new Error("Typed catalog Start is missing its selected entry-byte identity.");
+  }
+  return {
+    target: { ...intent.row.target },
+    scriptSha256: intent.sourceState.scriptSha256,
+  };
+}
 
 /**
  * Deterministic editor handoff. Untyped Start restores the direct command.

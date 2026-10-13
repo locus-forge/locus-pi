@@ -118,11 +118,18 @@ authorizes trusted workflow execution. This catalog route does not require a
 loaded package skill. If the tool is unavailable, it stops visibly; it does not
 invoke Pi, use a shell, or emit a `/workflows` fallback.
 
-Admitted programmatic `workflow` tool launches show a bounded canonical preview
-in interactive confirmation and the current-call tool card. A pre-start
-validation failure never reaches confirmation; its current-call error card keeps
-the attempted JSON visible. One-shot `print`/`json` hosts have no operator to
-confirm and require explicit non-interactive authorization from their caller. The
+The extension retains the selected target and entry-byte digest outside the
+editable prompt. A new shadowing source or changed selected file is refused
+before confirmation; admission checks the digest again before module import, so
+editing the file while confirmation is open cannot switch the executed entry.
+
+Programmatic `workflow` tool launches show a bounded canonical preview in
+interactive confirmation and the current-call tool card. Tool argument-shape and
+catalog-source identity failures never reach confirmation. The declared
+`meta.inputSchema` is checked during admission after confirmation but before
+module evaluation; a refusal keeps the attempted JSON visible in the current-call
+error card. One-shot `print`/`json` hosts have no operator to confirm and require
+explicit non-interactive authorization from their caller. The
 generated slash command bypasses model-tool confirmation and the tool card; its
 JSON remains visible in the editable command.
 Preview display is diagnostic only: accepted typed authority remains the private
@@ -389,8 +396,13 @@ input.
 
 ### `workflow` tool (programmatic)
 
-The tool stays headless. It validates the launch target and executes the workflow without
-opening a human launch prompt.
+In interactive TUI/RPC sessions, the tool validates its argument shape and any
+catalog-selected source identity, then opens an extension-owned confirmation
+before attach or import. Parent cancellation dismisses the prompt; an unanswered
+prompt times out after five minutes. Cancellation, timeout, operator refusal, or
+dialog failure returns a machine-readable tool error and starts no workflow.
+One-shot `print`/`json` launches stay headless because their caller owns explicit
+non-interactive authorization.
 
 ```json
 { "name": "item-pipeline", "input": "Write concise results.", "items": ["a.ts", "b.ts"] }
@@ -445,7 +457,8 @@ working model in a scratch project so child agents actually spawn:
 Interactive `pi` (no `-p`) renders the live progress panel, and for
 `workspaceMode: "worktree"` / `"temporary-worktree"` agents Pi native approval can
 prompt for writes according to `tools.approvalMode` and `tools.approval.*`.
-`locus-pi` no longer adds its own workflow launch gate before runtime starts.
+The native `workflow` tool adds the confirmation described above; direct
+`/workflows run` and one-shot launches do not add a second Locus-owned gate.
 
 ### Live operator questions — `agent({ ask: true })`
 

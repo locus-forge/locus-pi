@@ -218,7 +218,10 @@ native-run request. Submitting it asks the agent to prepare canonical JSON and
 call the native `workflow` tool. The tool's extension-owned interactive
 confirmation displays that value as the separate user decision before trusted
 workflow execution; an unavailable tool fails visibly instead of falling back
-to Pi, a shell, or `/workflows`. This route does not require package skills.
+to Pi, a shell, or `/workflows`. The extension retains the selected target and
+entry-byte SHA-256 outside editable prompt text, refuses precedence or byte
+drift before confirmation, and admission checks the digest again before import.
+This route does not require package skills.
 `Edit` and `Review` still prefill the compact
 `Request: ...`, `Skill: locus-pi-workflow-create`, and
 `Additional instructions:` handoff because those actions require source work.

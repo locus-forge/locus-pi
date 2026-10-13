@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -7,7 +7,13 @@ import * as runner from "../../../../extensions/workflows/runtime/workflow-runne
 import {
   registerWorkflowTool,
   workflowConfirmationDetails,
+  WORKFLOW_LAUNCH_CONFIRM_TIMEOUT_MS,
 } from "../../../../extensions/workflows/tool/workflow-tool.js";
+import {
+  resolveWorkflowTarget,
+  type ResolvedWorkflowTarget,
+} from "../../../../extensions/workflows/runtime/workflow-discovery.js";
+import { sha256WorkflowBytes } from "../../../../extensions/workflows/runtime/workflow-script-identity.js";
 import type { WorkflowCommandLauncher } from "../../../../extensions/workflows/launch/workflow-command-launcher.js";
 import { createHarness, runTool, type Harness } from "../../../test-harness.js";
 
@@ -126,7 +132,7 @@ describe("workflow tool: continuation artifact refs", () => {
 
 const confirmationRoots: string[] = [];
 
-function typedConfirmationHarness(mode: "tui" | "json" = "tui") {
+function typedConfirmationHarness(mode: "tui" | "rpc" | "json" = "tui") {
   const root = mkdtempSync(path.join(tmpdir(), "workflow-tool-confirmation-"));
   confirmationRoots.push(root);
   const workflowDir = path.join(root, ".locus-pi", "workflows");
@@ -138,6 +144,20 @@ function typedConfirmationHarness(mode: "tui" | "json" = "tui") {
   const harness = createHarness(root, { mode });
   workflows(harness.pi);
   return { root, harness };
+}
+
+function catalogSelectionHarness(
+  root: string,
+  selection: { target: ResolvedWorkflowTarget; scriptSha256: string },
+): Harness {
+  const harness = createHarness(root);
+  registerWorkflowTool(harness.pi, {
+    commandLauncher: IDLE_LAUNCHER,
+    takeCatalogLaunchSelection: () => selection,
+    onRunStarted: () => {},
+    onRunCompleted: () => {},
+  });
+  return harness;
 }
 
 function completedRun(root: string) {
@@ -177,7 +197,69 @@ describe("workflow tool interactive confirmation", () => {
     expect(harness.confirmCalls).toHaveLength(1);
     expect(harness.confirmCalls[0]).toMatchObject({ title: 'Run trusted workflow "typed"?' });
     expect(harness.confirmCalls[0]?.message).toContain('Input (JSON): {"count":2,"mode":"safe"}');
+    expect(harness.confirmCalls[0]?.opts).toMatchObject({ timeout: WORKFLOW_LAUNCH_CONFIRM_TIMEOUT_MS });
+    expect(harness.confirmCalls[0]?.opts?.signal).toBeInstanceOf(AbortSignal);
+    expect(result.isError).toBe(true);
     expect(result).toMatchObject({ details: { status: "cancelled" } });
+  });
+
+  it("stops when the parent aborts during confirmation even if the dialog later says Yes", async () => {
+    const { harness } = typedConfirmationHarness();
+    let resolveConfirmation: ((confirmed: boolean) => void) | undefined;
+    vi.spyOn(harness.ctx.ui, "confirm").mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveConfirmation = resolve;
+        }),
+    );
+    const run = vi.spyOn(runner, "runWorkflowScript");
+    const controller = new AbortController();
+
+    const pending = harness.tools
+      .get("workflow")!
+      .execute(
+        "aborted",
+        { name: "typed", inputValue: { mode: "safe" } },
+        controller.signal,
+        () => void 0,
+        harness.ctx,
+      );
+    controller.abort(new Error("parent stopped"));
+    resolveConfirmation?.(true);
+    const result = await pending;
+
+    expect(run).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ isError: true, details: { cancellationReason: "aborted" } });
+  });
+
+  it("bounds an unanswered RPC confirmation and fails closed", async () => {
+    vi.useFakeTimers();
+    try {
+      const { harness } = typedConfirmationHarness("rpc");
+      vi.spyOn(harness.ctx.ui, "confirm").mockImplementation(
+        (_title, _message, opts) =>
+          new Promise<boolean>((resolve) => {
+            opts?.signal?.addEventListener("abort", () => resolve(false), { once: true });
+          }),
+      );
+      const run = vi.spyOn(runner, "runWorkflowScript");
+      const pending = harness.tools
+        .get("workflow")!
+        .execute(
+          "timed-out",
+          { name: "typed", inputValue: { mode: "safe" } },
+          new AbortController().signal,
+          () => void 0,
+          harness.ctx,
+        );
+
+      await vi.advanceTimersByTimeAsync(WORKFLOW_LAUNCH_CONFIRM_TIMEOUT_MS);
+      const result = await pending;
+      expect(run).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ isError: true, details: { cancellationReason: "timed-out" } });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("launches the exact confirmed snapshot", async () => {
@@ -239,5 +321,48 @@ describe("workflow tool interactive confirmation", () => {
 
     expect(harness.confirmCalls).toEqual([]);
     expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses project shadowing of the catalog-selected Package target before confirmation", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "workflow-tool-catalog-shadow-"));
+    confirmationRoots.push(root);
+    const selectedTarget = resolveWorkflowTarget({ name: "post-code-review" }, root, root);
+    expect(selectedTarget.source).toBe("package");
+    const selection = {
+      target: selectedTarget,
+      scriptSha256: sha256WorkflowBytes(readFileSync(selectedTarget.path)),
+    };
+    const workflowDir = path.join(root, ".locus-pi", "workflows");
+    mkdirSync(workflowDir, { recursive: true });
+    writeFileSync(path.join(workflowDir, "post-code-review.workflow.mjs"), 'export default () => "shadow";\n');
+    const harness = catalogSelectionHarness(root, selection);
+
+    const result = await runTool(harness, "workflow", { name: "post-code-review" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("changed before confirmation") });
+    expect(harness.confirmCalls).toEqual([]);
+  });
+
+  it("refuses changed selected entry bytes before confirmation", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "workflow-tool-catalog-bytes-"));
+    confirmationRoots.push(root);
+    const workflowDir = path.join(root, ".locus-pi", "workflows");
+    mkdirSync(workflowDir, { recursive: true });
+    const sourcePath = path.join(workflowDir, "typed.workflow.mjs");
+    writeFileSync(sourcePath, 'export default () => "selected";\n');
+    const selectedTarget = resolveWorkflowTarget({ name: "typed" }, root, root);
+    const selection = {
+      target: selectedTarget,
+      scriptSha256: sha256WorkflowBytes(readFileSync(sourcePath)),
+    };
+    writeFileSync(sourcePath, 'export default () => "changed";\n');
+    const harness = catalogSelectionHarness(root, selection);
+
+    const result = await runTool(harness, "workflow", { name: "typed" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("entry bytes changed") });
+    expect(harness.confirmCalls).toEqual([]);
   });
 });

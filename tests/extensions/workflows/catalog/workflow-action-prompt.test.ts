@@ -1,12 +1,15 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { WorkflowCatalogViewer } from "../../../../extensions/workflows/catalog/catalog-viewer.js";
 import {
   buildWorkflowActionPrompt,
   buildWorkflowCatalogModel,
+  readWorkflowCatalogSource,
 } from "../../../../extensions/workflows/catalog/workflow-catalog.js";
+import { workflowCatalogLaunchSelection } from "../../../../extensions/workflows/catalog/workflow-action-prompt.js";
 
 const roots: string[] = [];
 const previousHome = process.env.HOME;
@@ -28,10 +31,17 @@ function rowFor(source: string, name = "review"): ReturnType<typeof buildWorkflo
 }
 
 function startPrompt(row: ReturnType<typeof rowFor>): string {
+  const source = readFileSync(row.target.path, "utf8");
   return buildWorkflowActionPrompt({
     action: "start",
     row,
-    sourceState: { kind: "ready", row, path: row.target.path, source: readFileSync(row.target.path, "utf8") },
+    sourceState: {
+      kind: "ready",
+      row,
+      path: row.target.path,
+      source,
+      scriptSha256: createHash("sha256").update(source).digest("hex"),
+    },
   });
 }
 
@@ -55,6 +65,22 @@ describe("workflow Start editor handoff", () => {
     expect(prompt).not.toContain("--input-json");
     expect(prompt).not.toContain("/skill:");
     expect(prompt).not.toContain("preparation-only");
+  });
+
+  it("retains the selected target and entry-byte digest outside editable prompt text", () => {
+    const row = rowFor(
+      'export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"]}}; export default()=>null;\n',
+      "bound",
+    );
+    const root = path.resolve(path.dirname(row.target.path), "..", "..");
+    const sourceState = readWorkflowCatalogSource(row, root, root);
+    expect(sourceState.kind).toBe("ready");
+    const selected = workflowCatalogLaunchSelection({ action: "start", row, sourceState });
+
+    expect(selected).toEqual({
+      target: row.target,
+      scriptSha256: createHash("sha256").update(readFileSync(row.target.path)).digest("hex"),
+    });
   });
 
   it("describes typed Start as an editor handoff instead of a direct launch", () => {

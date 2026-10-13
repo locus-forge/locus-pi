@@ -58,10 +58,14 @@ The model-callable `workflow` tool owns an awaited confirmation in interactive
 TUI and RPC sessions. It shows the target, workspace, bounded canonical typed
 input, and a warning that the selected file has full host Node.js/module access
 and no sandbox before it attaches or imports the workflow. Confirmation records
-consent but does not constrain the module. One-shot `print` and `json` hosts have
-no reachable operator and bypass that prompt; their caller must supply explicit
-non-interactive authorization. `/workflows run` is itself an explicit operator
-command and does not pass through the tool-confirmation path.
+consent but does not constrain the module. Parent cancellation, five-minute
+timeout, operator refusal, and dialog failure all fail closed before attach. For
+typed catalog Start, the selected target and entry-byte digest are retained
+outside editable prompt text, checked before confirmation, and checked again by
+admission before import. One-shot `print` and `json` hosts have no reachable
+operator and bypass that prompt; their caller must supply explicit non-interactive
+authorization. `/workflows run` is itself an explicit operator command and does
+not pass through the tool-confirmation path.
 
 ## Approval / trust discipline
 

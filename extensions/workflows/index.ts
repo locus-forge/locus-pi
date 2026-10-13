@@ -40,6 +40,7 @@ import {
 } from "./operator/progress-widget.js";
 import { createWorkflowCommandLauncher } from "./launch/workflow-command-launcher.js";
 import { registerWorkflowTool } from "./tool/workflow-tool.js";
+import { workflowCatalogLaunchSelection } from "./catalog/workflow-action-prompt.js";
 import { registerWorkflowSourceCheckTool } from "./tool/workflow-source-check-tool.js";
 import { registerFusionSurface } from "./fusion/surface.js";
 import {
@@ -62,6 +63,7 @@ export default function workflows(pi: ExtensionAPI): void {
    */
   const sessionRunIds = new Set<string>();
   const sessionPanels = new Set<WorkflowProgressComponent>();
+  let pendingCatalogLaunch: ReturnType<typeof workflowCatalogLaunchSelection>;
   let completionProjectRoot = process.cwd();
   let completionWorkingDirectory = completionProjectRoot;
   const rememberCompletionContext = (ctx: ExtensionContext): void => {
@@ -252,18 +254,25 @@ export default function workflows(pi: ExtensionAPI): void {
     resetWorkflowLiveExecutions();
     disposeSessionPanels();
     sessionRunIds.clear();
+    pendingCatalogLaunch = undefined;
     rememberCompletionContext(ctx);
     commandLauncher.startSession(ctx);
   });
   pi.on("session_shutdown", async (_event, _ctx) => {
     resetWorkflowLiveExecutions();
     disposeSessionPanels();
+    pendingCatalogLaunch = undefined;
     await commandLauncher.shutdown();
     unpinTransientUiKey(pi, WORKFLOW_LIVE_WIDGET_KEY);
   });
 
   registerWorkflowTool(pi, {
     commandLauncher,
+    takeCatalogLaunchSelection: () => {
+      const selected = pendingCatalogLaunch;
+      pendingCatalogLaunch = undefined;
+      return selected;
+    },
     onRunStarted: (runId) => sessionRunIds.add(runId),
     onRunCompleted: (runId) => completedRunIds.add(runId),
   });
@@ -279,5 +288,8 @@ export default function workflows(pi: ExtensionAPI): void {
       workingDirectory: completionWorkingDirectory,
     }),
     actionableRunIds: (projectRoot) => handoffController.eligibleRunIds(projectRoot),
+    rememberCatalogLaunchSelection: (intent) => {
+      pendingCatalogLaunch = intent === undefined ? undefined : workflowCatalogLaunchSelection(intent);
+    },
   });
 }

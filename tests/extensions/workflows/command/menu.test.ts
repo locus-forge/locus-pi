@@ -62,6 +62,40 @@ describe("/workflows root menu", () => {
     expect(existsSync(path.join(root, ".locus-pi", "runs"))).toBe(false);
   });
 
+  it("binds a typed Run selection outside editable text and refuses later source drift", async () => {
+    const root = makeRoot();
+    const workflowDir = path.join(root, ".locus-pi", "workflows");
+    mkdirSync(workflowDir, { recursive: true });
+    const sourcePath = path.join(workflowDir, "typed.workflow.mjs");
+    writeFileSync(
+      sourcePath,
+      'export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"]}}; export default()=>"selected";\n',
+    );
+    const h = createHarness(root);
+    h.selectQueue.push("run", "typed");
+    workflows(h.pi);
+
+    await h.commands.get("workflows")!.handler("", h.ctx);
+    writeFileSync(
+      sourcePath,
+      'export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"]}}; export default()=>"changed";\n',
+    );
+    const result = await h.tools
+      .get("workflow")!
+      .execute(
+        "selected-drift",
+        { name: "typed", inputValue: { mode: "safe" } },
+        new AbortController().signal,
+        () => void 0,
+        h.ctx,
+      );
+
+    expect(h.editorText).toMatch(/^Start the exact current workflow "typed"/u);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining("changed before confirmation") });
+    expect(h.confirmCalls).toEqual([]);
+  });
+
   it("routes a descriptive root selection back to its exact verb", async () => {
     const h = createHarness(makeRoot());
     h.selectQueue.push("status — view recent run progress");

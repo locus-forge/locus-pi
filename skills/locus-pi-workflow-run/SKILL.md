@@ -48,7 +48,10 @@ reviews that value and launches in a separate action. For an explicit programmat
 run request, show the canonical value before the tool call; interactive
 confirmation and the current-call tool card repeat a bounded preview without persisting the value in
 result details. In an interactive TUI/RPC session the tool itself awaits the
-operator's confirmation before it attaches or imports the workflow. A slash
+operator's confirmation before it attaches or imports the workflow; abort,
+timeout, or refusal is terminal for that call. Catalog Start also retains its
+selected target and entry-byte digest outside this editable request, so the
+native tool refuses source drift instead of silently running a new shadow. A slash
 launch keeps the JSON visible in the editable command and bypasses model-tool
 confirmation and the tool card.
 

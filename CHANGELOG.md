@@ -8,9 +8,12 @@ User-visible changes to the public package.
 
 - Typed catalog `Start` now requests the native `workflow` tool directly. The
   tool shows canonical JSON in an extension-owned interactive confirmation
-  before it attaches or imports the workflow. The route no longer requires a
-  loaded skill command, prepares a second slash command, or permits shell
-  fallback.
+  before it attaches or imports the workflow, retains the selected target and
+  entry-byte digest outside editable prompt text, and refuses source drift.
+  Confirmation is abort-aware, times out fail-closed after five minutes, and
+  reports timeout or operator refusal as a machine-readable tool error. The
+  route no longer requires a loaded skill command, prepares a second slash
+  command, or permits shell fallback.
 
 ## [0.14.1] - 2026-10-08
 

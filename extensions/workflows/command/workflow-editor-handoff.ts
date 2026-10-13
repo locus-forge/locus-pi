@@ -8,6 +8,38 @@ import {
 } from "../catalog/workflow-catalog.js";
 import { errorMessage, workflowWarningBlock } from "../operator/operator-ui.js";
 
+const WORKFLOW_EDITOR_PREFILL_RENDER_STATUS_KEY = "workflows:editor-prefill-render";
+
+/** Restore the main editor after a workflow-owned selector has closed. */
+export function fillWorkflowEditor(ctx: ExtensionCommandContext, command: string): boolean {
+  if (ctx.ui.setEditorText === undefined) {
+    setOperatorWidget(
+      ctx,
+      "workflows",
+      workflowWarningBlock(
+        "Workflow action could not fill the editor because this Pi host does not expose setEditorText().",
+        "Nothing was started or stopped; use the matching /workflows subcommand directly.",
+      ),
+    );
+    return false;
+  }
+  try {
+    ctx.ui.setEditorText(command);
+    ctx.ui.setStatus(WORKFLOW_EDITOR_PREFILL_RENDER_STATUS_KEY, undefined);
+    return true;
+  } catch (error) {
+    setOperatorWidget(
+      ctx,
+      "workflows",
+      workflowWarningBlock(
+        `Workflow action could not fill the editor: ${errorMessage(error)}.`,
+        "Nothing was started or stopped.",
+      ),
+    );
+    return false;
+  }
+}
+
 export function workflowEditorHandoff(
   ctx: ExtensionCommandContext,
   intent: Exclude<WorkflowBrowserIntent, { action: "copy-project" | "copy-personal" }>,

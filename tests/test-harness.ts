@@ -116,7 +116,11 @@ export interface Harness {
   customOptions: Array<{ overlay?: boolean } | undefined>;
   terminalInputHandlers: Set<(data: string) => { consume?: boolean; data?: string } | undefined>;
   confirmQueue: boolean[];
-  confirmCalls: Array<{ title: string; message: string }>;
+  confirmCalls: Array<{
+    title: string;
+    message: string;
+    opts?: { timeout?: number; signal?: AbortSignal };
+  }>;
   abortCalls: number;
   editorText: string;
   /** The latest custom editor factory installed via ctx.ui.setEditorComponent. */
@@ -161,7 +165,11 @@ export function createHarness(
   const customOptions: Array<{ overlay?: boolean } | undefined> = [];
   const terminalInputHandlers = new Set<(data: string) => { consume?: boolean; data?: string } | undefined>();
   const confirmQueue: boolean[] = [];
-  const confirmCalls: Array<{ title: string; message: string }> = [];
+  const confirmCalls: Array<{
+    title: string;
+    message: string;
+    opts?: { timeout?: number; signal?: AbortSignal };
+  }> = [];
   const models = opts.models ?? [
     { provider: "test", id: "fast", name: "Test Fast" },
     { provider: "test", id: "strong", name: "Test Strong" },
@@ -234,8 +242,8 @@ export function createHarness(
       async editor(_title, content) {
         return { value: content || "edited", cancelled: false };
       },
-      async confirm(title, message) {
-        confirmCalls.push({ title, message });
+      async confirm(title, message, opts) {
+        confirmCalls.push({ title, message, ...(opts === undefined ? {} : { opts }) });
         return confirmQueue.shift() ?? true;
       },
       notify(message, level) {

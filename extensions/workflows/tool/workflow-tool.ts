@@ -6,6 +6,7 @@ import { canonicalWorkflowJSON } from "../runtime/structured-results/schema.js";
  */
 
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import {
   type ExtensionAPI,
   type ThemeLike,
@@ -24,7 +25,12 @@ import { formatWorkflowFailureDiagnosticLines } from "../runtime/workflow-failur
 import { applyWorkflowJournalLineToAgentLiveStore } from "../runtime/workflow-live.js";
 import { runWorkflowScript, type RunWorkflowScriptResult } from "../runtime/workflow-runner.js";
 import { readWorkflowResumeWorkspaceIdentity } from "../runtime/workflow-run-resume.js";
-import { resolveWorkflowTarget, type ResolvedWorkflowTarget } from "../runtime/workflow-discovery.js";
+import {
+  assertResolvedWorkflowTargetBinding,
+  resolveWorkflowTarget,
+  type ResolvedWorkflowTarget,
+} from "../runtime/workflow-discovery.js";
+import { sha256WorkflowBytes } from "../runtime/workflow-script-identity.js";
 import type { WorkflowJournalLine } from "../runtime/workflow-runtime.js";
 import {
   resolveNamedWorkflowWorkspacePath,
@@ -59,6 +65,24 @@ import {
   removedWorkflowBudgetKeyMessage,
 } from "../runtime/workflow-budget.js";
 import { WorkflowParams } from "./workflow-tool-params.js";
+export const WORKFLOW_LAUNCH_CONFIRM_TIMEOUT_MS = 5 * 60 * 1000;
+
+function cancelledWorkflowLaunch(workflowName: string, reason: "aborted" | "declined" | "timed-out"): ToolResult {
+  const explanation =
+    reason === "aborted"
+      ? "parent tool call was aborted"
+      : reason === "timed-out"
+        ? "interactive confirmation timed out"
+        : "operator declined interactive confirmation";
+  return errorResult(`workflow launch cancelled before execution: ${explanation}`, {
+    owner: "workflows",
+    workflowName,
+    status: "cancelled",
+    cancellationReason: reason,
+    disposition: { status: "cancelled" },
+  });
+}
+
 export function workflowConfirmationDetails(args: unknown, projectRoot: string): string[] {
   const record = args !== null && typeof args === "object" ? (args as Record<string, unknown>) : {};
   const target = String(record.name ?? record.scriptPath ?? record.script ?? "unspecified");
@@ -124,6 +148,8 @@ function removedWorkflowBudgetKeyName(params: unknown): string | undefined {
 
 export interface WorkflowToolDependencies {
   commandLauncher: WorkflowCommandLauncher;
+  /** Consume the exact current source selected by the interactive catalog, if any. */
+  takeCatalogLaunchSelection?: () => { target: ResolvedWorkflowTarget; scriptSha256: string } | undefined;
   /** Records a started run id so this session owns the questions that run publishes. */
   onRunStarted: (runId: string) => void;
   /** Records a settled run id so the session can prune its live rows later. */
@@ -226,43 +252,80 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
       }
       const workflowName = workflowTargetLabel(valid.value);
       const launchInput = snapshotWorkflowInput(valid.value as WorkflowInputFields);
+      const catalogSelection = deps.takeCatalogLaunchSelection?.();
+      let targetBinding: ResolvedWorkflowTarget | undefined;
+      let expectedScriptSha256: string | undefined;
+      if (catalogSelection !== undefined) {
+        try {
+          targetBinding = assertResolvedWorkflowTargetBinding(
+            catalogSelection.target,
+            valid.value.name !== undefined
+              ? { name: valid.value.name }
+              : valid.value.scriptPath !== undefined
+                ? { scriptPath: valid.value.scriptPath }
+                : { script: valid.value.script! },
+            getProjectRoot(ctx),
+            getWorkingDirectory(ctx),
+          );
+          const currentSha256 = sha256WorkflowBytes(readFileSync(targetBinding.path));
+          if (currentSha256 !== catalogSelection.scriptSha256) {
+            throw new Error("workflow entry bytes changed after catalog selection");
+          }
+          expectedScriptSha256 = catalogSelection.scriptSha256;
+        } catch (error) {
+          return errorResult(
+            `workflow: selected catalog source changed before confirmation: ${error instanceof Error ? error.message : String(error)}`,
+            { owner: "workflows", workflowName },
+          );
+        }
+      }
+      if (signal.aborted) return cancelledWorkflowLaunch(workflowName, "aborted");
       if (!isOneShotHostMode(ctx)) {
         let confirmed: boolean;
+        let confirmationTimedOut = false;
+        const timeoutController = new AbortController();
+        const timeout = setTimeout(() => {
+          confirmationTimedOut = true;
+          timeoutController.abort(new Error("workflow confirmation timed out"));
+        }, WORKFLOW_LAUNCH_CONFIRM_TIMEOUT_MS);
+        const confirmationSignal = AbortSignal.any([signal, timeoutController.signal]);
         try {
           confirmed = await ctx.ui.confirm(
             `Run trusted workflow ${JSON.stringify(workflowName)}?`,
             workflowConfirmationDetails({ ...valid.value, ...launchInput }, getProjectRoot(ctx)).join("\n"),
+            { signal: confirmationSignal, timeout: WORKFLOW_LAUNCH_CONFIRM_TIMEOUT_MS },
           );
         } catch (error) {
+          if (signal.aborted) return cancelledWorkflowLaunch(workflowName, "aborted");
+          if (confirmationTimedOut) return cancelledWorkflowLaunch(workflowName, "timed-out");
           return errorResult(
             `workflow: interactive confirmation could not be opened: ${error instanceof Error ? error.message : String(error)}`,
             { owner: "workflows" },
           );
+        } finally {
+          clearTimeout(timeout);
         }
-        if (!confirmed) {
-          return textResult("workflow launch cancelled before execution", {
-            owner: "workflows",
-            workflowName,
-            status: "cancelled",
-            disposition: { status: "cancelled" },
-          });
-        }
+        if (signal.aborted) return cancelledWorkflowLaunch(workflowName, "aborted");
+        if (confirmationTimedOut) return cancelledWorkflowLaunch(workflowName, "timed-out");
+        if (!confirmed) return cancelledWorkflowLaunch(workflowName, "declined");
       }
+      if (signal.aborted) return cancelledWorkflowLaunch(workflowName, "aborted");
       const transcript = createWorkflowTranscript(ctx, workflowName, "tool", launchInput);
       const taskTitle = workflowTaskTitle(valid.value.input);
-      let targetBinding: ResolvedWorkflowTarget | undefined;
-      try {
-        targetBinding = resolveWorkflowTarget(
-          valid.value.name !== undefined
-            ? { name: valid.value.name }
-            : valid.value.scriptPath !== undefined
-              ? { scriptPath: valid.value.scriptPath }
-              : { script: valid.value.script! },
-          getProjectRoot(ctx),
-          getWorkingDirectory(ctx),
-        );
-      } catch {
-        // Preserve the runner's durable failed-run evidence for resolution errors.
+      if (targetBinding === undefined) {
+        try {
+          targetBinding = resolveWorkflowTarget(
+            valid.value.name !== undefined
+              ? { name: valid.value.name }
+              : valid.value.scriptPath !== undefined
+                ? { scriptPath: valid.value.scriptPath }
+                : { script: valid.value.script! },
+            getProjectRoot(ctx),
+            getWorkingDirectory(ctx),
+          );
+        } catch {
+          // Preserve the runner's durable failed-run evidence for resolution errors.
+        }
       }
       const launched = commandLauncher.attach<RunWorkflowScriptResult>(ctx, signal, async (background) =>
         runWorkflowScript({
@@ -273,6 +336,7 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
           ...(valid.value.scriptPath !== undefined ? { scriptPath: valid.value.scriptPath } : {}),
           ...(valid.value.script !== undefined ? { script: valid.value.script } : {}),
           ...(targetBinding === undefined ? {} : { targetBinding }),
+          ...(expectedScriptSha256 === undefined ? {} : { expectedScriptSha256 }),
           ...launchInput,
           ...(valid.value.items !== undefined ? { items: valid.value.items } : {}),
           ...(valid.value.workspaceDir !== undefined ? { workspaceDir: valid.value.workspaceDir } : {}),
