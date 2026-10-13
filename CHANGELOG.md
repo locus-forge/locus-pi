@@ -13,8 +13,9 @@ User-visible changes to the public package.
   digest and the displayed workspace selection, including its project root. Typed catalog Start retains its
   exact selection behind a one-use request ID, so unrelated calls cannot consume
   it; a newer Start supersedes the prior unsubmitted editor handoff, steering or
-  follow-up input preserves a submitted request until its tool call, and the next
-  idle input retires any ID it does not carry. Explicit reuse still fails. Full
+  follow-up input carrying the ID marks it submitted, later streaming input
+  preserves it until its tool call, and the next idle input retires any ID it
+  does not carry. Explicit reuse still fails. Full
   launch arguments are
   detached before the dialog; confirmation is abort-aware, settles fail-closed
   after five minutes even if an adapter ignores the signal, and reports timeout

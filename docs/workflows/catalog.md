@@ -222,8 +222,9 @@ to Pi, a shell, or `/workflows`. The request includes a one-use
 `catalogSelectionId` that looks up the selected target and entry-byte SHA-256 in
 extension-owned session state; unrelated tool calls do not consume it. A newer
 Start supersedes the previous unsubmitted editor handoff. The idle input that
-submits the request retains the exact ID it carries; steering and follow-up input
-during that active request do not retire it. The next idle user input retires an
+submits the request retains the exact ID it carries. Steering or follow-up input
+that carries a known ID also marks it submitted, and later streaming input during
+that active request does not retire it. The next idle user input retires an
 abandoned submitted selection, so an independent later same-name call is not
 blocked. Missing or mismatched IDs fail closed while the submitted catalog
 request remains outstanding; each retained ID is consumed once, and explicitly

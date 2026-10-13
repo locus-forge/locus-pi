@@ -66,8 +66,9 @@ operator refusal, and dialog failure all fail closed before attach. For typed
 catalog Start, a one-use `catalogSelectionId` looks up the selected target and
 entry-byte digest in extension-owned session state; unrelated calls cannot
 consume it. A newer Start supersedes the previous unsubmitted editor handoff.
-Steering and follow-up input preserve an already submitted selection until its
-tool call; the next idle user input retires an ID it does not carry. Missing or
+Steering or follow-up input carrying a known ID marks it submitted, and later
+streaming input preserves it until its tool call; the next idle user input
+retires an ID it does not carry. Missing or
 mismatched IDs are refused while the submitted catalog request remains
 outstanding, and explicitly reusing an old ID remains refused. One-shot `print`
 and `json` hosts have no reachable

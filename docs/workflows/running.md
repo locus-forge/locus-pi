@@ -122,8 +122,8 @@ The extension retains the selected target and entry-byte digest behind a
 one-use `catalogSelectionId` written into the request. Unrelated tool calls do
 not consume it. A newer Start supersedes the previous unsubmitted editor
 handoff. Idle input that submits the request retains the exact ID it carries;
-steering and follow-up input during that active request preserve it until the
-tool call. The next idle user input retires an abandoned submitted selection, so
+steering or follow-up input carrying a known ID also marks it submitted, and later
+streaming input preserves it until the tool call. The next idle user input retires an abandoned submitted selection, so
 a later independent same-name call is allowed. Missing or mismatched IDs fail
 closed while the submitted catalog request remains outstanding; a matching ID
 is consumed once, and explicitly reusing an old ID still fails. A new shadowing

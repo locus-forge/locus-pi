@@ -243,7 +243,13 @@ export default function workflows(pi: ExtensionAPI): void {
   registerTransientUiCleanup(pi, WORKFLOW_LIVE_WIDGET_KEY, cleanupTransientSurface);
   pi.on("turn_end", (_event, ctx) => cleanupCompletedSurface(ctx));
   pi.on("input", (event) => {
-    if (event.source === "extension" || event.streamingBehavior !== undefined || typeof event.text !== "string") return;
+    if (event.source === "extension" || typeof event.text !== "string") return;
+    if (event.streamingBehavior !== undefined) {
+      for (const catalogSelectionId of catalogLaunches.keys()) {
+        if (event.text.includes(catalogSelectionId)) submittedCatalogLaunches.add(catalogSelectionId);
+      }
+      return;
+    }
     for (const catalogSelectionId of catalogLaunches.keys()) {
       if (event.text.includes(catalogSelectionId)) submittedCatalogLaunches.add(catalogSelectionId);
       else {

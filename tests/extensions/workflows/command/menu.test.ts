@@ -260,6 +260,41 @@ describe("/workflows root menu", () => {
     });
   });
 
+  it("marks a Start carried by steering or follow-up input as submitted", async () => {
+    for (const streamingBehavior of ["steer", "followUp"] as const) {
+      const root = makeRoot();
+      const workflowDir = path.join(root, ".locus-pi", "workflows");
+      mkdirSync(workflowDir, { recursive: true });
+      writeFileSync(
+        path.join(workflowDir, "typed.workflow.mjs"),
+        'export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"]}}; export default()=>"selected";\n',
+      );
+      const h = createHarness(root);
+      h.selectQueue.push("run", "typed");
+      workflows(h.pi);
+
+      await h.commands.get("workflows")!.handler("", h.ctx);
+      const submittedId = /catalogSelectionId "([^"]+)"/u.exec(h.editorText)?.[1];
+      await emit(h, "input", { text: h.editorText, source: "interactive", streamingBehavior });
+
+      h.selectQueue.push("run", "typed");
+      await h.commands.get("workflows")!.handler("", h.ctx);
+      const newerEditorId = /catalogSelectionId "([^"]+)"/u.exec(h.editorText)?.[1];
+      expect(newerEditorId).not.toBe(submittedId);
+
+      const submitted = await h.tools
+        .get("workflow")!
+        .execute(
+          `submitted-${streamingBehavior}`,
+          { name: "typed", catalogSelectionId: submittedId, inputValue: { mode: "safe" } },
+          new AbortController().signal,
+          () => void 0,
+          h.ctx,
+        );
+      expect(submitted.isError).not.toBe(true);
+    }
+  });
+
   it("routes a descriptive root selection back to its exact verb", async () => {
     const h = createHarness(makeRoot());
     h.selectQueue.push("status — view recent run progress");
