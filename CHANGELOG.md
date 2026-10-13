@@ -4,6 +4,25 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+### Fixed
+
+- Typed catalog `Start` now requests the native `workflow` tool directly. The
+  tool shows canonical JSON in an extension-owned interactive confirmation
+  before it attaches or imports the workflow. Every interactive call confirms a
+  resolved source locator and entry-byte digest, then admission enforces that
+  digest and the displayed workspace selection, including its project root. Typed catalog Start retains its
+  exact selection behind a one-use request ID, so unrelated calls cannot consume
+  it; a newer Start supersedes the prior unsubmitted editor handoff, steering or
+  follow-up input carrying the ID marks it submitted, later streaming input
+  preserves it until its tool call, and the next idle input retires any ID it
+  does not carry. Explicit reuse still fails. Full
+  launch arguments are
+  detached before the dialog; confirmation is abort-aware, settles fail-closed
+  after five minutes even if an adapter ignores the signal, and reports timeout
+  or operator refusal as a machine-readable tool error. The
+  route no longer requires a loaded skill command, prepares a second slash
+  command, or permits shell fallback.
+
 ## [0.14.1] - 2026-10-08
 
 ### Added

@@ -294,7 +294,7 @@ describe("workflow progress terminal and headless projection", () => {
     workflowsExt(harness.pi);
     const spy = vi.spyOn(runner, "runWorkflowScript").mockResolvedValue(failed);
     try {
-      const result = await runTool(harness, "workflow", { scriptPath: "persistence.workflow.mjs" });
+      const result = await runTool(harness, "workflow", { name: "live-smoke" });
       const text = result.content.map((item) => (item.type === "text" ? item.text : "")).join("\n");
 
       expect(result.isError).toBe(true);
@@ -320,7 +320,7 @@ describe("workflow progress terminal and headless projection", () => {
     workflowsExt(toolHarness.pi);
     const toolSpy = vi.spyOn(runner, "runWorkflowScript").mockResolvedValue(failed);
     try {
-      const result = await runTool(toolHarness, "workflow", { scriptPath: "semantic.workflow.mjs" });
+      const result = await runTool(toolHarness, "workflow", { name: "live-smoke" });
       const text = result.content.map((item) => (item.type === "text" ? item.text : "")).join("\n");
       expect(result.isError).toBe(true);
       expect(text).toContain("Acceptance remains open");
@@ -373,8 +373,8 @@ describe("workflow progress terminal and headless projection", () => {
     const runSpy = vi.spyOn(runner, "runWorkflowScript");
     runSpy.mockResolvedValueOnce(success).mockResolvedValueOnce(failure);
     try {
-      const successResult = await runTool(harness, "workflow", { name: "terminal-parity" });
-      const failureResult = await runTool(harness, "workflow", { name: "terminal-parity" });
+      const successResult = await runTool(harness, "workflow", { name: "live-smoke" });
+      const failureResult = await runTool(harness, "workflow", { name: "live-smoke" });
       const successDetails = successResult.details as Record<string, unknown>;
       const failureDetails = failureResult.details as Record<string, unknown>;
       const intentionalDifferences = new Set([

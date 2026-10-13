@@ -132,8 +132,16 @@ Review `evaluator-optimizer.design.md` and `evaluator-optimizer.workflow.mjs` sa
 ```
 
 Catalog `Start` keeps the direct command for text-input workflows. For typed
-input it prepares canonical JSON and an editable command without launching;
-the user reviews that value and starts the workflow separately. See
+input it restores a complete native-run request: the agent prepares canonical
+JSON and calls the `workflow` tool, whose interactive confirmation shows the
+value before the user authorizes execution. A one-use `catalogSelectionId`
+correlates that request with the extension-retained target and entry-byte digest,
+so unrelated calls cannot consume it and source drift is refused. A newer Start
+supersedes the previous unsubmitted editor handoff. Steering and follow-up input
+that carries the ID marks it submitted, and later streaming input preserves it
+until its tool call; the next idle input retires an ID it does not carry.
+Explicit reuse still fails. It does not
+require package skills and never falls back to a shell or slash command. See
 [Run and inspect](docs/workflows/running.md#start-from-the-catalog).
 
 [Create your first workflow](docs/workflows/create.md) explains the skill and includes

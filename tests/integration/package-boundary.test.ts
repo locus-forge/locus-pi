@@ -340,8 +340,8 @@ describe("npm public package boundary", () => {
       "schemas/extension-manifest.schema.json",
       "skills/",
     ]);
-    // Typed Start adds one catalog prompt owner and one command error-boundary owner under the existing allowlist.
-    expect(dryRun.files).toHaveLength(275);
+    // Typed Start adds catalog prompt/source owners and one command error-boundary owner under the allowlist.
+    expect(dryRun.files).toHaveLength(277);
     for (const filename of [
       "extensions/workflows/catalog/workflow-action-prompt.ts",
       "extensions/workflows/command/workflow-editor-handoff.ts",

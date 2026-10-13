@@ -5,6 +5,7 @@ import os from "node:os";
 import { createHarness, emit } from "../../../test-harness.js";
 import workflows from "../../../../extensions/workflows/index.js";
 import * as runner from "../../../../extensions/workflows/runtime/workflow-runner.js";
+import { workflowConfirmationDetails } from "../../../../extensions/workflows/tool/workflow-tool.js";
 import { ensureWorkflowRunDir } from "../../../../extensions/workflows/runtime/workflow-run-layout.js";
 import { workflowResultFile } from "../../../../extensions/workflows/runtime/workflow-result.js";
 import type { ThemeLike } from "../../../../extensions/_shared/host/pi-api.js";
@@ -103,32 +104,32 @@ describe("/workflows run launch gate", () => {
     }
   });
 
-  it("warns that native exec approval does not sandbox trusted workflow JavaScript", () => {
+  it("warns that interactive confirmation does not sandbox trusted workflow JavaScript", () => {
     const h = registerHarness();
     const tool = h.tools.get("workflow")!;
 
-    expect(tool.approval).toBe("exec");
     expect(tool.description).toContain("full Node.js/module access");
     expect(tool.description).toContain("not sandboxed");
-    expect(tool.formatApprovalDetails?.({ name: "reviewed-workflow", items: ["alpha", "beta"] })).toEqual([
-      "Workflow: reviewed-workflow",
-      "Items: 2",
-      "Workflow workspace: .locus-pi/workspaces/<generated-run-name>",
-      "Surface: trusted-file workflow runner",
-      "Trust: reviewed JavaScript with full Node.js/module access in the Pi host process",
-      "Isolation: none — exec approval is consent, not a sandbox",
-    ]);
+    expect(workflowConfirmationDetails({ name: "reviewed-workflow", items: ["alpha", "beta"] }, process.cwd())).toEqual(
+      [
+        "Workflow: reviewed-workflow",
+        "Items: 2",
+        "Workflow workspace: .locus-pi/workspaces/<generated-run-name>",
+        "Surface: trusted-file workflow runner",
+        "Trust: reviewed JavaScript with full Node.js/module access in the Pi host process",
+        "Isolation: none — confirmation is consent, not a sandbox",
+      ],
+    );
   });
 
   it("shows the generated native workspace for a bare name", () => {
-    const h = registerHarness();
-    const details = h.tools.get("workflow")!.formatApprovalDetails?.({ name: "post-code-review" }) ?? [];
+    const details = workflowConfirmationDetails({ name: "post-code-review" }, process.cwd());
 
     expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
   });
 
   it.each(["current", "legacy"] as const)(
-    "shows the selected %s named workspace in exec approval",
+    "shows the selected %s named workspace in interactive confirmation",
     async (workspaceKind) => {
       const root = mkdtempSync(path.join(os.tmpdir(), "workflow-approval-workspace-"));
       const runName = `${workspaceKind}-approval`;
@@ -137,8 +138,7 @@ describe("/workflows run launch gate", () => {
       }
       const h = registerCommandHarness(root);
       try {
-        await emit(h, "session_start", {});
-        const details = h.tools.get("workflow")!.formatApprovalDetails?.({ name: "live-smoke", runName }) ?? [];
+        const details = workflowConfirmationDetails({ name: "live-smoke", runName }, root);
         expect(details[2]).toBe(
           `Workflow workspace: .locus-pi/${workspaceKind === "legacy" ? "plans" : "workspaces"}/${runName}`,
         );
@@ -163,13 +163,7 @@ describe("/workflows run launch gate", () => {
     mkdirSync(path.join(root, ".locus-pi", "workspaces", runName), { recursive: true });
     const runId = source.runId;
     try {
-      await emit(h, "session_start", {});
-      const details =
-        h.tools.get("workflow")!.formatApprovalDetails?.({
-          name: "live-smoke",
-          runName,
-          resumeFromRunId: runId,
-        }) ?? [];
+      const details = workflowConfirmationDetails({ name: "live-smoke", runName, resumeFromRunId: runId }, root);
       expect(details[2]).toBe(`Workflow workspace: ${legacyRelative}`);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -181,13 +175,10 @@ describe("/workflows run launch gate", () => {
     ensureWorkflowRunDir(root, "20260901-missing-resume");
     const h = registerCommandHarness(root);
     try {
-      await emit(h, "session_start", {});
-      const details =
-        h.tools.get("workflow")!.formatApprovalDetails?.({
-          name: "live-smoke",
-          runName: "misleading-name",
-          resumeFromRunId: "20260901-missing-resume",
-        }) ?? [];
+      const details = workflowConfirmationDetails(
+        { name: "live-smoke", runName: "misleading-name", resumeFromRunId: "20260901-missing-resume" },
+        root,
+      );
       expect(details[2]).toContain(
         "Workflow workspace: recorded source workspace unavailable for run 20260901-missing-resume:",
       );
@@ -218,12 +209,7 @@ describe("/workflows run launch gate", () => {
     const h = registerCommandHarness(root);
     try {
       const original = readFileSync(workflowResultFile(runDir), "utf8");
-      await emit(h, "session_start", {});
-      const details =
-        h.tools.get("workflow")!.formatApprovalDetails?.({
-          name: "post-code-review",
-          resumeFromRunId: runId,
-        }) ?? [];
+      const details = workflowConfirmationDetails({ name: "post-code-review", resumeFromRunId: runId }, root);
       expect(details[2]).toContain(`recorded source workspace unavailable for run ${runId}`);
       expect(details[2]).toContain("has no valid host launch binding");
       expect(details[2]).not.toContain(workspaceRelative);
@@ -234,17 +220,18 @@ describe("/workflows run launch gate", () => {
     }
   });
 
-  it("shows an explicit native workspace in resume approval details", async () => {
+  it("shows an explicit native workspace in resume confirmation details", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "workflow-approval-output-resume-"));
     const h = registerCommandHarness(root);
     try {
-      await emit(h, "session_start", {});
-      const details =
-        h.tools.get("workflow")!.formatApprovalDetails?.({
+      const details = workflowConfirmationDetails(
+        {
           name: "live-smoke",
           workspaceDir: ".locus-pi/workspaces/explicit-resume",
           resumeFromRunId: "20260901-missing-resume",
-        }) ?? [];
+        },
+        root,
+      );
       expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/explicit-resume");
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -252,11 +239,10 @@ describe("/workflows run launch gate", () => {
   });
 
   it("shows the generated native workspace for an absolute owner-looking path", () => {
-    const h = registerHarness();
-    const details =
-      h.tools.get("workflow")!.formatApprovalDetails?.({
-        scriptPath: path.join(process.cwd(), ".agents", "workflows", "post-code-review.workflow.mjs"),
-      }) ?? [];
+    const details = workflowConfirmationDetails(
+      { scriptPath: path.join(process.cwd(), ".agents", "workflows", "post-code-review.workflow.mjs") },
+      process.cwd(),
+    );
 
     expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
   });
@@ -265,8 +251,7 @@ describe("/workflows run launch gate", () => {
     "/outside/.locus-pi/workflows/post-code-review.workflow.mjs",
     path.join(process.cwd(), ".locus-pi", "workflows", "post-code-review.workflow.mjs"),
   ])("shows the generated native workspace for an absolute legacy script: %s", (script) => {
-    const h = registerHarness();
-    const details = h.tools.get("workflow")!.formatApprovalDetails?.({ script }) ?? [];
+    const details = workflowConfirmationDetails({ script }, process.cwd());
 
     expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
   });
@@ -277,28 +262,22 @@ describe("/workflows run launch gate", () => {
     { scriptPath: "nested/../.locus-pi/workflows/post-code-review.workflow.mjs" },
     { script: ".locus-pi/workflows/post-code-review.workflow.mjs" },
   ])("shows the generated native workspace for resolved owner path %j", (args) => {
-    const h = registerHarness();
-    const details = h.tools.get("workflow")!.formatApprovalDetails?.(args) ?? [];
+    const details = workflowConfirmationDetails(args, process.cwd());
 
     expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
   });
 
-  it("does not classify escaping owner-looking paths in approval details", () => {
-    const h = registerHarness();
-    const details =
-      h.tools.get("workflow")!.formatApprovalDetails?.({
-        scriptPath: "../.locus-pi/workflows/post-code-review.workflow.mjs",
-      }) ?? [];
+  it("does not classify escaping owner-looking paths in confirmation details", () => {
+    const details = workflowConfirmationDetails(
+      { scriptPath: "../.locus-pi/workflows/post-code-review.workflow.mjs" },
+      process.cwd(),
+    );
 
     expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
   });
 
-  it("does not overmatch a nested non-owner suffix in approval details", () => {
-    const h = registerHarness();
-    const details =
-      h.tools.get("workflow")!.formatApprovalDetails?.({
-        scriptPath: "nested/post-code-review.workflow.mjs",
-      }) ?? [];
+  it("does not overmatch a nested non-owner suffix in confirmation details", () => {
+    const details = workflowConfirmationDetails({ scriptPath: "nested/post-code-review.workflow.mjs" }, process.cwd());
 
     expect(details[2]).toBe("Workflow workspace: .locus-pi/workspaces/<generated-run-name>");
   });
@@ -634,7 +613,7 @@ describe("/workflows run launch gate", () => {
     }
   });
 
-  it("keeps the programmatic workflow tool headless", async () => {
+  it("keeps the programmatic workflow tool on one confirmation and native result", async () => {
     const h = registerHarness();
     const spy = vi.spyOn(runner, "runWorkflowScript").mockResolvedValue({
       runId: "run-4",
@@ -650,6 +629,7 @@ describe("/workflows run launch gate", () => {
         .execute("tool-1", { name: "live-smoke" }, new AbortController().signal, () => void 0, h.ctx);
       expect(spy).toHaveBeenCalledTimes(1);
       expect(spy.mock.calls[0]?.[0]).toMatchObject({ name: "live-smoke" });
+      expect(h.confirmCalls).toHaveLength(1);
       expect(h.entries.some((entry) => entry.type === "decision")).toBe(false);
     } finally {
       spy.mockRestore();
@@ -673,7 +653,7 @@ describe("/workflows run launch gate", () => {
         settled = true;
         return result;
       });
-      await Promise.resolve();
+      await waitForBackground(() => spy.mock.calls.length === 1);
       expect(spy).toHaveBeenCalledTimes(1);
       expect(settled).toBe(false);
 
@@ -715,7 +695,7 @@ describe("/workflows run launch gate", () => {
       const tool = h.tools.get("workflow")!;
       const result = await tool.execute(
         "tool-full-result",
-        { name: "plan" },
+        { name: "live-smoke" },
         new AbortController().signal,
         () => void 0,
         h.ctx,
@@ -725,7 +705,7 @@ describe("/workflows run launch gate", () => {
       expect(result.details).not.toHaveProperty("humanResultText");
 
       const operatorText = tool.renderResult!(result, { expanded: true, isPartial: false }, renderTheme, {
-        args: { name: "plan" },
+        args: { name: "live-smoke" },
         toolCallId: "tool-full-result",
         invalidate() {},
         lastComponent: undefined,
@@ -778,14 +758,14 @@ describe("/workflows run launch gate", () => {
       const tool = h.tools.get("workflow")!;
       const result = await tool.execute(
         "tool-result-symlink",
-        { name: "plan" },
+        { name: "live-smoke" },
         new AbortController().signal,
         () => void 0,
         h.ctx,
       );
 
       const operatorText = tool.renderResult!(result, { expanded: true, isPartial: false }, renderTheme, {
-        args: { name: "plan" },
+        args: { name: "live-smoke" },
         toolCallId: "tool-result-symlink",
         invalidate() {},
         lastComponent: undefined,

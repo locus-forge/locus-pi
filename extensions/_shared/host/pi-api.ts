@@ -399,7 +399,7 @@ export interface ExtensionContext {
     ): Promise<SelectReturn>;
     input(title: string, opts?: { default?: string; placeholder?: string }): Promise<InputResult>;
     editor(title: string, content: string, opts?: { language?: string }): Promise<EditorResult>;
-    confirm(title: string, message: string): Promise<boolean>;
+    confirm(title: string, message: string, opts?: { timeout?: number; signal?: AbortSignal }): Promise<boolean>;
     notify(message: string, level?: "info" | "warning" | "error"): void;
     /** Listen to raw terminal input in interactive mode. Returns an unsubscribe function. */
     onTerminalInput?(handler: (data: string) => { consume?: boolean; data?: string } | undefined): () => void;

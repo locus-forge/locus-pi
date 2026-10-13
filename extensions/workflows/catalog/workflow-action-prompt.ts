@@ -1,13 +1,36 @@
 import { buildWorkflowRunCommand } from "../command/command-parser.js";
 import { workflowSourceInputSchema } from "../source/workflow-source-structured.js";
+import type { ResolvedWorkflowTarget } from "../runtime/workflow-discovery.js";
 import type { WorkflowBrowserIntent } from "./workflow-catalog.js";
+
+/** Exact source retained outside editable prompt text for a typed catalog Start. */
+export function workflowCatalogLaunchSelection(
+  intent: WorkflowBrowserIntent,
+): { target: ResolvedWorkflowTarget; scriptSha256: string } | undefined {
+  if (
+    intent.action !== "start" ||
+    intent.row.kind !== "current" ||
+    intent.sourceState.kind !== "ready" ||
+    workflowSourceInputSchema(intent.sourceState.source) === undefined
+  ) {
+    return undefined;
+  }
+  if (intent.sourceState.scriptSha256 === undefined) {
+    throw new Error("Typed catalog Start is missing its selected entry-byte identity.");
+  }
+  return {
+    target: { ...intent.row.target },
+    scriptSha256: intent.sourceState.scriptSha256,
+  };
+}
 
 /**
  * Deterministic editor handoff. Untyped Start restores the direct command.
- * Typed Start prepares a separate, reviewable command without launching it.
+ * Typed Start asks the agent to prepare typed input and call the native workflow
+ * tool; the tool's interactive confirmation is the operator review boundary.
  * Edit and review continue through the packaged authoring skill.
  */
-export function buildWorkflowActionPrompt(intent: WorkflowBrowserIntent): string {
+export function buildWorkflowActionPrompt(intent: WorkflowBrowserIntent, catalogSelectionId?: string): string {
   if (intent.action === "copy-project" || intent.action === "copy-personal") {
     throw new Error(`Workflow copy action ${JSON.stringify(intent.action)} does not produce an editor prompt.`);
   }
@@ -23,11 +46,11 @@ export function buildWorkflowActionPrompt(intent: WorkflowBrowserIntent): string
     }
     const command = buildWorkflowRunCommand(row.target);
     if (workflowSourceInputSchema(intent.sourceState.source) === undefined) return command;
+    if (catalogSelectionId === undefined) throw new Error("Typed catalog Start requires a host-owned selection id.");
     return [
-      `Request: Prepare typed input for the exact current workflow ${JSON.stringify(row.name)} resolved from ${JSON.stringify(row.sourceLocator)}. Do not start it.`,
-      "Skill: locus-pi-workflow-run",
+      `Start the exact current workflow ${JSON.stringify(row.name)} resolved from ${JSON.stringify(row.sourceLocator)}.`,
       "",
-      `Preparation-only mode: Inspect that exact source's static meta.inputSchema without importing the module. Build one explicit inputValue from the user's intent and repository evidence. Return its canonical JSON and one editable launch command beginning ${JSON.stringify(`${command} --input-json `)}. Do not call the workflow tool, submit the command, or start the workflow; the user reviews the JSON and launches in a separate action. Never invent unresolved required values, defaults, coercions, or unknown properties.`,
+      `This is an explicit programmatic run request from the interactive Pi catalog. Inspect that exact source's static meta.inputSchema without importing the module. Build one explicit inputValue from the user's intent and repository evidence, show its canonical JSON, then call the native workflow tool with name ${JSON.stringify(row.name)}, catalogSelectionId ${JSON.stringify(catalogSelectionId)}, and that inputValue. The selection id is a one-use lookup key for the extension-owned target and entry digest; do not omit or alter it. The tool's interactive confirmation is the user's review step before trusted workflow execution. If the workflow tool is unavailable, report the missing prerequisite and stop. Do not invoke Pi, use a shell, emit or execute a /workflows command, or ask the user to run one. Never invent unresolved required values, defaults, coercions, or unknown properties; ask one focused question when a required value cannot be established.`,
       "",
       "Additional launch instructions:",
       "",

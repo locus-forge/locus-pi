@@ -182,6 +182,12 @@ export interface RunWorkflowScriptOptions {
   script?: string;
   /** Host-owned resolved target; prevents launch-time raw-reference re-resolution. */
   targetBinding?: ResolvedWorkflowTarget;
+  /** Host-owned confirmed/catalog entry-byte identity; admission refuses drift before import. */
+  expectedScriptSha256?: string;
+  /** Host-owned interactive workspace selection; admission refuses drift before creating it. */
+  expectedWorkspaceAbsolutePath?: string;
+  /** Host-owned interactive project root; every launch refuses a changed root. */
+  expectedProjectRoot?: string;
   /** Optional bounded human semantic request. */
   input?: string;
   inputValue?: WorkflowInputValue;
@@ -537,6 +543,8 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
 
   try {
     if (inputFailure !== undefined) throw inputFailure;
+    if (opts.expectedProjectRoot !== undefined && path.resolve(projectRoot) !== path.resolve(opts.expectedProjectRoot))
+      throw new Error("workflow project root changed after confirmation");
     items = snapshotWorkflowItems(opts.items);
     try {
       opts.onRunStart?.({ runId, runDir });

@@ -1,11 +1,12 @@
 import { snapshotWorkflowInput, type WorkflowInputFields } from "../runtime/workflow-input.js";
-import { canonicalWorkflowJSON } from "../runtime/structured-results/schema.js";
+import { immutableJSON } from "../runtime/structured-results/schema.js";
 /**
- * Native workflow schema, approval, command-launcher dispatch and terminal result.
+ * Native workflow schema, interactive confirmation, command-launcher dispatch and terminal result.
  * Cards own tool-call hierarchy; command widgets and overlays remain in /workflows.
  */
 
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import {
   type ExtensionAPI,
   type ThemeLike,
@@ -23,13 +24,19 @@ import { prepareValidatedParams, validateParams } from "../../_shared/host/valid
 import { formatWorkflowFailureDiagnosticLines } from "../runtime/workflow-failure.js";
 import { applyWorkflowJournalLineToAgentLiveStore } from "../runtime/workflow-live.js";
 import { runWorkflowScript, type RunWorkflowScriptResult } from "../runtime/workflow-runner.js";
-import { readWorkflowResumeWorkspaceIdentity } from "../runtime/workflow-run-resume.js";
-import { resolveWorkflowTarget, type ResolvedWorkflowTarget } from "../runtime/workflow-discovery.js";
+import {
+  assertResolvedWorkflowTargetBinding,
+  resolveWorkflowTarget,
+  safeWorkflowSourceLocator,
+  type ResolvedWorkflowTarget,
+} from "../runtime/workflow-discovery.js";
+import { sha256WorkflowBytes } from "../runtime/workflow-script-identity.js";
 import type { WorkflowJournalLine } from "../runtime/workflow-runtime.js";
 import {
   resolveNamedWorkflowWorkspacePath,
   resolveWorkflowWorkspaceDirectoryPath,
 } from "../runtime/workflow-output.js";
+import { readWorkflowResumeWorkspaceIdentity } from "../runtime/workflow-run-resume.js";
 import {
   formatOperatorScriptIdentity,
   safeOperatorSourceRef,
@@ -50,67 +57,16 @@ import {
   readWorkflowRunTextFile,
   WORKFLOW_NESTED_RUN_STORAGE_PATTERN,
   WORKFLOW_RUN_GROUP_STORAGE_PATTERN,
-  WORKFLOW_WORKSPACES_STORAGE_PREFIX,
   workflowRunOutputsDir,
 } from "../runtime/workflow-run-layout.js";
-import {
-  resolveWorkflowBudget,
-  WORKFLOW_BUDGET_AXES,
-  removedWorkflowBudgetKeyMessage,
-} from "../runtime/workflow-budget.js";
+import { removedWorkflowBudgetKeyMessage } from "../runtime/workflow-budget.js";
 import { WorkflowParams } from "./workflow-tool-params.js";
-function workflowApprovalDetails(args: unknown, projectRoot: string): string[] {
-  const record = args !== null && typeof args === "object" ? (args as Record<string, unknown>) : {};
-  const target = String(record.name ?? record.scriptPath ?? record.script ?? "unspecified");
-  let workspace: string;
-  if (typeof record.workspaceDir === "string") {
-    workspace = record.workspaceDir;
-  } else if (typeof record.resumeFromRunId === "string") {
-    try {
-      workspace = readWorkflowResumeWorkspaceIdentity(projectRoot, record.resumeFromRunId).relativePath;
-    } catch (error) {
-      workspace =
-        `recorded source workspace unavailable for run ${record.resumeFromRunId}: ` +
-        `${error instanceof Error ? error.message : String(error)}`;
-    }
-  } else if (typeof record.runName === "string") {
-    try {
-      workspace = resolveNamedWorkflowWorkspacePath(projectRoot, record.runName);
-    } catch (error) {
-      workspace = `selection blocked: ${error instanceof Error ? error.message : String(error)}`;
-    }
-  } else {
-    workspace = `${WORKFLOW_WORKSPACES_STORAGE_PREFIX}<generated-run-name>`;
-  }
-  const declaredBudget =
-    record.budget !== null && typeof record.budget === "object"
-      ? (record.budget as Parameters<typeof resolveWorkflowBudget>[0])
-      : undefined;
-  const resolvedBudget = declaredBudget && resolveWorkflowBudget(declaredBudget).budget;
-  const inputJSON = workflowInputJSON(record);
-  return [
-    `Workflow: ${target}`,
-    `Items: ${Array.isArray(record.items) ? String(record.items.length) : "none"}`,
-    `Workflow workspace: ${workspace}`,
-    ...(inputJSON === undefined ? [] : [`Input (JSON): ${inputJSON}`]),
-    ...(declaredBudget !== undefined && Object.keys(declaredBudget).length > 0
-      ? [
-          `Budget overrides: ${WORKFLOW_BUDGET_AXES.filter((axis) => declaredBudget?.[axis] !== undefined)
-            .map((axis) => `${axis}=${resolvedBudget?.[axis]}`)
-            .join(" ")}; other axes use launch defaults`,
-        ]
-      : []),
-    ...(record.recoverInterrupted === true
-      ? ["Recovery: explicit hard-crash recovery of a confirmed serial prefix; no unresolved child effects allowed"]
-      : []),
-    ...(record.force === true
-      ? ["Lease recovery: force only with a complete matching terminal result; active/unverifiable owners stay fenced"]
-      : []),
-    "Surface: trusted-file workflow runner",
-    "Trust: reviewed JavaScript with full Node.js/module access in the Pi host process",
-    "Isolation: none — exec approval is consent, not a sandbox",
-  ];
-}
+import {
+  confirmWorkflowLaunch,
+  workflowConfirmationDetails,
+  workflowInputJSON,
+} from "./workflow-launch-confirmation.js";
+export { workflowConfirmationDetails, WORKFLOW_LAUNCH_CONFIRM_TIMEOUT_MS } from "./workflow-launch-confirmation.js";
 
 /** First removed budget option named by a raw tool argument object, if any. */
 function removedWorkflowBudgetKeyName(params: unknown): string | undefined {
@@ -124,6 +80,14 @@ function removedWorkflowBudgetKeyName(params: unknown): string | undefined {
 
 export interface WorkflowToolDependencies {
   commandLauncher: WorkflowCommandLauncher;
+  /** Atomically resolve one catalog request id without letting unrelated calls consume it. */
+  resolveCatalogLaunchSelection?: (request: {
+    catalogSelectionId?: string;
+    name?: string;
+  }) =>
+    | { status: "none" }
+    | { status: "required" | "invalid"; message: string }
+    | { status: "selected"; target: ResolvedWorkflowTarget; scriptSha256: string };
   /** Records a started run id so this session owns the questions that run publishes. */
   onRunStarted: (runId: string) => void;
   /** Records a settled run id so the session can prune its live rows later. */
@@ -132,10 +96,6 @@ export interface WorkflowToolDependencies {
 
 export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDependencies): void {
   const { commandLauncher } = deps;
-  let approvalProjectRoot = process.cwd();
-  pi.on("session_start", (_event, ctx) => {
-    approvalProjectRoot = getProjectRoot(ctx);
-  });
   registerToolWithErrorResults(pi, {
     name: "workflow",
     label: "workflow",
@@ -147,7 +107,7 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
       `Fresh workflows default to unique .locus-pi/workspaces/<generated-run-name> workspaces; runName selects .locus-pi/workspaces/<runName> for new names and ` +
       `reuses an existing legacy-only .locus-pi/plans/<runName>; resume repeats the original workspace. Root evidence is stored under ` +
       `${WORKFLOW_RUN_GROUP_STORAGE_PATTERN}{outputs,runtime}; saved children and resume attempts use ${WORKFLOW_NESTED_RUN_STORAGE_PATTERN}{outputs,runtime}. ` +
-      `The saved JavaScript executes with full Node.js/module access in the Pi host process; it is not sandboxed, and exec approval is consent rather than ` +
+      `The saved JavaScript executes with full Node.js/module access in the Pi host process; it is not sandboxed, and interactive confirmation is consent rather than ` +
       `capability isolation. A canonical folder <name>/ may own <name>.workflow.mjs plus direct child entries addressable as <name>/<child>, or may be group-only ` +
       `with direct children and no runnable root; the nearest Project namespace wins as a whole, then User, then Package. Existing flat Project/User files remain ` +
       `standalone compatibility entries. The DSL orchestrates sub-agents; bare agent() starts a clean child, while an explicit agent name selects a project or ` +
@@ -166,8 +126,6 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
         Object.hasOwn(input, "inputValue") ? { ...(args as object), ...input } : args,
       );
     },
-    approval: "exec",
-    formatApprovalDetails: (args) => workflowApprovalDetails(args, approvalProjectRoot),
     renderShell: "self",
     renderCall: () => new EmptyWorkflowToolCallComponent(),
     renderResult: renderWorkflowToolResultCard,
@@ -198,81 +156,174 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
       }
       const valid = validateParams(WorkflowParams, params);
       if (!valid.ok) return valid.result;
-      const targetFields = [valid.value.name, valid.value.scriptPath, valid.value.script].filter(
-        (v) => v !== undefined,
-      );
+      let launch: typeof valid.value;
+      try {
+        launch = immutableJSON(valid.value, { omitUndefinedObjectFields: true }) as typeof valid.value;
+      } catch (error) {
+        return errorResult(`workflow: launch arguments could not be detached: ${String(error)}`, {
+          owner: "workflows",
+        });
+      }
+      const targetFields = [launch.name, launch.scriptPath, launch.script].filter((v) => v !== undefined);
       if (targetFields.length !== 1)
         return errorResult("workflow: exactly one of name, scriptPath, or script is required", { owner: "workflows" });
-      if (valid.value.recoverInterrupted === true && valid.value.resumeFromRunId === undefined)
+      if (launch.recoverInterrupted === true && launch.resumeFromRunId === undefined)
         return errorResult("workflow: recoverInterrupted requires resumeFromRunId", { owner: "workflows" });
-      if (valid.value.continuation !== undefined && valid.value.resumeFromRunId !== undefined) {
+      if (launch.continuation !== undefined && launch.resumeFromRunId !== undefined) {
         return errorResult("workflow: continuation and resumeFromRunId are mutually exclusive", {
           owner: "workflows",
         });
       }
-      if (valid.value.workspaceDir !== undefined && valid.value.runName !== undefined) {
+      if (launch.workspaceDir !== undefined && launch.runName !== undefined) {
         return errorResult("workflow: runName and workspaceDir are mutually exclusive", { owner: "workflows" });
       }
-      if (valid.value.workspaceDir !== undefined) {
-        try {
-          resolveWorkflowWorkspaceDirectoryPath(
-            getProjectRoot(ctx),
-            valid.value.workspaceDir,
-            workflowTargetLabel(valid.value),
-            getWorkingDirectory(ctx),
+      const projectRoot = getProjectRoot(ctx);
+      const workingDirectory = getWorkingDirectory(ctx);
+      let expectedWorkspacePath: ReturnType<typeof resolveWorkflowWorkspaceDirectoryPath> | undefined;
+      try {
+        if (launch.workspaceDir !== undefined) {
+          expectedWorkspacePath = resolveWorkflowWorkspaceDirectoryPath(
+            projectRoot,
+            launch.workspaceDir,
+            workflowTargetLabel(launch),
+            workingDirectory,
           );
-        } catch (error) {
-          return errorResult(`workflow: ${error instanceof Error ? error.message : String(error)}`, {
-            owner: "workflows",
-          });
+        } else if (launch.resumeFromRunId !== undefined) {
+          expectedWorkspacePath = resolveWorkflowWorkspaceDirectoryPath(
+            projectRoot,
+            readWorkflowResumeWorkspaceIdentity(projectRoot, launch.resumeFromRunId).relativePath,
+            workflowTargetLabel(launch),
+            workingDirectory,
+          );
+        } else if (launch.runName !== undefined) {
+          expectedWorkspacePath = resolveWorkflowWorkspaceDirectoryPath(
+            projectRoot,
+            resolveNamedWorkflowWorkspacePath(projectRoot, launch.runName),
+            workflowTargetLabel(launch),
+            workingDirectory,
+          );
         }
+      } catch (error) {
+        return errorResult(`workflow: ${error instanceof Error ? error.message : String(error)}`, {
+          owner: "workflows",
+        });
       }
       if (commandLauncher.currentLease(ctx) === undefined) {
         return errorResult("workflow: this extension session has already shut down", { owner: "workflows" });
       }
-      const transcript = createWorkflowTranscript(ctx, workflowTargetLabel(valid.value), "tool", {
-        ...snapshotWorkflowInput(valid.value as WorkflowInputFields),
-      });
-      const workflowName = workflowTargetLabel(valid.value);
-      const taskTitle = workflowTaskTitle(valid.value.input);
+      const workflowName = workflowTargetLabel(launch);
+      const launchInput = snapshotWorkflowInput(launch as WorkflowInputFields);
+      const catalogLookup =
+        deps.resolveCatalogLaunchSelection?.({
+          ...(launch.catalogSelectionId === undefined ? {} : { catalogSelectionId: launch.catalogSelectionId }),
+          ...(launch.name === undefined ? {} : { name: launch.name }),
+        }) ??
+        (launch.catalogSelectionId === undefined
+          ? ({ status: "none" } as const)
+          : ({ status: "invalid", message: "catalog selection is unavailable in this session" } as const));
+      if (catalogLookup.status === "required" || catalogLookup.status === "invalid") {
+        return errorResult(`workflow: ${catalogLookup.message}`, { owner: "workflows", workflowName });
+      }
+      const catalogSelection = catalogLookup.status === "selected" ? catalogLookup : undefined;
       let targetBinding: ResolvedWorkflowTarget | undefined;
-      try {
-        targetBinding = resolveWorkflowTarget(
-          valid.value.name !== undefined
-            ? { name: valid.value.name }
-            : valid.value.scriptPath !== undefined
-              ? { scriptPath: valid.value.scriptPath }
-              : { script: valid.value.script! },
-          getProjectRoot(ctx),
-          getWorkingDirectory(ctx),
+      let expectedScriptSha256: string | undefined;
+      let sourceLocator: string | undefined;
+      if (catalogSelection !== undefined || !isOneShotHostMode(ctx)) {
+        try {
+          const request =
+            launch.name !== undefined
+              ? { name: launch.name }
+              : launch.scriptPath !== undefined
+                ? { scriptPath: launch.scriptPath }
+                : { script: launch.script! };
+          targetBinding =
+            catalogSelection === undefined
+              ? resolveWorkflowTarget(request, projectRoot, workingDirectory)
+              : assertResolvedWorkflowTargetBinding(catalogSelection.target, request, projectRoot, workingDirectory);
+          const currentSha256 = sha256WorkflowBytes(readFileSync(targetBinding.path));
+          if (catalogSelection !== undefined && currentSha256 !== catalogSelection.scriptSha256) {
+            throw new Error("workflow entry bytes changed after catalog selection");
+          }
+          expectedScriptSha256 = catalogSelection?.scriptSha256 ?? currentSha256;
+          sourceLocator = safeWorkflowSourceLocator(targetBinding, projectRoot);
+        } catch (error) {
+          return errorResult(
+            `workflow: source could not be bound before confirmation: ${error instanceof Error ? error.message : String(error)}`,
+            { owner: "workflows", workflowName },
+          );
+        }
+      }
+      if (!isOneShotHostMode(ctx)) {
+        const refused = await confirmWorkflowLaunch(
+          ctx,
+          signal,
+          workflowName,
+          workflowConfirmationDetails(
+            {
+              ...launch,
+              ...launchInput,
+              effectiveWorkspaceDir: expectedWorkspacePath?.relativePath,
+              sourceLocator,
+              scriptSha256: expectedScriptSha256,
+            },
+            projectRoot,
+          ),
         );
-      } catch {
-        // Preserve the runner's durable failed-run evidence for resolution errors.
+        if (refused !== undefined) return refused;
+      }
+      if (signal.aborted) {
+        return errorResult("workflow launch cancelled before execution: parent tool call was aborted", {
+          owner: "workflows",
+          workflowName,
+          status: "cancelled",
+          cancellationReason: "aborted",
+          disposition: { status: "cancelled" },
+        });
+      }
+      const transcript = createWorkflowTranscript(ctx, workflowName, "tool", launchInput);
+      const taskTitle = workflowTaskTitle(launch.input);
+      if (targetBinding === undefined) {
+        try {
+          targetBinding = resolveWorkflowTarget(
+            launch.name !== undefined
+              ? { name: launch.name }
+              : launch.scriptPath !== undefined
+                ? { scriptPath: launch.scriptPath }
+                : { script: launch.script! },
+            projectRoot,
+            workingDirectory,
+          );
+        } catch {
+          // Preserve the runner's durable failed-run evidence for resolution errors.
+        }
       }
       const launched = commandLauncher.attach<RunWorkflowScriptResult>(ctx, signal, async (background) =>
         runWorkflowScript({
           pi,
           ctx,
           signal: background.signal,
-          ...(valid.value.name !== undefined ? { name: valid.value.name } : {}),
-          ...(valid.value.scriptPath !== undefined ? { scriptPath: valid.value.scriptPath } : {}),
-          ...(valid.value.script !== undefined ? { script: valid.value.script } : {}),
+          ...(launch.name !== undefined ? { name: launch.name } : {}),
+          ...(launch.scriptPath !== undefined ? { scriptPath: launch.scriptPath } : {}),
+          ...(launch.script !== undefined ? { script: launch.script } : {}),
           ...(targetBinding === undefined ? {} : { targetBinding }),
-          ...snapshotWorkflowInput(valid.value as WorkflowInputFields),
-          ...(valid.value.items !== undefined ? { items: valid.value.items } : {}),
-          ...(valid.value.workspaceDir !== undefined ? { workspaceDir: valid.value.workspaceDir } : {}),
-          ...(valid.value.runName !== undefined ? { runName: valid.value.runName } : {}),
-          ...(valid.value.budget === undefined ? {} : { budget: valid.value.budget }),
-          ...(valid.value.continuation !== undefined ? { continuation: valid.value.continuation } : {}),
-          ...(valid.value.resumeFromRunId !== undefined ? { resumeFromRunId: valid.value.resumeFromRunId } : {}),
-          ...(valid.value.recoverInterrupted === undefined
+          ...(expectedScriptSha256 === undefined ? {} : { expectedScriptSha256 }),
+          ...(!isOneShotHostMode(ctx) ? { expectedProjectRoot: projectRoot } : {}),
+          ...(expectedWorkspacePath === undefined
             ? {}
-            : { recoverInterrupted: valid.value.recoverInterrupted }),
-          ...(valid.value.force === true ? { force: true as const } : {}),
+            : { expectedWorkspaceAbsolutePath: expectedWorkspacePath.absolutePath }),
+          ...launchInput,
+          ...(launch.items !== undefined ? { items: launch.items } : {}),
+          ...(launch.workspaceDir !== undefined ? { workspaceDir: launch.workspaceDir } : {}),
+          ...(launch.runName !== undefined ? { runName: launch.runName } : {}),
+          ...(launch.budget === undefined ? {} : { budget: launch.budget }),
+          ...(launch.continuation !== undefined ? { continuation: launch.continuation } : {}),
+          ...(launch.resumeFromRunId !== undefined ? { resumeFromRunId: launch.resumeFromRunId } : {}),
+          ...(launch.recoverInterrupted === undefined ? {} : { recoverInterrupted: launch.recoverInterrupted }),
+          ...(launch.force === true ? { force: true as const } : {}),
           // Same default as the command surface: in a headless (`print`/`json`)
           // host there is no operator to reach, so the mode is on unless the
           // caller explicitly passes `noOperator: false`.
-          ...((valid.value.noOperator ?? isOneShotHostMode(ctx)) ? { noOperator: true as const } : {}),
+          ...((launch.noOperator ?? isOneShotHostMode(ctx)) ? { noOperator: true as const } : {}),
           onRunStart: ({ runId, runDir }) => {
             background.setRunId(runId);
             deps.onRunStarted(runId);
@@ -519,23 +570,6 @@ function renderContextInput(context: ToolRenderContext): string | undefined {
   if (context.args === null || typeof context.args !== "object") return undefined;
   const input = (context.args as Record<string, unknown>).input;
   return typeof input === "string" ? input : undefined;
-}
-
-const WORKFLOW_INPUT_JSON_PREVIEW_MAX_CHARS = 4096;
-
-/** Current-call visibility only: persisted run/result projections retain identities, not the typed value. */
-function workflowInputJSON(record: Record<string, unknown>): string | undefined {
-  if (!Object.hasOwn(record, "inputValue")) return undefined;
-  const property = Object.getOwnPropertyDescriptor(record, "inputValue");
-  if (property === undefined || !("value" in property)) return "<unavailable: inputValue is not a data property>";
-  try {
-    const canonical = canonicalWorkflowJSON(property.value);
-    if (canonical.length <= WORKFLOW_INPUT_JSON_PREVIEW_MAX_CHARS) return canonical;
-    const omitted = canonical.length - WORKFLOW_INPUT_JSON_PREVIEW_MAX_CHARS;
-    return `${canonical.slice(0, WORKFLOW_INPUT_JSON_PREVIEW_MAX_CHARS)}… (+${omitted} chars)`;
-  } catch (error) {
-    return `<unavailable: ${error instanceof Error ? error.message : String(error)}>`;
-  }
 }
 
 const WORKFLOW_TASK_TITLE_MAX_CHARS = 96;

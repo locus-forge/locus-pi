@@ -110,15 +110,36 @@ emergency compatibility alias; every other operation uses `/workflows`.
 `Start` restores editable text to the main editor; it never submits or starts a
 workflow by itself. For a workflow without `meta.inputSchema`, it restores the
 direct `/workflows run <name>` command. For a workflow with a statically admitted
-input schema, it restores a preparation-only prompt for the installed
-`locus-pi-workflow-run` skill. The skill inspects the exact selected source,
-returns canonical JSON plus an editable `--input-json` command, and stops. The
-user reviews that value and launches it in a separate action.
+input schema, it restores a complete explicit native-run request. After the user
+submits that request, the agent inspects the exact selected source, prepares
+canonical `inputValue`, and calls the native `workflow` tool. The tool's
+extension-owned interactive confirmation displays that JSON before the user
+authorizes trusted workflow execution. This catalog route does not require a
+loaded package skill. If the tool is unavailable, it stops visibly; it does not
+invoke Pi, use a shell, or emit a `/workflows` fallback.
 
-Programmatic `workflow` tool launches additionally show a bounded canonical
-preview in native approval and the current-call tool card, including on a
-pre-start validation failure. The generated slash command bypasses model-tool
-approval and the tool card; its JSON remains visible in the editable command.
+The extension retains the selected target and entry-byte digest behind a
+one-use `catalogSelectionId` written into the request. Unrelated tool calls do
+not consume it. A newer Start supersedes the previous unsubmitted editor
+handoff. Idle input that submits the request retains the exact ID it carries;
+steering or follow-up input carrying a known ID also marks it submitted, and later
+streaming input preserves it until the tool call. The next idle user input retires an abandoned submitted selection, so
+a later independent same-name call is allowed. Missing or mismatched IDs fail
+closed while the submitted catalog request remains outstanding; a matching ID
+is consumed once, and explicitly reusing an old ID still fails. A new shadowing
+source or changed selected file is refused before confirmation; admission checks
+the digest again before module import, so editing the file while confirmation is
+open cannot switch the executed entry.
+
+Programmatic `workflow` tool launches show a bounded canonical preview in
+interactive confirmation and the current-call tool card. Tool argument-shape and
+catalog-source identity failures never reach confirmation. The declared
+`meta.inputSchema` is checked during admission after confirmation but before
+module evaluation; a refusal keeps the attempted JSON visible in the current-call
+error card. One-shot `print`/`json` hosts have no operator to confirm and require
+explicit non-interactive authorization from their caller. The
+generated slash command bypasses model-tool confirmation and the tool card; its
+JSON remains visible in the editable command.
 Preview display is diagnostic only: accepted typed authority remains the private
 `launch-binding.json`, while persisted results keep identities and digests instead
 of copying the value. Runtime validation never inserts defaults, coerces values,
@@ -383,8 +404,21 @@ input.
 
 ### `workflow` tool (programmatic)
 
-The tool stays headless. It validates the launch target and executes the workflow without
-opening a human launch prompt.
+In interactive TUI/RPC sessions, the tool detaches the complete validated launch
+request, resolves and hashes its source, and shows the effective workspace,
+safe source locator, entry SHA-256, and typed value in an extension-owned
+confirmation before attach or import. Admission enforces the same target and
+digest and the displayed explicit, named, or resumed workspace selection. A
+relative workspace resolving elsewhere after a working-directory change, or a
+named workspace switching between the current and legacy roots, is refused
+before workspace creation. The host-owned absolute workspace expectation also
+refuses the same relative path if the session changes to another project root.
+Parent cancellation dismisses the prompt; a local race settles an
+unanswered prompt after five minutes even if an adapter ignores its signal.
+Cancellation, timeout, operator refusal, or dialog failure returns a
+machine-readable tool error and starts no workflow.
+One-shot `print`/`json` launches stay headless because their caller owns explicit
+non-interactive authorization.
 
 ```json
 { "name": "item-pipeline", "input": "Write concise results.", "items": ["a.ts", "b.ts"] }
@@ -439,7 +473,8 @@ working model in a scratch project so child agents actually spawn:
 Interactive `pi` (no `-p`) renders the live progress panel, and for
 `workspaceMode: "worktree"` / `"temporary-worktree"` agents Pi native approval can
 prompt for writes according to `tools.approvalMode` and `tools.approval.*`.
-`locus-pi` no longer adds its own workflow launch gate before runtime starts.
+The native `workflow` tool adds the confirmation described above; direct
+`/workflows run` and one-shot launches do not add a second Locus-owned gate.
 
 ### Live operator questions — `agent({ ask: true })`
 

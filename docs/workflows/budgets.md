@@ -101,7 +101,7 @@ and tools have no durable measured totals and print as `not recorded`, never `0`
 
 ## Shared run budget at the tool boundary
 
-The existing `workflow` tool accepts optional `budget` with the six axes: concurrency, totalAgents, runtimeMs, timeoutMs, toolCalls and turns. There is no answer-size axis: a run does not bound how LONG an answer may be, and a length requirement belongs in the stage prompt. A budget object that still carries `answerChars` is refused by name rather than ignored. Values are validated by the same runtime budget owner and displayed in the approval details. There is no second adaptive budget and no USD-cost claim. The command launcher carries this object for structured callers; the slash CLI syntax has not gained budget flags.
+The existing `workflow` tool accepts optional `budget` with the six axes: concurrency, totalAgents, runtimeMs, timeoutMs, toolCalls and turns. There is no answer-size axis: a run does not bound how LONG an answer may be, and a length requirement belongs in the stage prompt. A budget object that still carries `answerChars` is refused by name rather than ignored. Values are validated by the same runtime budget owner and displayed in interactive confirmation details. There is no second adaptive budget and no USD-cost claim. The command launcher carries this object for structured callers; the slash CLI syntax has not gained budget flags.
 
 For the three-round refinement example, `totalAgents: 9` permits at most nine physical workflow children when transport retries are not enabled. Every choice is corrected inside its own child session, so a format correction never costs another physical child — it consumes that child's cumulative turns/tools/time.
 

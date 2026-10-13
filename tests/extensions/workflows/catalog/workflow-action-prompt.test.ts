@@ -1,15 +1,19 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { WorkflowCatalogViewer } from "../../../../extensions/workflows/catalog/catalog-viewer.js";
 import {
   buildWorkflowActionPrompt,
   buildWorkflowCatalogModel,
+  readWorkflowCatalogSource,
 } from "../../../../extensions/workflows/catalog/workflow-catalog.js";
+import { workflowCatalogLaunchSelection } from "../../../../extensions/workflows/catalog/workflow-action-prompt.js";
 
 const roots: string[] = [];
 const previousHome = process.env.HOME;
+const CATALOG_SELECTION_ID = "00000000-0000-4000-8000-000000000001";
 
 afterEach(() => {
   if (previousHome === undefined) delete process.env.HOME;
@@ -28,11 +32,21 @@ function rowFor(source: string, name = "review"): ReturnType<typeof buildWorkflo
 }
 
 function startPrompt(row: ReturnType<typeof rowFor>): string {
-  return buildWorkflowActionPrompt({
-    action: "start",
-    row,
-    sourceState: { kind: "ready", row, path: row.target.path, source: readFileSync(row.target.path, "utf8") },
-  });
+  const source = readFileSync(row.target.path, "utf8");
+  return buildWorkflowActionPrompt(
+    {
+      action: "start",
+      row,
+      sourceState: {
+        kind: "ready",
+        row,
+        path: row.target.path,
+        source,
+        scriptSha256: createHash("sha256").update(source).digest("hex"),
+      },
+    },
+    CATALOG_SELECTION_ID,
+  );
 }
 
 describe("workflow Start editor handoff", () => {
@@ -40,19 +54,39 @@ describe("workflow Start editor handoff", () => {
     expect(startPrompt(rowFor("export default () => null;\n"))).toBe("/workflows run review");
   });
 
-  it("prepares typed JSON for a separate explicit launch", () => {
+  it("requests one native typed-tool launch without requiring a skill command", () => {
     const prompt = startPrompt(
       rowFor(
         'export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"],additionalProperties:false}}; export default()=>null;\n',
       ),
     );
 
-    expect(prompt).toContain('Request: Prepare typed input for the exact current workflow "review"');
-    expect(prompt).toContain("Skill: locus-pi-workflow-run");
-    expect(prompt).toContain('beginning "/workflows run review --input-json "');
-    expect(prompt).toContain("Do not call the workflow tool, submit the command, or start the workflow");
-    expect(prompt).toContain("launches in a separate action");
-    expect(prompt).not.toContain("Prepare and start");
+    expect(prompt).toMatch(/^Start the exact current workflow "review"/u);
+    expect(prompt).toContain("explicit programmatic run request from the interactive Pi catalog");
+    expect(prompt).toContain('call the native workflow tool with name "review", catalogSelectionId');
+    expect(prompt).toContain(`catalogSelectionId "${CATALOG_SELECTION_ID}"`);
+    expect(prompt).toContain("do not omit or alter it");
+    expect(prompt).toContain("interactive confirmation is the user's review step");
+    expect(prompt).toContain("Do not invoke Pi, use a shell, emit or execute a /workflows command");
+    expect(prompt).not.toContain("--input-json");
+    expect(prompt).not.toContain("/skill:");
+    expect(prompt).not.toContain("preparation-only");
+  });
+
+  it("retains the selected target and entry-byte digest outside editable prompt text", () => {
+    const row = rowFor(
+      'export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"]}}; export default()=>null;\n',
+      "bound",
+    );
+    const root = path.resolve(path.dirname(row.target.path), "..", "..");
+    const sourceState = readWorkflowCatalogSource(row, root, root);
+    expect(sourceState.kind).toBe("ready");
+    const selected = workflowCatalogLaunchSelection({ action: "start", row, sourceState });
+
+    expect(selected).toEqual({
+      target: row.target,
+      scriptSha256: createHash("sha256").update(readFileSync(row.target.path)).digest("hex"),
+    });
   });
 
   it("describes typed Start as an editor handoff instead of a direct launch", () => {

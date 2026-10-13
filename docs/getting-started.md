@@ -195,7 +195,18 @@ The checkout is probably registered in both user and project scope. Use `pi list
 
 ### `/workflows run` is rejected before a run starts
 
-Check the target name, required `--workspace-dir`, safe project-relative path rules, and whether the workflow declares `meta.inputSchema`. Typed workflows require tool `inputValue` or a raw `--input-json` tail; they never reinterpret legacy text. Programmatic tool launches show a bounded canonical preview beside schema validation errors; slash launches keep JSON visible in the editor and bypass tool approval/card. Use `/workflows info <name>` for the live contract and the [catalog Start guide](workflows/running.md#start-from-the-catalog) for assisted preparation.
+Check the target name, required `--workspace-dir`, safe project-relative path rules, and whether the workflow declares `meta.inputSchema`. Typed workflows require tool `inputValue` or a raw `--input-json` tail; they never reinterpret legacy text. Interactive programmatic tool launches show a bounded canonical preview in confirmation and the current-call card; slash launches keep JSON visible in the editor and bypass both. Use `/workflows info <name>` for the live contract and the [catalog Start guide](workflows/running.md#start-from-the-catalog) for assisted preparation.
+
+Catalog Start also binds the selected target and entry-byte digest behind the
+one-use `catalogSelectionId` written into its request. Unrelated workflow calls
+cannot consume that identity. A newer Start supersedes an earlier unsubmitted
+editor handoff. Steering or follow-up input that carries the ID marks it
+submitted, and later streaming input during the active request preserves it until
+the tool call; the next idle user input retires the selection unless it carries
+the exact ID. While that submitted catalog request
+remains outstanding, a missing or mismatched ID is refused; an explicitly reused
+ID is always refused. If the source changes before launch, refresh the catalog
+instead of confirming a different workflow.
 
 ### A workflow is awaiting operator input
 
@@ -203,4 +214,4 @@ Inspect it with `/workflows status <runId>`, then continue it explicitly with `/
 
 ### A local workflow is untrusted
 
-Do not run it. Project and user workflows are JavaScript with host access; path validation and approval prompts are not a sandbox.
+Do not run it. Project and user workflows are JavaScript with host access; path validation and confirmation prompts are not a sandbox.
