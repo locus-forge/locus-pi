@@ -282,9 +282,35 @@ describe("workflow tool confirmed workspace identity", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]).toMatchObject({
-      text: expect.stringContaining("workflow workspace changed after confirmation"),
+      text: expect.stringContaining("workflow project root changed after confirmation"),
     });
     expect(existsSync(path.join(otherRoot, "reviews", "approved"))).toBe(false);
+  });
+
+  it("refuses a generated workspace when the project root changes after confirmation", async () => {
+    const { harness, confirm } = confirmedWorkspaceHarness();
+    const otherRoot = mkdtempSync(path.join(tmpdir(), "workflow-tool-other-generated-project-"));
+    confirmedWorkspaceRoots.push(otherRoot);
+
+    const pending = harness.tools
+      .get("workflow")!
+      .execute(
+        "generated-project-drift",
+        { name: "live-smoke" },
+        new AbortController().signal,
+        () => void 0,
+        harness.ctx,
+      );
+    harness.ctx.session!.projectRoot = otherRoot;
+    harness.ctx.session!.workingDirectory = otherRoot;
+    confirm();
+    const result = await pending;
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({
+      text: expect.stringContaining("workflow project root changed after confirmation"),
+    });
+    expect(existsSync(path.join(otherRoot, ".locus-pi", "workspaces"))).toBe(false);
   });
 });
 

@@ -307,6 +307,7 @@ export function registerWorkflowTool(pi: ExtensionAPI, deps: WorkflowToolDepende
           ...(launch.script !== undefined ? { script: launch.script } : {}),
           ...(targetBinding === undefined ? {} : { targetBinding }),
           ...(expectedScriptSha256 === undefined ? {} : { expectedScriptSha256 }),
+          ...(!isOneShotHostMode(ctx) ? { expectedProjectRoot: projectRoot } : {}),
           ...(expectedWorkspacePath === undefined
             ? {}
             : { expectedWorkspaceAbsolutePath: expectedWorkspacePath.absolutePath }),

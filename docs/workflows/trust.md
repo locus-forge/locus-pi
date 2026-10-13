@@ -65,9 +65,10 @@ not constrain the module. Parent cancellation, a local five-minute timeout,
 operator refusal, and dialog failure all fail closed before attach. For typed
 catalog Start, a one-use `catalogSelectionId` looks up the selected target and
 entry-byte digest in extension-owned session state; unrelated calls cannot
-consume it, and missing or mismatched IDs are refused while that same-name
-selection remains outstanding. Consuming the last selection releases the name
-guard, while explicitly reusing an old ID remains refused. One-shot `print`
+consume it. A newer Start supersedes the previous editor handoff, and the next
+submitted user input retires a selection whose ID it does not carry. Missing or
+mismatched IDs are refused while the submitted catalog request remains
+outstanding, and explicitly reusing an old ID remains refused. One-shot `print`
 and `json` hosts have no reachable
 operator and bypass that prompt; their caller must supply explicit non-interactive
 authorization. `/workflows run` is itself an explicit operator command and does

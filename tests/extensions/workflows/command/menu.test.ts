@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import workflows from "../../../../extensions/workflows/index.js";
-import { createHarness } from "../../../test-harness.js";
+import { createHarness, emit } from "../../../test-harness.js";
 
 const roots: string[] = [];
 const ROOT_WORKFLOW_OPTIONS = [
@@ -62,7 +62,7 @@ describe("/workflows root menu", () => {
     expect(existsSync(path.join(root, ".locus-pi", "runs"))).toBe(false);
   });
 
-  it("correlates each typed Run selection until consumption and then releases its name guard", async () => {
+  it("correlates a typed Run selection until consumption and then releases its name guard", async () => {
     const root = makeRoot();
     const workflowDir = path.join(root, ".locus-pi", "workflows");
     mkdirSync(workflowDir, { recursive: true });
@@ -77,14 +77,8 @@ describe("/workflows root menu", () => {
     workflows(h.pi);
 
     await h.commands.get("workflows")!.handler("", h.ctx);
-    const firstCatalogSelectionId = /catalogSelectionId "([^"]+)"/u.exec(h.editorText)?.[1];
-    expect(firstCatalogSelectionId).toBeDefined();
-
-    h.selectQueue.push("run", "typed");
-    await h.commands.get("workflows")!.handler("", h.ctx);
-    const secondCatalogSelectionId = /catalogSelectionId "([^"]+)"/u.exec(h.editorText)?.[1];
-    expect(secondCatalogSelectionId).toBeDefined();
-    expect(secondCatalogSelectionId).not.toBe(firstCatalogSelectionId);
+    const catalogSelectionId = /catalogSelectionId "([^"]+)"/u.exec(h.editorText)?.[1];
+    expect(catalogSelectionId).toBeDefined();
 
     const unrelated = await h.tools
       .get("workflow")!
@@ -104,36 +98,8 @@ describe("/workflows root menu", () => {
 
     const mismatch = await h.tools
       .get("workflow")!
-      .execute(
-        "mismatch",
-        { name: "other", catalogSelectionId: firstCatalogSelectionId },
-        new AbortController().signal,
-        () => void 0,
-        h.ctx,
-      );
+      .execute("mismatch", { name: "other", catalogSelectionId }, new AbortController().signal, () => void 0, h.ctx);
     expect(mismatch.content[0]).toMatchObject({ text: expect.stringContaining("does not match") });
-
-    const firstSelected = await h.tools
-      .get("workflow")!
-      .execute(
-        "first-selected",
-        { name: "typed", catalogSelectionId: firstCatalogSelectionId, inputValue: { mode: "safe" } },
-        new AbortController().signal,
-        () => void 0,
-        h.ctx,
-      );
-    expect(firstSelected.isError).not.toBe(true);
-
-    const stillGuarded = await h.tools
-      .get("workflow")!
-      .execute(
-        "still-guarded",
-        { name: "typed", inputValue: { mode: "safe" } },
-        new AbortController().signal,
-        () => void 0,
-        h.ctx,
-      );
-    expect(stillGuarded.content[0]).toMatchObject({ text: expect.stringContaining("catalogSelectionId is required") });
 
     writeFileSync(
       sourcePath,
@@ -143,7 +109,7 @@ describe("/workflows root menu", () => {
       .get("workflow")!
       .execute(
         "selected-drift",
-        { name: "typed", catalogSelectionId: secondCatalogSelectionId, inputValue: { mode: "safe" } },
+        { name: "typed", catalogSelectionId, inputValue: { mode: "safe" } },
         new AbortController().signal,
         () => void 0,
         h.ctx,
@@ -168,12 +134,82 @@ describe("/workflows root menu", () => {
       .get("workflow")!
       .execute(
         "reused",
-        { name: "typed", catalogSelectionId: firstCatalogSelectionId, inputValue: { mode: "safe" } },
+        { name: "typed", catalogSelectionId, inputValue: { mode: "safe" } },
         new AbortController().signal,
         () => void 0,
         h.ctx,
       );
     expect(reused.content[0]).toMatchObject({ text: expect.stringContaining("unknown or used") });
+  });
+
+  it("retires superseded and abandoned typed Start handoffs on the real input lifecycle", async () => {
+    const root = makeRoot();
+    const workflowDir = path.join(root, ".locus-pi", "workflows");
+    mkdirSync(workflowDir, { recursive: true });
+    writeFileSync(
+      path.join(workflowDir, "typed.workflow.mjs"),
+      'export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"]}}; export default()=>"selected";\n',
+    );
+    const h = createHarness(root);
+    h.selectQueue.push("run", "typed", "run", "typed");
+    workflows(h.pi);
+
+    await h.commands.get("workflows")!.handler("", h.ctx);
+    const firstId = /catalogSelectionId "([^"]+)"/u.exec(h.editorText)?.[1];
+    await h.commands.get("workflows")!.handler("", h.ctx);
+    const secondId = /catalogSelectionId "([^"]+)"/u.exec(h.editorText)?.[1];
+    expect(firstId).toBeDefined();
+    expect(secondId).toBeDefined();
+    expect(secondId).not.toBe(firstId);
+
+    await emit(h, "input", { text: h.editorText, source: "interactive" });
+    const superseded = await h.tools
+      .get("workflow")!
+      .execute(
+        "superseded",
+        { name: "typed", catalogSelectionId: firstId, inputValue: { mode: "safe" } },
+        new AbortController().signal,
+        () => void 0,
+        h.ctx,
+      );
+    expect(superseded.content[0]).toMatchObject({ text: expect.stringContaining("unknown or used") });
+
+    const current = await h.tools
+      .get("workflow")!
+      .execute(
+        "current",
+        { name: "typed", catalogSelectionId: secondId, inputValue: { mode: "safe" } },
+        new AbortController().signal,
+        () => void 0,
+        h.ctx,
+      );
+    expect(current.isError).not.toBe(true);
+
+    h.selectQueue.push("run", "typed");
+    await h.commands.get("workflows")!.handler("", h.ctx);
+    const abandonedId = /catalogSelectionId "([^"]+)"/u.exec(h.editorText)?.[1];
+    await emit(h, "input", { text: "Run typed independently.", source: "interactive" });
+    const independent = await h.tools
+      .get("workflow")!
+      .execute(
+        "independent-after-abandon",
+        { name: "typed", inputValue: { mode: "safe" } },
+        new AbortController().signal,
+        () => void 0,
+        h.ctx,
+      );
+    expect(independent.isError).not.toBe(true);
+
+    const abandoned = await h.tools
+      .get("workflow")!
+      .execute(
+        "abandoned",
+        { name: "typed", catalogSelectionId: abandonedId, inputValue: { mode: "safe" } },
+        new AbortController().signal,
+        () => void 0,
+        h.ctx,
+      );
+    expect(abandoned.content[0]).toMatchObject({ text: expect.stringContaining("unknown or used") });
   });
 
   it("routes a descriptive root selection back to its exact verb", async () => {

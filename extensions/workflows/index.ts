@@ -241,6 +241,12 @@ export default function workflows(pi: ExtensionAPI): void {
   registerTransientUiCleanup(pi, "workflows", cleanupTransientSurface);
   registerTransientUiCleanup(pi, WORKFLOW_LIVE_WIDGET_KEY, cleanupTransientSurface);
   pi.on("turn_end", (_event, ctx) => cleanupCompletedSurface(ctx));
+  pi.on("input", (event) => {
+    if (event.source === "extension" || typeof event.text !== "string") return;
+    for (const catalogSelectionId of catalogLaunches.keys()) {
+      if (!event.text.includes(catalogSelectionId)) catalogLaunches.delete(catalogSelectionId);
+    }
+  });
   pi.on("agent_settled", (_event, ctx) => {
     observeHandoffPump(ctx, () => pumpSessionHandoffs(ctx));
   });
@@ -301,6 +307,7 @@ export default function workflows(pi: ExtensionAPI): void {
     rememberCatalogLaunchSelection: (intent, catalogSelectionId) => {
       const selected = workflowCatalogLaunchSelection(intent);
       if (selected === undefined || catalogSelectionId === undefined) return;
+      catalogLaunches.clear();
       catalogLaunches.set(catalogSelectionId, selected);
     },
   });

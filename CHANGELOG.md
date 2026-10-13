@@ -12,8 +12,9 @@ User-visible changes to the public package.
   resolved source locator and entry-byte digest, then admission enforces that
   digest and the displayed workspace selection, including its project root. Typed catalog Start retains its
   exact selection behind a one-use request ID, so unrelated calls cannot consume
-  it; the same-name guard is released after the last outstanding selection is
-  consumed, while an explicit reused ID still fails. Full launch arguments are
+  it; a newer Start supersedes the prior editor handoff and submitted user input
+  retires any selection ID it does not carry, while explicit reuse still fails.
+  Full launch arguments are
   detached before the dialog; confirmation is abort-aware, settles fail-closed
   after five minutes even if an adapter ignores the signal, and reports timeout
   or operator refusal as a machine-readable tool error. The
