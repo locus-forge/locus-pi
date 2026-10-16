@@ -10,6 +10,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import type { WorkflowAskEvidenceRecord } from "./workflow-ask-tool.js";
 import { workflowResultFile } from "./workflow-result.js";
@@ -392,8 +393,10 @@ export function createWorkflowArtifactStore(options: CreateWorkflowArtifactStore
     stage?: string;
     childSessionId?: string;
   }): WorkflowArtifactRef {
-    const bytes = readArtifactFile(options.runDir, artifactsDir, input.sourcePath);
-    const relativePath = normalizeWorkflowArtifactRelativePath(path.relative(artifactsDir, input.sourcePath));
+    const root = realpathSync(artifactsDir),
+      source = realpathSync(input.sourcePath);
+    const bytes = readArtifactFile(options.runDir, artifactsDir, source);
+    const relativePath = normalizeWorkflowArtifactRelativePath(path.relative(root, source));
     if (input.kind === "transcript") validateTranscript(bytes, input.childSessionId);
     return addExistingRecord({ ...input, relativePath, bytes, provenance: "fresh" });
   }
@@ -652,9 +655,7 @@ function parseSourceRunEnvelope(
   } catch {
     throw new Error(`Source workflow run has no valid persisted runId: ${runId}`);
   }
-  if (persistedRunId !== runId) {
-    throw new Error(`Source workflow run result belongs to another run: ${runId}`);
-  }
+  if (persistedRunId !== runId) throw new Error(`Source workflow run result belongs to another run: ${runId}`);
   const binding = parseWorkflowPersistedBinding(value, projectRoot, runId, { verifySnapshot: true, runDir });
   if (binding.targetInvalid !== undefined || binding.target === undefined) {
     throw new Error(`Source workflow run has an invalid target identity: ${runId}`);
@@ -690,11 +691,10 @@ function parseSourceRunEnvelope(
 }
 
 function readArtifactFile(runDir: string, artifactsDir: string, file: string): Buffer {
-  const relative = path.relative(path.resolve(artifactsDir), path.resolve(file));
-  if (relative === "" || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+  const relative = path.relative(realpathSync(artifactsDir), realpathSync(file));
+  if (relative === "" || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
     throw new Error("Workflow artifact path escapes its artifact root.");
-  }
-  return readWorkflowRunFile(runDir, file);
+  return readWorkflowRunFile(runDir, path.join(artifactsDir, relative));
 }
 
 function validateTranscript(bytes: Buffer, childSessionId?: string): void {

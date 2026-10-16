@@ -235,6 +235,7 @@ class RecordingTerminal implements Terminal {
   clearScreen(): void {}
   setTitle(): void {}
   setProgress(): void {}
+  setProgramStatus(): void {}
 
   get output(): string {
     return this.writes.join("");
@@ -1532,10 +1533,9 @@ describe("AgentSessionViewer", () => {
     expect(unknown.render(80)).toHaveLength(49);
     unknown.dispose();
   });
-  it("does not promise key scrolling in fullscreen, where Pi consumes those keys first", () => {
-    // `TuiAltScreen` registers its viewport listener in its own constructor and
-    // consumes PageUp/PageDown/Home/End before any component is reached, so this
-    // screen cannot scroll by key there. The footer says only what is true.
+  it("offers Home and End in fullscreen while Pi keeps the page and modified keys", () => {
+    // Pi 1.0.3 moved fullscreen top/bottom to Ctrl+Home/Ctrl+End, so unmodified
+    // Home/End now reach this screen when its reply editor is closed.
     const row = agentLiveStore.begin({ id: "fullscreen-footer-row", agentName: "reviewer", label: "Review" });
     const execution = executionFor(row.id);
     const unregister = agentLiveStore.registerInputForExecution(execution, async () => {});
@@ -1549,9 +1549,8 @@ describe("AgentSessionViewer", () => {
       { matches: () => false },
     );
     const fullscreenFooter = fullscreen.render(80).at(-1) ?? "";
-    expect(fullscreenFooter).not.toContain("pgup");
-    expect(fullscreenFooter).not.toContain("history");
-    expect(fullscreenFooter).toContain("esc close · enter send");
+    expect(fullscreenFooter).not.toContain(PAGE_HISTORY_HINT);
+    expect(fullscreenFooter).toContain("esc close · home/end history · enter send");
     fullscreen.dispose();
 
     const regular = new AgentSessionViewer(

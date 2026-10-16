@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -104,7 +104,7 @@ describe.skipIf(process.platform === "win32")("Pi baseline commands", () => {
     expect(result.status, result.stderr).toBe(0);
     expect(JSON.parse(readFileSync(fixture.npmReceipt, "utf8"))).toEqual({
       args: ["install", "--save-dev", "--save-exact", ...packages.map((name) => `${name}@1.0.0`)],
-      cwd: fixture.root,
+      cwd: realpathSync(fixture.root),
     });
     expect(result.stdout).toContain("Pi host contract verified: CLI 1.0.0; SDK packages 1.0.0");
     expect(result.stdout).toContain("Pi development baseline is now 1.0.0.");

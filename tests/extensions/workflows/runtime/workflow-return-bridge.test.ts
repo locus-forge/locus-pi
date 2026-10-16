@@ -1,6 +1,6 @@
 /** Requires installed Pi imports; fake session integration, not a live provider run. */
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { it as test } from "vitest";
@@ -27,12 +27,14 @@ function tempRun(root: string, id: string): string {
   return dir;
 }
 async function temporary(run: (root: string) => Promise<void>): Promise<void> {
-  // realpath: the host records the real exported path, and the artifact root must match it.
-  const root = realpathSync(mkdtempSync(path.join(tmpdir(), "locus-bridge-return-")));
+  const physicalRoot = realpathSync(mkdtempSync(path.join(tmpdir(), "locus-bridge-return-")));
+  const root = process.platform === "win32" ? physicalRoot : `${physicalRoot}-alias`;
+  if (root !== physicalRoot) symlinkSync(physicalRoot, root, "dir");
   try {
     await run(root);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    if (root !== physicalRoot) rmSync(root, { force: true });
+    rmSync(physicalRoot, { recursive: true, force: true });
   }
 }
 /** One real runtime -> bridge -> SDK stack whose only fake part is the Pi session.
@@ -130,7 +132,8 @@ function bridgeHarness(
                 mkdirSync(path.dirname(file), { recursive: true });
                 // The host verifies the session header before adopting the trace.
                 writeFileSync(file, `${JSON.stringify({ type: "session", id: sessionId })}\n`, "utf8");
-                return file;
+                // Pi 1.3 may return the physical spelling of the requested report path.
+                return realpathSync(file);
               },
               dispose() {
                 counters.disposals += 1;
