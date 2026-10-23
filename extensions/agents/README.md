@@ -14,9 +14,9 @@
 /ps [row-id|agent|last]
 ```
 
-`spawn_agent` accepts one required `task` plus optional `agent`, `title`, and explicit parent context. Omitting `agent` starts a clean child without a role profile. An explicit name resolves only from the project or user catalog.
+`spawn_agent` accepts one required `task` plus optional `agent`, `modelRole`, `requireModelRole`, `title`, and explicit parent context. Omitting `agent` starts a clean child without a role profile. An explicit name resolves only from the project or user catalog.
 
-Bare standalone children inherit the current session model without consulting the
+Without an explicit `modelRole`, bare standalone children inherit the current session model without consulting the
 `agent` model role. Bare children and named profiles whose model tier inherits also
 receive known parent thinking; unknown parent thinking leaves Pi SDK defaults.
 A resolved profile selector or assigned role uses its `:off|minimal|low|medium|high|xhigh`
@@ -24,6 +24,21 @@ suffix. Without a suffix it leaves the SDK's per-model/global thinking fallback,
 even under a high parent. Separate profile `thinking-level`/`thinkingLevel` fields
 do not affect this routing. Pi still clamps effort to model capabilities; terminal
 evidence records the child's effective readback, leaving it absent when unavailable.
+
+An explicit `modelRole` (for example `tier-s:high`) overrides the selected profile's
+model preference, or selects a model for a bare child. Roles come from the project
+`.pi/model-roles/config.json` when present, otherwise the user
+`~/.pi/agent/model-roles/config.json`; the project replaces all user assignments.
+The `modelRole` parameter advertises assigned roles and their source path before
+each parent turn. `requireModelRole: true` requires an explicit assigned role and
+refuses before creating a child when it is missing. Other missing roles inherit the
+parent model with recorded fallback; malformed assignments fail.
+
+Rows and tool cards display the literal role with model and effort, such as
+`tier-s (provider/model, high)`. Until execution is confirmed the label says
+`requested`; confirmed fields come from the child, and parent fallback is explicit.
+A role selects a model; the `agent` catalog supplies instructions. Adding a role
+never creates an agent profile.
 
 ## Contract and limits
 

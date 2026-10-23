@@ -135,7 +135,7 @@
   },
   "permissions": {
     "filesystem": {
-      "read": ["*"],
+      "read": ["*", ".pi/model-roles/config.json", "~/.pi/agent/model-roles/config.json"],
       "write": ["*"]
     },
     "subprocess": ["*"],

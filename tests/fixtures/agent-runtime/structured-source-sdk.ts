@@ -10,7 +10,7 @@ import { readWorkflowReplayLog } from "../../../extensions/workflows/runtime/wor
 
 export async function withStructuredSourceSdk<T>(
   source: string,
-  scripted: object[][],
+  scripted: Parameters<typeof createStructuredSdkExecutor>[1],
   work: (fixture: {
     root: string;
     sourcePath: string;

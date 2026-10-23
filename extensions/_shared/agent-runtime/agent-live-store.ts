@@ -1,3 +1,4 @@
+import type { ModelRouteDisplay } from "../model/live-model-display.js";
 import { EventEmitter } from "node:events";
 import { PetnameRegistry } from "./agent-names.js";
 import { AgentLiveTranscript, type AgentLiveTranscriptSnapshot } from "./agent-live-transcript.js";
@@ -32,7 +33,7 @@ const MAX_AGENT_LIVE_EVENT_LINES = 200;
 const MAX_AGENT_LIVE_EVENT_LINE_LENGTH = 300;
 const MAX_AGENT_LIVE_REQUEST_LENGTH = 32_000;
 
-export interface AgentLiveRow {
+export interface AgentLiveRow extends ModelRouteDisplay {
   id: string;
   parentRowId?: string;
   /** Durable owner provenance. Workflow-owned rows stop only through /workflows stop. */
@@ -62,8 +63,6 @@ export interface AgentLiveRow {
   startedAt?: number;
   elapsedMs?: number;
   lastActivityAt?: number;
-  model?: string;
-  thinking?: string;
   currentPath?: string;
   currentTools: string[];
   currentToolArgs?: string | undefined;
@@ -95,7 +94,7 @@ export interface AgentLiveRow {
   latestMessage?: string | undefined;
 }
 
-export interface AgentLiveBeginOptions {
+export interface AgentLiveBeginOptions extends ModelRouteDisplay {
   id?: string;
   parentRowId?: string;
   workflowRunId?: string;
@@ -105,8 +104,6 @@ export interface AgentLiveBeginOptions {
   request?: string;
   slotKey?: string;
   round?: number;
-  model?: string;
-  thinking?: string;
   currentPath?: string;
   isolated?: boolean;
   noMcp?: boolean;
@@ -295,7 +292,10 @@ class AgentLiveStore {
     const current = this.rows.get(rowId);
     if (current === undefined) return undefined;
     const cleared: AgentLiveRow = { ...current };
-    if (missing === "model") delete cleared.model;
+    if (missing === "model") {
+      delete cleared.model;
+      cleared.modelConfirmed = false;
+    }
     delete cleared.thinking;
     this.rows.set(rowId, cleared);
     this.#emit();
@@ -352,11 +352,7 @@ class AgentLiveStore {
     return authority !== undefined && this.cancelWithAuthority(authority);
   }
 
-  /**
-   * Synchronous projection/compatibility API. It is intentionally row-id based
-   * and must not be retained across an async boundary. Async producers must use
-   * beginExecution() and the corresponding execution-handle methods.
-   */
+  /** Row-id compatibility API; async producers must use beginExecution and its handle. */
   begin(options: AgentLiveBeginOptions): AgentLiveRow {
     return this.#begin(options, false).row;
   }
@@ -371,22 +367,22 @@ class AgentLiveStore {
   ): { row: AgentLiveRow; execution: AgentLiveExecutionHandle } {
     const id = options.id ?? `agent-live-${Date.now()}-${++this.#nextId}`;
     const existing = this.rows.get(id);
-    // Petname is stable per row: assigned once (never re-derived), and skipped for
-    // group summary rows which render from their own label, not a petname.
+    // Stable petnames belong to child rows; groups use their labels.
     const isGroupRow = (options.groupKind ?? existing?.groupKind) !== undefined;
     const displayName =
       existing?.displayName ??
       (isGroupRow ? undefined : this.#displayNameFor(id, existing?.parentRowId ?? options.parentRowId));
-    // Slot rounds (REQ-009): the SAME row is reused when a workflow slot is re-invoked.
-    // A strictly higher round means a new iteration began — reset the per-round transient
-    // fields (tools/args/tool-start/tokens/elapsed) so the row shows THIS round, not the
-    // last. `round`/`slotKey` are options-win (the newer call carries the current value).
+    // Reused slots reset transient fields on a newer round; the caller owns round and slotKey.
     const round = options.round ?? existing?.round;
     const slotKey = options.slotKey ?? existing?.slotKey;
     const isNewRound = existing !== undefined && options.round !== undefined && options.round > (existing.round ?? 0);
     const resetTransient = freshExecution || isNewRound;
     const lastActivityAt = freshExecution ? options.now : (existing?.lastActivityAt ?? options.now);
     const model = freshExecution ? (options.model ?? existing?.model) : (existing?.model ?? options.model);
+    const modelRole = freshExecution ? options.modelRole : (options.modelRole ?? existing?.modelRole);
+    const modelRoleFallback = freshExecution
+      ? options.modelRoleFallback
+      : (options.modelRoleFallback ?? existing?.modelRoleFallback);
     const thinking = freshExecution
       ? (options.thinking ?? existing?.thinking)
       : (existing?.thinking ?? options.thinking);
@@ -427,6 +423,9 @@ class AgentLiveStore {
       ...(!freshExecution && existing?.startedAt !== undefined ? { startedAt: existing.startedAt } : {}),
       ...(!resetTransient && existing?.elapsedMs !== undefined ? { elapsedMs: existing.elapsedMs } : {}),
       ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
+      ...(modelRole === undefined ? {} : { modelRole }),
+      ...(modelRoleFallback === undefined ? {} : { modelRoleFallback }),
+      modelConfirmed: freshExecution ? false : (options.modelConfirmed ?? existing?.modelConfirmed ?? false),
       ...(model !== undefined ? { model } : {}),
       ...(thinking !== undefined ? { thinking } : {}),
       ...(currentPath !== undefined ? { currentPath } : {}),

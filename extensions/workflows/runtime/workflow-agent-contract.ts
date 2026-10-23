@@ -194,6 +194,7 @@ export interface WorkflowAgentResult {
    * when the peer exposes no model on its session; never back-filled from the
    * request, because repeating a request back proves only that we remember it.
    */
+  modelRole?: string;
   executedModel?: string;
   /**
    * Set when a declared tier had no assignment in the global config and the child therefore

@@ -68,7 +68,7 @@ describe("model-role lock release reporting", () => {
     });
 
     expect(result.receipt.kind).toBe("warning");
-    expect(result.receipt.text).toContain("AGENT → test/fast:low saved.");
+    expect(result.receipt.text).toContain("agent → test/fast:low saved.");
     expect(result.receipt.text).toContain("Could not release model-role config lock");
     expect(result.receipt.text).not.toContain("route was not saved");
     expect(harness.entries.at(0)).toMatchObject({

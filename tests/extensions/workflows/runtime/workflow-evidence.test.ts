@@ -31,6 +31,9 @@ const evidence: EvidenceEvaluation = {
 
 function tempProject(): string {
   const root = mkdtempSync(path.join(tmpdir(), "locus-workflow-evidence-"));
+  const rolesDir = path.join(root, ".pi", "model-roles");
+  mkdirSync(rolesDir, { recursive: true });
+  writeFileSync(path.join(rolesDir, "config.json"), JSON.stringify({ roles: {} }));
   const dir = path.join(root, ".agents", "agents");
   mkdirSync(dir, { recursive: true });
   writeFileSync(
@@ -38,11 +41,7 @@ function tempProject(): string {
     "---\nname: reviewer\ndescription: Project reviewer\ntools: read, grep\n---\nReview carefully.\n",
     "utf8",
   );
-  // The `default` agent has to belong to this project too. Discovery is
-  // project → user → bundled, so a root that declares only `reviewer` borrows
-  // `default` from whatever catalog the developer installed under `$HOME` — and
-  // now that agent frontmatter `model:` selects the child's model, a stale home
-  // catalog can fail these calls for reasons that have nothing to do with evidence.
+  // Own both profiles and assignments so operator settings cannot decide these checks.
   writeFileSync(
     path.join(dir, "default.md"),
     "---\nname: default\ndescription: General purpose agent\nmodel: task\n---\nDo the work.\n",

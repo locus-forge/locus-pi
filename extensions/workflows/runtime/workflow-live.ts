@@ -80,6 +80,7 @@ export function applyWorkflowJournalLineToAgentLiveStore(line: WorkflowJournalLi
       ...(line.agent === undefined ? {} : { agentName: line.agent }),
       label: line.label !== undefined ? `${displayName} (${line.label})` : displayName,
       ...(line.title === undefined ? {} : { title: line.title }),
+      ...(line.modelRole === undefined ? {} : { modelRole: line.modelRole }),
       ...(line.model !== undefined ? { model: line.model } : {}),
       ...(line.thinking !== undefined ? { thinking: line.thinking } : {}),
       ...(line.slotKey !== undefined ? { slotKey: line.slotKey } : {}),
@@ -199,6 +200,12 @@ function patchTerminalExecutionEvidence(
   patch: Partial<Omit<AgentLiveRow, "id" | "model" | "thinking">>,
 ): void {
   const model = line.model !== undefined ? { model: line.model } : {};
+  patch = {
+    ...patch,
+    modelConfirmed: line.executedModel !== undefined && line.executedModel !== "unavailable",
+    ...(line.modelRole === undefined ? {} : { modelRole: line.modelRole }),
+    ...(line.modelRoleFallback === undefined ? {} : { modelRoleFallback: line.modelRoleFallback }),
+  };
   if (line.executedModel === undefined) agentLiveStore.patchExecutionWithoutReadback(execution, "model", patch);
   else if (line.thinking === undefined)
     agentLiveStore.patchExecutionWithoutReadback(execution, "thinking", { ...patch, ...model });

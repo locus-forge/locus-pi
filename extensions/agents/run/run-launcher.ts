@@ -24,6 +24,7 @@ import {
   resolveAgentModelPreference,
   malformedRoleAssignmentNote,
   unassignedAgentTierNote,
+  unassignedRoleNote,
   type ModelRoleResolution,
 } from "../../_shared/model/model-settings.js";
 import { resolveWorkflowModel } from "../../_shared/model/workflow-model-resolve.js";
@@ -68,6 +69,7 @@ interface AgentLiveTaskBaseInput {
   title: string;
   task: string;
   approvalTier: ApprovalTier;
+  modelRole?: string;
   liveModel: { model?: string; thinking?: string } | undefined;
   /** Explicit wall clock for this whole interactive child. */
   childTimeoutMs: number;
@@ -77,7 +79,7 @@ interface AgentLiveTaskBaseInput {
 
 export type AgentLiveTaskInput = AgentLiveTaskBaseInput &
   (
-    | { executionMode: "bare"; agent?: never; resolvedAgent?: never; modelRoleResolution?: never }
+    | { executionMode: "bare"; agent?: never; resolvedAgent?: never; modelRoleResolution?: ModelRoleResolution }
     | {
         executionMode: "named";
         agent: AgentDefinition;
@@ -104,6 +106,9 @@ export async function runAgentLiveTask(
     label,
     title,
     request: input.task,
+    ...(input.modelRoleResolution === undefined || input.modelRoleResolution.source === "agent"
+      ? {}
+      : { modelRole: input.modelRoleResolution.role }),
     ...(liveModel?.model !== undefined ? { model: liveModel.model } : {}),
     ...(liveModel?.thinking !== undefined ? { thinking: liveModel.thinking } : {}),
     isolated: false,
@@ -123,9 +128,10 @@ export async function runAgentLiveTask(
   // model — and an unresolvable CONCRETE selector fails the run by name rather than
   // silently inheriting. This is the one call site both interactive triggers share.
   const tier =
-    input.executionMode === "named" ? await resolveAgentExecutorModel(ctx, input.agent, input.modelRoleResolution) : {};
+    input.modelRoleResolution === undefined
+      ? {}
+      : await resolveAgentExecutorModel(ctx, input.agent, input.modelRoleResolution, input.modelRole);
   if (tier.refusal !== undefined) {
-    if (input.executionMode !== "named") throw new Error("bare execution cannot produce a profile refusal");
     // The refusal lands before any session is created, so the row's seeded
     // `model`/`thinking` are the REQUEST talking to itself. Leaving them on a terminal
     // row shows an operator a model that never ran and cannot be told apart from one
@@ -138,8 +144,8 @@ export async function runAgentLiveTask(
     });
     return recordStandaloneFailure(input, {
       status: "failed",
-      executionMode: "named",
-      agentName: input.agent.name,
+      executionMode: input.executionMode,
+      ...(input.agent === undefined ? {} : { agentName: input.agent.name }),
       reason: tier.refusal,
       diagnostics: [tier.refusal],
       lifecycleEntryIds: [],
@@ -147,6 +153,7 @@ export async function runAgentLiveTask(
   }
   // Inherited models keep known parent effort. Concrete tiers use their suffix,
   // or leave SDK per-model/global defaults intact when no suffix was declared.
+  if (tier.fallback !== undefined) agentLiveStore.patchExecution(execution, { modelRoleFallback: tier.fallback });
   const thinkingLevel = tier.model === undefined ? input.pi.getThinkingLevel?.() : tier.thinking;
   const executor = createAgentSdkSessionExecutor({
     model: tier.model ?? (ctx as { model?: unknown }).model,
@@ -163,6 +170,7 @@ export async function runAgentLiveTask(
   });
   const requestInput = {
     approvalTier: input.approvalTier,
+    ...(input.modelRoleResolution === undefined ? {} : { modelRoleResolution: input.modelRoleResolution }),
     // Travels on the request for the same reason it does in the bridge: the
     // run-result artifact is written inside the boundary. `writeAgentRunResultArtifact`
     // only promotes it once `executedModel` is set — i.e. after the child was actually
@@ -254,29 +262,22 @@ function recordStandaloneFailure(
   };
 }
 
-/**
- * The interactive half of the tier chain.
- *
- * The workflow bridge owns the full three-term precedence because only a workflow
- * call can declare a per-call `model` / `modelRole`. An interactive child has no
- * call site to declare one, so the chain here is the agent's own resolved tier, then
- * the session model. The two asymmetric outcomes are the same as the bridge's: a
- * concrete selector that does not resolve refuses by name, an unassigned role
- * inherits (OD5).
- */
+/** Resolve an explicit spawn role or profile preference before creating a child. */
 async function resolveAgentExecutorModel(
   ctx: ExtensionContext,
-  agent: AgentDefinition,
+  agent: AgentDefinition | undefined,
   resolution: ModelRoleResolution,
+  explicitRole?: string,
 ): Promise<{ model?: unknown; thinking?: ThinkingLevel; refusal?: string; fallback?: string }> {
   if (resolution.malformed !== undefined) {
     // Same rule as the bridge (OD2 parity): a malformed assignment is a config error
     // and refuses, only a genuinely unassigned role degrades.
     return {
       refusal: malformedRoleAssignmentNote(
-        agent.model?.[0] ?? resolution.role,
-        `agent "${agent.name}" frontmatter model`,
+        explicitRole ?? agent?.model?.[0] ?? resolution.role,
+        explicitRole === undefined ? `agent "${agent?.name}" frontmatter model` : "modelRole",
         resolution.malformed,
+        resolution.configPath,
       ),
     };
   }
@@ -286,10 +287,13 @@ async function resolveAgentExecutorModel(
     // the same unexplained-model problem OD2 asked us to close for `/agent run` and
     // `spawn_agent`, so the note the bridge writes is written here too. The roles
     // state is re-read only on this path, so the common case pays nothing.
-    const declared = agent.model?.[0];
+    const declared = explicitRole ?? agent?.model?.[0];
     if (declared === undefined) return {};
     return {
-      fallback: unassignedAgentTierNote(agent.name, declared, resolution, await loadModelRolesState()),
+      fallback:
+        explicitRole === undefined && agent !== undefined
+          ? unassignedAgentTierNote(agent.name, declared, resolution, await loadModelRolesState(getProjectRoot(ctx)))
+          : unassignedRoleNote(declared, "modelRole", await loadModelRolesState(getProjectRoot(ctx))),
     };
   }
   const resolved = await resolveWorkflowModel(formatAssignment(resolution.assignment), ctx);
@@ -297,7 +301,7 @@ async function resolveAgentExecutorModel(
     return { model: resolved.model, ...(resolved.thinking === undefined ? {} : { thinking: resolved.thinking }) };
   return {
     refusal:
-      `Agent "${agent.name}" declares the model ${JSON.stringify(agent.model?.[0] ?? resolution.role)}, ` +
+      `Agent "${agent?.name ?? "bare"}" declares the model ${JSON.stringify(explicitRole ?? agent?.model?.[0] ?? resolution.role)}, ` +
       `resolved to ${JSON.stringify(formatAssignment(resolution.assignment))} by the ${resolution.source} layer, ` +
       `but that ${resolved.message}`,
   };
@@ -357,7 +361,7 @@ export async function executeAgentRunCommand(
     return;
   }
   const { agent, resolvedAgent } = resolution;
-  const modelRoles = await loadModelRolesState();
+  const modelRoles = await loadModelRolesState(getProjectRoot(ctx));
   const modelRoleResolution = resolveAgentModelPreference(modelRoles, agent.model ?? []);
   const liveModel = resolveLiveModelDisplay({ pi, ctx, assignment: modelRoleResolution.assignment });
   const hasUI = ctx.hasUI === true;

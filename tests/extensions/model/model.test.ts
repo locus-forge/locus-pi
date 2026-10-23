@@ -97,7 +97,7 @@ describe("model extension", () => {
     ]);
   });
 
-  it("applies DEFAULT model + effort, persists its route, and closes only on q", async () => {
+  it("applies default model + effort, persists its route, and closes only on q", async () => {
     harness.customInputQueue.push(ENTER, ENTER, ...repeat(DOWN, 4), ENTER, "q");
 
     await harness.commands.get("model-roles")!.handler("", harness.ctx);
@@ -111,7 +111,7 @@ describe("model extension", () => {
       data: { role: "default", assignment: "test/fast:high", modelApplied: true, rolePersisted: true },
     });
     expect(harness.customOptions).toHaveLength(1);
-    expect(joinFrames(harness).includes("[OK] DEFAULT → test/fast:high saved; Current session updated.")).toBe(true);
+    expect(joinFrames(harness).includes("[OK] default → test/fast:high saved; Current session updated.")).toBe(true);
     expect(harness.statuses.has("model-roles")).toBe(false);
     expect(harness.statuses.get("locus")).toContain("routes");
     expect(harness.statuses.get("locus")).not.toContain("current=");
@@ -144,8 +144,8 @@ describe("model extension", () => {
     expect(harness.entries).toHaveLength(2);
     expect(harness.customOptions).toHaveLength(1);
     const frames = joinFrames(harness);
-    expect(frames).toContain("[OK] DEFAULT → test/fast:high saved; Current session updated.");
-    expect(frames).toContain("[OK] AGENT → test/strong:low saved.");
+    expect(frames).toContain("[OK] default → test/fast:high saved; Current session updated.");
+    expect(frames).toContain("[OK] agent → test/strong:low saved.");
     expect(frames).toContain("Models: [ALL]");
     expect(frames).toContain("Action for test/strong:");
   });
@@ -167,7 +167,7 @@ describe("model extension", () => {
     expect(harness.thinkingLevel).toBeUndefined();
   });
 
-  it("keeps DEFAULT route distinct after host model divergence and reopen", async () => {
+  it("keeps default route distinct after host model divergence and reopen", async () => {
     harness.customInputQueue.push(ENTER, ENTER, ENTER, "q");
     await harness.commands.get("model-roles")!.handler("", harness.ctx);
 
@@ -178,7 +178,7 @@ describe("model extension", () => {
 
     const frame = harness.customRenderFrames[0]!.join("\n");
     expect(frame).toContain("Current session model: test/strong");
-    expect(frame).toContain("DEFAULT route: test/fast:off");
+    expect(frame).toContain("default route: test/fast:off");
   });
 
   it("persists the global user config across a fresh harness", async () => {
@@ -223,11 +223,11 @@ describe("model extension", () => {
     const text = rolesFrame?.join("\n") ?? "";
     expect(text).toContain("Models: [ALL]");
     expect(text).toContain("test/fast");
-    expect(text).toContain("Set as DEFAULT · active · main/current model");
-    expect(text).toContain("Set as AGENT · active · model-less agents/workflows");
-    expect(text).toContain("Set as TASK · active · explicit task role");
-    expect(text).toContain("Set as PLAN · dormant · beta prompt planning");
-    expect(text).toContain("Set as SMOL · fallback-only · summary resolver");
+    expect(text).toContain("Set as default · active · main/current model");
+    expect(text).toContain("Set as agent · active · model-less agents/workflows");
+    expect(text).toContain("Set as task · active · explicit task role");
+    expect(text).toContain("Set as plan · dormant · beta prompt planning");
+    expect(text).toContain("Set as smol · fallback-only · summary resolver");
     expect(text).not.toContain("Available roles:");
   });
 
@@ -249,7 +249,7 @@ describe("model extension", () => {
     expect(frame).toContain("Models 1-2 of 2");
   });
 
-  it("leaves the selector usable and the route unset when DEFAULT effort control is unavailable", async () => {
+  it("leaves the selector usable and the route unset when default effort control is unavailable", async () => {
     delete harness.pi.setThinkingLevel;
     harness.customInputQueue.push(ENTER, ENTER, ENTER, "q");
 
@@ -261,7 +261,7 @@ describe("model extension", () => {
     expect(joinFrames(harness)).toContain("Effort capability: registry");
   });
 
-  it("leaves the selector usable when the host refuses DEFAULT model selection", async () => {
+  it("leaves the selector usable when the host refuses default model selection", async () => {
     harness.pi.setModel = vi.fn(async () => false);
     harness.customInputQueue.push(ENTER, ENTER, ENTER, "q");
 
@@ -273,7 +273,7 @@ describe("model extension", () => {
     expect(joinFrames(harness)).toContain("Effort capability: registry");
   });
 
-  it("does not persist DEFAULT when the host clamps the selected effort", async () => {
+  it("does not persist default when the host clamps the selected effort", async () => {
     harness.pi.setThinkingLevel = () => {
       harness.thinkingLevel = "off";
     };
@@ -284,10 +284,10 @@ describe("model extension", () => {
     expect(harness.selectedModel).toMatchObject({ provider: "test", id: "fast" });
     const state = await loadModelRolesState();
     expect(state.effective.get("default")?.assignment).toBeUndefined();
-    expect(joinFrames(harness)).toContain("[ERROR] Pi clamped effort high to off; DEFAULT route was not saved.");
+    expect(joinFrames(harness)).toContain("[ERROR] Pi clamped effort high to off; default route was not saved.");
   });
 
-  it("reports partial success when Current changes but DEFAULT persistence fails", async () => {
+  it("reports partial success when Current changes but default persistence fails", async () => {
     const projectRoot = join(root, "read-only-project");
     const roleDir = dirname(getModelRolesConfigPath());
     await mkdir(roleDir, { recursive: true });
@@ -303,7 +303,7 @@ describe("model extension", () => {
       expect(harness.thinkingLevel).toBe("high");
       const receiptFrame = harness.customRenderFrames.at(-1)!.join("\n");
       expect(receiptFrame).toContain("Current session model: test/fast · effort high");
-      expect(receiptFrame).toContain("[WARN] Current session changed to test/fast · effort high, but DEFAULT route");
+      expect(receiptFrame).toContain("[WARN] Current session changed to test/fast · effort high, but default route");
       expect(receiptFrame).toContain("was not saved: EACCES");
       const state = await loadModelRolesState();
       expect(state.effective.get("default")?.assignment).toBeUndefined();
@@ -366,7 +366,7 @@ describe("model extension", () => {
     expect(harness.entries).toEqual([]);
     expect(harness.widgets.get("model-roles")).toContain("[WARN] Model roles");
     expect(harness.widgets.get("model-roles")).toContain("Current session model:");
-    expect(harness.widgets.get("model-roles")).toContain("DEFAULT route:");
+    expect(harness.widgets.get("model-roles")).toContain("default route:");
     expect(harness.widgets.get("model-roles")).toContain("fallback is read-only");
     expect(harness.widgetOptions.get("model-roles")).toEqual({ placement: "aboveEditor" });
     expect(harness.notifications).toEqual([]);
@@ -416,7 +416,7 @@ describe("model extension", () => {
     });
   });
 
-  it("loads only the global user config and ignores old settings and session mirrors", async () => {
+  it("loads user configuration without project context and ignores settings/session mirrors", async () => {
     await writeJson(getModelRolesConfigPath(), {
       version: 1,
       roles: { smol: "test/fast:low", task: "test/fast" },
@@ -445,7 +445,7 @@ describe("model extension", () => {
     });
   });
 
-  it("keeps PLAN/SUMMARY dormant while AGENT and explicit TASK routes stay active", async () => {
+  it("keeps plan/summary dormant while agent and explicit task routes stay active", async () => {
     await writeJson(getModelRolesConfigPath(), {
       version: 1,
       roles: {
@@ -556,7 +556,7 @@ describe("model extension", () => {
     const contribution = modelRoleStatusContribution(roleSummaries(state));
 
     expect(contribution).toMatchObject({ id: "model.roles", lane: "route", narrow: "routes 3" });
-    expect(contribution?.wide).toContain("DEFAULT=gpt-5.6");
+    expect(contribution?.wide).toContain("default=gpt-5.6");
     expect(contribution?.wide).not.toMatch(/current=|effort|high|cwd|context/);
     expect(contribution?.compact).not.toMatch(/current=|effort|high|cwd|context/);
   });
@@ -601,14 +601,14 @@ describe("ModelRoleSelectorComponent", () => {
     expect(text).toContain("\x1b[48;2;88;61;121m\x1b[38;2;248;241;255m[ALL]\x1b[0m");
     expect(text).not.toContain("\x1b[32m[ALL]\x1b[39m");
     expect(text).toContain("\x1b[32m[CURRENT]\x1b[39m");
-    expect(text).toContain("\x1b[32m[DEFAULT]\x1b[39m");
+    expect(text).toContain("\x1b[32m[default]\x1b[39m");
     expect(text).toContain("\x1b[48;2;88;61;121m\x1b[38;2;248;241;255mtest/fast — Test Fast\x1b[0m");
     expect(text).not.toContain("\x1b[33m");
 
     await component.handleInput(ENTER);
     const roles = component.render(146).join("\n");
-    expect(roles).toContain("\x1b[48;2;88;61;121m\x1b[38;2;248;241;255mSet as DEFAULT\x1b[0m");
-    expect(roles).toContain("\x1b[33m[DEFAULT]\x1b[39m");
+    expect(roles).toContain("\x1b[48;2;88;61;121m\x1b[38;2;248;241;255mSet as default\x1b[0m");
+    expect(roles).toContain("\x1b[33m[default]\x1b[39m");
   });
 
   it("renders assigned routes in success on separate lines and keeps warning for unset ones", () => {
@@ -647,14 +647,14 @@ describe("ModelRoleSelectorComponent", () => {
 
     const lines = component.render(146);
     const routingIndex = lines.findIndex((line) => line.includes("Routing roles:"));
-    expect(lines[routingIndex + 1]).toContain("\x1b[32mSUMMARY\x1b[39m");
-    expect(lines[routingIndex + 2]).toContain("\x1b[32mSMOL\x1b[39m");
+    expect(lines[routingIndex + 1]).toContain("\x1b[32msummary\x1b[39m");
+    expect(lines[routingIndex + 2]).toContain("\x1b[32msmol\x1b[39m");
     expect(lines[routingIndex + 1]).toContain("\x1b[32mtest/strong:low\x1b[39m");
-    expect(lines.join("\n")).toMatch(/\x1b\[32m\[SUMMARY\]\x1b\[39m.*\x1b\[32m\[SMOL\]\x1b\[39m/su);
+    expect(lines.join("\n")).toMatch(/\x1b\[32m\[summary\]\x1b\[39m.*\x1b\[32m\[smol\]\x1b\[39m/su);
     expect(lines.join("\n")).toContain("\x1b[48;2;88;61;121m\x1b[38;2;248;241;255mtest/strong");
-    // Nothing is pinned to DEFAULT and no model owns the session here, so those
+    // Nothing is pinned to default and no model owns the session here, so those
     // two labels keep warning: unset is the surviving attention case.
-    expect(lines.join("\n")).toContain("\x1b[33mDEFAULT\x1b[39m");
+    expect(lines.join("\n")).toContain("\x1b[33mdefault\x1b[39m");
     expect(lines.join("\n")).toContain("route: unset");
     expect(lines.join("\n")).toContain("\x1b[33mCurrent\x1b[39m");
   });
@@ -679,7 +679,7 @@ describe("ModelRoleSelectorComponent", () => {
       expect(text).toContain("[SELECT]");
       expect(text).toContain("Model roles");
       expect(text).toContain("Current session model:");
-      expect(text).toContain("DEFAULT route:");
+      expect(text).toContain("default route:");
       expect(text).toContain("Models:");
       expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
     }
@@ -689,7 +689,7 @@ describe("ModelRoleSelectorComponent", () => {
       const lines = component.render(width);
       const text = lines.join("\n");
       expect(text).toContain("Action for test/fast:");
-      expect(text).toContain("Set as DEFAULT");
+      expect(text).toContain("Set as default");
       expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
     }
   });
@@ -713,7 +713,7 @@ describe("ModelRoleSelectorComponent", () => {
 
     await component.handleInput(ENTER);
     expect(component.render(80).join("\n")).toContain("Action for test/fast:");
-    expect(component.render(80).join("\n")).toContain("Set as DEFAULT");
+    expect(component.render(80).join("\n")).toContain("Set as default");
     await component.handleInput(ESC);
     expect(component.render(80).join("\n")).toContain("Models: [ALL]");
     await component.handleInput(ENTER);
@@ -809,7 +809,7 @@ describe("ModelRoleSelectorComponent", () => {
             currentSelector: "test/fast",
             currentThinking: "high",
             roleSummaries: summaries,
-            receipt: { kind: "success", text: "SUMMARY saved" },
+            receipt: { kind: "success", text: "summary saved" },
           };
         },
       },
@@ -823,7 +823,7 @@ describe("ModelRoleSelectorComponent", () => {
     expect(text).toContain("Models: [ALL]");
     expect(text).not.toContain("Action for test/fast:");
     expect(text).not.toContain("Effort capability:");
-    expect(text).toContain("[OK] SUMMARY saved");
+    expect(text).toContain("[OK] summary saved");
   });
 });
 

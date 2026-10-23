@@ -1,3 +1,4 @@
+import { getProjectRoot } from "../_shared/host/pi-api.js";
 /**
  * extensions/model/role-command.ts — the `/model-roles` command: read what the
  * host registry actually offers, open the inline selector when Pi can host one,
@@ -28,17 +29,17 @@ import { applyModelRole } from "./role-apply.js";
 export async function runModelUi(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
   const models = await availableModels(ctx);
   if (models.length === 0) {
-    const state = await loadModelRolesState();
+    const state = await loadModelRolesState(getProjectRoot(ctx));
     const summaries = roleSummaries(state);
     publishModelRoleStatus(ctx, summaries);
     setOperatorWidget(
       ctx,
       "model-roles",
-      modelRoleFallbackBlock(
-        summaries,
-        "No configured models are available; the selector was not opened.",
-        sessionFacts(pi, ctx),
-      ),
+      modelRoleFallbackBlock(summaries, "No configured models are available; the selector was not opened.", {
+        ...sessionFacts(pi, ctx),
+        configPath: state.path,
+        configExists: state.exists,
+      }),
     );
     return;
   }
@@ -54,7 +55,7 @@ async function availableModels(ctx: ExtensionContext): Promise<ModelLike[]> {
 }
 
 async function showModelRoleSelector(pi: ExtensionAPI, ctx: ExtensionContext, models: ModelLike[]): Promise<void> {
-  const state = await loadModelRolesState();
+  const state = await loadModelRolesState(getProjectRoot(ctx));
   const summaries = roleSummaries(state);
   if (ctx.mode !== "tui" || ctx.hasUI === false || !ctx.ui.custom) {
     publishModelRoleStatus(ctx, summaries);
@@ -64,7 +65,7 @@ async function showModelRoleSelector(pi: ExtensionAPI, ctx: ExtensionContext, mo
       modelRoleFallbackBlock(
         summaries,
         "Interactive model-role selection requires Pi custom UI; no route was changed.",
-        sessionFacts(pi, ctx),
+        { ...sessionFacts(pi, ctx), configPath: state.path, configExists: state.exists },
       ),
     );
     return;
@@ -79,10 +80,12 @@ async function showModelRoleSelector(pi: ExtensionAPI, ctx: ExtensionContext, mo
       (tui, theme, _keybindings, done) =>
         new ModelRoleSelectorComponent(tui, createModelRoleSelectorTheme(theme), {
           rows,
+          configPath: state.path,
+          configExists: state.exists,
           roleSummaries: summaries,
           currentSelector,
           currentThinking: pi.getThinkingLevel?.(),
-          applySelection: (selection) => applyModelRole(pi, ctx, selection),
+          applySelection: (selection) => applyModelRole(pi, ctx, selection, state.path),
           done,
         }),
     );

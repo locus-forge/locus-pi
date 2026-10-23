@@ -18,11 +18,10 @@
 import type { ThinkingLevel } from "../../_shared/host/pi-api.js";
 import type { ModelRoleResolution } from "../../_shared/model/model-settings.js";
 import {
-  DEFAULT_MODEL_ROLES,
   formatAssignment,
   resolveAgentModelPreference,
   malformedRoleAssignmentNote,
-  resolveDeclaredModelRole,
+  selectDeclaredModelRole,
   unassignedAgentTierNote,
   unassignedRoleNote,
   type ModelRolesState,
@@ -100,39 +99,13 @@ export async function resolveWorkflowTier(input: {
   }
 
   if (req.modelRole !== undefined) {
-    // `modelRole` is a NAME IN THE ROLES TABLE and never a provider selector (D4).
-    // A slash means a concrete `provider/id` under the OD1 grammar, so a
-    // slash-bearing `modelRole` is a category error, not an unassigned role — and
-    // treating it as one would degrade it to the session model, i.e. silently run
-    // something other than the model the author spelled out. That is the exact
-    // fail-closed case OD5 keeps loud, so it refuses with the option to use instead.
-    if (req.modelRole.includes("/")) {
-      return refusal(
-        `modelRole ${JSON.stringify(req.modelRole)} is not a role name: a "/" means a concrete ` +
-          `provider/id selector, and modelRole only ever names a role in the model-roles table. ` +
-          `Use \`model: ${JSON.stringify(req.modelRole)}\` to pin a concrete model, or name a bare ` +
-          `role (one of: ${DEFAULT_MODEL_ROLES.join(", ")}).`,
-        req.modelRole,
-      );
-    }
-    // The DECLARED role only. Purpose resolution would answer a question the author
-    // did not ask, and `modelRole: "smol"` would run whatever `agent` holds.
-    const declared = resolveDeclaredModelRole(modelRoles, req.modelRole);
-    if (declared.malformed !== undefined) {
-      // Assigned but unparseable — a config typo, not an unassigned role. Degrading
-      // it would run the parent's model under the requested tier's name and tell the
-      // operator their role was "not assigned in the global config", which their own file
-      // contradicts.
-      return refusal(malformedRoleAssignmentNote(req.modelRole, "modelRole", declared.malformed), req.modelRole);
+    let declared: ModelRoleResolution;
+    try {
+      declared = selectDeclaredModelRole(modelRoles, req.modelRole, req.requireModelRole);
+    } catch (error) {
+      return refusal(error instanceof Error ? error.message : String(error), req.modelRole);
     }
     if (declared.assignment === undefined) {
-      if (req.requireModelRole === true) {
-        return refusal(
-          `modelRole ${JSON.stringify(req.modelRole)} is required by this workflow stage, but the global ` +
-            "model-roles config does not assign it. Assign the role with /model-roles before running this workflow.",
-          req.modelRole,
-        );
-      }
       return {
         kind: "inherit",
         roleResolution: declared,
@@ -170,6 +143,7 @@ export async function resolveWorkflowTier(input: {
         frontmatterSelector ?? frontmatterResolution.role,
         `agent "${agent.name}" frontmatter model`,
         frontmatterResolution.malformed,
+        modelRoles.path,
       ),
       frontmatterSelector,
     );

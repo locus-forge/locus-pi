@@ -6,7 +6,11 @@ import { AGENT_SDK_UNAVAILABLE_DIAGNOSTIC } from "../../_shared/agent-runtime/ag
 import { agentLiveStore } from "../../_shared/agent-runtime/agent-live-store.js";
 import { pinTransientUiKey, unpinTransientUiKey } from "../../_shared/operator/command-ui.js";
 import { resolveLiveModelDisplay } from "../../_shared/model/live-model-display.js";
-import { loadModelRolesState, resolveAgentModelPreference } from "../../_shared/model/model-settings.js";
+import {
+  loadModelRolesState,
+  resolveAgentModelPreference,
+  selectDeclaredModelRole,
+} from "../../_shared/model/model-settings.js";
 import type { ExtensionAPI, ToolUpdate } from "../../_shared/host/pi-api.js";
 import { errorResult, getProjectRoot, textResult } from "../../_shared/host/pi-api.js";
 import { validateParams } from "../../_shared/host/validation.js";
@@ -47,6 +51,8 @@ export function registerAgentSpawnTools(pi: ExtensionAPI): void {
       valid.value.task,
       valid.value.title,
       valid.value.parentContext,
+      valid.value.modelRole,
+      valid.value.requireModelRole,
     );
   };
   pi.registerTool({
@@ -88,6 +94,8 @@ async function runTaskTool(
   task: string,
   title: string | undefined,
   parentContext?: { inline?: string; artifactPath?: string },
+  modelRole?: string,
+  requireModelRole?: boolean,
 ) {
   const bare = agentName === undefined;
   const resolution = bare ? undefined : resolveAgentSelection(agentName);
@@ -96,10 +104,20 @@ async function runTaskTool(
     return errorResult(report.text, report.details);
   }
   const agentDefault = resolution?.agent.parentContextDefault === true;
-  const modelRoleResolution =
-    resolution === undefined
-      ? undefined
-      : resolveAgentModelPreference(await loadModelRolesState(), resolution.agent.model ?? []);
+  if (requireModelRole === true && modelRole === undefined)
+    return errorResult("requireModelRole: true requires modelRole.");
+  let modelRoleResolution;
+  try {
+    if (modelRole !== undefined || resolution !== undefined) {
+      const state = await loadModelRolesState(getProjectRoot(ctx));
+      modelRoleResolution =
+        modelRole !== undefined
+          ? selectDeclaredModelRole(state, modelRole, requireModelRole)
+          : resolveAgentModelPreference(state, resolution!.agent.model ?? []);
+    }
+  } catch (error) {
+    return errorResult(errorMessage(error));
+  }
   const liveModel = resolveLiveModelDisplay({ pi, ctx, assignment: modelRoleResolution?.assignment });
   const executionLabel = resolution?.resolvedAgent ?? "sub-agent";
   const hasUI = ctx.hasUI === true;
@@ -127,6 +145,8 @@ async function runTaskTool(
       task,
       approvalTier: "allow",
       liveModel,
+      ...(modelRole === undefined ? {} : { modelRole }),
+      ...(modelRoleResolution === undefined ? {} : { modelRoleResolution }),
       childTimeoutMs: INTERACTIVE_AGENT_RUNTIME_MS,
       onStarted: (line: string) =>
         update({
@@ -190,6 +210,11 @@ async function runTaskTool(
     status: boundary.status,
     rowId,
     title: resolvedTitle,
+    ...(finishedRow?.modelRole === undefined ? {} : { modelRole: finishedRow.modelRole }),
+    ...(finishedRow?.model === undefined ? {} : { model: finishedRow.model }),
+    ...(finishedRow?.thinking === undefined ? {} : { thinking: finishedRow.thinking }),
+    ...(finishedRow?.modelConfirmed === undefined ? {} : { modelConfirmed: finishedRow.modelConfirmed }),
+    ...(finishedRow?.modelRoleFallback === undefined ? {} : { modelRoleFallback: finishedRow.modelRoleFallback }),
     ...(finishedRow?.displayName === undefined ? {} : { displayName: finishedRow.displayName }),
     ...(finishedRow?.startedAt === undefined ? {} : { startedAt: finishedRow.startedAt }),
     ...(finishedRow?.elapsedMs === undefined ? {} : { elapsedMs: finishedRow.elapsedMs }),

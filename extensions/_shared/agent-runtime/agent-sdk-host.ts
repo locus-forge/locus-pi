@@ -258,6 +258,8 @@ export interface AgentSdkSessionExecutorOptions {
     round?: number;
     isolated?: boolean;
     noMcp?: boolean;
+    modelRole?: string;
+    modelRoleFallback?: string;
     model?: string;
     thinking?: string;
   };
@@ -655,16 +657,8 @@ async function runChildSession(
     }
     return childTrace;
   };
-  /**
-   * Terminal row patch: a model stays only once one executed, an effort only once read back.
-   *
-   * `observed.executedModel` is this file's single proof of execution, so the row and
-   * the result are held to the same evidence: a run that ends before the child was
-   * dispatched — a rejected `prompt()`, a subscription that threw, an abort landing
-   * while the prompt was in flight — drops the label the row was seeded with instead
-   * of leaving an operator a terminal row indistinguishable from one that ran.
-   */
-  const patchTerminalRow = (patch: Partial<Omit<AgentLiveRow, "id" | "model" | "thinking">>): void => {
+  // Terminal model/effort require executed readback. Setup failures drop request labels.
+  const patchObservedRow = (patch: Partial<Omit<AgentLiveRow, "id" | "model" | "thinking">>): void => {
     if (observed.executedModel === undefined) agentLiveStore.patchExecutionWithoutReadback(execution, "model", patch);
     else if (observed.executedThinking === undefined)
       agentLiveStore.patchExecutionWithoutReadback(execution, "thinking", patch);
@@ -679,12 +673,8 @@ async function runChildSession(
       // Make the full uuid available to an active drill immediately, rather than
       // only after the child has completed and its boundary result is parsed.
       childSessionId: session.sessionId,
-      // The live row is where an operator actually watches a run, so it must show
-      // what RAN as soon as that is knowable. The row was built before the child
-      // existed and until this point carries a request-side display value; the
-      // readback replaces it the moment the session reports one. When the peer
-      // reports nothing the row keeps its display value rather than showing the
-      // `unavailable` sentinel, which is evidence and not a model name (D6/D7).
+      // Session readback replaces the request label, but remains unconfirmed until dispatch.
+      // Missing readback preserves the requested display, never an executed-model claim.
       ...(sessionModelSelector !== EXECUTED_MODEL_UNAVAILABLE ? { model: sessionModelSelector } : {}),
       ...(sessionThinkingLevel !== undefined ? { thinking: sessionThinkingLevel } : {}),
     });
@@ -748,7 +738,7 @@ async function runChildSession(
         restoreObservedOutput = await installAgentOutputAdmission(session, acceptance, created.hostVersion);
       } catch (error) {
         const reason = errorMessage(error);
-        patchTerminalRow({ status: "error", errors: [reason], finalAnswer: reason });
+        patchObservedRow({ status: "error", errors: [reason], finalAnswer: reason });
         await preserveChildTrace();
         return withChildTrace(
           failedResult(
@@ -795,6 +785,7 @@ async function runChildSession(
     if (turn.promptAccepted) {
       observed.executedModel = sessionModelSelector;
       if (sessionThinkingLevel !== undefined) observed.executedThinking = sessionThinkingLevel;
+      patchObservedRow({ modelConfirmed: sessionModelSelector !== EXECUTED_MODEL_UNAVAILABLE });
     }
     while (
       acceptance !== undefined &&
@@ -835,6 +826,7 @@ async function runChildSession(
       if (turn.promptAccepted) {
         observed.executedModel = sessionModelSelector;
         if (sessionThinkingLevel !== undefined) observed.executedThinking = sessionThinkingLevel;
+        patchObservedRow({ modelConfirmed: sessionModelSelector !== EXECUTED_MODEL_UNAVAILABLE });
       }
     }
     if (signal.aborted) turn = { ...turn, settlement: "aborted" };
@@ -842,7 +834,7 @@ async function runChildSession(
       const reason =
         "Child prompt was absorbed before model dispatch: an input handler or extension command handled it, " +
         "so no model ran and no agent_end will follow.";
-      patchTerminalRow({ status: "error", errors: [reason], finalAnswer: reason });
+      patchObservedRow({ status: "error", errors: [reason], finalAnswer: reason });
       await preserveChildTrace();
       return withChildTrace(
         failedResult(request, reason, "prompt-not-dispatched", [...diagnostics, reason], undefined, childSession),
@@ -858,6 +850,7 @@ async function runChildSession(
     if (turn.promptAccepted) {
       observed.executedModel = sessionModelSelector;
       if (sessionThinkingLevel !== undefined) observed.executedThinking = sessionThinkingLevel;
+      patchObservedRow({ modelConfirmed: sessionModelSelector !== EXECUTED_MODEL_UNAVAILABLE });
     }
 
     if (
@@ -871,7 +864,7 @@ async function runChildSession(
       await preserveChildTrace();
       if (turn.settlement === "timed_out") {
         const reason = `Child agent turn exceeded the ${String(turnBudgetMs)}ms budget and was aborted.`;
-        patchTerminalRow({ status: "error", errors: [reason], finalAnswer: reason });
+        patchObservedRow({ status: "error", errors: [reason], finalAnswer: reason });
         return withChildTrace(
           failedResult(request, reason, "host-turn-timeout", [...diagnostics, reason], undefined, childSession),
           childTrace,
@@ -879,7 +872,7 @@ async function runChildSession(
       }
       if (turn.settlement === "turn_limit") {
         const reason = `Child exceeded its cumulative ${String(request.maxTurns)} assistant-turn budget`;
-        patchTerminalRow({ status: "error", errors: [reason], finalAnswer: reason });
+        patchObservedRow({ status: "error", errors: [reason], finalAnswer: reason });
         return withChildTrace(
           failedResult(request, reason, "assistant-turn-budget", [...diagnostics, reason], undefined, childSession),
           childTrace,
@@ -887,14 +880,14 @@ async function runChildSession(
       }
       if (turn.settlement === "tool_limit") {
         const reason = `Child agent exceeded the ${maxToolCalls ?? 0} tool-call budget and was aborted.`;
-        patchTerminalRow({ status: "error", errors: [reason], finalAnswer: reason });
+        patchObservedRow({ status: "error", errors: [reason], finalAnswer: reason });
         return withChildTrace(
           failedResult(request, reason, "tool-call-budget", [...diagnostics, reason], undefined, childSession),
           childTrace,
         );
       }
       const reason = "Agent run was cancelled.";
-      patchTerminalRow({ status: "cancelled", finalAnswer: reason });
+      patchObservedRow({ status: "cancelled", finalAnswer: reason });
       return withChildTrace(cancelledResult(request, reason, diagnostics, childSession), childTrace);
     }
 
@@ -920,7 +913,7 @@ async function runChildSession(
     if (acceptance?.observedReturn !== undefined) {
       const decision = acceptance.inspect();
       if (decision.status === "failed") {
-        patchTerminalRow({ status: "error", errors: [decision.reason], finalAnswer: decision.reason });
+        patchObservedRow({ status: "error", errors: [decision.reason], finalAnswer: decision.reason });
         return withChildTrace(
           failedResult(
             request,
@@ -937,7 +930,7 @@ async function runChildSession(
     const providerFailure = assistantProviderFailure(session.messages);
     if (providerFailure !== undefined) {
       const currentErrors = agentLiveStore.rowForExecution(execution)?.errors ?? [];
-      patchTerminalRow({
+      patchObservedRow({
         status: "error",
         childSessionId: childSession.id,
         errors: unique([...currentErrors, providerFailure]),
@@ -957,7 +950,7 @@ async function runChildSession(
     }
     if (acceptance !== undefined && acceptedOutput === undefined) {
       const reason = acceptanceFailure ?? "No accepted output proposal at successful child completion";
-      patchTerminalRow({ status: "error", errors: [reason], finalAnswer: reason });
+      patchObservedRow({ status: "error", errors: [reason], finalAnswer: reason });
       return withChildTrace(
         failedResult(request, reason, acceptanceFailureCause, [...diagnostics, reason], childOutputStats, childSession),
         childTrace,
@@ -965,7 +958,7 @@ async function runChildSession(
     }
     const parsed = parseAgentText(text ?? "");
     if (!parsed.ok) {
-      patchTerminalRow({
+      patchObservedRow({
         status: "error",
         childSessionId: childSession.id,
         finalAnswer: parsed.reason,
@@ -992,7 +985,7 @@ async function runChildSession(
       status: "completed",
     };
     const evidence = evaluateEvidence(evidenceInput);
-    patchTerminalRow({
+    patchObservedRow({
       status: "done",
       childSessionId: childSession.id,
       finalAnswer: parsed.text,
@@ -1020,7 +1013,7 @@ async function runChildSession(
     // This catch takes both a transport rejection from `prompt()` (nothing ran) and a
     // failure after the child answered (something did), so the model label follows the
     // execution evidence rather than the code path.
-    patchTerminalRow({
+    patchObservedRow({
       status: "error",
       errors: unique([...currentErrors, reason]),
       finalAnswer: reason,
@@ -1646,6 +1639,8 @@ function liveBeginOptions(
   if (live.round !== undefined) options.round = live.round;
   if (live.parentRowId !== undefined) options.parentRowId = live.parentRowId;
   if (live.workflowRunId !== undefined) options.workflowRunId = live.workflowRunId;
+  if (live.modelRole !== undefined) options.modelRole = live.modelRole;
+  if (live.modelRoleFallback !== undefined) options.modelRoleFallback = live.modelRoleFallback;
   if (live.model !== undefined) options.model = live.model;
   if (live.thinking !== undefined) options.thinking = live.thinking;
   if (live.isolated !== undefined) options.isolated = live.isolated;

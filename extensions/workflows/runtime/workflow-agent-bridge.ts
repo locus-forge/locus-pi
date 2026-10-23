@@ -154,7 +154,7 @@ export function createWorkflowAgentPreflight(options: WorkflowAgentBridgeOptions
     const projectRoot = getProjectRoot(options.ctx);
     const discovered = discoverAgentDefinitions(projectRoot);
     const agentMap = new Map(discovered.definitions.map((agent) => [agent.name, agent]));
-    const modelRoles = await loadModelRolesState();
+    const modelRoles = await loadModelRolesState(projectRoot);
 
     for (const request of requests) {
       const agentName = request.agent?.trim();
@@ -273,7 +273,7 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
     //    runs on, and it decides it BEFORE any child is spawned so a refusal costs
     //    nothing. `modelRoleResolution` continues to travel into the request capsule
     //    and the run-result artifact exactly as it did before.
-    const modelRoles = await loadModelRolesState();
+    const modelRoles = await loadModelRolesState(getProjectRoot(ctx));
     const tier = await resolveWorkflowTier({ req, agent, modelRoles, resolveModelFn });
     if (tier.kind === "refused") {
       return {
@@ -317,6 +317,12 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
     }
 
     const modelRoleResolution = tier.roleResolution;
+    const modelRole =
+      req.model === undefined &&
+      modelRoleResolution.source !== "agent" &&
+      (req.modelRole !== undefined || agent?.model?.length || modelRoleResolution.assignment !== undefined)
+        ? modelRoleResolution.role
+        : undefined;
     const liveModel = resolveLiveModelDisplay({
       pi,
       ctx,
@@ -542,6 +548,8 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
         : undefined;
     const round = slotRowId !== undefined ? nextRound(roundByRowId, slotRowId) : undefined;
     const live: AgentSdkSessionExecutorOptions["live"] = {
+      ...(modelRole === undefined ? {} : { modelRole }),
+      ...(tier.kind === "inherit" && tier.fallback !== undefined ? { modelRoleFallback: tier.fallback } : {}),
       ...(req.label !== undefined ? { label: req.label } : {}),
       ...(req.title !== undefined ? { title: req.title } : {}),
       ...(slotRowId !== undefined ? { rowId: slotRowId } : {}),
@@ -705,6 +713,7 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
         readOnly: agent?.readOnly ?? false,
         ...(boundary.activeToolNames === undefined ? {} : { activeToolNames: boundary.activeToolNames }),
         ...(req.label !== undefined ? { label: req.label } : {}),
+        ...(modelRole === undefined ? {} : { modelRole }),
         ...(boundary.executedModel !== undefined ? { executedModel: boundary.executedModel } : {}),
         // Same gate as the settled path below, for the same reason: the note is past
         // tense, and a call the fuse killed before kickoff has no child to speak of.
@@ -786,6 +795,7 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
       ...(worktreePath !== undefined ? { worktreePath } : {}),
       // The request lives on `agent_start`; result evidence contains only host readback.
       ...(executedModel !== undefined && executedModel !== EXECUTED_MODEL_UNAVAILABLE ? { model: executedModel } : {}),
+      ...(modelRole === undefined ? {} : { modelRole }),
       ...(executedModel !== undefined ? { executedModel } : {}),
       ...(degradationConfirmed ? { modelRoleFallback: tier.fallback! } : {}),
       ...(boundary.executedThinking !== undefined ? { thinking: boundary.executedThinking } : {}),
