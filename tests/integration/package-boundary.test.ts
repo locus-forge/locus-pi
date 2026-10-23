@@ -31,10 +31,7 @@ interface PackageJson {
   devDependencies: Record<string, string>;
 }
 
-interface PackResult {
-  filename: string;
-  files: Array<{ path: string }>;
-}
+type PackResult = { filename: string; files: Array<{ path: string }> };
 
 const root = process.cwd();
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as PackageJson;
@@ -340,9 +337,11 @@ describe("npm public package boundary", () => {
       "schemas/extension-manifest.schema.json",
       "skills/",
     ]);
-    // Typed Start adds catalog prompt/source owners and one command error-boundary owner under the allowlist.
-    expect(dryRun.files).toHaveLength(277);
+    // Model-role file persistence and selector options remain inside the existing extension allowlist.
+    expect(dryRun.files).toHaveLength(279);
     for (const filename of [
+      "extensions/_shared/model/model-role-config.ts",
+      "extensions/model/selector/options.ts",
       "extensions/workflows/catalog/workflow-action-prompt.ts",
       "extensions/workflows/command/workflow-editor-handoff.ts",
       "extensions/workflows/source/workflow-source-structured.ts",

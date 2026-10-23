@@ -13,6 +13,8 @@ import type { RoleSummary } from "./model-role-selector.js";
 
 /** The current session facts the read-only model-roles fallback reports. */
 export interface ModelRoleSessionFacts {
+  configPath?: string;
+  configExists?: boolean;
   selector: string | undefined;
   thinking: ThinkingLevel | undefined;
 }
@@ -31,9 +33,9 @@ export function modelRoleFallbackBlock(
     metadata: [
       `Current session model: ${session.selector ?? "unset"}`,
       `Current session effort: ${session.thinking ?? "unknown"}`,
-      `DEFAULT route: ${defaultRoute?.assignment === undefined ? "unset" : formatAssignment(defaultRoute.assignment)}`,
+      `default route: ${defaultRoute?.assignment === undefined ? "unset" : formatAssignment(defaultRoute.assignment)}`,
       `Other routes: ${assigned.length === 0 ? "none" : assigned.map((summary) => `${summary.tag}=${formatAssignment(summary.assignment!)}`).join(" · ")}`,
-      "storage: ~/.pi/agent/model-roles/config.json",
+      `File: ${session.configPath ?? "unavailable"}${session.configExists === false ? " (not created)" : ""}`,
     ],
     hint: ["This fallback is read-only; routing state remains unchanged."],
     controls: ["Open /model-roles in an interactive Pi TUI to assign roles."],

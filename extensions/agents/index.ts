@@ -10,7 +10,7 @@ import { agentLiveStore } from "../_shared/agent-runtime/agent-live-store.js";
 import { FLEET_FOCUS_FALLBACK_SHORTCUT, fleetMenuState } from "../_shared/agent-runtime/fleet-menu.js";
 import type { ExtensionAPI, ExtensionContext } from "../_shared/host/pi-api.js";
 import { getProjectRoot } from "../_shared/host/pi-api.js";
-import { refreshAgents } from "./catalog/catalog.js";
+import { refreshAgents, refreshModelRoleHint } from "./catalog/catalog.js";
 import { registerAgentCommands, warnOnPsCollision } from "./command/command-router.js";
 import type { AgentSessionAuthority } from "./fleet/drill-command.js";
 import { createAgentFleetMenuController } from "./fleet/fleet-menu-controller.js";
@@ -48,8 +48,9 @@ export default function agents(pi: ExtensionAPI): void {
   // The catalog the caller reads must be current at the moment it picks a name,
   // not at the moment it calls: refresh before the turn, exactly like the other
   // refreshAgents call sites do before a command or a tool body runs.
-  pi.on("before_agent_start", (_event, ctx) => {
+  pi.on("before_agent_start", async (_event, ctx) => {
     refreshAgents(getProjectRoot(ctx));
+    await refreshModelRoleHint(getProjectRoot(ctx));
   });
   registerAgentSpawnTools(pi);
   registerAgentCommands(pi, { openFleetMenu: fleetMenu.open, agentSessionAuthority });

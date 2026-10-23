@@ -1,3 +1,4 @@
+import { getProjectRoot } from "../_shared/host/pi-api.js";
 /**
  * extensions/model/operator-surface.ts — the ctx-bound reads and writes behind
  * the `model.roles` status lane: loading the effective role state, publishing
@@ -32,8 +33,9 @@ export async function currentModelRoleState(
   ctx: ExtensionContext,
   fallbackCurrentSelector: string | undefined,
 ): Promise<CurrentModelRoleState> {
-  const state = await loadModelRolesState();
+  const state = await loadModelRolesState(getProjectRoot(ctx));
   return {
+    configExists: state.exists,
     currentSelector: ctx.model ? modelSelector(ctx.model) : fallbackCurrentSelector,
     currentThinking: pi?.getThinkingLevel?.(),
     roleSummaries: roleSummaries(state),
@@ -56,9 +58,7 @@ export function modelRoleStatusContribution(summaries: readonly RoleSummary[]): 
   const overflow = assigned.length - first.length;
   const suffix = overflow > 0 ? ` +${overflow}` : "";
   const wide = first.map((summary) => `${summary.tag}=${shortModelName(summary.assignment!.model)}`).join(" ");
-  const compact = first
-    .map((summary) => `${statusRoleAbbreviation(summary.tag)}:${shortModelName(summary.assignment!.model)}`)
-    .join(" ");
+  const compact = first.map((summary) => `${summary.tag}:${shortModelName(summary.assignment!.model)}`).join(" ");
   return {
     id: "model.roles",
     lane: "route",
@@ -81,11 +81,4 @@ export function notifyBenignInteractionEnd(ctx: ExtensionContext, message: strin
 function shortModelName(selector: string): string {
   const parts = selector.split("/");
   return parts.at(-1) ?? selector;
-}
-
-function statusRoleAbbreviation(tag: string): string {
-  return (
-    ({ DEFAULT: "D", AGENT: "A", TASK: "T", PLAN: "P", SUMMARY: "S", SMOL: "M" } as Record<string, string>)[tag] ??
-    tag.slice(0, 1)
-  );
 }

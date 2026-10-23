@@ -29,8 +29,8 @@ await agent("Read README.md and summarize the project. Do not modify files.", {
 });
 ```
 
-Assignments are saved globally in `~/.pi/agent/model-roles/config.json`; project-local
-role files are not read. The package supplies role names, but no model assignments.
+Assignments come from `<project>/.pi/model-roles/config.json` when it exists; otherwise
+from `~/.pi/agent/model-roles/config.json`. The project file replaces the entire user file. The package supplies role names, but no model assignments.
 An unassigned role inherits the current Pi model and records that fallback. Add
 `requireModelRole: true` when the stage must refuse to start without an assigned
 role. An invalid existing assignment is an error, not fallback.
@@ -84,10 +84,12 @@ a workflow child route, and a child whose route resolves outside that list still
 runs. Never change `enabledModels` unless the operator requested that exact
 configuration change.
 
-Workflow child roles have one persistent source:
-`~/.pi/agent/model-roles/config.json`. A role assignment uses
-`provider/model[:thinking]`. Project `.pi/model-roles/config.json`, Pi
-`settings.json#modelRoles`, and session evidence do not override this file.
+Workflow children and standalone agents use the same selected role file. `/model-roles`
+shows its full path and saves assignments there. A role assignment uses
+`provider/model[:thinking]`. A project file, even an empty one, suppresses user
+assignments; an invalid file fails with its path. Pi `settings.json#modelRoles`
+and session evidence do not override the selected file. See the
+[custom-role configuration](../../extensions/model/README.md#custom-roles-and-tiers).
 
 Use user-configured default model and thinking routing unless the user or project explicitly
 requests an override. Do not add model brands, tiers, or role substitutions at launch.
@@ -117,8 +119,8 @@ inherited workflow-child surface. The package ships no agent profiles.
 
 ### Model selection: execution versus metadata
 
-One precedence chain decides which model a child runs on, and it is the same
-chain for a workflow stage and for `/agent run` / `spawn_agent`:
+One precedence chain decides which model a child runs on, and it is the workflow chain; `spawn_agent` supports `modelRole` and profile routing, while
+`/agent run` uses its profile:
 
 ```
 opts.model  →  opts.modelRole  →  the agent's frontmatter tier  →  ctx.model
@@ -132,7 +134,7 @@ the point:
 - A **concrete** `provider/id` selector that does not resolve — a typo, a provider
   that is not configured, a model this host does not have — ends the call with a
   named failed result and zero child sessions. It never silently inherits.
-- A **role** that the global model-roles config does not assign degrades to `ctx.model` and records
+- A **role** that the selected model-roles config does not assign degrades to `ctx.model` and records
   `modelRoleFallback` on `agent_end`, in the `locus.agent.run-result.v2` body and
   in the run report. The package deliberately ships no role assignments, so this
   is what a user sees until they assign that named profile's role;
@@ -144,12 +146,11 @@ the point:
   described below and does not create a child to resolve.
 - A role whose assignment EXISTS but does not parse as `provider/id[:level]` is a
   configuration error and fails the call by name, quoting the value as written and
-  the global config holding it. It is deliberately not treated as unassigned: degrading a
+  the selected config holding it. It is deliberately not treated as unassigned: degrading a
   typo would run the session model under the requested tier's name and report the
   role as unassigned, which the operator's own config contradicts.
 
-A frontmatter tier resolves its named role directly from the global user config
-at `~/.pi/agent/model-roles/config.json`. A model-less child checks only the
+A frontmatter tier resolves its named role directly from the selected project or user config. A model-less child checks only the
 `agent` role, then inherits the current session model when that role is unset.
 A child that inherits the model also receives the parent session's current
 reasoning effort; the host's unrelated default cannot silently replace it.
@@ -224,8 +225,26 @@ line — its absence always means "no child ran", never "the record was lost".
 or with different fallback policy occupy different records. The key is built in
 the runtime before the bridge consults the roles table, so it identifies the tier
 a stage **declared**, not the model that produced the answer: remapping a role in
-`~/.pi/agent/model-roles/config.json`, or editing an agent's frontmatter, reuses the
+the selected configuration, or editing an agent's frontmatter, reuses the
 existing record. **A roles-table change invalidates recorded runs by hand.**
 
 `meta.description` has no effect on any of these choices. `/workflows info`
 reports the rules but never resolves them into a claimed future execution graph.
+
+## Select a role when spawning an agent
+
+`spawn_agent` accepts `modelRole` and `requireModelRole` in addition to an optional
+agent profile. The explicit role overrides the profile's model preference. Without
+an explicit role, bare children still inherit the parent model. An unassigned role
+inherits with recorded fallback unless `requireModelRole: true`; that flag requires
+an explicit role and refuses before creating a child when no assignment exists.
+A trailing thinking suffix, such as `tier-s:high`, overrides the assignment's effort.
+
+Before each parent turn, the `modelRole` tool parameter lists the currently assigned
+roles and selected configuration path. This is separate from the `agent` parameter's
+catalog of instruction profiles. Changing a role configuration does not create a profile.
+
+Agent rows and spawn cards retain the role, for example `tier-s (provider/model, high)`.
+The model and effort become execution facts only after child-session readback and dispatch;
+before confirmation, the label says `requested`. Missing readback stays unavailable, parent
+fallback is labelled, and replayed answers do not claim a fresh model execution.

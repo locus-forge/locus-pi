@@ -69,10 +69,17 @@ export interface WorkflowAgentAttemptDeps {
  * readback (`workflow-agent-bridge.ts`), so it is never a claim this line invents.
  */
 function executedModelEvidence(
-  result: Pick<WorkflowAgentResult, "model" | "executedModel" | "modelRoleFallback" | "thinking" | "activeToolNames">,
-): Pick<WorkflowJournalLine, "model" | "executedModel" | "modelRoleFallback" | "thinking" | "activeToolNames"> {
+  result: Pick<
+    WorkflowAgentResult,
+    "model" | "modelRole" | "executedModel" | "modelRoleFallback" | "thinking" | "activeToolNames"
+  >,
+): Pick<
+  WorkflowJournalLine,
+  "model" | "modelRole" | "executedModel" | "modelRoleFallback" | "thinking" | "activeToolNames"
+> {
   return {
     ...(result.model !== undefined ? { model: result.model } : {}),
+    ...(result.modelRole === undefined ? {} : { modelRole: result.modelRole }),
     ...(result.executedModel !== undefined ? { executedModel: result.executedModel } : {}),
     ...(result.modelRoleFallback !== undefined ? { modelRoleFallback: result.modelRoleFallback } : {}),
     ...(result.thinking !== undefined ? { thinking: result.thinking } : {}),
@@ -163,7 +170,7 @@ export function createWorkflowAgentAttempt(
         // in the run the value is a request and nothing has executed yet.
         ...(requestedLiveModel?.model !== undefined ? { model: requestedLiveModel.model } : {}),
         ...(requestedLiveModel?.model !== undefined ? { requestedModel: requestedLiveModel.model } : {}),
-        ...(req.modelRole !== undefined ? { modelRole: req.modelRole } : {}),
+        ...(req.modelRole !== undefined && req.model === undefined ? { modelRole: req.modelRole } : {}),
         ...(req.requireModelRole === true ? { requireModelRole: true } : {}),
         ...(requestedLiveModel?.thinking !== undefined ? { thinking: requestedLiveModel.thinking } : {}),
         ...(req.label !== undefined ? { label: req.label } : {}),
@@ -387,6 +394,7 @@ export function createWorkflowAgentAttempt(
       ...(finalResult.model !== undefined ? { model: finalResult.model } : {}),
       // The two model facts this line can honestly carry: what the host said the child
       // ran on, and — when a declared tier had nothing assigned — that it degraded.
+      ...(finalResult.modelRole === undefined ? {} : { modelRole: finalResult.modelRole }),
       ...(finalResult.executedModel !== undefined ? { executedModel: finalResult.executedModel } : {}),
       ...(finalResult.modelRoleFallback !== undefined ? { modelRoleFallback: finalResult.modelRoleFallback } : {}),
       ...(finalResult.thinking !== undefined ? { thinking: finalResult.thinking } : {}),

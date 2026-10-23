@@ -15,6 +15,16 @@ afterEach(async () => {
 });
 
 describe("extension layer checker negative rules", () => {
+  it("keeps model-role persistence below features and selector choices inside model", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, "extensions/_shared/model/model-role-config.ts"),
+      '\nimport "../../agents/index.js";\n',
+    );
+    await expectRule(root, "rule 1 (no upward import)");
+    await appendFile(path.join(root, CROSS_FEATURE_READER), '\nimport "../model/selector/options.js";\n');
+    await expectRule(root, "rule 6 (feature-internal facade)");
+  });
   it("keeps typed input admission inside the workflow facade and free of filesystem I/O", async () => {
     const root = await extensionFixture();
     await appendFile(

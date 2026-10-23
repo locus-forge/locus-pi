@@ -1,34 +1,12 @@
 /**
- * check-extension-layers.ts — the steady-state ownership guardrail for
- * `extensions/_shared` and selected cross-feature boundaries.
- *
- * The shared tree has five named layers. This gate keeps their current contract
- * explicit and mechanically enforced:
- *
- *   1. No upward import. Shared code may not import feature code.
- *   2. Layer order. A shared module may import only its own layer or a lower
- *      layer. `operator` is a leaf: it may reach only `host` and itself, and no
- *      other shared layer may import it.
- *   3. Complete ownership. Every shared TypeScript file appears exactly once in
- *      `SHARED_LAYER_MEMBERS` and sits in the matching layer directory.
- *   4. Registry ownership. Every `Symbol.for("locus-pi.…")` in executable
- *      extension source has exactly one declared owning module.
- *   5. Mutable module state. Named mutable bindings remain with their declared
- *      owner, and new mutable exported containers under `_shared` fail closed.
- *   6. Feature-internal facades. A declared feature-internal module may be
- *      imported from another feature only through its declared read facade.
- *   7. Pure modules. A declared pure module's transitive VALUE-import closure
- *      may not reach a host-bound Node builtin (`node:fs`, `node:path`, and the
- *      rest of `PURE_MODULE_FORBIDDEN_BUILTINS`).
- *
- * Registry and feature-import sweeps cover executable source under
- * `extensions/**`; tests are intentionally out of scope. Imports are read from
- * the TypeScript AST, including static imports, re-exports, import types, and
- * literal dynamic imports. Rules 1-3 and 6 enforce type-only edges too, because
- * a type-only edge still encodes ownership; rule 7 is the one rule that follows
- * value edges only, since it is about what actually loads at runtime. Type-only
- * is read per specifier, so `import { a, type B }` is a value edge while
- * `import { type A, type B }` is not.
+ * Steady-state ownership checks for extensions/_shared and cross-feature imports.
+ * Shared code cannot import features; shared imports follow LAYER_RANK, with operator
+ * restricted to host/operator and forbidden to the other layers. The ledger covers
+ * each shared file once, each global registry has one owner, and mutable state stays
+ * with its declared owner. Feature-internal modules require their read facade.
+ * Pure-module value closures cannot reach host-bound Node builtins.
+ * AST checks include static/dynamic literal imports, re-exports and type edges;
+ * only purity follows value imports alone. Tests are outside the inspected tree.
  */
 
 import type { Dirent } from "node:fs";
@@ -96,7 +74,13 @@ const SHARED_LAYER_MEMBERS: Record<SharedLayer, readonly string[]> = {
     "execution-scheduler",
     "execution-state",
   ],
-  model: ["model-settings", "live-model-display", "workflow-model-resolve", "session-tool-transport"],
+  model: [
+    "model-role-config",
+    "model-settings",
+    "live-model-display",
+    "workflow-model-resolve",
+    "session-tool-transport",
+  ],
   "agent-runtime": [
     "agents",
     "agent-context-extras",
@@ -138,6 +122,12 @@ interface FeatureInternalEntry {
 }
 
 const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
+  {
+    module: "extensions/model/selector/options.ts",
+    owner: "extensions/model",
+    facade: "extensions/model/index.ts",
+    reason: "Selector choices and capability labels are model-extension presentation, not shared routing policy.",
+  },
   {
     module: "extensions/workflows/runtime/workflow-input.ts",
     owner: "extensions/workflows",

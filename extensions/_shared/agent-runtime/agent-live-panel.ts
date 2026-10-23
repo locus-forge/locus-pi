@@ -1,3 +1,4 @@
+import type { ModelRouteDisplay } from "../model/live-model-display.js";
 import { sliceByColumn, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { AgentLiveRow, AgentLiveStatus } from "./agent-live-store.js";
 
@@ -493,21 +494,15 @@ export function formatRoundBadge(row: { round?: number }): string | undefined {
   return row.round !== undefined && row.round >= 2 ? `r${row.round}` : undefined;
 }
 
-/**
- * Model badge (REQ-005): short model name (provider prefix stripped) + effort as
- * a bare word, e.g. `{model:"anthropic/claude-fable-5", thinking:"medium"}` →
- * `claude-fable-5 medium`. No `thinking=` label.
- */
-export function formatModelBadge(model: { model?: string; thinking?: string }): string {
-  const parts: string[] = [];
-  if (model.model !== undefined && model.model !== "") parts.push(shortModelName(model.model));
-  if (model.thinking !== undefined && model.thinking !== "") parts.push(model.thinking);
-  return parts.join(" ");
-}
-
-function shortModelName(model: string): string {
-  const slash = model.lastIndexOf("/");
-  return slash >= 0 ? model.slice(slash + 1) : model;
+/** A role label is intent until execution has supplied model readback. */
+export function formatModelBadge(value: ModelRouteDisplay): string {
+  if (value.modelRole !== undefined) {
+    const actual = value.modelConfirmed === true;
+    const route = value.model === undefined ? "model unavailable" : value.model;
+    const effort = value.thinking ?? "effort unavailable";
+    return `${value.modelRole} (${route}, ${effort}${actual ? "" : "; requested"}${value.modelRoleFallback === undefined ? "" : "; parent fallback"})`;
+  }
+  return [value.model?.split("/").at(-1), value.thinking].filter(Boolean).join(" ");
 }
 
 function formatRowTokens(row: AgentLiveRow): string | undefined {
