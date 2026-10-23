@@ -28,9 +28,10 @@ Require one exact saved name or project-relative `.workflow.mjs` path. Source cr
 to the ordinary or detailed [authoring route](../../docs/workflows/create.md#choose-an-authoring-route).
 Accept either checked-source handoff under existing execution authorization.
 For `task/plan` or `task/plan-light`, reopen the exact workflow.mjs path assigned in the original whole input.
-Require completed successful review, a regular nonempty file, matching persisted checked/reviewed-byte SHA-256
-evidence and current Node/orchestration-only checks before launch, including after correction or replay.
-Missing/drifted source or failed/exhausted review forbids execution; never guess another file or reconstruct prose.
+Require successful review covering the current source, a regular nonempty file and current
+Node/orchestration-only checks before launch, including after correction or replay. Review changes against
+the accepted design and Task before reusing acceptance; this handoff requires no stored source digest.
+Missing/invalid source or failed/exhausted review forbids execution; never guess another file or reconstruct prose.
 Check an existing session/run before replacing it; silence or a lost tool handle does not prove it stopped.
 
 ## Choose the input contract before launch

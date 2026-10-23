@@ -193,21 +193,21 @@ remains intact and the whole module stays runnable. Requirements still queued fo
 later slices do not consume that slice's fix allowance. The final design review
 checks complete conformance before publication.
 
-An empty queue is not completion. Final whole-file mechanical and design gates reopen the exact caller-assigned regular nonempty source. Checkers record its absolute path, SHA-256 of persisted checked bytes and actual Node/source-tool outcomes; reviewers read those same bytes without silently editing them. Both design stages write the assigned workflow.design.md. Seed, queue, slice, correction and check stages write their assigned source-free records. No package stage executes generated source and no DSL file publication is required.
+An empty queue is not completion. Final whole-file mechanical and design gates reopen the exact caller-assigned regular nonempty source. Checkers record its absolute path and actual Node/source-tool outcomes; reviewers inspect the current source against the accepted design and Task without editing it and record requirement coverage and findings. Both design stages write the assigned workflow.design.md. Seed, queue, slice, correction and check stages write their assigned source-free records. No package stage executes generated source and no DSL file publication is required.
 
 The whole accepted input reaches every relevant agent, including helper routers. Agents interpret file assignments and task restrictions with ordinary tools; JavaScript forwards the input and opaque answers whole and branches only on exact choices. Missing or ambiguous destinations, missing source, failed checks, design mismatch and exhausted correction preserve work as non-success without fallback files or answer reconstruction.
 
 ## Handoff and replay
 
 Replay reuses model answers but does not repeat file edits. Repair + Continue is
-therefore valid only while the originally assigned prerequisite files remain intact. Every fresh suffix gate re-reads the actual file; a missing or drifted
-assigned file must fail its checks rather than be treated as preserved work. Before execution the caller compares current bytes with persisted reviewed/check evidence and repeats required checks, including after replay.
+therefore valid only while the originally assigned prerequisite files still satisfy their contracts. Every fresh suffix gate re-reads the actual file; a missing or invalid
+assigned file must fail its checks rather than be treated as preserved work. Before execution the caller reviews source or evidence changes against the accepted design and Task and repeats required checks, including after replay.
 
 No task stage executes generated source. Create-only ends with the
 checked source and launch command. For an authorized create-and-run request, the
 caller reviews the retained file and hands it to `locus-pi-workflow-run` through
 the existing file-target path, without repeat approval. Report authoring,
-execution and product verification separately. The exact assigned source path from the original whole input is the handoff. Native completion never attests file delivery. Reopen it, require successful review and regular nonempty bytes, compare persisted checked/reviewed SHA-256 evidence and rerun current required checks before execution, including after correction/replay. Failed or exhausted review forbids execution even if a source remains. Never reconstruct source from prose.
+execution and product verification separately. The exact assigned source path from the original whole input is the handoff. Native completion never attests file delivery. Reopen it, require successful review covering the current source and a regular nonempty file, and rerun current required checks before execution, including after correction/replay. This handoff requires no stored source digest; runtime-owned snapshot integrity and launch-confirmation identity remain separate contracts. Failed or exhausted review forbids execution even if a source remains. Never reconstruct source from prose.
 
 ```text
 /workflows run task/draft -- <raw request>
