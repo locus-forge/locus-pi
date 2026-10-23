@@ -119,8 +119,9 @@ A failed required check must reach explicit non-success. A valid choice
 token is routing data, not a substantive report or proof of acceptance.
 
 Reopen the assigned source after every correction or replay; reject a missing,
-empty, invalid or changed file. Record its exact path, SHA-256 of the persisted checked bytes and both check outcomes in the assigned workflow-review.md. Never use
-completion prose as proof that a file exists. Write workflow-review.md and return it: a verdict of accept or revise, then
+empty or invalid file. Review source changes against the accepted draft and prior findings.
+Record its exact path, requirement coverage, findings and both check outcomes in the assigned workflow-review.md.
+Never use completion prose as proof that a file exists. Write workflow-review.md and return it: a verdict of accept or revise, then
 only the findings that require a change, each with its evidence and the
 expected fix. Style preferences are not findings.
 

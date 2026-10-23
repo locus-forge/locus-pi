@@ -230,7 +230,9 @@ The additional sequence is justified by a consumer dependency, not a desire to c
 
 Choose checks that resolve uncertainty about the requested outcomes.
 Start with focused normal, failure and boundary cases. Expand verification
-for a concrete unresolved question; explain what the added check establishes.
+only for a named Task/contract requirement or concrete unresolved risk;
+explain what the added check establishes. Generic caution or a desire for
+more confidence does not justify widening the checks.
 
 Bound large searches so they can terminate. Use exhaustive enumeration when
 the task requires it and the chosen bounds make completion attainable.
@@ -250,6 +252,9 @@ bounds and failure exits. A separate design-review agent is not required by defa
 After Build, review the actual source against this record; a correct design does not prove
 that its implementation has the same edges. Keep any independent review required by the Task
 or selected authoring workflow. Do not add another reviewer merely to restate the design.
+Once required reviews accept the current product bytes and evidence, do not run another full-scope
+review of that unchanged state. Reopen acceptance only for changed bytes or evidence, or a named
+unresolved requirement or risk; scope the added review to that delta or question.
 
 For each acceptance edge, trace blocking criteria to the request or an
 authoritative contract and identify evidence an available child can obtain.
@@ -346,10 +351,13 @@ An optional check not performed does not, by itself, make a completed implementa
 The packaged `task/plan` and `task/plan-light` own their authoring review loops and
 caller-assigned source/evidence paths in the [task authoring manual](../../../examples/workflows/task/README.md).
 They do not inherit an extra design-review stage from this lesson. Use the same exact source
-for Node, the project-confined checker, reviewer and launcher. Retain its path, checked-byte
-SHA-256 and actual outcomes. Before launch, reopen the regular nonempty source and compare
-reviewed evidence; correction or replay requires current checks. Missing, drifted or failed
-source forbids execution. Native completion prose does not attest file delivery.
+for Node, the project-confined checker, reviewer and launcher. Retain its exact path, review
+findings and actual check outcomes. Before launch, reopen the regular nonempty source and
+confirm that current source and evidence satisfy the reviewed design and Task. Source or evidence
+changes require review of the affected scope; correction or replay requires current checks.
+Missing or invalid source, failed review and exhaustion forbid execution. Native completion
+prose does not attest file delivery. This handoff requires no stored source digest; runtime-owned
+snapshot integrity and launch-confirmation identity remain separate contracts.
 
 A successful Build returns `/workflows run <name>` (or the qualified child ref).
 Create-only stops there. Create-and-run continues through

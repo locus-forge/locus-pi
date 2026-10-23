@@ -302,6 +302,29 @@ ${authoring[0] ?? ""}
     }
   });
 
+  it("limits repeated review and added checks without weakening required acceptance evidence", () => {
+    const design = source("skills/locus-pi-workflow-create/references/design-and-build.md").replace(/\s+/gu, " ");
+    for (const rule of [
+      "only for a named Task/contract requirement or concrete unresolved risk",
+      "Generic caution or a desire for more confidence does not justify widening the checks.",
+      "Keep any independent review required by the Task or selected authoring workflow.",
+      "Once required reviews accept the current product bytes and evidence, do not run another full-scope review of that unchanged state.",
+      "Reopen acceptance only for changed bytes or evidence, or a named unresolved requirement or risk; scope the added review to that delta or question.",
+      "Correction receives the complete actionable findings and is followed by fresh review.",
+    ])
+      expect(design).toContain(rule);
+    for (const lesson of ["locus-pi-workflow-create", "locus-pi-workflow-create-detailed"]) {
+      const text = source(`skills/${lesson}/SKILL.md`).replace(/\s+/gu, " ");
+      for (const rule of [
+        "Required evidence stays binding",
+        "Corrections require fresh review",
+        "Do not repeat full review of accepted unchanged work and evidence",
+        "Expand checks only for a named requirement/risk",
+      ])
+        expect(text).toContain(rule);
+    }
+  });
+
   it("keeps source grammar, labels, output and failure authority in canonical references", () => {
     const authoring =
       source("docs/workflows/source-shape.md") +
