@@ -1,3 +1,37 @@
+import {
+  errorMessage,
+  isRecord,
+  isToolOrStepEvent,
+  isToolResultEvent,
+  eventToolName,
+  eventPath,
+  eventToolArgs,
+  eventErrorMessage,
+  eventTurnUsage,
+  finiteNonNegativeNumber,
+  eventTypeName,
+  formatAgentLiveEventLine,
+  formatAgentLiveStatsLine,
+  appendAgentLiveEventLine,
+  eventFieldMessage,
+  eventFieldValue,
+  boundedAgentLiveLine,
+  compactAgentLiveValue,
+  boundedAgentLiveRequest,
+  unique,
+  activityStateForStatus,
+  isTerminalAgentLiveStatus,
+} from "./session/live-events.js";
+export {
+  errorMessage,
+  isRecord,
+  eventToolName,
+  eventTypeName,
+  eventFieldMessage,
+  boundedAgentLiveRequest,
+  unique,
+} from "./session/live-events.js";
+import { AgentSessionState, type AgentSessionDisplay } from "./session/state.js";
 import type { ModelRouteDisplay } from "../model/live-model-display.js";
 import { EventEmitter } from "node:events";
 import { PetnameRegistry } from "./agent-names.js";
@@ -28,10 +62,6 @@ export interface SdkSessionStatsLike {
 export type AgentLiveStatus = "queued" | "working" | "done" | "cancelled" | "error";
 export type AgentLiveActivityState = "waiting" | "active" | "completed" | "cancelled" | "failed";
 export type AgentLiveGroupKind = "parallel" | "pipeline";
-
-const MAX_AGENT_LIVE_EVENT_LINES = 200;
-const MAX_AGENT_LIVE_EVENT_LINE_LENGTH = 300;
-const MAX_AGENT_LIVE_REQUEST_LENGTH = 32_000;
 
 export interface AgentLiveRow extends ModelRouteDisplay {
   id: string;
@@ -148,8 +178,44 @@ class AgentLiveStore {
   readonly #inputRegistrations = new Map<string, AgentLiveInputRegistration>();
   readonly #transcripts = new Map<string, AgentLiveTranscript>();
   #nextId = 0;
+  retainSessions = false;
+  readonly #sessions = new AgentSessionState<AgentLiveExecutionHandle>();
+  registerAgentLifetime(execution: AgentLiveExecutionHandle, exit: () => Promise<void>): () => void {
+    return this.#sessions.registerLifetime(execution, exit);
+  }
+  async exitAgent(id: string): Promise<void> {
+    const execution = this.captureExecutionAuthority(id);
+    if (execution === undefined) return;
+    try {
+      await this.#sessions.exit(execution);
+    } finally {
+      if (this.isExecutionAuthorityCurrent(execution)) this.removeRows([id]);
+    }
+  }
+  async shutdownAgents(): Promise<void> {
+    try {
+      await this.#sessions.shutdown();
+    } finally {
+      this.removeRows([...this.rows.keys()]);
+    }
+  }
+  registerConversation(
+    execution: AgentLiveExecutionHandle,
+    read: () => readonly unknown[],
+    display?: () => AgentSessionDisplay,
+  ): void {
+    this.#sessions.registerConversation(execution, read, display);
+  }
+  sessionDisplay(execution: AgentLiveExecutionHandle): AgentSessionDisplay {
+    return this.#sessions.display(execution);
+  }
+  conversation(execution: AgentLiveExecutionHandle): readonly unknown[] | undefined {
+    return this.isExecutionAuthorityCurrent(execution) ? this.#sessions.conversation(execution) : undefined;
+  }
 
   reset(): void {
+    void this.#sessions.shutdown().catch(() => {});
+    this.retainSessions = false;
     this.rows.clear();
     this.#agentNames.clear();
     this.#petnames.reset();
@@ -165,6 +231,7 @@ class AgentLiveStore {
     let removed = 0;
     for (const id of ids) {
       if (!this.rows.delete(id)) continue;
+
       this.#agentNames.delete(id);
       this.#petnames.release(id);
       this.#executionAuthorities.delete(id);
@@ -303,6 +370,7 @@ class AgentLiveStore {
   }
 
   feedExecutionEvent(execution: AgentLiveExecutionHandle, event: unknown, now = Date.now()): AgentLiveRow | undefined {
+    if (this.isExecutionAuthorityCurrent(execution)) this.#sessions.feed(execution, event);
     const rowId = this.#currentExecutionRowId(execution);
     return rowId === undefined ? undefined : this.feedSessionEvent(rowId, event, now);
   }
@@ -367,6 +435,22 @@ class AgentLiveStore {
   ): { row: AgentLiveRow; execution: AgentLiveExecutionHandle } {
     const id = options.id ?? `agent-live-${Date.now()}-${++this.#nextId}`;
     const existing = this.rows.get(id);
+    const previousExecution = this.#executionAuthorities.get(id);
+    if (
+      freshExecution &&
+      previousExecution !== undefined &&
+      existing !== undefined &&
+      isTerminalAgentLiveStatus(existing.status) &&
+      this.canSendInputForExecution(previousExecution)
+    ) {
+      // A completed workflow slot round is replaced, not a hidden second live agent.
+      // Persisted journals remain untouched; active previous executions are never cancelled here.
+      void this.#sessions.exit(previousExecution).catch((error) => {
+        const current = this.rows.get(id);
+        if (current !== undefined)
+          this.patch(id, { errors: [...current.errors, `Previous agent exit failed: ${String(error)}`] });
+      });
+    }
     // Stable petnames belong to child rows; groups use their labels.
     const isGroupRow = (options.groupKind ?? existing?.groupKind) !== undefined;
     const displayName =
@@ -454,6 +538,7 @@ class AgentLiveStore {
       ...(resetTransient || existing?.latestMessage === undefined ? {} : { latestMessage: existing.latestMessage }),
     };
     this.rows.set(id, row);
+
     const executionAuthority = Object.freeze({}) as AgentLiveExecutionHandle;
     this.#executionAuthorityRows.set(executionAuthority, id);
     this.#executionAuthorities.set(id, executionAuthority);
@@ -639,9 +724,9 @@ function transcriptPatch(snapshot: AgentLiveTranscriptSnapshot): Pick<AgentLiveR
  * file. Keep exactly one process-local store behind a versioned global symbol so
  * separately loaded entrypoints observe and control the same live rows.
  */
-const AGENT_LIVE_STORE_GLOBAL_KEY = Symbol.for("locus-pi.agent-live-store.v5");
+const AGENT_LIVE_STORE_GLOBAL_KEY = Symbol.for("locus-pi.agent-live-store.v6");
 interface SharedAgentLiveStoreSlot {
-  version: 5;
+  version: 6;
   store: AgentLiveStore;
 }
 
@@ -657,7 +742,7 @@ function sharedAgentLiveStore(): AgentLiveStore {
     // shared contract to this separately evaluated copy of the class.
     return existing.store as AgentLiveStore;
   }
-  const slot: SharedAgentLiveStoreSlot = { version: 5, store: new AgentLiveStore() };
+  const slot: SharedAgentLiveStoreSlot = { version: 6, store: new AgentLiveStore() };
   Object.defineProperty(runtimeGlobal, AGENT_LIVE_STORE_GLOBAL_KEY, {
     value: slot,
     enumerable: false,
@@ -668,8 +753,11 @@ function sharedAgentLiveStore(): AgentLiveStore {
 }
 
 function isSharedAgentLiveStoreSlot(value: unknown): value is SharedAgentLiveStoreSlot {
-  if (!isRecord(value) || value.version !== 5 || !isRecord(value.store)) return false;
+  if (!isRecord(value) || value.version !== 6 || !isRecord(value.store)) return false;
   return (
+    typeof value.store.registerAgentLifetime === "function" &&
+    typeof value.store.shutdownAgents === "function" &&
+    typeof value.store.conversation === "function" &&
     value.store.rows instanceof Map &&
     typeof value.store.begin === "function" &&
     typeof value.store.beginExecution === "function" &&
@@ -688,176 +776,3 @@ function isSharedAgentLiveStoreSlot(value: unknown): value is SharedAgentLiveSto
 }
 
 export const agentLiveStore = sharedAgentLiveStore();
-
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isToolOrStepEvent(event: unknown): boolean {
-  const type = eventTypeName(event).toLowerCase();
-  return type.includes("tool") || type.includes("step");
-}
-
-function isToolResultEvent(event: unknown): boolean {
-  const type = eventTypeName(event).toLowerCase();
-  return type.includes("result") || type.includes("end") || type.includes("finish");
-}
-
-export function eventToolName(event: unknown): string | undefined {
-  if (!isRecord(event)) return undefined;
-  for (const key of ["toolName", "tool", "name"]) {
-    const value = event[key];
-    if (typeof value === "string" && value.trim() !== "") return value;
-  }
-  const toolCall = event["toolCall"];
-  if (isRecord(toolCall)) {
-    const name = toolCall["name"] ?? toolCall["toolName"];
-    if (typeof name === "string" && name.trim() !== "") return name;
-  }
-  return undefined;
-}
-
-function eventPath(event: unknown): string | undefined {
-  if (!isRecord(event)) return undefined;
-  for (const key of ["currentPath", "cwd", "workingDirectory", "path"]) {
-    const value = event[key];
-    if (typeof value === "string" && value.trim() !== "") return compactAgentLiveValue(value);
-  }
-  return undefined;
-}
-
-function eventToolArgs(event: unknown): string | undefined {
-  if (!isRecord(event)) return undefined;
-  for (const key of ["args", "arguments", "input"]) {
-    const value = event[key];
-    const formatted = eventFieldValue(value);
-    if (formatted !== undefined) return formatted;
-  }
-  const toolCall = event["toolCall"];
-  if (isRecord(toolCall)) {
-    for (const key of ["args", "arguments", "input"]) {
-      const formatted = eventFieldValue(toolCall[key]);
-      if (formatted !== undefined) return formatted;
-    }
-  }
-  return undefined;
-}
-
-function eventErrorMessage(event: unknown): string | undefined {
-  if (!isRecord(event)) return undefined;
-  for (const nested of [event.message, event.error]) {
-    if (!isRecord(nested)) continue;
-    const message = eventFieldMessage(nested.errorMessage);
-    if (message !== undefined) return message;
-  }
-  for (const key of ["error", "message", "reason"]) {
-    const value = event[key];
-    const message = eventFieldMessage(value);
-    if (message !== undefined) return message;
-  }
-  return undefined;
-}
-
-/** Count one completed model turn. message_end carries the same message, so it is ignored. */
-function eventTurnUsage(event: unknown): { input: number; output: number } | undefined {
-  if (!isRecord(event) || eventTypeName(event) !== "turn_end") return undefined;
-  const message = event.message;
-  if (!isRecord(message) || message.role !== "assistant") return undefined;
-  const usage = message.usage;
-  if (!isRecord(usage)) return undefined;
-  const input = finiteNonNegativeNumber(usage.input);
-  const output = finiteNonNegativeNumber(usage.output);
-  return input === undefined || output === undefined ? undefined : { input, output };
-}
-
-function finiteNonNegativeNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-export function eventTypeName(event: unknown): string {
-  if (!isRecord(event)) return "unknown";
-  const value = event.type;
-  return typeof value === "string" && value.trim() !== "" ? value : "unknown";
-}
-
-function formatAgentLiveEventLine(event: unknown): string {
-  const parts = [`event type=${eventTypeName(event)}`];
-  const tool = eventToolName(event);
-  if (tool !== undefined) parts.push(`tool=${tool}`);
-  if (isRecord(event)) {
-    for (const key of ["error", "message", "reason"]) {
-      const message = eventFieldMessage(event[key]);
-      if (message !== undefined) parts.push(`${key}=${message}`);
-    }
-  }
-  return boundedAgentLiveLine(parts.join(" "));
-}
-
-function formatAgentLiveStatsLine(stats: SdkSessionStatsLike): string {
-  return boundedAgentLiveLine(
-    `stats sessionId=${stats.sessionId} toolCalls=${stats.toolCalls} toolResults=${stats.toolResults}`,
-  );
-}
-
-function appendAgentLiveEventLine(lines: string[], line: string): string[] {
-  return [...lines, line].slice(-MAX_AGENT_LIVE_EVENT_LINES);
-}
-
-export function eventFieldMessage(value: unknown): string | undefined {
-  if (typeof value === "string" && value.trim() !== "") return compactAgentLiveValue(value);
-  if (value instanceof Error && value.message.trim() !== "") return compactAgentLiveValue(value.message);
-  return undefined;
-}
-
-function eventFieldValue(value: unknown): string | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value === "string") return value.trim() === "" ? undefined : boundedAgentLiveLine(value);
-  try {
-    return boundedAgentLiveLine(JSON.stringify(value));
-  } catch {
-    return boundedAgentLiveLine(String(value));
-  }
-}
-
-function boundedAgentLiveLine(value: string): string {
-  const compacted = compactAgentLiveValue(value);
-  if (compacted.length <= MAX_AGENT_LIVE_EVENT_LINE_LENGTH) return compacted;
-  return `${compacted.slice(0, MAX_AGENT_LIVE_EVENT_LINE_LENGTH - 1)}…`;
-}
-
-function compactAgentLiveValue(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-export function boundedAgentLiveRequest(value: string): string {
-  if (value.length <= MAX_AGENT_LIVE_REQUEST_LENGTH) return value;
-  const omitted = value.length - MAX_AGENT_LIVE_REQUEST_LENGTH;
-  return `${value.slice(0, MAX_AGENT_LIVE_REQUEST_LENGTH)}\n\n… ${omitted} additional request character(s) omitted`;
-}
-
-export function unique(values: string[]): string[] {
-  return [...new Set(values)];
-}
-
-function activityStateForStatus(status: AgentLiveStatus): AgentLiveActivityState {
-  switch (status) {
-    case "queued":
-      return "waiting";
-    case "working":
-      return "active";
-    case "done":
-      return "completed";
-    case "cancelled":
-      return "cancelled";
-    case "error":
-      return "failed";
-  }
-}
-
-function isTerminalAgentLiveStatus(status: AgentLiveStatus): boolean {
-  return status === "done" || status === "cancelled" || status === "error";
-}

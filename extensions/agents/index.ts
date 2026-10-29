@@ -1,3 +1,6 @@
+import { renderAgentStrip } from "./fleet/agent-screen.js";
+import { shutdownAgentCommands } from "./run/run-launcher.js";
+import { AgentScreenController } from "./fleet/agent-screen-controller.js";
 /**
  * extensions/agents/index.ts — Extension entrypoint.
  *
@@ -8,7 +11,7 @@
  */
 import { agentLiveStore } from "../_shared/agent-runtime/agent-live-store.js";
 import { FLEET_FOCUS_FALLBACK_SHORTCUT, fleetMenuState } from "../_shared/agent-runtime/fleet-menu.js";
-import type { ExtensionAPI, ExtensionContext } from "../_shared/host/pi-api.js";
+import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext } from "../_shared/host/pi-api.js";
 import { getProjectRoot } from "../_shared/host/pi-api.js";
 import { refreshAgents, refreshModelRoleHint } from "./catalog/catalog.js";
 import { registerAgentCommands, warnOnPsCollision } from "./command/command-router.js";
@@ -21,29 +24,74 @@ import { registerAgentSpawnTools } from "./tool/task-tool.js";
 /** Registers safe catalog commands and fail-closed agent execution tools. */
 export default function agents(pi: ExtensionAPI): void {
   let agentSessionEpoch = 0;
+  let screen = new AgentScreenController();
+  let stopAutoOpen = () => {};
   const agentSessionAuthority: AgentSessionAuthority = {
     capture: () => agentSessionEpoch,
     isCurrent: (authority) => authority === agentSessionEpoch,
   };
   const fleetMenu = createAgentFleetMenuController(agentSessionAuthority);
-  const fallbackFocusRegistered = registerFleetShortcut(pi, fleetMenu.open);
+  const fallbackFocusRegistered = registerFleetShortcut(pi, (ctx) =>
+    agentLiveStore.retainSessions ? screen.open(ctx) : fleetMenu.open(ctx),
+  );
   // A fresh/reloaded Pi session used to get a fresh module-local store. Preserve
   // that lifecycle now that the store is process-shared across package entrypoints.
-  pi.on("session_start", (_event, ctx) => {
+  pi.on("session_start", async (_event, ctx) => {
+    screen.close(true);
+    screen = new AgentScreenController();
+    stopAutoOpen();
     agentSessionEpoch += 1;
     disposeAgentSessionViewers();
     fleetMenu.invalidate();
+    await shutdownAgentCommands();
+    await agentLiveStore.shutdownAgents();
     agentLiveStore.reset();
+    agentLiveStore.retainSessions = ctx.mode === "tui" && ctx.hasUI === true;
     installAgentInterruptGuard(ctx);
     fleetMenuState.setFallbackFocusAvailable(ctx.mode === "tui" && fallbackFocusRegistered);
     // Parent Pi owns bare Up/Down. Fleet entry is explicit via /ps or shift+down.
     fleetMenuState.setEmptyEditorFocusAvailable(false);
     warnOnPsCollision(pi, ctx);
+    const known = new Set<string>();
+    const changed = () => {
+      if (ctx.mode === "tui")
+        ctx.ui.setWidget(
+          "agent-strip",
+          () => ({ invalidate() {}, render: (width: number) => [renderAgentStrip("main", width)] }),
+          { placement: "belowEditor" },
+        );
+      for (const row of agentLiveStore.rows.values()) {
+        if (known.has(row.id)) continue;
+        known.add(row.id);
+        if ((row.id.startsWith("spawn_agent:") || row.id.startsWith("run:")) && row.groupKind === undefined) {
+          queueMicrotask(() => {
+            void screen.open(ctx, row.id).catch((error) => ctx.ui.notify(String(error), "error"));
+          });
+        }
+      }
+    };
+    agentLiveStore.emitter.on("change", changed);
+    changed();
+    stopAutoOpen = () => {
+      agentLiveStore.emitter.off("change", changed);
+      ctx.ui.setWidget("agent-strip", undefined);
+    };
   });
-  pi.on("session_shutdown", () => {
-    agentSessionEpoch += 1;
+  pi.on("session_shutdown", async (_event, ctx) => {
+    stopAutoOpen();
+    screen.close(true);
     disposeAgentSessionViewers();
     fleetMenu.invalidate();
+    try {
+      await shutdownAgentCommands();
+      await agentLiveStore.shutdownAgents();
+    } catch (error) {
+      ctx.ui.notify(`Agent shutdown failed: ${String(error)}`, "error");
+    } finally {
+      agentSessionEpoch += 1;
+      disposeAgentSessionViewers();
+      fleetMenu.invalidate();
+    }
   });
   // The catalog the caller reads must be current at the moment it picks a name,
   // not at the moment it calls: refresh before the turn, exactly like the other
@@ -52,8 +100,36 @@ export default function agents(pi: ExtensionAPI): void {
     refreshAgents(getProjectRoot(ctx));
     await refreshModelRoleHint(getProjectRoot(ctx));
   });
+  pi.registerCommand("exit", {
+    description: "Exit main and stop every agent (inside an agent: exit only that agent).",
+    handler: async (_args, ctx) => {
+      screen.close();
+      const command = ctx as ExtensionCommandContext;
+      const mainActive = !ctx.isIdle();
+      if (mainActive && (ctx.abort === undefined || command.waitForIdle === undefined)) {
+        ctx.ui.notify("Cannot confirm main shutdown: abort/waitForIdle is unavailable.", "error");
+        return;
+      }
+      // Pi's shutdown() only requests exit; it does not interrupt a streaming main.
+      // Abort first, then join main and child cleanup before asking the host to exit.
+      if (mainActive) ctx.abort?.();
+      const settled = await Promise.allSettled([
+        mainActive ? command.waitForIdle!() : Promise.resolve(),
+        shutdownAgentCommands(),
+        agentLiveStore.shutdownAgents(),
+      ]);
+      for (const result of settled) {
+        if (result.status === "rejected") ctx.ui.notify(`Agent shutdown failed: ${String(result.reason)}`, "error");
+      }
+      ctx.shutdown?.();
+    },
+  });
   registerAgentSpawnTools(pi);
-  registerAgentCommands(pi, { openFleetMenu: fleetMenu.open, agentSessionAuthority });
+  registerAgentCommands(pi, {
+    openFleetMenu: fleetMenu.open,
+    agentSessionAuthority,
+    openAgentScreen: (ctx, target) => screen.open(ctx, target),
+  });
 }
 
 function registerFleetShortcut(pi: ExtensionAPI, handler: (ctx: ExtensionContext) => Promise<void>): boolean {

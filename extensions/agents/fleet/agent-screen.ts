@@ -1,0 +1,254 @@
+import { AgentPicker } from "./agent-picker.js";
+import {
+  renderStatusLines,
+  paintStatusLines,
+  formatStatusCwd,
+} from "../../_shared/agent-runtime/status-line-render.js";
+import { getSelectListTheme } from "@earendil-works/pi-coding-agent";
+import type { ThemeLike } from "../../_shared/host/render-profile.js";
+import { NativeAgentConversation } from "./native-conversation.js";
+import {
+  matchesKey,
+  Editor,
+  ScrollView,
+  VStack,
+  truncateToWidth,
+  type Component,
+  type TUI,
+} from "@earendil-works/pi-tui";
+import {
+  agentLiveStore,
+  type AgentLiveExecutionHandle,
+  type AgentLiveRow,
+} from "../../_shared/agent-runtime/agent-live-store.js";
+
+interface AgentView {
+  execution: AgentLiveExecutionHandle;
+  input: Editor;
+  transcript: ScrollView;
+  root: VStack;
+  notice: string;
+}
+
+/** One independent viewport and draft per execution. Group rows are never agents. */
+export class AgentScreen {
+  #views = new Map<string, AgentView>();
+  #active: string | undefined;
+  #generation = 0;
+  #closed = false;
+  #picker: AgentPicker | undefined;
+  #unsubscribe: () => void;
+
+  constructor(
+    private readonly tui: TUI & { setLayoutRoot(component: Component): void },
+    private readonly returnMain: () => void,
+    private readonly reportError: (message: string) => void = () => {},
+    private readonly theme?: ThemeLike,
+  ) {
+    const changed = () => {
+      if (!this.#closed) this.tui.requestRender();
+    };
+    agentLiveStore.emitter.on("change", changed);
+    this.#unsubscribe = () => agentLiveStore.emitter.off("change", changed);
+  }
+
+  async select(id: string): Promise<void> {
+    ++this.#generation;
+    if (id === "main") {
+      this.returnMain();
+      return;
+    }
+    const rows = [...agentLiveStore.rows.values()].filter(isAgentScreenRow);
+    if (id === "last") id = rows.at(-1)?.id ?? id;
+    if (!agentLiveStore.rows.has(id)) {
+      const matches = rows.filter((row) => row.displayName === id || row.agentName === id || row.childSessionId === id);
+      if (matches.length === 1) id = matches[0]!.id;
+      else if (matches.length > 1) {
+        this.list(`Ambiguous agent: ${id}; use an exact ID.`);
+        return;
+      }
+    }
+    const execution = agentLiveStore.captureExecutionAuthority(id);
+    const row = execution === undefined ? undefined : agentLiveStore.rowForExecution(execution);
+    if (execution === undefined || row === undefined || !isAgentScreenRow(row)) {
+      this.list(`Unknown agent: ${id}`);
+      return;
+    }
+    let view = this.#views.get(id);
+    if (view?.execution !== execution) {
+      const input = new Editor(this.tui, {
+        borderColor: (text) => {
+          const level = agentLiveStore.sessionDisplay(execution).thinking;
+          const color = level === undefined ? "borderMuted" : `thinking${level[0]!.toUpperCase()}${level.slice(1)}`;
+          return this.theme?.fg?.(color, text) ?? text;
+        },
+        selectList: getSelectListTheme(),
+      });
+      const conversation = new NativeAgentConversation(
+        () => agentLiveStore.conversation(execution) ?? [],
+        this.tui,
+        row.currentPath ?? process.cwd(),
+        () => agentLiveStore.sessionDisplay(execution).task ?? row.request,
+      );
+      const transcript = new ScrollView(conversation, { primary: true, follow: "end", scrollbar: "auto" });
+      const status: Component = {
+        invalidate() {},
+        render: (width) => {
+          const current = agentLiveStore.rowForExecution(execution);
+          const display = agentLiveStore.sessionDisplay(execution);
+          return paintStatusLines(
+            renderStatusLines(
+              {
+                cwd: formatStatusCwd(display.cwd ?? "cwd:?"),
+                model: display.model ?? "model:?",
+                effort: display.thinking ?? "effort:?",
+                controls: `sub-agent ${current?.displayName ?? id} · ${current?.status ?? "exited"} · Esc main · /ps`,
+                contextTokens: display.contextTokens ?? null,
+                contextWindow: display.contextWindow ?? 0,
+                contextPercent: display.contextPercent ?? null,
+                compaction: { kind: "unknown" },
+              },
+              width,
+            ),
+            width,
+          );
+        },
+      };
+      const picker: Component = { invalidate() {}, render: (width) => this.#picker?.render(width) ?? [] };
+      const strip: Component = { invalidate() {}, render: (width) => [renderAgentStrip(id, width, view?.notice)] };
+      const root = new VStack([
+        { component: transcript, basis: 0, grow: 1, minSize: 1 },
+        { component: picker, grow: 0, shrink: 1, minSize: 0 },
+        { component: input, grow: 0, shrink: 0, minSize: 1 },
+        { component: strip, grow: 0, shrink: 1, minSize: 0 },
+        { component: status, grow: 0, shrink: 1, minSize: 0 },
+      ]);
+      view = { execution, input, transcript, root, notice: "" };
+      input.onSubmit = (text) => {
+        void this.submit(id, text).catch((error) => this.reportError(String(error)));
+      };
+      const handleInput = input.handleInput.bind(input);
+      input.handleInput = (data) => {
+        if (this.#picker !== undefined) {
+          this.#picker.handleInput(data);
+          return;
+        }
+        if (matchesKey(data, "escape")) this.returnMain();
+        else if (matchesKey(data, "ctrl+c")) agentLiveStore.cancel(id);
+        else handleInput(data);
+      };
+      this.#views.set(id, view);
+    }
+    this.#picker = undefined;
+    this.#active = id;
+    this.tui.setLayoutRoot(view.root);
+    this.tui.setFocus(view.input);
+    this.tui.requestRender(true);
+  }
+
+  suspend(): void {
+    this.#picker = undefined;
+    ++this.#generation;
+  }
+
+  list(notice = ""): void {
+    ++this.#generation;
+    const view = this.#active === undefined ? undefined : this.#views.get(this.#active);
+    if (view === undefined) {
+      if (notice) this.reportError(notice);
+      this.returnMain();
+      return;
+    }
+    view.notice = notice;
+    const dismiss = () => {
+      this.#picker = undefined;
+      this.tui.requestRender();
+    };
+    this.#picker = new AgentPicker(
+      agentPickerEntries,
+      this.#active ?? "main",
+      (id) => {
+        dismiss();
+        void this.select(id).catch((error) => this.reportError(String(error)));
+      },
+      dismiss,
+      () => this.tui.requestRender(),
+    );
+    this.tui.requestRender();
+  }
+
+  private async submit(id: string, text: string): Promise<void> {
+    const view = this.#views.get(id);
+    if (view === undefined || this.#closed) return;
+    const command = text.trim();
+    if (command === "/ps") {
+      view.input.setText("");
+      this.list();
+      return;
+    }
+    if (command.startsWith("/ps ")) {
+      view.input.setText("");
+      await this.select(command.slice(4).trim());
+      return;
+    }
+    if (command === "/cancel") {
+      agentLiveStore.cancel(id);
+      view.input.setText("");
+      return;
+    }
+    if (command === "/exit") {
+      try {
+        await agentLiveStore.exitAgent(id);
+      } finally {
+        this.returnMain();
+      }
+      return;
+    }
+    const submission = ++this.#generation;
+    view.input.addToHistory(text);
+    view.transcript.scrollToEnd();
+    view.input.setText("");
+    const result = await agentLiveStore.sendInputForExecution(view.execution, text);
+    if (this.#closed) return;
+    view.notice = result.ok ? "" : result.reason;
+    if (!result.ok && submission === this.#generation && view.input.getText() === "") view.input.setText(text);
+
+    this.tui.requestRender();
+  }
+
+  dispose(): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    ++this.#generation;
+    this.#unsubscribe();
+    this.#views.clear();
+  }
+}
+
+/** Workflow slot/group rows are projections, never separate agent runtimes. */
+export function isAgentScreenRow(row: AgentLiveRow): boolean {
+  return row.groupKind === undefined && !row.id.startsWith("workflow:");
+}
+
+export function agentPickerEntries() {
+  return [
+    { id: "main", label: "Main agent" },
+    ...[...agentLiveStore.rows.values()]
+      .filter(isAgentScreenRow)
+      .map((row) => ({ id: row.id, label: `${row.displayName ?? "agent"} · ${row.status}` })),
+  ];
+}
+
+export function renderAgentStrip(active: string, width: number, notice = ""): string {
+  const peers = [
+    { id: "main", label: "main" },
+    ...[...agentLiveStore.rows.values()]
+      .filter(isAgentScreenRow)
+      .map((row) => ({ id: row.id, label: row.displayName ?? row.id })),
+  ];
+  return truncateToWidth(
+    peers.map((peer) => (peer.id === active ? `[${peer.label}]` : peer.label)).join(" · ") +
+      (notice ? `  ${notice}` : ""),
+    width,
+  );
+}

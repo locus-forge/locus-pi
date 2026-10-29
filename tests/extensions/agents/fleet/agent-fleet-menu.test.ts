@@ -184,6 +184,8 @@ describe("agent fleet menu", () => {
     h.ctx.hasUI = true;
     agents(h.pi);
     await emit(h, "session_start");
+    // This suite exercises the retained legacy fleet fallback, not the native terminal screen.
+    agentLiveStore.retainSessions = false;
     row("workflow-agent:run:reviewer:a:phase", "first workflow row");
     const second = row("workflow-agent:run:reviewer:b:phase", "second workflow row");
     fleetMenuState.setVisibleRows(selectFleetMenuRows([...agentLiveStore.rows.values()]));
@@ -209,6 +211,8 @@ describe("agent fleet menu", () => {
     h.ctx.hasUI = true;
     agents(h.pi);
     await emit(h, "session_start");
+    // This suite exercises the retained legacy fleet fallback, not the native terminal screen.
+    agentLiveStore.retainSessions = false;
     row("editor-guard-row", "do not steal arrows");
 
     fleetMenuState.setVisibleRows(selectFleetMenuRows([...agentLiveStore.rows.values()]));
@@ -485,6 +489,8 @@ describe("agent fleet menu", () => {
     h.ctx.hasUI = true;
     agents(h.pi);
     await emit(h, "session_start");
+    // This suite exercises the retained legacy fleet fallback, not the native terminal screen.
+    agentLiveStore.retainSessions = false;
     row("escape-guard-row", "guard this child");
 
     h.confirmQueue.push(false);
@@ -506,6 +512,8 @@ describe("agent fleet menu", () => {
     h.ctx.hasUI = true;
     agents(h.pi);
     await emit(h, "session_start");
+    // This suite exercises the retained legacy fleet fallback, not the native terminal screen.
+    agentLiveStore.retainSessions = false;
     applyWorkflowJournalLineToAgentLiveStore({
       ts: "t",
       runId: "escape-workflow",
@@ -535,6 +543,8 @@ describe("agent fleet menu", () => {
     expect(launched.ok).toBe(true);
     agents(h.pi);
     await emit(h, "session_start");
+    // This suite exercises the retained legacy fleet fallback, not the native terminal screen.
+    agentLiveStore.retainSessions = false;
 
     const results = [...h.terminalInputHandlers].map((handler) => handler("\u001b"));
 
@@ -1038,6 +1048,8 @@ describe("agent fleet menu", () => {
     h.ctx.hasUI = true;
     agents(h.pi);
     await emit(h, "session_start");
+    // This suite exercises the retained legacy fleet fallback, not the native terminal screen.
+    agentLiveStore.retainSessions = false;
     row("reused-row", "old session row");
     const oldRequestRender = vi.fn();
     let oldComponent: CustomUiComponent | undefined;
@@ -1058,6 +1070,8 @@ describe("agent fleet menu", () => {
     await vi.waitFor(() => expect(oldComponent).toBeDefined());
 
     await emit(h, "session_start");
+    // This suite exercises the retained legacy fleet fallback, not the native terminal screen.
+    agentLiveStore.retainSessions = false;
     const reused = row("reused-row", "new session row");
     row("new-session-second", "new session second row");
     const newCancel = vi.fn();
@@ -1115,6 +1129,8 @@ describe("agent fleet menu", () => {
     h.ctx.hasUI = true;
     agents(h.pi);
     await emit(h, "session_start");
+    // This suite exercises the retained legacy fleet fallback, not the native terminal screen.
+    agentLiveStore.retainSessions = false;
     const oldFirst = row("old-session-a", "old first row");
     row("old-session-b", "old second row");
     const before = agentLiveStore.emitter.listenerCount("change");
@@ -1145,6 +1161,8 @@ describe("agent fleet menu", () => {
     oldRequestRender.mockClear();
 
     await emit(h, "session_start");
+    // This suite exercises the retained legacy fleet fallback, not the native terminal screen.
+    agentLiveStore.retainSessions = false;
     expect(agentLiveStore.emitter.listenerCount("change")).toBe(before);
     expect(oldRequestRender).not.toHaveBeenCalled();
     expect(fleetMenuState.focused).toBe(false);
@@ -1189,7 +1207,8 @@ describe("agent fleet menu", () => {
     await vi.waitFor(() => expect(agentLiveStore.emitter.listenerCount("change")).toBe(before + 1));
     shutdownRequestRender.mockClear();
     await emit(h, "session_shutdown", { reason: "reload" });
-    expect(agentLiveStore.emitter.listenerCount("change")).toBe(before);
+    // Shutdown also releases the new standalone-agent auto-open subscription.
+    expect(agentLiveStore.emitter.listenerCount("change")).toBe(before - 1);
     expect(fleetMenuState.focused).toBe(false);
     expect(fleetMenuState.selectedRowId).toBeUndefined();
     agentLiveStore.patch(newFirst.id, { label: "mutated after shutdown" });
@@ -1423,6 +1442,8 @@ describe("agent fleet menu", () => {
     h.ctx.hasUI = true;
     agents(h.pi);
     await emit(h, "session_start");
+    // This suite exercises the retained legacy fleet fallback, not the native terminal screen.
+    agentLiveStore.retainSessions = false;
     row("epoch-return-a", "first epoch row");
     row("epoch-return-b", "second epoch row");
     let customCalls = 0;
@@ -1434,6 +1455,8 @@ describe("agent fleet menu", () => {
         // A reload while the agent screen was open: the menu it came from is gone,
         // and rows of the replacement session are not a reason to bring it back.
         await emit(h, "session_start");
+        // This suite exercises the retained legacy fleet fallback, not the native terminal screen.
+        agentLiveStore.retainSessions = false;
         row("epoch-return-c", "row after reload");
       }
       return result;

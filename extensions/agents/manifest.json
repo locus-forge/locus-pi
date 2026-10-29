@@ -60,7 +60,8 @@
       "agent summary",
       "agent drill",
       "agent ps",
-      "ps"
+      "ps",
+      "exit"
     ],
     "hooks": ["session_start", "session_shutdown", "before_agent_start", "input"],
     "shortcuts": ["shift+down"]

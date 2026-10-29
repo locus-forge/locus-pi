@@ -337,20 +337,40 @@ function headOfPrompt(prompt: string): string {
     .join(" ");
 }
 
-/**
- * `/agent run` — the single-agent slash trigger. T-188 W2: it is now a client of
- * the shared live-row model (agentLiveStore + the AgentLivePanel installed by
- * installWorkflowProgress), exactly like the `task`/`spawn_agent` tool. There is
- * no replacement-session transcript switch (the T-187 root cause of "who is
- * working?", the upward jump, and `drill last → not found`): the run streams into
- * the live panel above the editor, its row survives for `/agent drill`, and the
- * detailed flow goes through drill + the JSONL journal.
+/** Slash-launched assignments use the same SDK boundary as chat/workflow agents.
+ * The runtime continues independently of the command handler and visible screen.
  */
-export async function executeAgentRunCommand(
+const commandRuns = new Map<AbortController, Promise<void>>();
+
+/** Include preflight work in shutdown so a late catalog read cannot create a new agent. */
+export async function shutdownAgentCommands(): Promise<void> {
+  const pending = [...commandRuns.entries()];
+  for (const [controller] of pending) controller.abort();
+  await Promise.allSettled(pending.map(([, run]) => run));
+}
+
+export function executeAgentRunCommand(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   name: string,
   task: string,
+  approvalTier: CommandApprovalTier = "prompt",
+  title?: string,
+): Promise<void> {
+  const controller = new AbortController();
+  const running = executeAgentRunCommandOwned(pi, ctx, name, task, controller, approvalTier, title).finally(() =>
+    commandRuns.delete(controller),
+  );
+  commandRuns.set(controller, running);
+  return running;
+}
+
+async function executeAgentRunCommandOwned(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  name: string,
+  task: string,
+  controller: AbortController,
   approvalTier: CommandApprovalTier = "prompt",
   title?: string,
 ): Promise<void> {
@@ -362,12 +382,12 @@ export async function executeAgentRunCommand(
   }
   const { agent, resolvedAgent } = resolution;
   const modelRoles = await loadModelRolesState(getProjectRoot(ctx));
+  if (controller.signal.aborted) return;
   const modelRoleResolution = resolveAgentModelPreference(modelRoles, agent.model ?? []);
   const liveModel = resolveLiveModelDisplay({ pi, ctx, assignment: modelRoleResolution.assignment });
   const hasUI = ctx.hasUI === true;
   const panel = hasUI ? installWorkflowProgress(ctx, AGENTS_WIDGET_KEY, `run ${resolvedAgent}`, "agent") : undefined;
   if (hasUI) pinTransientUiKey(pi, AGENTS_WIDGET_KEY);
-  const controller = new AbortController();
   try {
     const boundary = await runAgentLiveTask({
       pi,

@@ -1,9 +1,10 @@
+import { driveChildTurn, type ChildTurnLedger } from "./session/turn-driver.js";
+import { retainAgentSession, AgentSessionUnsettledError } from "./session/lifetime.js";
 import { agentOutputAcceptance } from "./output-acceptance/agent-output-contract.js";
 import {
   installAgentOutputAdmission,
   restrictAgentOutputTools,
   AgentObservedOutputError,
-  installChildBudgetAdmission,
 } from "./output-acceptance/agent-output-admission.js";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import path from "node:path";
@@ -18,7 +19,6 @@ import type {
 } from "./agent-runner.js";
 import { agentRunDisplayName, agentRunResultIdentity } from "./agent-runner.js";
 import { AGENT_BUDGET_UNBOUNDED, EXECUTED_MODEL_UNAVAILABLE } from "./agent-runner.js";
-import { scheduleLongTimeout } from "../runtime/long-timer.js";
 import { modelSelectorFromModel } from "../model/live-model-display.js";
 import {
   createAgentExecutionPromptCapsule,
@@ -106,6 +106,7 @@ export interface SdkAgentSessionLike {
   readonly model?: unknown;
   /** Current effective reasoning effort, as reported by the child session. */
   readonly thinkingLevel?: ThinkingLevel;
+  getContextUsage?(): { tokens: number | null; contextWindow: number; percent: number | null } | undefined;
   /** Pi conversation history; optional for structural mocks. */
   readonly messages?: readonly unknown[];
   subscribe(listener: (event: SdkAgentSessionEventLike) => void): () => void;
@@ -304,6 +305,11 @@ export function createAgentSdkSessionExecutor(options: AgentSdkSessionExecutorOp
       if (signal.aborted) childController.abort();
       else signal.addEventListener("abort", forwardCallerAbort, { once: true });
       let unregisterCancel = () => {};
+      let unregisterLifetime = () => {};
+      let finish = () => {};
+      const finished = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
       try {
         const cwd = request.workingDirectory ?? request.projectRoot ?? process.cwd();
         const execution =
@@ -318,6 +324,10 @@ export function createAgentSdkSessionExecutor(options: AgentSdkSessionExecutorOp
           agentLiveStore.patchExecution(execution, { request: boundedRequest });
         }
         unregisterCancel = agentLiveStore.registerCancelForExecution(execution, () => childController.abort());
+        unregisterLifetime = agentLiveStore.registerAgentLifetime(execution, async () => {
+          childController.abort();
+          await finished;
+        });
         try {
           options.onLiveExecution?.(execution);
         } catch (observerError) {
@@ -354,6 +364,8 @@ export function createAgentSdkSessionExecutor(options: AgentSdkSessionExecutorOp
         );
       } finally {
         unregisterCancel();
+        unregisterLifetime();
+        finish();
         signal.removeEventListener("abort", forwardCallerAbort);
       }
     },
@@ -578,10 +590,27 @@ async function runChildSession(
   }
 
   const session = created.session;
+  agentLiveStore.registerConversation(
+    execution,
+    () => session.messages ?? [],
+    () => {
+      const context = session.getContextUsage?.();
+      const model = modelSelectorFromModel(session.model);
+      return {
+        ...(request.workingDirectory === undefined ? {} : { cwd: request.workingDirectory }),
+        task: request.task,
+        ...(model === undefined ? {} : { model }),
+        ...(session.thinkingLevel === undefined ? {} : { thinking: session.thinkingLevel }),
+        ...(context === undefined
+          ? {}
+          : { contextTokens: context.tokens, contextWindow: context.contextWindow, contextPercent: context.percent }),
+      };
+    },
+  );
   let restoreObservedOutput: (() => void) | undefined;
   let childSession = createSdkSessionRecord(request, session.sessionId);
   let activeToolNames: string[] | undefined;
-  if (request.capabilityMode !== undefined) {
+  if (request.capabilityMode !== undefined || agentLiveStore.retainSessions) {
     try {
       const readback = session.getActiveToolNames?.();
       if (readback !== undefined && (!Array.isArray(readback) || !readback.every((name) => typeof name === "string"))) {
@@ -658,6 +687,12 @@ async function runChildSession(
     return childTrace;
   };
   // Terminal model/effort require executed readback. Setup failures drop request labels.
+  let retained = false;
+  let operatorCancelled = false;
+  const operatorController = new AbortController();
+  const turnSignal = AbortSignal.any([signal, operatorController.signal]);
+  let resumeAfterAssignment: (() => void) | undefined;
+  let unregisterOperatorCancel = () => {};
   const patchObservedRow = (patch: Partial<Omit<AgentLiveRow, "id" | "model" | "thinking">>): void => {
     if (observed.executedModel === undefined) agentLiveStore.patchExecutionWithoutReadback(execution, "model", patch);
     else if (observed.executedThinking === undefined)
@@ -767,6 +802,53 @@ async function runChildSession(
         : hostDeadline === undefined
           ? ledger.deadline
           : Math.min(ledger.deadline, hostDeadline);
+    resumeAfterAssignment = () => {
+      if (!agentLiveStore.retainSessions || !agentLiveStore.isExecutionAuthorityCurrent(execution) || signal.aborted)
+        return;
+      // Assignment-only output protocol ends here. Original permissions and cumulative
+      // execution budgets stay with this session; accepted workflow receipts stay immutable.
+      const allowed = activeToolNames?.filter((name) => !request.responseAcceptance?.toolNames.includes(name));
+      if (allowed !== undefined) session.setActiveToolsByName?.(allowed);
+      if (
+        request.responseAcceptance === undefined ||
+        (allowed !== undefined && session.setActiveToolsByName !== undefined)
+      ) {
+        retained = true;
+        retainAgentSession(execution, session, async (text, nextSignal) => {
+          if (deadline !== undefined && Date.now() >= deadline)
+            throw new Error("Agent lifetime time budget exhausted.");
+          if (request.maxTurns !== undefined && ledger.assistantTurns >= request.maxTurns)
+            throw new Error("Agent lifetime turn budget exhausted.");
+          if (maxToolCalls !== undefined && ledger.admittedToolCalls >= maxToolCalls)
+            throw new Error("Agent lifetime tool budget exhausted.");
+          const next = await driveChildTurn(
+            session,
+            text,
+            nextSignal,
+            deadline === undefined ? undefined : Math.max(1, deadline - Date.now()),
+            maxToolCalls,
+            execution,
+            ledger,
+            request.maxTurns,
+            false,
+            false,
+          );
+          if (next.settlement !== "completed") {
+            await abortChild(session, abortTimeoutMs);
+            if (session.isStreaming !== false)
+              throw new AgentSessionUnsettledError("Agent abort did not confirm idle; input disabled until exit.");
+          }
+          if (session.messages !== undefined) agentLiveStore.replaceExecutionTranscript(execution, session.messages);
+          agentLiveStore.applyExecutionStats(execution, session.getSessionStats());
+          if (next.settlement !== "completed" && next.settlement !== "aborted")
+            throw new Error(`Agent continuation stopped: ${next.settlement}`);
+        });
+      }
+    };
+    unregisterOperatorCancel = agentLiveStore.registerCancelForExecution(execution, () => {
+      operatorCancelled = true;
+      operatorController.abort();
+    });
     let acceptedOutput:
       Extract<ReturnType<NonNullable<typeof acceptance>["inspect"]>, { status: "accepted" }> | undefined;
     let acceptanceFailure: string | undefined;
@@ -774,7 +856,7 @@ async function runChildSession(
     let turn = await driveChildTurn(
       session,
       kickoff,
-      signal,
+      turnSignal,
       deadline === undefined ? undefined : Math.max(1, deadline - Date.now()),
       maxToolCalls,
       execution,
@@ -790,7 +872,7 @@ async function runChildSession(
     while (
       acceptance !== undefined &&
       turn.settlement === "completed" &&
-      !signal.aborted &&
+      !turnSignal.aborted &&
       assistantProviderFailure(session.messages) === undefined
     ) {
       const decision = acceptance.inspect();
@@ -815,7 +897,7 @@ async function runChildSession(
       turn = await driveChildTurn(
         session,
         decision.prompt,
-        signal,
+        turnSignal,
         deadline === undefined ? undefined : Math.max(1, deadline - Date.now()),
         maxToolCalls,
         execution,
@@ -829,7 +911,7 @@ async function runChildSession(
         patchObservedRow({ modelConfirmed: sessionModelSelector !== EXECUTED_MODEL_UNAVAILABLE });
       }
     }
-    if (signal.aborted) turn = { ...turn, settlement: "aborted" };
+    if (signal.aborted || operatorCancelled) turn = { ...turn, settlement: "aborted" };
     if (turn.settlement === "not_dispatched") {
       const reason =
         "Child prompt was absorbed before model dispatch: an input handler or extension command handled it, " +
@@ -990,6 +1072,7 @@ async function runChildSession(
       childSessionId: childSession.id,
       finalAnswer: parsed.text,
     });
+    retained = true;
     return {
       status: "completed",
       ...agentRunResultIdentity(request),
@@ -1035,171 +1118,12 @@ async function runChildSession(
     );
   } finally {
     restoreObservedOutput?.();
-    disposeQuietly(session);
+    unregisterOperatorCancel();
+    const keep = retained || (operatorCancelled && session.isStreaming === false);
+    retained = false;
+    if (keep) resumeAfterAssignment?.();
+    if (!retained) disposeQuietly(session);
   }
-}
-
-type ChildTurnSettlement = "completed" | "not_dispatched" | "aborted" | "timed_out" | "tool_limit" | "turn_limit";
-interface ChildTurnLedger {
-  deadline?: number;
-  toolCalls: number;
-  /**
-   * Tool calls ADMITTED by the pre-dispatch hook, counted independently of the event
-   * stream. `tool_execution_start` is emitted before the hook runs, so an event count
-   * includes the call this host is about to refuse; admission is the number that decides
-   * whether the next tool may run at all.
-   */
-  admittedToolCalls: number;
-  assistantTurns: number;
-  toolNames: Set<string>;
-}
-const SDK_TOOL_EVIDENCE_EVENT_TYPES = new Set(["tool_execution_start", "tool_execution_update", "tool_execution_end"]);
-
-interface ChildTurnObservation {
-  settlement: ChildTurnSettlement;
-  recordedToolNames: string[];
-  /**
-   * Whether the child was actually dispatched: it emitted at least one event. A `prompt()`
-   * that REJECTS (no credentials, no route) leaves by exception instead. This flag covers
-   * what returns normally — an abort or timeout that wins while nothing has arrived, or a
-   * prompt absorbed before dispatch. Nothing ran then, so no model may be recorded as executed.
-   */
-  promptAccepted: boolean;
-}
-
-/**
- * Prompt the child and wait for its `agent_end`, racing against the abort signal and a
- * wall-clock timeout so neither a hung `prompt()` nor a missing `agent_end` can pin the
- * tool forever.
- */
-async function driveChildTurn(
-  session: SdkAgentSessionLike,
-  kickoff: string,
-  signal: AbortSignal,
-  turnBudgetMs: number | undefined,
-  maxToolCalls: number | undefined,
-  execution: AgentLiveExecutionHandle,
-  ledger: ChildTurnLedger = { toolCalls: 0, admittedToolCalls: 0, assistantTurns: 0, toolNames: new Set() },
-  maxAssistantTurns?: number,
-  observedOutput = false,
-): Promise<ChildTurnObservation> {
-  // Subscribe BEFORE prompting so a fast agent_end is never missed.
-  let resolveEnd: () => void = () => {};
-  const ended = new Promise<void>((resolve) => {
-    resolveEnd = resolve;
-  });
-  // The SDK invokes this listener on its OWN synchronous, detached emit path
-  // (agent loop -> _handleAgentEvent -> _emit), NOT on a promise we await. A throw
-  // here would escape every try/catch below and surface as an uncaught exception
-  // that kills the host process. So the whole body is guarded: a malformed or late
-  // event degrades to a recorded diagnostic, never a crash.
-  const recordedToolNames = ledger.toolNames;
-  // Set the moment the transport takes the turn — see ChildTurnObservation.
-  let promptAccepted = false;
-  let resolveToolLimit: () => void = () => {};
-  const toolLimited = new Promise<"tool_limit">((resolve) => {
-    resolveToolLimit = () => resolve("tool_limit");
-  });
-  let resolveTurnLimit: () => void = () => {};
-  const turnLimited = new Promise<"turn_limit">((resolve) => {
-    resolveTurnLimit = () => resolve("turn_limit");
-  });
-  // Admission BEFORE dispatch. The event counters below stay as they are — they are the
-  // evidence, and the settlement they resolve is unchanged — but on their own they only
-  // learn about the over-budget action once the child has already taken it. These hooks
-  // refuse the next one instead: the (N+1)-th tool never executes, and the turn after the
-  // last declared one is never generated. The named budget stop and everything received
-  // so far are untouched either way.
-  const restoreAdmission = installChildBudgetAdmission(session, ledger, {
-    ...(observedOutput ? { trackToolCalls: true } : {}),
-    ...(maxToolCalls === undefined ? {} : { maxToolCalls }),
-    ...(maxAssistantTurns === undefined ? {} : { maxAssistantTurns }),
-    onToolBudgetReached: () => resolveToolLimit(),
-    onTurnBudgetReached: () => resolveTurnLimit(),
-  });
-  const unsubscribe = session.subscribe((event) => {
-    try {
-      // An event from the child is proof it is live, even if `prompt()` has not
-      // settled yet: a host whose prompt promise only resolves at turn end would
-      // otherwise look like a turn that never started.
-      promptAccepted = true;
-      const toolName = sdkToolEventName(event);
-      if (toolName !== undefined) recordedToolNames.add(toolName);
-      if (eventTypeName(event) === "tool_execution_start") {
-        ledger.toolCalls += 1;
-        if (maxToolCalls !== undefined && ledger.toolCalls > maxToolCalls) resolveToolLimit();
-      }
-      if (eventTypeName(event) === "turn_start" && !observedOutput) {
-        ledger.assistantTurns += 1;
-        if (maxAssistantTurns !== undefined && ledger.assistantTurns > maxAssistantTurns) resolveTurnLimit();
-      }
-      agentLiveStore.feedExecutionEvent(execution, event);
-      // Pi emits `agent_end` after each model cycle, including a cycle followed
-      // by queued steering input. The SDK prompt still owns the live run until
-      // it settles, so keep the row active here; the terminal result path below
-      // applies the genuine final status after prompt() returns.
-      if (eventTypeName(event) === "agent_end" && session.isStreaming === true) {
-        agentLiveStore.patchExecution(execution, { status: "working" });
-      }
-      if (isRecord(event) && event.type === "agent_end" && event.willRetry !== true) resolveEnd();
-    } catch {
-      // A malformed/late event must not crash the host from the SDK's emit path.
-      // The genuine failure is still surfaced through the turn's timeout/abort and
-      // the failedResult mapping; this guard only prevents an out-of-band throw.
-    }
-  });
-  const unregisterInput =
-    "isStreaming" in session
-      ? agentLiveStore.registerInputForExecution(
-          execution,
-          async (text) => {
-            if (session.isStreaming !== true) throw new Error("Agent turn is no longer accepting input.");
-            await session.prompt(text, {
-              source: "locus-pi-agent-viewer",
-              streamingBehavior: "steer",
-            });
-          },
-          () => session.isStreaming === true,
-        )
-      : () => {};
-
-  let cancelTimer: (() => void) | undefined;
-  let onAbort: (() => void) | undefined;
-  try {
-    const aborted = new Promise<"aborted">((resolve) => {
-      onAbort = () => resolve("aborted");
-      signal.addEventListener("abort", onAbort, { once: true });
-    });
-    // No budget, no timer: an undeclared wall clock is unbounded, never a
-    // zero-delay abort. A budget above Node's maximum delay is a chain of
-    // representable waits, never a clamp to one millisecond.
-    const timedOut = new Promise<"timed_out">((resolve) => {
-      if (turnBudgetMs !== undefined) {
-        cancelTimer = scheduleLongTimeout(turnBudgetMs, () => resolve("timed_out"), "childTimeoutMs");
-      }
-    });
-    // Pi settles prompt() only after the whole agent run. Settling with no child event means an
-    // input handler or extension command absorbed the prompt, and agent_end will never come.
-    const completed = (async (): Promise<"completed" | "not_dispatched"> => {
-      await session.prompt(kickoff, { source: "locus-pi-agent-sdk-host" });
-      if (!promptAccepted) return "not_dispatched";
-      await ended;
-      return "completed";
-    })();
-    const settlement = await Promise.race([completed, aborted, timedOut, toolLimited, turnLimited]);
-    return { settlement, recordedToolNames: [...recordedToolNames].sort(), promptAccepted };
-  } finally {
-    unregisterInput();
-    unsubscribe();
-    restoreAdmission();
-    cancelTimer?.();
-    if (onAbort !== undefined) signal.removeEventListener("abort", onAbort);
-  }
-}
-
-function sdkToolEventName(event: unknown): string | undefined {
-  if (!SDK_TOOL_EVIDENCE_EVENT_TYPES.has(eventTypeName(event))) return undefined;
-  return eventToolName(event)?.trim() || undefined;
 }
 
 /** Best-effort child abort with a bounded acknowledgement wait. */
