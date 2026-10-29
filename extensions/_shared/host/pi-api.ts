@@ -383,6 +383,8 @@ export interface ExtensionContext {
   isIdle(): boolean;
   /** Abort the active parent agent turn (real Pi: ctx.abort()). */
   abort?(): void;
+  /** Gracefully exit the host application. */
+  shutdown?(): void;
   /** Active parent-agent abort signal when a turn is running (real Pi: ctx.signal). */
   signal?: AbortSignal;
   /** Current context usage for the active model (real Pi: ctx.getContextUsage()). */

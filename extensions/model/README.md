@@ -14,7 +14,7 @@ It does not enforce Pi's `enabledModels` setting. That list keeps its Pi meaning
 
 The selector uses the shared [TUI visual language](../../docs/tui-design.md). Its purple frame and provider pill identify the active selection surface. Strong row focus moves from model to role to effort, while saved assignments remain green and unset routes remain warnings.
 
-Use Pi's built-in `/thinking` selector to change the current thinking level. `Enter` applies the highlighted level to the current session; `Ctrl+S` also saves it as Pi's global default. Locus does not register a separate `/effort` alias. The package requires Pi `>=0.84.3`, where `/thinking` is available.
+Use Pi's built-in `/thinking` selector to change the current thinking level. `Enter` applies the highlighted level to the current session; `Ctrl+S` also saves it as Pi's global default. Locus does not register a separate `/effort` alias. The package requires Pi `>=1.3.0`; `/thinking` has been available since Pi 0.84.3.
 
 ## Persistence
 

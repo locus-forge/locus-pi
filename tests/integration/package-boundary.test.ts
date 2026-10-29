@@ -318,7 +318,7 @@ describe("npm public package boundary", () => {
     expect(testedVersion).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
     for (const packageName of PI_PACKAGES) {
       const peerRange = pkg.peerDependencies[packageName]!;
-      expect(peerRange, `${packageName} peer floor`).toBe(">=0.84.3");
+      expect(peerRange, `${packageName} peer floor`).toBe(">=1.3.0");
       expect(pkg.devDependencies[packageName], `${packageName} development pin`).toBe(testedVersion);
       expect(supportsPiVersion(peerRange, testedVersion)).toBe(true);
       expect(supportsPiVersion(peerRange, "999.0.0")).toBe(true);
@@ -338,7 +338,7 @@ describe("npm public package boundary", () => {
       "skills/",
     ]);
     // Model-role file persistence and selector options remain inside the existing extension allowlist.
-    expect(dryRun.files).toHaveLength(279);
+    expect(dryRun.files).toHaveLength(289);
     for (const filename of [
       "extensions/_shared/model/model-role-config.ts",
       "extensions/model/selector/options.ts",

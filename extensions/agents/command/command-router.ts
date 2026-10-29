@@ -1,3 +1,4 @@
+import { agentLiveStore } from "../../_shared/agent-runtime/agent-live-store.js";
 /**
  * extensions/agents/command/command-router.ts — the `/ps` and `/agent` grammars and their
  * dispatch. Both commands are registered with their transient-UI lifecycle here;
@@ -40,6 +41,7 @@ export interface AgentCommandDependencies {
   /** Open the interactive fleet for this session. */
   openFleetMenu(ctx: ExtensionContext): Promise<void>;
   agentSessionAuthority: AgentSessionAuthority;
+  openAgentScreen?(ctx: ExtensionContext, target?: string): Promise<void>;
 }
 
 export function registerAgentCommands(pi: ExtensionAPI, deps: AgentCommandDependencies): void {
@@ -67,7 +69,9 @@ export function registerAgentCommands(pi: ExtensionAPI, deps: AgentCommandDepend
           });
           return;
         }
-        if (target === "") await openFleetMenu(ctx);
+        if (deps.openAgentScreen !== undefined && agentLiveStore.retainSessions)
+          await deps.openAgentScreen(ctx, target);
+        else if (target === "") await openFleetMenu(ctx);
         else await executeAgentDrillCommand(ctx as ExtensionCommandContext, { target }, agentSessionAuthority);
       },
     },
@@ -114,13 +118,17 @@ export function registerAgentCommands(pi: ExtensionAPI, deps: AgentCommandDepend
         const drillCommand = parseAgentDrillCommand(text);
         if (drillCommand !== undefined) {
           clearAgentsTransient(ctx);
-          await executeAgentDrillCommand(ctx as ExtensionCommandContext, drillCommand, agentSessionAuthority);
+          if (deps.openAgentScreen !== undefined && agentLiveStore.retainSessions)
+            await deps.openAgentScreen(ctx, drillCommand.target);
+          else await executeAgentDrillCommand(ctx as ExtensionCommandContext, drillCommand, agentSessionAuthority);
           return;
         }
         const psTarget = parseAgentPsCommand(text);
         if (psTarget !== undefined) {
           clearAgentsTransient(ctx);
-          if (psTarget === "") await openFleetMenu(ctx);
+          if (deps.openAgentScreen !== undefined && agentLiveStore.retainSessions)
+            await deps.openAgentScreen(ctx, psTarget);
+          else if (psTarget === "") await openFleetMenu(ctx);
           else
             await executeAgentDrillCommand(ctx as ExtensionCommandContext, { target: psTarget }, agentSessionAuthority);
           return;
@@ -148,7 +156,7 @@ export function registerAgentCommands(pi: ExtensionAPI, deps: AgentCommandDepend
           });
           return;
         }
-        await executeAgentRunCommand(
+        const running = executeAgentRunCommand(
           pi,
           ctx as ExtensionCommandContext,
           runCommand.name,
@@ -156,6 +164,11 @@ export function registerAgentCommands(pi: ExtensionAPI, deps: AgentCommandDepend
           runCommand.approvalTier,
           runCommand.title,
         );
+        // A terminal command must release Pi command admission while the agent runs.
+        // The live runtime owns cancellation/shutdown; failures remain visible.
+        if (ctx.mode === "tui" && agentLiveStore.retainSessions && deps.openAgentScreen !== undefined) {
+          void running.catch((error) => ctx.ui.notify(`Agent run failed: ${String(error)}`, "error"));
+        } else await running;
       },
     },
   );

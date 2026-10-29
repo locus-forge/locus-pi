@@ -89,12 +89,17 @@ const SHARED_LAYER_MEMBERS: Record<SharedLayer, readonly string[]> = {
     /** The closed failure-cause list is value-imported by workflow runtime; keep this module import-free. */
     "agent-failure-cause",
     "agent-live-panel",
+    "status-line-render",
     "agent-live-store",
     "agent-live-transcript",
     "agent-names",
     "agent-read-only-policy",
     "agent-runner",
     "agent-sdk-host",
+    "session/lifetime",
+    "session/state",
+    "session/live-events",
+    "session/turn-driver",
     "output-acceptance/agent-output-admission",
     "output-acceptance/agent-output-contract",
     "agent-system-prompt",
@@ -364,7 +369,7 @@ interface RegistryEntry {
 
 /** Symbol string -> the one executable module allowed to name it. */
 const REGISTRIES: readonly RegistryEntry[] = [
-  { symbol: "locus-pi.agent-live-store.v5", owner: "extensions/_shared/agent-runtime/agent-live-store.ts" },
+  { symbol: "locus-pi.agent-live-store.v6", owner: "extensions/_shared/agent-runtime/agent-live-store.ts" },
   { symbol: "locus-pi.workflow-live-executions.v1", owner: "extensions/workflows/runtime/workflow-live.ts" },
   { symbol: "locus-pi.fleet-menu-state.v3", owner: "extensions/_shared/agent-runtime/fleet-menu.ts" },
   { symbol: "locus-pi.fleet-viewed-row.v1", owner: "extensions/_shared/agent-runtime/fleet-menu.ts" },

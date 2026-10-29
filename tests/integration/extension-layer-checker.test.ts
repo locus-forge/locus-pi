@@ -119,7 +119,7 @@ describe("extension layer checker negative rules", () => {
     const root = await extensionFixture();
     await appendFile(
       path.join(root, CROSS_FEATURE_READER),
-      '\nvoid Symbol.for("locus-pi.agent-live-store.v5");\n',
+      '\nvoid Symbol.for("locus-pi.agent-live-store.v6");\n',
       "utf8",
     );
 
