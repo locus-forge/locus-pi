@@ -13,7 +13,7 @@ description: "Describe the sequential first workflow taught by the create lesson
 
 # Getting started
 
-Requires Node.js `>=22.19.0`, Pi `>=0.84.3`, and a configured model provider.
+Requires Node.js `>=22.19.0`, Pi `>=1.3.0`, and a configured model provider.
 Development checks use Pi `1.3.0`. Pi supplies TypeBox to loaded extensions;
 the package declares it as a peer to avoid a separate runtime copy.
 Choose one installation source: a Git checkout or the published npm package.
