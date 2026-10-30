@@ -78,6 +78,25 @@ function workflowActivityLabel(run: WorkflowActivity): string {
   if (run.status !== "awaiting_operator") return run.status;
   return run.handoffState === "resolved" ? "answered" : run.handoffState === "running" ? "continuing" : "needs input";
 }
+/** Counts retained evidence, not all-time history or attempts that never created an SDK session. */
+export function commandCenterCounts(agents: readonly AgentActivity[]) {
+  const sessions = new Map<string, boolean>();
+  for (const agent of agents) {
+    const id = agent.row.childSessionId;
+    if (id === undefined || id.trim() === "") continue;
+    const key = JSON.stringify([agent.row.projectRoot ?? "Project unknown", id]);
+    sessions.set(key, (sessions.get(key) ?? false) || (agent.current && agent.active));
+  }
+  const active = [...sessions.values()].filter(Boolean).length;
+  return {
+    sessions: sessions.size,
+    active,
+    inactive: sessions.size - active,
+    executions: agents.length,
+    running: agents.filter((agent) => agent.current && agent.row.status === "working").length,
+  };
+}
+
 /** Flat agent ownership; only authoritative workflow provenance creates visual indentation. */
 export function commandCenterRows(store: ActivityStore = activityStore): CenterRow[] {
   const agents = [...store.agents.values()];
@@ -90,13 +109,13 @@ export function commandCenterRows(store: ActivityStore = activityStore): CenterR
   for (const project of projects) {
     if (rows.length) rows.push({ key: `gap:${project}`, kind: "gap", text: "" });
     const members = agents.filter((a) => (a.row.projectRoot ?? "Project unknown") === project);
-    const active = members.filter((a) => a.active).length;
+    const counts = commandCenterCounts(members);
     rows.push({
       key: `project:${project}`,
       kind: "project",
       projectPath: project,
-      counts: `${members.length} exec · ${active} active · ${members.length - active} inactive`,
-      text: `${project}  ${members.length} executions · ${active} active · ${members.length - active} inactive`,
+      counts: `${counts.sessions} sessions · ${counts.active} active · ${counts.inactive} inactive`,
+      text: `${project}  ${counts.sessions} sessions · ${counts.active} active · ${counts.inactive} inactive`,
     });
     const runs = workflows.filter((w) => w.projectRoot === project);
     const emitted = new Set<string>();
@@ -212,7 +231,7 @@ export class AgentsCommandCenter implements Component {
     if (this.#selected === undefined)
       this.#selected = rows.find((r) => r.kind === "agent" || r.kind === "workflow")?.key;
     const selected = rows.find((row) => row.key === this.#selected);
-    const contentHeight = Math.max(1, height - 7);
+    const contentHeight = Math.max(1, height - 8);
     const selectedIndex = rows.findIndex((row) => row.key === this.#selected);
     if (selectedIndex >= 0) {
       if (selectedIndex < this.#offset) this.#offset = selectedIndex;
@@ -227,14 +246,15 @@ export class AgentsCommandCenter implements Component {
     const details = this.details(selected, rightWidth).flatMap((line) => wrapTextWithAnsi(line, rightWidth));
     this.#detailOffset = Math.min(this.#detailOffset, Math.max(0, details.length - contentHeight));
     const agents = [...this.store.agents.values()];
-    const active = agents.filter((a) => a.active).length;
-    const running = agents.filter((a) => a.current && a.row.status === "working").length;
+    const counts = commandCenterCounts(agents);
     const output = [
       truncateToWidth(heading("Agents Command Center") + quiet("  Group: Project"), safeWidth),
       truncateToWidth(
-        quiet(
-          `Executions ${agents.length} · Active ${active} (incl idle) · Running ${running} · Inactive ${agents.length - active}`,
-        ),
+        quiet(`Known sessions ${counts.sessions} · Active ${counts.active} · Inactive ${counts.inactive}`),
+        safeWidth,
+      ),
+      truncateToWidth(
+        quiet(`Executions ${counts.executions} · Running ${counts.running} · active includes idle`),
         safeWidth,
       ),
       violet("─".repeat(safeWidth)),
@@ -251,7 +271,7 @@ export class AgentsCommandCenter implements Component {
       const row = rows[this.#offset + i];
       let left = "";
       if (row?.projectPath !== undefined) {
-        const counts = leftWidth >= 65 ? `${row.counts?.replace(" exec ·", " executions ·")}` : `${row.counts}`;
+        const counts = row.counts ?? "";
         const projectWidth = Math.max(4, leftWidth - visibleWidth(counts) - 3);
         left = heading(tailPath(clean(row.projectPath), projectWidth)) + quiet(` [${counts}]`);
       } else if (row?.agent || row?.workflow) {
