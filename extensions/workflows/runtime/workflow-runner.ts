@@ -1,4 +1,4 @@
-import { activityStore } from "../../_shared/agent-runtime/activity-store.js";
+import { activityStore, projectWorkflowActivityHandoff } from "../../_shared/agent-runtime/activity-store.js";
 import {
   snapshotWorkflowInput,
   workflowTypedInputProjection,
@@ -120,6 +120,8 @@ import {
   assertWorkflowHandoffClaimEligibility,
   assertWorkflowHandoffClaimForContinuation,
   bindWorkflowHandoffClaim,
+  readPersistedWorkflowOperatorHandoff,
+  projectWorkflowHandoffState,
   type WorkflowHandoffClaimLease,
 } from "./workflow-handoff.js";
 
@@ -545,6 +547,19 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   const finishRun: typeof finalizeRun = (fields) => {
     const result = finalizeRun(fields);
     activityStore.settleWorkflow(runId, result.disposition?.status ?? (result.ok ? "completed" : "failed"));
+    if (opts.operatorHandoffClaim !== undefined) {
+      // Use the persisted claim/result owner, not the continuation's optimistic outcome.
+      try {
+        const source = readPersistedWorkflowOperatorHandoff(projectRoot, opts.operatorHandoffClaim.sourceRunId);
+        if (source.status === "ready")
+          projectWorkflowActivityHandoff(
+            source.handoff.originRunId,
+            projectWorkflowHandoffState(projectRoot, source.handoff).status,
+          );
+      } catch {
+        /* Display projection cannot change the durable execution result. */
+      }
+    }
     return result;
   };
 
@@ -873,6 +888,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     try {
       bindWorkflowHandoffClaim(opts.operatorHandoffClaim, runId);
       handoffClaimBound = true;
+      projectWorkflowActivityHandoff(opts.operatorHandoffClaim.sourceRunId, "running");
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       emitPrelude({ ts: new Date().toISOString(), runId, kind: "error", source: "runtime", message: error });

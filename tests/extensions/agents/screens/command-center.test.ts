@@ -1,6 +1,15 @@
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { beforeEach, expect, it, vi } from "vitest";
-import { AgentsCommandCenter, commandCenterRows } from "../../../../extensions/agents/fleet/command-center.js";
-import { activityStore, renderActivityStrip } from "../../../../extensions/_shared/agent-runtime/activity-store.js";
+import {
+  AgentsCommandCenter,
+  commandCenterRows,
+  compactWorkflowPath,
+} from "../../../../extensions/agents/fleet/command-center.js";
+import {
+  activityStore,
+  renderActivityStrip,
+  projectWorkflowActivityHandoff,
+} from "../../../../extensions/_shared/agent-runtime/activity-store.js";
 import { agentLiveStore } from "../../../../extensions/_shared/agent-runtime/agent-live-store.js";
 import { installCommandCenterEditor } from "../../../../extensions/agents/fleet/command-center-editor.js";
 import { createHarness } from "../../../test-harness.js";
@@ -199,4 +208,114 @@ it("working agents precede retained idle sessions when the strip is capped", () 
     [...activityStore.agents.values()].find((a) => a.row.id === "working")!.row.displayName!,
   );
   expect(renderActivityStrip(100)[0]).not.toContain("idle");
+});
+it("matches the accepted hierarchy palette, semantic status column and compact detail preview", () => {
+  activityStore.workflow({
+    runId: "w",
+    projectRoot: "/project",
+    sourcePath: "/project/workflows/check.mjs",
+    status: "running",
+  });
+  const execution = agent("nested", "/project", "w");
+  agentLiveStore.patchExecution(execution, {
+    status: "working",
+    displayName: "Gamma",
+    latestMessage: "long message ".repeat(100),
+    currentPath: "/very/long/cloud/path/project",
+  });
+  const selected = [...activityStore.agents.keys()][0]!;
+  const center = new AgentsCommandCenter(() => 32, vi.fn(), vi.fn(), vi.fn(), activityStore, selected);
+  const output = center.render(116).join("\n");
+  expect(output).toContain("Agents / Workflows");
+  expect(output).toContain("Status");
+  expect(output).toContain("workflows/check.mjs");
+  expect(output).toContain("└─");
+  expect(output).toContain("\x1b[38;5;84mworking");
+  expect(output).toContain("\x1b[38;5;141m");
+  expect(output).toContain("\x1b[38;5;147mModel:");
+  expect(output).toContain("Launch prompt");
+  expect(output).not.toContain("\x1b[48;");
+  for (const width of [50, 80, 116])
+    for (const line of center.render(width)) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+});
+
+it("compacts workflow paths relative to project, marks external paths, and preserves identity", () => {
+  expect(compactWorkflowPath("/project/workflows/release/very-long-directory/check.mjs", "/project", 35)).toContain(
+    "check.mjs",
+  );
+  const inside = compactWorkflowPath("/project/workflows/release/very-long-directory/check.mjs", "/project", 35);
+  expect(inside).not.toContain("/project");
+  expect(inside).toContain("…");
+  const external = compactWorkflowPath("/other/workflows/check.mjs", "/project", 32);
+  expect(external).toContain("external:");
+  expect(external).toContain("check.mjs");
+  for (const width of [12, 20, 35]) {
+    const value = compactWorkflowPath("/project/workflows/very-long-workflow-name.mjs", "/project", width);
+    expect(visibleWidth(value)).toBeLessThanOrEqual(width);
+    expect(value).not.toContain("\n");
+    expect(value).toContain(".mjs");
+  }
+  for (const [runId, sourcePath] of [
+    ["a", "/project/a/check.mjs"],
+    ["b", "/other/a/check.mjs"],
+  ])
+    activityStore.workflow({ runId: runId!, sourcePath: sourcePath!, projectRoot: "/project", status: "running" });
+  expect(
+    commandCenterRows()
+      .filter((r) => r.workflow)
+      .map((r) => r.key),
+  ).toEqual(["workflow:a", "workflow:b"]);
+});
+
+it("keeps distinguishable parent folders for same-basename workflows at 80-column tree widths", () => {
+  const first = compactWorkflowPath(
+    "/project/workflows/long-project-segment/research-pipeline/monthly-validation/verify.workflow.mjs",
+    "/project",
+    31,
+  );
+  const second = compactWorkflowPath("/project/workflows/other-validation/verify.workflow.mjs", "/project", 31);
+  expect(first).not.toBe(second);
+  expect(first).toContain("monthly");
+  expect(second).toContain("other");
+  expect(first).toContain("verify.workflow.mjs");
+  expect(second).toContain("verify.workflow.mjs");
+});
+
+it("keeps ordinary workflow details compact and exposes full paths only on explicit expansion", () => {
+  activityStore.workflow({
+    runId: "w",
+    projectRoot: "/very/long/cloud/project",
+    sourcePath: "/very/long/cloud/project/workflows/build.mjs",
+    status: "running",
+  });
+  const center = new AgentsCommandCenter(() => 24, vi.fn(), vi.fn(), vi.fn(), activityStore, "workflow:w");
+  expect(center.render(80).join("\n")).not.toContain("Full source path");
+  center.handleInput("p");
+  expect(center.render(80).join("\n")).toContain("Full source path");
+  center.handleInput("p");
+  expect(center.render(80).join("\n")).not.toContain("Full source path");
+});
+
+it("projects a handoff into an old-shaped v1 singleton without requiring a new instance method", () => {
+  const workflows = new Map(activityStore.workflows);
+  workflows.set("source", {
+    runId: "source",
+    projectRoot: "/project",
+    sourcePath: "handoff.mjs",
+    status: "awaiting_operator",
+  });
+  const oldStore = {
+    workflows,
+    workflow(value: typeof workflows extends Map<string, infer T> ? T : never) {
+      workflows.set(value.runId, value);
+    },
+  };
+  projectWorkflowActivityHandoff("source", "resolved", oldStore);
+  expect(workflows.get("source")).toMatchObject({ status: "awaiting_operator", handoffState: "resolved" });
+});
+it("labels narrow workflow details truthfully", () => {
+  activityStore.workflow({ runId: "w", projectRoot: "/project", sourcePath: "build.mjs", status: "running" });
+  const center = new AgentsCommandCenter(() => 24, vi.fn(), vi.fn(), vi.fn(), activityStore, "workflow:w");
+  center.handleInput("\t");
+  expect(center.render(50).join("\n")).toContain("Workflow Details");
 });

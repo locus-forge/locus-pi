@@ -9,6 +9,8 @@ export interface WorkflowActivity {
   projectRoot: string;
   sourcePath: string;
   parentRunId?: string;
+  /** Current handoff authority; historical run status is never rewritten. */
+  handoffState?: "pending" | "running" | "resolved" | "retryable";
   status: "running" | "completed" | "failed" | "cancelled" | "awaiting_operator";
 }
 export interface AgentActivity {
@@ -83,10 +85,22 @@ const KEY = Symbol.for("locus-pi.activity-store.v1");
 const globalStore = globalThis as unknown as Record<symbol, ActivityStore | undefined>;
 export const activityStore = globalStore[KEY] ?? (globalStore[KEY] = new ActivityStore());
 
+/** Stateless projection also works with a v1 store retained across extension reload. */
+export function projectWorkflowActivityHandoff(
+  runId: string,
+  state: NonNullable<WorkflowActivity["handoffState"]>,
+  store: Pick<ActivityStore, "workflows" | "workflow"> = activityStore,
+): void {
+  const run = store.workflows.get(runId);
+  if (run !== undefined) store.workflow({ ...run, handoffState: state });
+}
+
 /** Logical work: a workflow represents its descendants once, not one extra row per agent. */
 export function activityStripItems(store: ActivityStore = activityStore): { key: string; label: string }[] {
   const workflows = [...store.workflows.values()].filter(
-    (run) => run.status === "running" || run.status === "awaiting_operator",
+    (run) =>
+      run.status === "running" ||
+      (run.status === "awaiting_operator" && run.handoffState !== "resolved" && run.handoffState !== "running"),
   );
   const visibleRuns = new Set(workflows.map((run) => run.runId));
   const roots: WorkflowActivity[] = [];

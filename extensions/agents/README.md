@@ -176,3 +176,19 @@ The active child uses an independent `TuiAltScreen`. A terminal lease stops the 
 `working -> idle` means a turn finished, not that the agent exited. Cancellation aborts the current turn and returns to idle only after verified SDK settlement. Explicit exit disposes one execution. Main exit waits for all registered execution cleanups, including an older execution whose workflow row ID was replaced. Cleanup errors are not success receipts.
 
 The alternative editor-container viewer was rejected because the host still rendered and scrolled its own transcript around it. A new process per visit was rejected because it would restart the agent or create two writers for the same session. Direct access to private host layout roots was rejected in favor of the public terminal handoff.
+
+### Command Center visual hierarchy
+
+The center uses the accepted compact layout: violet project and section headings,
+lavender metadata, tree connectors, a dedicated status column, and a muted violet
+selection marker without a saturated background. Running, waiting, inactive and
+failed states keep textual labels as well as semantic colors. Narrow terminals
+retain the Tab details view. Terminal font sizing remains a terminal setting.
+Long last-message content has a short preview above the launch prompt; the full
+message remains available by scrolling details. Press `P` in the center to expand
+full source/project/working paths; the default details keep paths on one line.
+
+An answered operator handoff retains its historical `awaiting_operator` run
+outcome but projects its current claim as continuing, answered or retryable.
+Only unresolved/retryable questions appear as needs-input in the activity strip;
+a successful continuation does not rewrite the source run as completed.
