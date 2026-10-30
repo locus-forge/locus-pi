@@ -113,6 +113,7 @@ export interface AgentLiveRow extends ModelRouteDisplay {
   tokenCount?: { input: number; output: number };
   childSessionId?: string;
   resultArtifact?: string;
+  errorLogPath?: string;
   finalAnswer?: string;
   isolated: boolean;
   noMcp: boolean;
@@ -533,6 +534,7 @@ class AgentLiveStore {
       ...(!resetTransient && existing?.tokenCount !== undefined ? { tokenCount: existing.tokenCount } : {}),
       ...(!freshExecution && existing?.childSessionId !== undefined ? { childSessionId: existing.childSessionId } : {}),
       ...(!freshExecution && existing?.resultArtifact !== undefined ? { resultArtifact: existing.resultArtifact } : {}),
+      ...(!freshExecution && existing?.errorLogPath !== undefined ? { errorLogPath: existing.errorLogPath } : {}),
       ...(!freshExecution && existing?.finalAnswer !== undefined ? { finalAnswer: existing.finalAnswer } : {}),
       isolated: options.isolated ?? existing?.isolated ?? false,
       noMcp: options.noMcp ?? existing?.noMcp ?? false,
