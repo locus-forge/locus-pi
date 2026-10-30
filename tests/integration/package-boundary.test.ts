@@ -1,4 +1,5 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import { promisify } from "node:util";
 import {
   existsSync,
   mkdirSync,
@@ -564,13 +565,23 @@ describe("npm public package boundary", () => {
     }
   }, 30_000);
 
-  it("runs the Pi-native source checker from a real consumer install", () => {
+  it("runs the Pi-native source checker from a real consumer install", async () => {
     const temporaryRoot = mkdtempSync(path.join(tmpdir(), "locus-pi-installed-checker-"));
-    try {
-      const packOutput = execFileSync("npm", ["pack", "--silent", "--json", "--pack-destination", temporaryRoot], {
-        cwd: root,
+    // Keep the worker event loop responsive to Vitest RPC throughout the real install/probe.
+    // A shared subprocess deadline ends before the existing test timeout, leaving time for cleanup.
+    const deadline = Date.now() + 110_000;
+    const run = async (file: string, args: string[], cwd: string): Promise<string> => {
+      const { stdout } = await promisify(execFile)(file, args, {
+        cwd,
         encoding: "utf8",
+        maxBuffer: 1024 * 1024,
+        timeout: Math.max(1, deadline - Date.now()),
+        killSignal: "SIGKILL",
       });
+      return stdout;
+    };
+    try {
+      const packOutput = await run("npm", ["pack", "--silent", "--json", "--pack-destination", temporaryRoot], root);
       const [packed] = JSON.parse(packOutput) as PackResult[];
       if (!packed) throw new Error("npm pack returned no package result");
 
@@ -582,7 +593,7 @@ describe("npm public package boundary", () => {
         path.join(workflowDirectory, "consumer.workflow.mjs"),
         readFileSync(path.join(root, PACKAGE_WORKFLOW_PATHS["live-smoke"]), "utf8"),
       );
-      execFileSync(
+      await run(
         "npm",
         [
           "install",
@@ -592,7 +603,7 @@ describe("npm public package boundary", () => {
           "--legacy-peer-deps",
           path.join(temporaryRoot, packed.filename),
         ],
-        { cwd: consumerRoot, encoding: "utf8" },
+        consumerRoot,
       );
       const installedMatrix = [
         {
@@ -765,10 +776,7 @@ describe("npm public package boundary", () => {
         process.stdout.write(JSON.stringify(results));
       `;
       const results = JSON.parse(
-        execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", probeScript], {
-          cwd: root,
-          encoding: "utf8",
-        }),
+        await run(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", probeScript], root),
       ) as Array<{ name: string; accepted: boolean; passed: boolean }>;
       for (const result of results) expect(result.passed, result.name).toBe(result.accepted);
     } finally {
