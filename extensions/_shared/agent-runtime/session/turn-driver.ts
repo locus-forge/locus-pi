@@ -95,6 +95,8 @@ export async function driveChildTurn(
       // settled yet: a host whose prompt promise only resolves at turn end would
       // otherwise look like a turn that never started.
       promptAccepted = true;
+      if (agentLiveStore.rowForExecution(execution)?.dispatchedAt === undefined)
+        agentLiveStore.patchExecution(execution, { dispatchedAt: Date.now() });
       const toolName = sdkToolEventName(event);
       if (toolName !== undefined) recordedToolNames.add(toolName);
       if (eventTypeName(event) === "tool_execution_start") {

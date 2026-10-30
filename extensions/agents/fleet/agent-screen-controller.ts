@@ -1,10 +1,7 @@
-import { fleetMenuState } from "../../_shared/agent-runtime/fleet-menu.js";
 import { coerceTheme } from "../../_shared/host/render-profile.js";
 import type { ExtensionContext } from "../../_shared/host/pi-api.js";
 import { AgentTerminalLease, supportsAgentTerminal } from "./terminal-lease.js";
-import { AgentPicker } from "./agent-picker.js";
-import { agentLiveStore } from "../../_shared/agent-runtime/agent-live-store.js";
-import { AgentScreen, agentPickerEntries } from "./agent-screen.js";
+import { AgentScreen } from "./agent-screen.js";
 
 /** Owns one terminal handoff at a time; background agents never own terminal callbacks. */
 export class AgentScreenController {
@@ -13,7 +10,6 @@ export class AgentScreenController {
   #done: (() => void) | undefined;
   #opening = false;
   #shutdown = false;
-  #closePicker: (() => void) | undefined;
 
   async open(ctx: ExtensionContext, target = ""): Promise<void> {
     if (this.#shutdown || ctx.mode !== "tui" || !ctx.hasUI || ctx.ui.custom === undefined) return;
@@ -26,11 +22,6 @@ export class AgentScreenController {
       else await this.#screen.select(target);
       return;
     }
-    if (target === "") {
-      this.openMainPicker(ctx);
-      return;
-    }
-    this.#closePicker?.();
     if (this.#opening) return;
     this.#opening = true;
     try {
@@ -74,44 +65,7 @@ export class AgentScreenController {
     }
   }
 
-  private openMainPicker(ctx: ExtensionContext): void {
-    this.#closePicker?.();
-    if (ctx.ui.onTerminalInput === undefined) {
-      ctx.ui.notify("Inline agent picker requires terminal input support; use /ps ID.", "warning");
-      return;
-    }
-    let removeInput = () => {};
-    const close = () => {
-      if (this.#closePicker !== close) return;
-      this.#closePicker = undefined;
-      fleetMenuState.setFocused(false);
-      removeInput();
-      agentLiveStore.emitter.off("change", render);
-      ctx.ui.setWidget("agent-picker", undefined);
-    };
-    const picker = new AgentPicker(
-      agentPickerEntries,
-      "main",
-      (id) => {
-        close();
-        if (id !== "main") void this.open(ctx, id).catch((error) => ctx.ui.notify(String(error), "error"));
-      },
-      close,
-      () => render(),
-    );
-    const render = () => ctx.ui.setWidget("agent-picker", () => picker, { placement: "aboveEditor" });
-    this.#closePicker = close;
-    fleetMenuState.setFocused(true);
-    removeInput = ctx.ui.onTerminalInput((data) => {
-      picker.handleInput(data);
-      return { consume: true };
-    });
-    agentLiveStore.emitter.on("change", render);
-    render();
-  }
-
   close(shutdown = false): void {
-    this.#closePicker?.();
     if (shutdown) this.#shutdown = true;
     this.#screen?.suspend();
     const done = this.#done;

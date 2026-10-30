@@ -66,25 +66,28 @@ describe("spawn_agent model-role selection", () => {
     expect(f.captured[0]).toMatchObject({ model: strong, thinkingLevel: "high" });
     expect(f.readback().row).toMatchObject({ modelRole: "tier-s", modelConfirmed: true });
   });
-  it.each(["high", undefined])("shows the requested role effort %s before child readback", async (thinking) => {
-    const f = await createThinkingFixture(roots);
-    f.h.pi.setThinkingLevel?.("low");
-    projectRoles(f.root, { "tier-s": `openai/gpt-5.2${thinking === undefined ? "" : `:${thinking}`}` });
-    const started: string[] = [];
-    await f.h.tools.get("spawn_agent")!.execute(
-      "requested-role",
-      { task: "Return READY", modelRole: "tier-s" },
-      new AbortController().signal,
-      (update) => {
-        started.push(...(update.content ?? []).filter((c) => c.type === "text").map((c) => c.text));
-        const row = [...f.agentLiveStore.rows.values()].at(-1)!;
-        expect(row.thinking).toBe(thinking);
-        expect(row.modelConfirmed).not.toBe(true);
-      },
-      f.h.ctx,
-    );
-    expect(started.join("\n")).toContain(`tier-s (openai/gpt-5.2, ${thinking ?? "effort unavailable"}; requested)`);
-  });
+  it.each(["high", undefined])(
+    "announces only after dispatch with the available session effort %s",
+    async (thinking) => {
+      const f = await createThinkingFixture(roots);
+      f.h.pi.setThinkingLevel?.("low");
+      projectRoles(f.root, { "tier-s": `openai/gpt-5.2${thinking === undefined ? "" : `:${thinking}`}` });
+      const started: string[] = [];
+      await f.h.tools.get("spawn_agent")!.execute(
+        "requested-role",
+        { task: "Return READY", modelRole: "tier-s" },
+        new AbortController().signal,
+        (update) => {
+          started.push(...(update.content ?? []).filter((c) => c.type === "text").map((c) => c.text));
+          const row = [...f.agentLiveStore.rows.values()].at(-1)!;
+          expect(row.thinking).toBe(thinking ?? "low");
+          expect(row.modelConfirmed).not.toBe(true);
+        },
+        f.h.ctx,
+      );
+      expect(started.join("\n")).toContain(`tier-s (openai/gpt-5.2, ${thinking ?? "low"}; requested)`);
+    },
+  );
   it("publishes configured literal choices before the turn and refreshes after editing", async () => {
     const f = await createThinkingFixture(roots);
     writeGlobalModelRoles(f.root, { userOnly: "openai/gpt-5.2" });

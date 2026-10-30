@@ -1,3 +1,4 @@
+import { activityStore, renderActivityStrip } from "../_shared/agent-runtime/activity-store.js";
 import {
   renderStatusLines,
   paintStatusLines,
@@ -25,6 +26,7 @@ const COMPACTED_VISIBLE_MS = 12_000;
 const STATUS_LINE_OVERFLOW_OWNER = "status-line-overflow";
 
 export class LocusFooterComponent implements CustomUiComponent {
+  #activityChanged = () => this.tui.requestRender();
   #unsubscribeBranch: (() => void) | undefined;
   #clearCompactedTimer: ReturnType<typeof setTimeout> | undefined;
   #compaction: CompactionDisplayState = { kind: "idle" };
@@ -36,6 +38,7 @@ export class LocusFooterComponent implements CustomUiComponent {
     private readonly footerData: FooterDataProviderLike,
   ) {
     this.#unsubscribeBranch = footerData.onBranchChange(() => tui.requestRender());
+    activityStore.emitter.on("change", this.#activityChanged);
   }
 
   setCompaction(state: CompactionDisplayState): void {
@@ -58,6 +61,7 @@ export class LocusFooterComponent implements CustomUiComponent {
   }
 
   dispose(): void {
+    activityStore.emitter.off("change", this.#activityChanged);
     this.#unsubscribeBranch?.();
     this.#unsubscribeBranch = undefined;
     if (this.#clearCompactedTimer !== undefined) clearTimeout(this.#clearCompactedTimer);
@@ -68,10 +72,11 @@ export class LocusFooterComponent implements CustomUiComponent {
   render(width: number): string[] {
     const safeWidth = Math.max(1, Math.floor(width));
     const plainLines = renderStatusLines(snapshotStatusLine(this.ctx, this.footerData, this.#compaction), safeWidth);
-    setViewerExternalRows(STATUS_LINE_OVERFLOW_OWNER, Math.max(0, plainLines.length - 1));
+    const activity = renderActivityStrip(safeWidth);
+    setViewerExternalRows(STATUS_LINE_OVERFLOW_OWNER, Math.max(0, plainLines.length + activity.length - 1));
     // Stable violet identity. Semantic content remains plain text and survives
     // terminals/themes that strip ANSI styling.
-    return paintStatusLines(plainLines, safeWidth);
+    return [...paintStatusLines(plainLines, safeWidth), ...activity];
   }
 }
 
@@ -89,7 +94,7 @@ export function snapshotStatusLine(
     effort: ctx.thinkingLevel ?? "off",
     cwd: formatStatusCwd(cwd),
     ...(branch === null ? {} : { branch }),
-    controls: defaultControlHints(),
+    controls: `${defaultControlHints()} · ← agents (empty)`,
     contextTokens: context?.tokens ?? null,
     contextWindow: context?.contextWindow ?? numericField(ctx.model, "contextWindow") ?? 0,
     contextPercent: context?.percent ?? null,

@@ -102,6 +102,7 @@ export async function runAgentLiveTask(
   const { ctx, rowId, label, title, liveModel } = input;
   const execution = agentLiveStore.beginExecution({
     id: rowId,
+    projectRoot: getProjectRoot(ctx),
     ...(input.executionMode === "named" ? { agentName: input.resolvedAgent } : {}),
     label,
     title,
@@ -114,13 +115,6 @@ export async function runAgentLiveTask(
     isolated: false,
     noMcp: false,
   });
-  const startedRow = agentLiveStore.rowForExecution(execution);
-  // REQ-011: append-only transcript event line at kickoff.
-  if (startedRow !== undefined) {
-    const startedLine = formatAgentStartedEventLine(startedRow);
-    input.onStarted?.(startedLine);
-    emitAgentEventLine(ctx, startedLine, "info");
-  }
   // Parity with the workflow bridge (OD2): `/agent run reviewer` and a workflow stage
   // naming `reviewer` resolve their model the same way, so the same agent cannot run
   // on two different models with nothing in the evidence to explain why. The
@@ -185,6 +179,16 @@ export async function runAgentLiveTask(
           modelRoleResolution: input.modelRoleResolution,
         })
       : createBareAgentRunRequest(input.task, requestInput);
+  let announced = false;
+  const announce = () => {
+    const row = agentLiveStore.rowForExecution(execution);
+    if (announced || row?.dispatchedAt === undefined) return;
+    announced = true;
+    const line = formatAgentStartedEventLine(row);
+    input.onStarted?.(line);
+    emitAgentEventLine(ctx, line, "info");
+  };
+  agentLiveStore.emitter.on("change", announce);
   let boundary: Awaited<ReturnType<typeof executeAgentRunBoundary>>;
   try {
     boundary = await executeAgentRunBoundary({ pi: input.pi, ctx, request, executor, signal: input.signal });
@@ -196,6 +200,8 @@ export async function runAgentLiveTask(
       lifecycleEntryIds: [],
     });
     throw err;
+  } finally {
+    agentLiveStore.emitter.off("change", announce);
   }
   if (boundary.status !== "completed") boundary = recordStandaloneFailure(input, boundary);
   // A run whose envelope could not be stored is NOT a done run — it prints as the storage
@@ -340,7 +346,14 @@ function headOfPrompt(prompt: string): string {
 /** Slash-launched assignments use the same SDK boundary as chat/workflow agents.
  * The runtime continues independently of the command handler and visible screen.
  */
-const commandRuns = new Map<AbortController, Promise<void>>();
+const commandRuns = new Map<AbortController, Promise<unknown>>();
+
+/** Detached tool preflight shares the same exit barrier as slash launches. */
+export function trackAgentLaunch<T>(controller: AbortController, run: Promise<T>): Promise<T> {
+  const tracked = run.finally(() => commandRuns.delete(controller));
+  commandRuns.set(controller, tracked);
+  return tracked;
+}
 
 /** Include preflight work in shutdown so a late catalog read cannot create a new agent. */
 export async function shutdownAgentCommands(): Promise<void> {

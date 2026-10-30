@@ -548,6 +548,7 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
         : undefined;
     const round = slotRowId !== undefined ? nextRound(roundByRowId, slotRowId) : undefined;
     const live: AgentSdkSessionExecutorOptions["live"] = {
+      displayTask: req.prompt,
       ...(modelRole === undefined ? {} : { modelRole }),
       ...(tier.kind === "inherit" && tier.fallback !== undefined ? { modelRoleFallback: tier.fallback } : {}),
       ...(req.label !== undefined ? { label: req.label } : {}),

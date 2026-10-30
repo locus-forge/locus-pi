@@ -97,13 +97,14 @@ export function createWorkflowTranscript(
       startedAt = Date.now();
       return {
         eventKind: "workflow_start",
+        displayLabel: safeTarget,
         runId: id,
         runDir,
         journalPath: workflowJournalFile(runDir),
         resultPath: workflowResultFile(runDir),
         text: [
           workflowRunHeader(safeTarget, id, "started", startedAt),
-          "● workflow started · live progress in the panel below · /ps opens the agent fleet",
+          "● workflow started · ← from empty editor opens Agents Command Center",
           `runDir: ${runDir}`,
         ].join("\n"),
       };

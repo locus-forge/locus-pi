@@ -1,4 +1,6 @@
-import { AgentPicker } from "./agent-picker.js";
+import { guardCommandCenterInput } from "./command-center-editor.js";
+import { AgentsCommandCenter } from "./command-center.js";
+import { activityStore, renderActivityStrip, type AgentActivity } from "../../_shared/agent-runtime/activity-store.js";
 import {
   renderStatusLines,
   paintStatusLines,
@@ -36,7 +38,7 @@ export class AgentScreen {
   #active: string | undefined;
   #generation = 0;
   #closed = false;
-  #picker: AgentPicker | undefined;
+  #center: AgentsCommandCenter | undefined;
   #unsubscribe: () => void;
 
   constructor(
@@ -48,8 +50,8 @@ export class AgentScreen {
     const changed = () => {
       if (!this.#closed) this.tui.requestRender();
     };
-    agentLiveStore.emitter.on("change", changed);
-    this.#unsubscribe = () => agentLiveStore.emitter.off("change", changed);
+    activityStore.emitter.on("change", changed);
+    this.#unsubscribe = () => activityStore.emitter.off("change", changed);
   }
 
   async select(id: string): Promise<void> {
@@ -88,7 +90,7 @@ export class AgentScreen {
         () => agentLiveStore.conversation(execution) ?? [],
         this.tui,
         row.currentPath ?? process.cwd(),
-        () => agentLiveStore.sessionDisplay(execution).task ?? row.request,
+        () => row.request ?? agentLiveStore.sessionDisplay(execution).task,
       );
       const transcript = new ScrollView(conversation, { primary: true, follow: "end", scrollbar: "auto" });
       const status: Component = {
@@ -102,7 +104,7 @@ export class AgentScreen {
                 cwd: formatStatusCwd(display.cwd ?? "cwd:?"),
                 model: display.model ?? "model:?",
                 effort: display.thinking ?? "effort:?",
-                controls: `sub-agent ${current?.displayName ?? id} · ${current?.status ?? "exited"} · Esc main · /ps`,
+                controls: `sub-agent ${current?.displayName ?? id} · ${current?.status ?? "exited"} · Esc main · ← agents`,
                 contextTokens: display.contextTokens ?? null,
                 contextWindow: display.contextWindow ?? 0,
                 contextPercent: display.contextPercent ?? null,
@@ -114,14 +116,18 @@ export class AgentScreen {
           );
         },
       };
-      const picker: Component = { invalidate() {}, render: (width) => this.#picker?.render(width) ?? [] };
-      const strip: Component = { invalidate() {}, render: (width) => [renderAgentStrip(id, width, view?.notice)] };
+      const strip: Component = {
+        invalidate() {},
+        render: (width) => [
+          ...renderActivityStrip(width),
+          ...(view?.notice ? [truncateToWidth(view.notice, width)] : []),
+        ],
+      };
       const root = new VStack([
         { component: transcript, basis: 0, grow: 1, minSize: 1 },
-        { component: picker, grow: 0, shrink: 1, minSize: 0 },
         { component: input, grow: 0, shrink: 0, minSize: 1 },
-        { component: strip, grow: 0, shrink: 1, minSize: 0 },
         { component: status, grow: 0, shrink: 1, minSize: 0 },
+        { component: strip, grow: 0, shrink: 1, minSize: 0 },
       ]);
       view = { execution, input, transcript, root, notice: "" };
       input.onSubmit = (text) => {
@@ -129,17 +135,14 @@ export class AgentScreen {
       };
       const handleInput = input.handleInput.bind(input);
       input.handleInput = (data) => {
-        if (this.#picker !== undefined) {
-          this.#picker.handleInput(data);
-          return;
-        }
         if (matchesKey(data, "escape")) this.returnMain();
         else if (matchesKey(data, "ctrl+c")) agentLiveStore.cancel(id);
         else handleInput(data);
       };
+      guardCommandCenterInput(input, () => this.list());
       this.#views.set(id, view);
     }
-    this.#picker = undefined;
+    this.#center = undefined;
     this.#active = id;
     this.tui.setLayoutRoot(view.root);
     this.tui.setFocus(view.input);
@@ -147,34 +150,78 @@ export class AgentScreen {
   }
 
   suspend(): void {
-    this.#picker = undefined;
+    this.#active = undefined;
+    this.#center = undefined;
     ++this.#generation;
   }
 
   list(notice = ""): void {
     ++this.#generation;
-    const view = this.#active === undefined ? undefined : this.#views.get(this.#active);
-    if (view === undefined) {
-      if (notice) this.reportError(notice);
-      this.returnMain();
-      return;
-    }
-    view.notice = notice;
+    activityStore.capture();
+    if (notice) this.reportError(notice);
+    const prior = this.#active === undefined ? undefined : this.#views.get(this.#active);
     const dismiss = () => {
-      this.#picker = undefined;
-      this.tui.requestRender();
+      this.#center = undefined;
+      if (prior === undefined) this.returnMain();
+      else {
+        this.tui.setLayoutRoot(prior.root);
+        this.tui.setFocus(prior.input);
+        this.tui.requestRender(true);
+      }
     };
-    this.#picker = new AgentPicker(
-      agentPickerEntries,
-      this.#active ?? "main",
-      (id) => {
-        dismiss();
-        void this.select(id).catch((error) => this.reportError(String(error)));
+    this.#center = new AgentsCommandCenter(
+      () => this.tui.terminal?.rows ?? 24,
+      (entry) => {
+        if (entry.current && agentLiveStore.isExecutionAuthorityCurrent(entry.execution)) {
+          void this.select(entry.row.id).catch((error) => this.reportError(String(error)));
+        } else this.history(entry);
       },
       dismiss,
       () => this.tui.requestRender(),
+      activityStore,
+      [...activityStore.agents.values()].find((a) => a.row.id === this.#active && a.current)?.key,
     );
-    this.tui.requestRender();
+    this.tui.setLayoutRoot(this.#center);
+    this.tui.setFocus(this.#center);
+    this.tui.requestRender(true);
+  }
+
+  private history(entry: AgentActivity): void {
+    const center = this.#center;
+    const conversation = new NativeAgentConversation(
+      () => entry.conversation,
+      this.tui,
+      entry.display.cwd ?? entry.row.currentPath ?? process.cwd(),
+      () => entry.row.request,
+    );
+    const transcript = new ScrollView(conversation, { primary: true, follow: "none", scrollbar: "auto" });
+    const controls: Component = {
+      invalidate() {},
+      render: (width) => [
+        truncateToWidth(`${entry.row.displayName ?? "Agent"} · historical snapshot · read-only · Esc back`, width),
+      ],
+      handleInput: (data) => {
+        if (matchesKey(data, "escape") || matchesKey(data, "backspace")) {
+          if (center) {
+            this.tui.setLayoutRoot(center);
+            this.tui.setFocus(center);
+            this.tui.requestRender(true);
+          } else this.returnMain();
+        } else if (matchesKey(data, "up")) transcript.scrollBy(-1);
+        else if (matchesKey(data, "down")) transcript.scrollBy(1);
+        else if (matchesKey(data, "pageUp")) transcript.scrollBy(-10);
+        else if (matchesKey(data, "pageDown")) transcript.scrollBy(10);
+        this.tui.requestRender();
+      },
+    };
+    this.tui.setLayoutRoot(
+      new VStack([
+        { component: transcript, basis: 0, grow: 1, minSize: 1 },
+        { component: controls, grow: 0, shrink: 0 },
+      ]),
+    );
+    this.tui.setFocus(controls);
+    this.tui.requestRender(true);
   }
 
   private async submit(id: string, text: string): Promise<void> {
@@ -228,27 +275,4 @@ export class AgentScreen {
 /** Workflow slot/group rows are projections, never separate agent runtimes. */
 export function isAgentScreenRow(row: AgentLiveRow): boolean {
   return row.groupKind === undefined && !row.id.startsWith("workflow:");
-}
-
-export function agentPickerEntries() {
-  return [
-    { id: "main", label: "Main agent" },
-    ...[...agentLiveStore.rows.values()]
-      .filter(isAgentScreenRow)
-      .map((row) => ({ id: row.id, label: `${row.displayName ?? "agent"} · ${row.status}` })),
-  ];
-}
-
-export function renderAgentStrip(active: string, width: number, notice = ""): string {
-  const peers = [
-    { id: "main", label: "main" },
-    ...[...agentLiveStore.rows.values()]
-      .filter(isAgentScreenRow)
-      .map((row) => ({ id: row.id, label: row.displayName ?? row.id })),
-  ];
-  return truncateToWidth(
-    peers.map((peer) => (peer.id === active ? `[${peer.label}]` : peer.label)).join(" · ") +
-      (notice ? `  ${notice}` : ""),
-    width,
-  );
 }

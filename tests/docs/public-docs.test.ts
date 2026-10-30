@@ -5,6 +5,7 @@ import { defaultExtensionManifests, root } from "../contracts/helpers/package-co
 
 const expectedDocs = [
   "architecture.md",
+  "design-review.md",
   "environment-variables.md",
   "extensions.md",
   "getting-started.md",

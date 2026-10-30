@@ -1207,8 +1207,8 @@ describe("agent fleet menu", () => {
     await vi.waitFor(() => expect(agentLiveStore.emitter.listenerCount("change")).toBe(before + 1));
     shutdownRequestRender.mockClear();
     await emit(h, "session_shutdown", { reason: "reload" });
-    // Shutdown also releases the new standalone-agent auto-open subscription.
-    expect(agentLiveStore.emitter.listenerCount("change")).toBe(before - 1);
+    // The process-shared activity projection remains; the focused view listener is released.
+    expect(agentLiveStore.emitter.listenerCount("change")).toBe(before);
     expect(fleetMenuState.focused).toBe(false);
     expect(fleetMenuState.selectedRowId).toBeUndefined();
     agentLiveStore.patch(newFirst.id, { label: "mutated after shutdown" });

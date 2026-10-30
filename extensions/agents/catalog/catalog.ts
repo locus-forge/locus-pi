@@ -35,6 +35,12 @@ const AGENT_PARAM_CATALOG_HEADING = "Available agents (name — description):";
 // cap here refuses a job before anyone looks at it, on a number this surface invented.
 // `minLength: 1` stays on `task`: an empty instruction is missing, not short.
 export const TaskParams = Type.Object({
+  background: Type.Optional(
+    Type.Boolean({
+      description:
+        "Return a queued handle immediately. Defaults true in interactive TUI, false headless. Use agent_status to collect the result; false awaits exact final text.",
+    }),
+  ),
   agent: Type.Optional(Type.String({ description: AGENT_PARAM_BASE_DESCRIPTION })),
   modelRole: Type.Optional(
     Type.String({

@@ -248,6 +248,8 @@ export interface AgentSdkSessionExecutorOptions {
   maxToolCalls?: number;
   /** Optional live-row identity supplied by callers that already created a UI row. */
   live?: {
+    /** Author-provided task, excluding workflow execution/context capsules. Display only. */
+    displayTask?: string;
     rowId?: string;
     parentRowId?: string;
     workflowRunId?: string;
@@ -316,10 +318,17 @@ export function createAgentSdkSessionExecutor(options: AgentSdkSessionExecutorOp
           options.liveExecution ??
           (options.live !== undefined
             ? agentLiveStore.beginExecution(
-                liveBeginOptions(options.live.rowId, executionName, options.live, cwd, request.task),
+                liveBeginOptions(
+                  options.live.rowId,
+                  executionName,
+                  options.live,
+                  cwd,
+                  options.live.displayTask ?? request.task,
+                ),
               )
             : agentLiveStore.claimQueuedExecution(executionName, executionName));
-        const boundedRequest = boundedAgentLiveRequest(request.task);
+        agentLiveStore.patchExecution(execution, { projectRoot: request.projectRoot ?? cwd });
+        const boundedRequest = boundedAgentLiveRequest(options.live?.displayTask ?? request.task);
         if (agentLiveStore.rowForExecution(execution)?.request !== boundedRequest) {
           agentLiveStore.patchExecution(execution, { request: boundedRequest });
         }
@@ -598,7 +607,7 @@ async function runChildSession(
       const model = modelSelectorFromModel(session.model);
       return {
         ...(request.workingDirectory === undefined ? {} : { cwd: request.workingDirectory }),
-        task: request.task,
+        task: agentLiveStore.rowForExecution(execution)?.request ?? "",
         ...(model === undefined ? {} : { model }),
         ...(session.thinkingLevel === undefined ? {} : { thinking: session.thinkingLevel }),
         ...(context === undefined

@@ -66,6 +66,14 @@ export function workflowUnknownCommandBlock(text: string, available: string[]): 
 }
 
 export function workflowRunConflictBlock(runId: string): OperatorBlock {
+  if (runId === "settling workflow callbacks" || runId === "current run") {
+    return {
+      type: "WARN",
+      subject: "Workflow run",
+      primary: "Workflow not started: settling workflow callbacks.",
+      metadata: ["Try again after the current workflow has finished stopping."],
+    };
+  }
   return {
     type: "WARN",
     subject: "Workflow run",
