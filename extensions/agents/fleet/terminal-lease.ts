@@ -1,4 +1,29 @@
-import { TuiAltScreen, type TUI } from "@earendil-works/pi-tui";
+import { TuiAltScreen, type TUI, type Component } from "@earendil-works/pi-tui";
+
+/** Route native viewport keys through the public scroll API, not private input listeners. */
+export class AgentTerminalScreen extends TuiAltScreen {
+  #root: (Component & { scrollDetailsBy?(lines: number): void }) | undefined;
+
+  override setLayoutRoot(component: Component | undefined): void {
+    this.#root = component;
+    super.setLayoutRoot(component);
+  }
+
+  override scrollBy(lines: number): void {
+    if (this.#root?.scrollDetailsBy) this.#root.scrollDetailsBy(lines);
+    else super.scrollBy(lines);
+  }
+
+  override scrollToTop(): void {
+    if (this.#root?.scrollDetailsBy) this.#root.scrollDetailsBy(-Number.MAX_SAFE_INTEGER);
+    else super.scrollToTop();
+  }
+
+  override scrollToBottom(): void {
+    if (this.#root?.scrollDetailsBy) this.#root.scrollDetailsBy(Number.MAX_SAFE_INTEGER);
+    else super.scrollToBottom();
+  }
+}
 
 /** Exclusive terminal ownership. The inactive renderer keeps its model, never its input loop. */
 export class AgentTerminalLease {
@@ -7,7 +32,7 @@ export class AgentTerminalLease {
   #closed = false;
 
   constructor(private readonly host: TUI) {
-    this.screen = new TuiAltScreen(host.terminal, host.getShowHardwareCursor(), undefined, {
+    this.screen = new AgentTerminalScreen(host.terminal, host.getShowHardwareCursor(), undefined, {
       scrollToEndIndicator: () => " Jump to latest message ",
     });
   }

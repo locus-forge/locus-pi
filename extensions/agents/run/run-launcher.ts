@@ -11,7 +11,7 @@ import {
   type ApprovalTier,
 } from "../../_shared/agent-runtime/agent-runner.js";
 import { createAgentSdkSessionExecutor } from "../../_shared/agent-runtime/agent-sdk-host.js";
-import { agentLiveStore } from "../../_shared/agent-runtime/agent-live-store.js";
+import { agentLiveStore, type AgentLiveExecutionHandle } from "../../_shared/agent-runtime/agent-live-store.js";
 import {
   formatAgentFinishedEventLine,
   formatAgentStartedEventLine,
@@ -136,7 +136,7 @@ export async function runAgentLiveTask(
       errors: [tier.refusal],
       finalAnswer: tier.refusal,
     });
-    return recordStandaloneFailure(input, {
+    return recordStandaloneFailure(input, execution, {
       status: "failed",
       executionMode: input.executionMode,
       ...(input.agent === undefined ? {} : { agentName: input.agent.name }),
@@ -193,7 +193,7 @@ export async function runAgentLiveTask(
   try {
     boundary = await executeAgentRunBoundary({ pi: input.pi, ctx, request, executor, signal: input.signal });
   } catch (err) {
-    recordStandaloneFailure(input, {
+    recordStandaloneFailure(input, execution, {
       status: "failed",
       reason: errorMessage(err),
       diagnostics: [],
@@ -203,7 +203,7 @@ export async function runAgentLiveTask(
   } finally {
     agentLiveStore.emitter.off("change", announce);
   }
-  if (boundary.status !== "completed") boundary = recordStandaloneFailure(input, boundary);
+  if (boundary.status !== "completed") boundary = recordStandaloneFailure(input, execution, boundary);
   // A run whose envelope could not be stored is NOT a done run — it prints as the storage
   // failure it is, through the same failure receipt as every other non-completion. What it
   // is also not is a lost answer: the child answered, so the row keeps that answer and the
@@ -214,6 +214,7 @@ export async function runAgentLiveTask(
     status: boundary.status === "completed" ? "done" : boundary.status === "cancelled" ? "cancelled" : "error",
     ...(boundary.childSession?.id !== undefined ? { childSessionId: boundary.childSession.id } : {}),
     ...(boundary.resultArtifact?.path !== undefined ? { resultArtifact: boundary.resultArtifact.path } : {}),
+    ...(boundary.errorLogPath !== undefined ? { errorLogPath: boundary.errorLogPath } : {}),
     finalAnswer: answerSurvivedStorageFailure === true && boundary.text !== undefined ? boundary.text : boundary.reason,
     errors: boundary.status === "completed" ? [] : [boundary.reason, ...boundary.diagnostics],
   });
@@ -227,9 +228,10 @@ export async function runAgentLiveTask(
 /** Final standalone facts only. Workflow children are indexed by their own journal owner. */
 function recordStandaloneFailure(
   input: AgentLiveTaskInput,
+  execution: AgentLiveExecutionHandle,
   result: Awaited<ReturnType<typeof executeAgentRunBoundary>>,
 ): Awaited<ReturnType<typeof executeAgentRunBoundary>> {
-  const row = agentLiveStore.rows.get(input.rowId);
+  const row = agentLiveStore.rowForExecution(execution);
   const parentSessionId = getSessionId(input.ctx);
   const receipt = appendProjectError(getProjectRoot(input.ctx), {
     ts: new Date().toISOString(),
@@ -247,19 +249,23 @@ function recordStandaloneFailure(
     resultPath: result.resultArtifact?.path,
     transcriptPath: result.childTrace?.path,
   });
-  const details = result.resultArtifact?.path ?? result.childTrace?.path;
+  agentLiveStore.patchExecution(execution, {
+    errorLogPath: receipt.path,
+    status: result.status === "cancelled" ? "cancelled" : "error",
+    errors: [result.reason, ...result.diagnostics],
+    ...(result.resultArtifact?.path ? { resultArtifact: result.resultArtifact.path } : {}),
+  });
+  const name = row?.displayName ?? result.agentName ?? "(unnamed)";
+  const reason = result.reason.replace(/\s+/g, " ");
   emitAgentEventLine(
     input.ctx,
-    [
-      `Agent ${row?.displayName ?? result.agentName ?? "(unnamed)"} ${result.status}: ${result.reason}`,
-      `task: ${input.title}`,
-      ...(result.failureCause === undefined ? [] : [`cause: ${result.failureCause}`]),
-      ...(details === undefined ? [] : [`details: ${details}`]),
-      `errors: ${receipt.path}`,
-      ...(receipt.warning === undefined ? [] : [receipt.warning]),
-    ].join("\n"),
-    result.status === "cancelled" ? "warning" : "error",
+    result.status === "cancelled"
+      ? `Agent ${name} cancelled.`
+      : `Agent ${name} ${result.status}: ${reason.length > 140 ? reason.slice(0, 137) + "…" : reason} · /ps for details`,
+    result.status === "cancelled" ? "info" : "error",
   );
+  if (receipt.warning !== undefined)
+    emitAgentEventLine(input.ctx, `Agent diagnostics could not be indexed: ${receipt.warning}`, "warning");
   return {
     ...result,
     errorLogPath: receipt.path,

@@ -90,6 +90,34 @@ function mockSdkResult(text: string, turns = 1): void {
 }
 
 describe("agent task tool execution", () => {
+  it("acknowledges expected cancellation compactly while retaining explicit diagnostic artifacts", async () => {
+    mockSdkResult("unused");
+    vi.doMock("../../../../extensions/_shared/agent-runtime/agent-runner.js", async (original) => ({
+      ...(await original<typeof import("../../../../extensions/_shared/agent-runtime/agent-runner.js")>()),
+      executeAgentRunBoundary: async () => ({
+        status: "cancelled",
+        reason: "Operator cancelled",
+        diagnostics: [],
+        lifecycleEntryIds: [],
+        resultArtifact: { path: "/private/long/result.json" },
+      }),
+    }));
+    const { default: agents } = await import("../../../../extensions/agents/index.js");
+    const h = createHarness(tempRootWithTaskAgent(), { sessionId: "cancel-proof" });
+    agents(h.pi);
+    const result = await runTool(h, "spawn_agent", { task: "Cancelled task" });
+    expect(result.isError).toBe(true);
+    const notice = h.notificationEvents.find((e) => e.message.includes("cancelled."));
+    expect(notice?.level).toBe("info");
+    expect(notice?.message).not.toContain("\n");
+    expect(notice?.message).not.toContain("/private");
+    const row = [...agentLiveStore.rows.values()][0]!;
+    expect(row.resultArtifact).toBe("/private/long/result.json");
+    expect(row.errors).toContain("Operator cancelled");
+    expect(row.errorLogPath).toBeTruthy();
+    expect(existsSync(row.errorLogPath!)).toBe(true);
+  });
+
   it("allows more than five turns and arms exactly one hour for a standalone task", async () => {
     mockSdkResult("done after six turns", 6);
     const timer = vi.spyOn(globalThis, "setTimeout");

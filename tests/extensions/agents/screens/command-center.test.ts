@@ -3,6 +3,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import {
   AgentsCommandCenter,
   commandCenterRows,
+  commandCenterCounts,
   compactWorkflowPath,
 } from "../../../../extensions/agents/fleet/command-center.js";
 import {
@@ -46,7 +47,8 @@ it("counts unique executions, not mirrors or worktrees, and keeps replaced round
   const old = agent("slot", "/one/project");
   agentLiveStore.patchExecution(old, { childSessionId: "old", currentPath: "/tmp/worktree" });
   agent("workflow:mirror", "/one/project");
-  agent("slot", "/one/project");
+  const replacement = agent("slot", "/one/project");
+  agentLiveStore.patchExecution(replacement, { childSessionId: "new" });
   agent("second", "/two/project");
   const rows = commandCenterRows();
   expect(rows.filter((r) => r.kind === "agent")).toHaveLength(3);
@@ -318,4 +320,108 @@ it("labels narrow workflow details truthfully", () => {
   const center = new AgentsCommandCenter(() => 24, vi.fn(), vi.fn(), vi.fn(), activityStore, "workflow:w");
   center.handleInput("\t");
   expect(center.render(50).join("\n")).toContain("Workflow Details");
+});
+it("distinguishes execution totals, retained active sessions and observed running work", () => {
+  const running = agent("running");
+  agentLiveStore.patchExecution(running, { status: "working", childSessionId: "confirmed" });
+  agent("queued");
+  const center = new AgentsCommandCenter(() => 24, vi.fn(), vi.fn(), vi.fn());
+  const output = center.render(120).join("\n");
+  expect(output).toContain("Executions 2");
+  expect(output).toContain("Known sessions 1");
+  expect(output).toContain("Active 1");
+  expect(output).toContain("active includes idle");
+  expect(output).toContain("Running 1");
+  expect(output).toContain("Inactive 0");
+});
+it("shows last declared workflow phase after termination, not a fabricated current phase", () => {
+  activityStore.workflow({
+    runId: "w",
+    projectRoot: "/project",
+    sourcePath: "build.mjs",
+    status: "completed",
+    phase: "Validate",
+  });
+  const center = new AgentsCommandCenter(() => 24, vi.fn(), vi.fn(), vi.fn(), activityStore, "workflow:w");
+  expect(center.render(100).join("\n")).toContain("Last phase");
+  expect(center.render(100).join("\n")).toContain("Validate");
+});
+it("long phase does not crowd out actual workflow state and sanitizes terminal controls", () => {
+  activityStore.workflow({
+    runId: "w",
+    projectRoot: "/project",
+    sourcePath: "/project/deep/build.mjs",
+    status: "running",
+    phase: "\x1b[31mValidate\n".repeat(20),
+  });
+  for (const width of [40, 80]) {
+    const line = renderActivityStrip(width)[0]!;
+    expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+    expect(line).toContain("running");
+    expect(line).toContain(".mjs");
+    expect(line).not.toContain("\n");
+    expect(line).not.toContain("\x1b[31m");
+  }
+});
+
+it("normalizes native zero-viewport page deltas to a useful detail step without moving selection", () => {
+  const execution = agent("diagnostics");
+  agentLiveStore.patchExecution(execution, { errors: Array.from({ length: 30 }, (_, i) => `Diagnostic ${i}`) });
+  const make = () => new AgentsCommandCenter(() => 16, vi.fn(), vi.fn(), vi.fn());
+  const native = make(),
+    direct = make();
+  native.render(80);
+  direct.render(80);
+  const narrow = make();
+  const initialNarrow = narrow.render(50);
+  narrow.scrollDetailsBy(0);
+  expect(narrow.render(50)).toEqual(initialNarrow);
+  const selected = native.selectedKey;
+  native.scrollDetailsBy(1);
+  direct.handleInput("\u001b[6~");
+  expect(native.render(80)).toEqual(direct.render(80));
+  expect(native.selectedKey).toBe(selected);
+  const frame = native.render(80);
+  native.scrollDetailsBy(0);
+  expect(native.render(80)).toEqual(frame);
+  native.scrollDetailsBy(-1);
+  expect(native.render(80)).toEqual(make().render(80));
+});
+
+it("counts only confirmed sessions, deduplicates rounds and ORs current active evidence", () => {
+  const first = agent("round");
+  agentLiveStore.patchExecution(first, { childSessionId: "same", currentPath: "/worktree/one", status: "done" });
+  const second = agent("round");
+  agentLiveStore.registerInputForExecution(second, async () => {});
+  agentLiveStore.patchExecution(second, { childSessionId: "same", currentPath: "/worktree/two", status: "done" });
+  agent("queued");
+  const refused = agent("refused");
+  agentLiveStore.patchExecution(refused, { status: "error", childSessionId: " " });
+  const createdThenAborted = agent("aborted");
+  agentLiveStore.patchExecution(createdThenAborted, { childSessionId: "created", status: "cancelled" });
+  const otherProject = agent("elsewhere", "/other");
+  agentLiveStore.patchExecution(otherProject, { childSessionId: "same", status: "working" });
+  const rows = [...activityStore.agents.values()];
+  expect(commandCenterCounts(rows)).toEqual({ sessions: 3, active: 2, inactive: 1, executions: 6, running: 1 });
+  const historical = rows.find((entry) => entry.execution === first)!;
+  expect(historical.current).toBe(false);
+  // Stale active flags on history cannot make an inactive session active.
+  expect(commandCenterCounts([{ ...historical, active: true }])).toMatchObject({ sessions: 1, active: 0, inactive: 1 });
+  // Counts describe retained evidence only; eviction does not invent all-time history.
+  expect(commandCenterCounts(rows.filter((entry) => entry.row.childSessionId !== "created"))).toMatchObject({
+    sessions: 2,
+    inactive: 0,
+  });
+});
+
+it.each([50, 80, 134])("keeps session and execution metrics readable at width %i", (width) => {
+  const running = agent("running");
+  agentLiveStore.patchExecution(running, { childSessionId: "confirmed", status: "working" });
+  agent("queued");
+  const center = new AgentsCommandCenter(() => 24, vi.fn(), vi.fn(), vi.fn());
+  const lines = center.render(width);
+  expect(lines).toHaveLength(24);
+  expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+  expect(lines[1]).toContain("Known sessions 1 · Active 1 · Inactive 0");
+  expect(lines[2]).toContain("Executions 2 · Running 1 · active includes idle");
 });

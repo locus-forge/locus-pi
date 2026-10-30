@@ -9,6 +9,8 @@ export interface WorkflowActivity {
   projectRoot: string;
   sourcePath: string;
   parentRunId?: string;
+  /** Last observed ungrouped phase owned by this run; absent until explicitly emitted. */
+  phase?: string;
   /** Current handoff authority; historical run status is never rewritten. */
   handoffState?: "pending" | "running" | "resolved" | "retryable";
   status: "running" | "completed" | "failed" | "cancelled" | "awaiting_operator";
@@ -95,8 +97,20 @@ export function projectWorkflowActivityHandoff(
   if (run !== undefined) store.workflow({ ...run, handoffState: state });
 }
 
+export function projectWorkflowActivityPhase(
+  runId: string,
+  phase: string,
+  store: Pick<ActivityStore, "workflows" | "workflow"> = activityStore,
+): void {
+  const value = phase.trim();
+  const run = store.workflows.get(runId);
+  if (run !== undefined && value.length > 0) store.workflow({ ...run, phase: value });
+}
+
 /** Logical work: a workflow represents its descendants once, not one extra row per agent. */
-export function activityStripItems(store: ActivityStore = activityStore): { key: string; label: string }[] {
+export function activityStripItems(
+  store: ActivityStore = activityStore,
+): { key: string; label: string; phase?: string }[] {
   const workflows = [...store.workflows.values()].filter(
     (run) =>
       run.status === "running" ||
@@ -126,6 +140,7 @@ export function activityStripItems(store: ActivityStore = activityStore): { key:
       key: `workflow:${run.runId}`,
       rank: run.status === "awaiting_operator" ? 0 : 1,
       label: `${run.sourcePath.startsWith(`${run.projectRoot}/`) ? run.sourcePath.slice(run.projectRoot.length + 1) : run.sourcePath} · ${run.status === "awaiting_operator" ? "needs input" : run.status}`,
+      ...(run.phase ? { phase: run.phase } : {}),
     })),
     ...[...store.agents.values()]
       .filter(
@@ -145,18 +160,28 @@ export function renderActivityStrip(width: number, store: ActivityStore = activi
     let label = redactSecrets(item.label)
       .text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
       .replace(/[\x00-\x1f\x7f]/g, " ");
+    const phase =
+      item.phase === undefined
+        ? ""
+        : truncateToWidth(
+            redactSecrets(item.phase)
+              .text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+              .replace(/[\x00-\x1f\x7f]/g, " "),
+            Math.max(0, Math.min(24, Math.floor(width / 3))),
+          );
+    const phaseSuffix = phase ? ` · ${phase}` : "";
     if (item.key.startsWith("workflow:")) {
       const separator = label.lastIndexOf(" · ");
       const suffix = separator < 0 ? "" : label.slice(separator);
       const path = separator < 0 ? label : label.slice(0, separator);
-      const budget = Math.max(1, width - 4 - visibleWidth(suffix));
+      const budget = Math.max(1, width - 4 - visibleWidth(suffix) - visibleWidth(phaseSuffix));
       if (visibleWidth(path) > budget) {
         const chars = [...path];
         while (chars.length && visibleWidth(chars.join("")) > budget - 1) chars.shift();
         label = `…${chars.join("")}${suffix}`;
       }
     }
-    return truncateToWidth(`  ● ${label}`, width);
+    return truncateToWidth(`  ● ${label}${phaseSuffix}`, width);
   });
   if (items.length > store.maxItems)
     lines.push(truncateToWidth(`  +${items.length - store.maxItems} more · ← Agents Command Center`, width));
