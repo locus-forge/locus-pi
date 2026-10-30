@@ -95,8 +95,8 @@ export function commandCenterRows(store: ActivityStore = activityStore): CenterR
       key: `project:${project}`,
       kind: "project",
       projectPath: project,
-      counts: `${members.length} · ${active} active · ${members.length - active} inactive`,
-      text: `${project}  ${members.length} sessions · ${active} active · ${members.length - active} inactive`,
+      counts: `${members.length} exec · ${active} active · ${members.length - active} inactive`,
+      text: `${project}  ${members.length} executions · ${active} active · ${members.length - active} inactive`,
     });
     const runs = workflows.filter((w) => w.projectRoot === project);
     const emitted = new Set<string>();
@@ -169,6 +169,14 @@ export class AgentsCommandCenter implements Component {
   get selectedKey(): string | undefined {
     return this.#selected;
   }
+  scrollDetailsBy(lines: number): void {
+    if (lines === 0) return;
+    // A custom layout has no primary ScrollView height; the host can send a one-line page delta.
+    const step = Math.sign(lines) * Math.max(5, Math.abs(lines));
+    this.#detailOffset = Math.max(0, this.#detailOffset + step);
+    this.#showDetails = true;
+    this.repaint();
+  }
   handleInput(data: string): void {
     if (matchesKey(data, "escape") || matchesKey(data, "backspace") || matchesKey(data, "left")) {
       this.dismiss();
@@ -185,8 +193,8 @@ export class AgentsCommandCenter implements Component {
       this.#fullPaths = !this.#fullPaths;
       this.#detailOffset = 0;
     } else if (matchesKey(data, "tab")) this.#showDetails = !this.#showDetails;
-    else if (matchesKey(data, "pageDown")) this.#detailOffset += 5;
-    else if (matchesKey(data, "pageUp")) this.#detailOffset = Math.max(0, this.#detailOffset - 5);
+    else if (matchesKey(data, "pageDown")) this.scrollDetailsBy(5);
+    else if (matchesKey(data, "pageUp")) this.scrollDetailsBy(-5);
     else if (matchesKey(data, "enter")) {
       const row = rows.find((candidate) => candidate.key === this.#selected);
       if (row?.agent !== undefined) this.choose(row.agent);
@@ -220,9 +228,15 @@ export class AgentsCommandCenter implements Component {
     this.#detailOffset = Math.min(this.#detailOffset, Math.max(0, details.length - contentHeight));
     const agents = [...this.store.agents.values()];
     const active = agents.filter((a) => a.active).length;
+    const running = agents.filter((a) => a.current && a.row.status === "working").length;
     const output = [
       truncateToWidth(heading("Agents Command Center") + quiet("  Group: Project"), safeWidth),
-      truncateToWidth(quiet(`All ${agents.length} · Active ${active} · Inactive ${agents.length - active}`), safeWidth),
+      truncateToWidth(
+        quiet(
+          `Executions ${agents.length} · Active ${active} (incl idle) · Running ${running} · Inactive ${agents.length - active}`,
+        ),
+        safeWidth,
+      ),
       violet("─".repeat(safeWidth)),
       split
         ? pad(quiet("Agents / Workflows"), nameWidth) +
@@ -237,7 +251,7 @@ export class AgentsCommandCenter implements Component {
       const row = rows[this.#offset + i];
       let left = "";
       if (row?.projectPath !== undefined) {
-        const counts = leftWidth >= 65 ? `${row.counts?.replace(" ·", " sessions ·")}` : `${row.counts}`;
+        const counts = leftWidth >= 65 ? `${row.counts?.replace(" exec ·", " executions ·")}` : `${row.counts}`;
         const projectWidth = Math.max(4, leftWidth - visibleWidth(counts) - 3);
         left = heading(tailPath(clean(row.projectPath), projectWidth)) + quiet(` [${counts}]`);
       } else if (row?.agent || row?.workflow) {
@@ -317,6 +331,23 @@ export class AgentsCommandCenter implements Component {
         "",
         ...(this.#fullPaths ? [field("Full working path", cwd)] : []),
         ...(lastLines.length > 3 ? ["", quiet("Full last message"), last] : []),
+        ...(a.row.errors.length ? ["", quiet("Diagnostics"), ...a.row.errors.map(clean)] : []),
+        ...(a.row.resultArtifact
+          ? [
+              field(
+                "Result artifact",
+                this.#fullPaths ? a.row.resultArtifact : tailPath(clean(a.row.resultArtifact), Math.max(1, width - 17)),
+              ),
+            ]
+          : []),
+        ...(a.row.errorLogPath
+          ? [
+              field(
+                "Error index",
+                this.#fullPaths ? a.row.errorLogPath : tailPath(clean(a.row.errorLogPath), Math.max(1, width - 13)),
+              ),
+            ]
+          : []),
         ...(a.current ? [] : ["", quiet("Historical snapshot · read-only · no implicit resume")]),
       ];
     }
@@ -325,6 +356,9 @@ export class AgentsCommandCenter implements Component {
         compactWorkflowPath(row.workflow.sourcePath, row.workflow.projectRoot, width),
         "",
         quiet("Activity: ") + statusColor(workflowActivityLabel(row.workflow)),
+        ...(row.workflow.phase
+          ? [field(row.workflow.status === "running" ? "Phase" : "Last phase", row.workflow.phase)]
+          : []),
         ...(row.workflow.status === "awaiting_operator" ? [field("Run outcome", "awaiting operator")] : []),
         ...(this.#fullPaths
           ? [field("Full source path", row.workflow.sourcePath), field("Full project path", row.workflow.projectRoot)]

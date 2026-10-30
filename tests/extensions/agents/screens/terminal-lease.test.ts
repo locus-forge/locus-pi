@@ -45,3 +45,49 @@ describe("exclusive terminal handoff", () => {
     expect(host.start).not.toHaveBeenCalled();
   });
 });
+
+it("routes native page keys to mounted center details, then restores ordinary viewport scrolling", async () => {
+  const { AgentTerminalScreen } = await import("../../../../extensions/agents/fleet/terminal-lease.js");
+  const { TuiAltScreen } = await import("@earendil-works/pi-tui");
+  let input: ((data: string) => void) | undefined;
+  const terminal = new Proxy(
+    {
+      columns: 80,
+      rows: 24,
+      kittyProtocolActive: false,
+      start(onInput: (data: string) => void) {
+        input = onInput;
+      },
+    },
+    {
+      get(target, key) {
+        return Reflect.get(target, key) ?? (() => {});
+      },
+    },
+  );
+  const screen = new AgentTerminalScreen(terminal as unknown as TUI["terminal"]);
+  const scrollDetailsBy = vi.fn();
+  const root = { render: () => ["center"], invalidate() {}, scrollDetailsBy };
+  const nativeScroll = vi.spyOn(TuiAltScreen.prototype, "scrollBy");
+  screen.setLayoutRoot(root);
+  screen.setFocus(root);
+  screen.start();
+  try {
+    input!("\u001b[6~");
+    expect(scrollDetailsBy).toHaveBeenLastCalledWith(expect.any(Number));
+    expect(scrollDetailsBy.mock.calls.at(-1)![0]).toBeGreaterThan(0);
+    input!("\u001b[5~");
+    expect(scrollDetailsBy.mock.calls.at(-1)![0]).toBeLessThan(0);
+    expect(nativeScroll).not.toHaveBeenCalled();
+    screen.setLayoutRoot({ render: () => ["conversation"], invalidate() {} });
+    input!("\u001b[6~");
+    expect(nativeScroll).toHaveBeenCalledOnce();
+    screen.setLayoutRoot(undefined);
+    input!("\u001b[6~");
+    expect(nativeScroll).toHaveBeenCalledTimes(2);
+    expect(scrollDetailsBy).toHaveBeenCalledTimes(2);
+  } finally {
+    screen.stop();
+    nativeScroll.mockRestore();
+  }
+});

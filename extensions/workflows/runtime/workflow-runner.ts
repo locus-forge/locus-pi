@@ -1,4 +1,8 @@
-import { activityStore, projectWorkflowActivityHandoff } from "../../_shared/agent-runtime/activity-store.js";
+import {
+  activityStore,
+  projectWorkflowActivityHandoff,
+  projectWorkflowActivityPhase,
+} from "../../_shared/agent-runtime/activity-store.js";
 import {
   snapshotWorkflowInput,
   workflowTypedInputProjection,
@@ -980,7 +984,21 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     ...(budget.timeoutMs === undefined ? {} : { defaultTimeoutMs: budget.timeoutMs }),
     ...(budget.toolCalls === undefined ? {} : { defaultMaxToolCalls: budget.toolCalls }),
     ...(budget.turns === undefined ? {} : { defaultMaxTurns: budget.turns }),
-    ...(opts.onEvent !== undefined ? { onEvent: opts.onEvent } : {}),
+    onEvent: (line) => {
+      try {
+        if (
+          line.runId === runId &&
+          line.kind === "phase" &&
+          line.groupId === undefined &&
+          line.parentGroupId === undefined &&
+          line.phase !== undefined
+        )
+          projectWorkflowActivityPhase(runId, line.phase);
+      } catch {
+        /* A failed read-only activity listener cannot suppress the observer. */
+      }
+      opts.onEvent?.(line);
+    },
     ...(noOperator === undefined ? {} : { operatorInputForbidden: true }),
     onAwaitOperator: (declaration) => {
       if (awaitOperatorDeclaration !== undefined) {
