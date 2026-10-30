@@ -154,6 +154,7 @@ describe("workflow command receipts", () => {
     expect(announceCommandWorkflowStart(h.pi, h.ctx, announcement)).toBe(true);
     expect(h.sentMessages.at(-1)?.message.details).toEqual({
       eventKind: "workflow_start",
+      displayLabel: "live-smoke",
       runId: "run-paths",
       runDir,
       journalPath: path.join(runDir, "runtime", "journal.ndjson"),

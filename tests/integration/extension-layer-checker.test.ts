@@ -15,6 +15,20 @@ afterEach(async () => {
 });
 
 describe("extension layer checker negative rules", () => {
+  it("keeps activity projection foundational and its global registry single-owned", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, "extensions/_shared/agent-runtime/activity-store.ts"),
+      '\nimport "../../agents/index.js";\n',
+    );
+    await expectRule(root, "rule 1 (no upward import)");
+    await appendFile(
+      path.join(root, CROSS_FEATURE_READER),
+      '\nconst duplicateActivity = Symbol.for("locus-pi.activity-store.v1");\n',
+    );
+    await expectRule(root, "rule 4");
+  });
+
   it("keeps model-role persistence below features and selector choices inside model", async () => {
     const root = await extensionFixture();
     await appendFile(

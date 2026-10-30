@@ -91,8 +91,12 @@ export interface AgentLiveRow extends ModelRouteDisplay {
   status: AgentLiveStatus;
   activityState?: AgentLiveActivityState;
   startedAt?: number;
+  /** First observed SDK event proves dispatch, unlike session allocation. */
+  dispatchedAt?: number;
   elapsedMs?: number;
   lastActivityAt?: number;
+  /** Launch project identity; unlike currentPath this does not change with worktrees. */
+  projectRoot?: string;
   currentPath?: string;
   currentTools: string[];
   currentToolArgs?: string | undefined;
@@ -134,6 +138,8 @@ export interface AgentLiveBeginOptions extends ModelRouteDisplay {
   request?: string;
   slotKey?: string;
   round?: number;
+  /** Launch project identity; unlike currentPath this does not change with worktrees. */
+  projectRoot?: string;
   currentPath?: string;
   isolated?: boolean;
   noMcp?: boolean;
@@ -481,6 +487,7 @@ class AgentLiveStore {
       : (existing?.groupTotal ?? options.groupTotal);
     const request = options.request ?? (freshExecution ? undefined : existing?.request);
     if (resetTransient) this.#transcripts.delete(id);
+    const projectRoot = options.projectRoot ?? existing?.projectRoot;
     const row: AgentLiveRow = {
       id,
       ...(existing?.parentRowId !== undefined || options.parentRowId !== undefined
@@ -493,6 +500,7 @@ class AgentLiveStore {
         ? { agentName: existing?.agentName ?? options.agentName }
         : {}),
       ...(displayName !== undefined ? { displayName } : {}),
+      ...(projectRoot === undefined ? {} : { projectRoot }),
       label: options.label,
       ...(existing?.title !== undefined || options.title !== undefined
         ? { title: existing?.title ?? options.title }

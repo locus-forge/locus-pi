@@ -31,6 +31,13 @@ export function registerWorkflowTranscriptRenderers(pi: ExtensionAPI): void {
   if (pi.registerMessageRenderer === undefined) return;
   pi.registerMessageRenderer(WORKFLOW_RUN_CUSTOM_TYPE, (message, { outputPad }, theme) => {
     if (typeof message.content !== "string") return undefined;
+    if (message.details?.eventKind === "workflow_start" && typeof message.details.displayLabel === "string") {
+      const label = compactTranscriptText(message.details.displayLabel).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+      return {
+        invalidate() {},
+        render: (width: number) => [truncateToWidth(`● workflow ${label} started`, Math.max(1, width))],
+      };
+    }
     const title = workflowRunTitle(message.details?.eventKind);
     // Only the run card gets digest tone: its content is the digest, whose line
     // vocabulary is known. The result card below carries the workflow's own prose,

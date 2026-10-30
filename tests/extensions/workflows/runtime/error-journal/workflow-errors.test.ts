@@ -189,16 +189,22 @@ describe("workflow error entry point", () => {
   it("does not duplicate the terminal pointer when saving the result also fails", async () => {
     const root = project(),
       harness = createHarness(root);
+    const scriptPath = path.join(root, "failure.workflow.mjs");
+    writeFileSync(scriptPath, 'export default async () => { throw new Error("first failure"); };');
+    let injected = false;
     const result = await runWorkflowScript({
       pi: harness.pi,
       ctx: harness.ctx,
       signal: new AbortController().signal,
-      script: 'throw new Error("first failure");',
+      scriptPath,
       onRunStart: ({ runDir }) => {
-        mkdirSync(path.join(runDir, "runtime/result.json"));
+        mkdirSync(path.join(runDir, "runtime/result.json"), { recursive: true });
+        injected = true;
       },
     });
+    expect(injected).toBe(true);
     expect(result.ok).toBe(false);
+    expect(result.error).toContain("first failure");
     expect(result.resultPersistence.ok).toBe(false);
     expect(rows(root).filter((row) => row.event === "workflow_result")).toHaveLength(1);
     expect(rows(root)).toContainEqual(expect.objectContaining({ event: "error" }));

@@ -91,6 +91,7 @@ const SHARED_LAYER_MEMBERS: Record<SharedLayer, readonly string[]> = {
     "agent-live-panel",
     "status-line-render",
     "agent-live-store",
+    "activity-store",
     "agent-live-transcript",
     "agent-names",
     "agent-read-only-policy",
@@ -369,6 +370,7 @@ interface RegistryEntry {
 
 /** Symbol string -> the one executable module allowed to name it. */
 const REGISTRIES: readonly RegistryEntry[] = [
+  { symbol: "locus-pi.activity-store.v1", owner: "extensions/_shared/agent-runtime/activity-store.ts" },
   { symbol: "locus-pi.agent-live-store.v6", owner: "extensions/_shared/agent-runtime/agent-live-store.ts" },
   { symbol: "locus-pi.workflow-live-executions.v1", owner: "extensions/workflows/runtime/workflow-live.ts" },
   { symbol: "locus-pi.fleet-menu-state.v3", owner: "extensions/_shared/agent-runtime/fleet-menu.ts" },

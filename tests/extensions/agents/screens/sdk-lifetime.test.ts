@@ -9,7 +9,7 @@ import {
 import { agentLiveStore } from "../../../../extensions/_shared/agent-runtime/agent-live-store.js";
 import type { AgentRunRequest } from "../../../../extensions/_shared/agent-runtime/agent-runner.js";
 
-function fixture(slow = false, abortTimeoutMs = 10) {
+function fixture(slow = false, abortTimeoutMs = 10, displayTask?: string) {
   agentLiveStore.reset();
   agentLiveStore.retainSessions = true;
   const dir = mkdtempSync(path.join(tmpdir(), "flat-agent-"));
@@ -52,7 +52,7 @@ function fixture(slow = false, abortTimeoutMs = 10) {
     createSession,
     reportsDir: dir,
     abortTimeoutMs,
-    live: { rowId: "a", label: "A" },
+    live: { rowId: "a", label: "A", ...(displayTask === undefined ? {} : { displayTask }) },
   });
   const request: AgentRunRequest = {
     executionMode: "bare",
@@ -155,4 +155,15 @@ describe("SDK assignment and agent lifetimes", () => {
     expect(result.text).toBe(JSON.stringify("ok"));
     expect(session.setActiveToolsByName).toHaveBeenLastCalledWith(["read"]);
   });
+});
+
+it("shows the author prompt, never the workflow execution capsule, while SDK receives full execution task", async () => {
+  const author = "Validate this build without changing files.";
+  const { executor, request, session } = fixture(false, 10, author);
+  const internal = "## Workflow execution context\nINTERNAL CONTROL\n\n---\n\n" + author;
+  await executor.run({ ...request, task: internal }, new AbortController().signal);
+  const execution = agentLiveStore.captureExecutionAuthority("a")!;
+  expect(agentLiveStore.rowForExecution(execution)?.request).toBe(author);
+  expect(agentLiveStore.sessionDisplay(execution).task).toBe(author);
+  expect(session.prompt).toHaveBeenCalledWith(expect.stringContaining("INTERNAL CONTROL"), expect.anything());
 });

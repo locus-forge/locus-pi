@@ -338,7 +338,7 @@ describe("npm public package boundary", () => {
       "skills/",
     ]);
     // Model-role file persistence and selector options remain inside the existing extension allowlist.
-    expect(dryRun.files).toHaveLength(289);
+    expect(dryRun.files).toHaveLength(293);
     for (const filename of [
       "extensions/_shared/model/model-role-config.ts",
       "extensions/model/selector/options.ts",

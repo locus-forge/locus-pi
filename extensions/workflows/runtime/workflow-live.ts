@@ -77,6 +77,7 @@ export function applyWorkflowJournalLineToAgentLiveStore(line: WorkflowJournalLi
       id,
       ...(line.groupId !== undefined ? { parentRowId: workflowGroupLiveRowId(line) } : {}),
       workflowRunId: line.runId,
+      ...(projectRoot === undefined ? {} : { projectRoot }),
       ...(line.agent === undefined ? {} : { agentName: line.agent }),
       label: line.label !== undefined ? `${displayName} (${line.label})` : displayName,
       ...(line.title === undefined ? {} : { title: line.title }),

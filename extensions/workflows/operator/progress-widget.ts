@@ -77,6 +77,8 @@ const WORKFLOW_VIEWER_RESERVATION_OWNER = "workflow-live";
 const NOOP_TUI: WidgetFactoryTui = { requestRender: () => {} };
 
 export interface WorkflowProgressOptions {
+  /** Modern TUI owns passive activity in the footer; keep only actionable notices here. */
+  compactActivity?: boolean;
   scope?: "fleet" | "workflow";
   /** Statically declared stages (`meta.phases`): titles plus their planned detail. */
   declaredStages?: readonly WorkflowDeclaredStage[];
@@ -235,6 +237,22 @@ export class WorkflowProgressComponent implements CustomUiComponent {
 
   /** Pull-based projection. Never serves a cached frame — the cache is only a comparison baseline. */
   #project(width: number): string[] {
+    if (this.options.compactActivity) {
+      const actionable = this.done !== undefined && this.done.status !== "completed";
+      const lines = actionable
+        ? [
+            truncate(`${workflowProgressDonePresentation(this.done!.status).marker} ${this.done!.summary}`, width),
+            truncate(
+              this.options.scope === "workflow"
+                ? `Details: /workflows status ${shortWorkflowRunId(this.runId)}`
+                : "Details: ← Agents Command Center",
+              width,
+            ),
+          ]
+        : [];
+      setViewerExternalRows(WORKFLOW_VIEWER_RESERVATION_OWNER, lines.length);
+      return lines;
+    }
     const rows = this.tui.terminal?.rows ?? 24;
     const budget = Math.max(1, Math.min(rows - 6, 24));
     const liveRows = this.visibleRows();
@@ -593,7 +611,7 @@ export class WorkflowProgressComponent implements CustomUiComponent {
   }
 
   #syncLiveTimer(): void {
-    if (this.#disposed || this.done !== undefined) {
+    if (this.options.compactActivity || this.#disposed || this.done !== undefined) {
       this.#stopLiveTimer();
       return;
     }
@@ -700,7 +718,8 @@ export function installWorkflowProgress(
 ): WorkflowProgressComponent {
   const component = new WorkflowProgressComponent(NOOP_TUI, coerceTheme(undefined), scriptRef, runIdPlaceholder, {
     ...options,
-    ownsFleetProjection: true,
+    ownsFleetProjection: !(ctx.mode === "tui" && agentLiveStore.retainSessions),
+    compactActivity: ctx.mode === "tui" && agentLiveStore.retainSessions,
   });
   if (ctx.hasUI === true) {
     if (ctx.mode !== "tui") {

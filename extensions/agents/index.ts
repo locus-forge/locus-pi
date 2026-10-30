@@ -1,4 +1,6 @@
-import { renderAgentStrip } from "./fleet/agent-screen.js";
+import { loadActivityLimit } from "./fleet/activity-settings.js";
+import { activityStore } from "../_shared/agent-runtime/activity-store.js";
+import { installCommandCenterEditor } from "./fleet/command-center-editor.js";
 import { shutdownAgentCommands } from "./run/run-launcher.js";
 import { AgentScreenController } from "./fleet/agent-screen-controller.js";
 /**
@@ -25,7 +27,7 @@ import { registerAgentSpawnTools } from "./tool/task-tool.js";
 export default function agents(pi: ExtensionAPI): void {
   let agentSessionEpoch = 0;
   let screen = new AgentScreenController();
-  let stopAutoOpen = () => {};
+  let stopCenterBindings = () => {};
   const agentSessionAuthority: AgentSessionAuthority = {
     capture: () => agentSessionEpoch,
     isCurrent: (authority) => authority === agentSessionEpoch,
@@ -39,7 +41,7 @@ export default function agents(pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, ctx) => {
     screen.close(true);
     screen = new AgentScreenController();
-    stopAutoOpen();
+    stopCenterBindings();
     agentSessionEpoch += 1;
     disposeAgentSessionViewers();
     fleetMenu.invalidate();
@@ -52,33 +54,21 @@ export default function agents(pi: ExtensionAPI): void {
     // Parent Pi owns bare Up/Down. Fleet entry is explicit via /ps or shift+down.
     fleetMenuState.setEmptyEditorFocusAvailable(false);
     warnOnPsCollision(pi, ctx);
-    const known = new Set<string>();
-    const changed = () => {
-      if (ctx.mode === "tui")
-        ctx.ui.setWidget(
-          "agent-strip",
-          () => ({ invalidate() {}, render: (width: number) => [renderAgentStrip("main", width)] }),
-          { placement: "belowEditor" },
-        );
-      for (const row of agentLiveStore.rows.values()) {
-        if (known.has(row.id)) continue;
-        known.add(row.id);
-        if ((row.id.startsWith("spawn_agent:") || row.id.startsWith("run:")) && row.groupKind === undefined) {
-          queueMicrotask(() => {
-            void screen.open(ctx, row.id).catch((error) => ctx.ui.notify(String(error), "error"));
-          });
-        }
-      }
-    };
-    agentLiveStore.emitter.on("change", changed);
-    changed();
-    stopAutoOpen = () => {
-      agentLiveStore.emitter.off("change", changed);
-      ctx.ui.setWidget("agent-strip", undefined);
-    };
+    try {
+      activityStore.setMaxItems(await loadActivityLimit(getProjectRoot(ctx)));
+    } catch (error) {
+      activityStore.setMaxItems(4);
+      ctx.ui.notify(`Agent UI settings: ${String(error)}`, "warning");
+    }
+    activityStore.capture();
+    stopCenterBindings = agentLiveStore.retainSessions
+      ? installCommandCenterEditor(ctx, () => {
+          void screen.open(ctx).catch((error) => ctx.ui.notify(String(error), "error"));
+        })
+      : () => {};
   });
   pi.on("session_shutdown", async (_event, ctx) => {
-    stopAutoOpen();
+    stopCenterBindings();
     screen.close(true);
     disposeAgentSessionViewers();
     fleetMenu.invalidate();

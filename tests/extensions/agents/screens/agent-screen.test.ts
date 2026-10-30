@@ -55,7 +55,7 @@ it("lists workflow executor once, not its journal slot projection", async () => 
   ]);
 });
 
-it("inline picker dismissal preserves child editor draft and does not replace its layout", async () => {
+it("fullscreen center dismissal restores the exact child editor draft and layout", async () => {
   let input: { handleInput(data: string): void; setText(text: string): void; getText(): string } | undefined;
   const setLayoutRoot = vi.fn();
   const tui = {
@@ -73,7 +73,8 @@ it("inline picker dismissal preserves child editor draft and does not replace it
   screen.list();
   input!.handleInput("\u001b");
   expect(input!.getText()).toBe("unfinished draft");
-  expect(setLayoutRoot).toHaveBeenCalledOnce();
+  expect(setLayoutRoot).toHaveBeenCalledTimes(3);
+  expect(setLayoutRoot.mock.calls[2]![0]).toBe(setLayoutRoot.mock.calls[0]![0]);
   expect(main).not.toHaveBeenCalled();
   screen.list();
   input!.handleInput("\u007f");
@@ -82,7 +83,7 @@ it("inline picker dismissal preserves child editor draft and does not replace it
   screen.dispose();
 });
 
-it("returns to main rather than leaving a blank terminal on an unknown initial target", async () => {
+it("opens the center rather than leaving a blank terminal on an unknown initial target", async () => {
   const main = vi.fn();
   const error = vi.fn();
   const tui = { requestRender() {}, setLayoutRoot() {}, setFocus() {} } as unknown as TUI & {
@@ -90,7 +91,7 @@ it("returns to main rather than leaving a blank terminal on an unknown initial t
   };
   const screen = new AgentScreen(tui, main, error);
   await screen.select("missing");
-  expect(main).toHaveBeenCalledOnce();
+  expect(main).not.toHaveBeenCalled();
   expect(error).toHaveBeenCalledWith("Unknown agent: missing");
   screen.dispose();
 });

@@ -1,3 +1,6 @@
+import { Type } from "@sinclair/typebox";
+import { safeToolText } from "../../_shared/host/safe-output.js";
+import type { ToolResult } from "../../_shared/host/pi-api.js";
 /**
  * extensions/agents/tool/task-tool.ts — the canonical spawn-a-subagent tool.
  * It routes through the createAgentSession host + honesty gate.
@@ -12,7 +15,7 @@ import {
   selectDeclaredModelRole,
 } from "../../_shared/model/model-settings.js";
 import type { ExtensionAPI, ToolUpdate } from "../../_shared/host/pi-api.js";
-import { errorResult, getProjectRoot, textResult } from "../../_shared/host/pi-api.js";
+import { errorResult, getProjectRoot, getSessionId, textResult } from "../../_shared/host/pi-api.js";
 import { validateParams } from "../../_shared/host/validation.js";
 import { errorMessage } from "../../_shared/host/error-text.js";
 import { installWorkflowProgress } from "../../workflows/operator/progress-widget.js";
@@ -24,6 +27,7 @@ import {
   nextAgentRunSequence,
   resolveAgentTitle,
   runAgentLiveTask,
+  trackAgentLaunch,
 } from "../run/run-launcher.js";
 import { createUnknownAgentReport } from "../run/unknown-agent-report.js";
 
@@ -32,6 +36,57 @@ type TaskToolCtx = Parameters<ExtensionAPI["registerTool"]>[0]["execute"] extend
   : never;
 
 export function registerAgentSpawnTools(pi: ExtensionAPI): void {
+  const launches = new Map<string, { owner: string; terminal: Promise<ToolResult>; result?: ToolResult }>();
+  const owner = (ctx: TaskToolCtx) => JSON.stringify([getProjectRoot(ctx), getSessionId(ctx)]);
+  pi.on("session_start", () => launches.clear());
+  pi.registerTool({
+    name: "agent_status",
+    description:
+      "Read a background spawn handle. wait defaults false; true explicitly waits for that assignment. Never resumes or restarts an agent.",
+    parameters: Type.Object({ handle: Type.String({ minLength: 1 }), wait: Type.Optional(Type.Boolean()) }),
+    approval: "read",
+    execute: async (_id, params, signal, _update, ctx) => {
+      const valid = validateParams(
+        Type.Object({ handle: Type.String({ minLength: 1 }), wait: Type.Optional(Type.Boolean()) }),
+        params,
+      );
+      if (!valid.ok) return valid.result;
+      const record = launches.get(valid.value.handle);
+      if (record === undefined || record.owner !== owner(ctx))
+        return errorResult("Unknown agent handle for this session.");
+      if (valid.value.wait && record.result === undefined) {
+        if (signal.aborted) return errorResult("Status wait cancelled; agent continues.");
+        let remove = () => {};
+        try {
+          await Promise.race([
+            record.terminal,
+            new Promise<void>((resolve) => {
+              const abort = () => resolve();
+              signal.addEventListener("abort", abort, { once: true });
+              remove = () => signal.removeEventListener("abort", abort);
+            }),
+          ]);
+        } finally {
+          remove();
+        }
+        if (signal.aborted) return errorResult("Status wait cancelled; agent continues.");
+      }
+      if (launches.get(valid.value.handle) !== record || record.owner !== owner(ctx))
+        return errorResult("Agent handle expired while waiting; session changed.");
+      if (record.result !== undefined)
+        return {
+          ...record.result,
+          content: record.result.content.map((part) =>
+            part.type === "text" ? { ...part, text: safeToolText(part.text).text } : part,
+          ),
+        };
+      const row = agentLiveStore.rows.get(valid.value.handle);
+      return textResult(`Agent ${valid.value.handle}: ${row?.dispatchedAt === undefined ? "queued" : row.status}.`, {
+        handle: valid.value.handle,
+        status: row?.dispatchedAt === undefined ? "queued" : row.status,
+      });
+    },
+  });
   const spawnAgentExecute: Parameters<ExtensionAPI["registerTool"]>[0]["execute"] = async (
     _toolCallId,
     params,
@@ -42,23 +97,48 @@ export function registerAgentSpawnTools(pi: ExtensionAPI): void {
     const valid = validateParams(TaskParams, params);
     if (!valid.ok) return valid.result;
     refreshAgents(getProjectRoot(ctx));
-    return runTaskTool(
+    const background = valid.value.background ?? (ctx.mode === "tui" && agentLiveStore.retainSessions);
+    const handle = `spawn_agent:${valid.value.agent ?? "bare"}:${nextAgentRunSequence()}`;
+    const controller = background ? new AbortController() : undefined;
+    if (signal.aborted) return errorResult("Agent launch cancelled before dispatch.");
+    const run = runTaskTool(
       pi,
       ctx,
-      signal,
-      update,
+      controller?.signal ?? signal,
+      background ? () => {} : update,
       valid.value.agent,
       valid.value.task,
       valid.value.title,
       valid.value.parentContext,
       valid.value.modelRole,
       valid.value.requireModelRole,
+      handle,
     );
+    if (!background) return run;
+    const terminal = trackAgentLaunch(
+      controller!,
+      run.catch((error) => errorResult(errorMessage(error))),
+    );
+    const record: { owner: string; terminal: Promise<ToolResult>; result?: ToolResult } = {
+      owner: owner(ctx),
+      terminal,
+    };
+    launches.set(handle, record);
+    void terminal.then((result) => {
+      record.result = result;
+      const settled = [...launches.entries()].filter(([, value]) => value.result !== undefined);
+      for (const [id] of settled.slice(0, Math.max(0, settled.length - 200))) launches.delete(id);
+    });
+    return textResult(`Agent queued: ${handle}. Continue working; use agent_status to check or collect the result.`, {
+      handle,
+      rowId: handle,
+      status: "queued",
+    });
   };
   pi.registerTool({
     name: "spawn_agent",
     description:
-      "Spawn one subagent to run one self-contained task in a headless child session. Omit agent for a clean session, or name a project/user catalog agent. Successful content is the child's exact final text.",
+      "Spawn one subagent to run one self-contained task in a headless child session. Omit agent for a clean session, or name a project/user catalog agent. Interactive launches return a queued handle without blocking. Use agent_status to collect; background:false or headless defaults await the child's final text.",
     parameters: TaskParams,
     approval: "exec",
     formatApprovalDetails: taskApprovalDetails,
@@ -96,6 +176,7 @@ async function runTaskTool(
   parentContext?: { inline?: string; artifactPath?: string },
   modelRole?: string,
   requireModelRole?: boolean,
+  suppliedRowId?: string,
 ) {
   const bare = agentName === undefined;
   const resolution = bare ? undefined : resolveAgentSelection(agentName);
@@ -118,13 +199,14 @@ async function runTaskTool(
   } catch (error) {
     return errorResult(errorMessage(error));
   }
+  if (signal.aborted) return errorResult("Agent launch cancelled before dispatch.");
   const liveModel = resolveLiveModelDisplay({ pi, ctx, assignment: modelRoleResolution?.assignment });
   const executionLabel = resolution?.resolvedAgent ?? "sub-agent";
   const hasUI = ctx.hasUI === true;
   const panel = hasUI
     ? installWorkflowProgress(ctx, "agents", `spawn_agent ${executionLabel}`, "spawn_agent")
     : undefined;
-  const rowId = `spawn_agent:${resolution?.resolvedAgent ?? "bare"}:${nextAgentRunSequence()}`;
+  const rowId = suppliedRowId ?? `spawn_agent:${resolution?.resolvedAgent ?? "bare"}:${nextAgentRunSequence()}`;
   const resolvedTitle = resolveAgentTitle(title, "", task);
   let boundary: Awaited<ReturnType<typeof runAgentLiveTask>>;
   // Pin the "agents" progress key for the duration of the live run so a chat

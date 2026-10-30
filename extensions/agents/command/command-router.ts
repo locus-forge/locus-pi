@@ -1,3 +1,5 @@
+import { persistActivityLimit, activitySettingsPath } from "../fleet/activity-settings.js";
+import { activityStore } from "../../_shared/agent-runtime/activity-store.js";
 import { agentLiveStore } from "../../_shared/agent-runtime/agent-live-store.js";
 /**
  * extensions/agents/command/command-router.ts — the `/ps` and `/agent` grammars and their
@@ -91,6 +93,27 @@ export function registerAgentCommands(pi: ExtensionAPI, deps: AgentCommandDepend
         const discovery = refreshAgents(getProjectRoot(ctx));
         clearAgentsStatus(ctx);
         const text = getCommandText(args).trim();
+        if (text === "settings" || text.startsWith("settings ")) {
+          const match = /^settings activityStrip\.maxItems (\d+)$/.exec(text);
+          if (match !== null) {
+            try {
+              await persistActivityLimit(getProjectRoot(ctx), Number(match[1]));
+              activityStore.setMaxItems(Number(match[1]));
+            } catch (error) {
+              ctx.ui.notify(String(error), "error");
+              return;
+            }
+          } else if (text !== "settings") {
+            ctx.ui.notify("Usage: /agent settings activityStrip.maxItems <1–20>", "warning");
+            return;
+          }
+          ctx.ui.notify(
+            `activityStrip.maxItems = ${activityStore.maxItems} (${activitySettingsPath(getProjectRoot(ctx))})`,
+            "info",
+          );
+          return;
+        }
+
         if (text === "list" || text === "") {
           const catalog = [...agentCatalog.values()];
           const fullBlock = agentCatalogBlock(catalog, discovery.diagnostics);
