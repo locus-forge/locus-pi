@@ -113,9 +113,23 @@ A fixed control skeleton does not require precomputed implementation work. The e
 
 ## Executor selection
 
-Pi already has responsibility roles and concrete selectors. Omit `model`, `modelRole`, `requireModelRole`, and effort selectors by default. Use `{ modelRole: "reviewer" }` only when the user or project explicitly requests that routing and the role exists in the global user model table. A configured role alone does not authorize choosing it. Model-less calls follow user routing, including an assigned `agent` role, and otherwise inherit the session model. If a particular route is essential, use `requireModelRole: true` so an unassigned role fails instead of inheriting silently. Configure roles through `/model-roles` or `~/.pi/agent/model-roles/config.json`, the only persistent model-role authority; project-local role files are not read. A role name is a configuration key, not proof of Claude, Codex, subscription billing or reviewer independence.
+Pi already has responsibility roles and concrete selectors. Omit `model`, `modelRole`, `requireModelRole`, and
+effort selectors by default. Use `{ modelRole: "reviewer" }` only when the user or project explicitly requests that
+routing and the role is assigned in the selected project or user model-role file. A configured role alone does not
+authorize choosing it. Model-less calls follow user routing, including an assigned `agent` role, and otherwise
+inherit the session model. If a particular route is essential, use `requireModelRole: true` so an unassigned role
+fails instead of inheriting silently. Follow the [canonical model-role
+configuration](../../../docs/workflows/models.md#use-model-roles): `<project>/.pi/model-roles/config.json`, when
+present, replaces the entire user file `~/.pi/agent/model-roles/config.json`. An empty project file suppresses user
+assignments; an invalid project file fails rather than falling back. An invalid existing assignment is an error, not
+fallback. `/model-roles` displays and saves to the selected file. A role name is a configuration key, not proof of
+Claude, Codex, subscription billing or reviewer independence.
 
-An explicit verified condition can select an author-owned options record at a visible callsite; do not add `chooseEngine`/`agentOpts` wrappers or parse model prose to choose a provider. Pi has no built-in live-load scheduler for choosing an engine. Resolve availability in the design or global user configuration or through a real `choice` edge when the task requires it. Do not invent automatic failover or silently change a required executor.
+An explicit verified condition can select an author-owned options record at a visible callsite; do not add
+`chooseEngine`/`agentOpts` wrappers or parse model prose to choose a provider. Pi has no built-in live-load
+scheduler for choosing an engine. Resolve availability in the design or selected project/user configuration or
+through a real `choice` edge when the task requires it. Do not invent automatic failover or silently change a
+required executor.
 
 Keep literal responsibility labels (`review`, `correct`) and human work titles. Name a provider/model in a title only when its route was verified. Confirm `executedModel` and recorded fallback evidence when evaluating a run. Different role names alone are not different engines. The generic references deliberately inherit the session model and promise independent sessions/roles, not cross-provider review.
 
