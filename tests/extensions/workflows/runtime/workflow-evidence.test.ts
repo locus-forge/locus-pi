@@ -42,9 +42,10 @@ function tempProject(): string {
     "utf8",
   );
   // Own both profiles and assignments so operator settings cannot decide these checks.
+  // Pin the harness model so user-configured roles cannot block the evidence probe.
   writeFileSync(
     path.join(dir, "default.md"),
-    "---\nname: default\ndescription: General purpose agent\nmodel: task\n---\nDo the work.\n",
+    "---\nname: default\ndescription: General purpose agent\nmodel: test/fast\n---\nDo the work.\n",
     "utf8",
   );
   return root;
@@ -220,8 +221,9 @@ describe("workflow evidence threading", () => {
       path.join(root, "package.json"),
       `${JSON.stringify({ scripts: { verify: "node changed.mjs", injected: "node injected.mjs" } })}\n`,
     );
-    await runner({ prompt: "inspect", agent: "default", readOnly: true, tools: ["repository_check"] });
+    const result = await runner({ prompt: "inspect", agent: "default", readOnly: true, tools: ["repository_check"] });
 
+    assert.equal(result.status, "completed", result.summary);
     assert.deepEqual(observed?.repositoryCheckScripts, { verify: "node verify.mjs" });
   });
 

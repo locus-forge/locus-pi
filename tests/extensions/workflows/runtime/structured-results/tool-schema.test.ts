@@ -23,7 +23,9 @@ describe("standard Pi constrained sampling with the caller's actual schema", () 
     const result = await structuredSdk({ schema: schema as any }, [rawTurn([JSON.stringify({ value })])]);
     expect(result.error).toBeUndefined();
     expect(result.value).toEqual(value);
-    const wire = (result.payloads[0] as any).tools.find((tool: any) => tool.name === "workflow_return");
+    const wire = (result.payloads[0] as any).input
+      .find((item: any) => item.type === "additional_tools")
+      .tools.find((tool: any) => tool.name === "workflow_return");
     expect(wire.parameters).toEqual({
       type: "object",
       properties: { value: schema },
@@ -51,7 +53,9 @@ describe("standard Pi constrained sampling with the caller's actual schema", () 
     const result = await structuredSdk({ schema: schema as any }, [rawTurn([JSON.stringify({ value })])]);
     expect(result.error).toBeUndefined();
     expect(result.value).toEqual(value);
-    const wire = (result.payloads[0] as any).tools.find((tool: any) => tool.name === "workflow_return");
+    const wire = (result.payloads[0] as any).input
+      .find((item: any) => item.type === "additional_tools")
+      .tools.find((tool: any) => tool.name === "workflow_return");
     expect(wire.parameters).toEqual(tool.parameters);
     expect(wire.strict).not.toBe(true);
     expect(result.counters).toMatchObject({ sessions: 1, generations: 1, tools: 1 });
@@ -80,8 +84,15 @@ describe("standard Pi constrained sampling with the caller's actual schema", () 
     expect(result.error).toBeUndefined();
     expect(result.counters).toMatchObject({ sessions: 1, generations: 2, effects: 0, tools: 1 });
     const correction = result.payloads[1] as any;
-    expect(correction.tools.map((tool: any) => tool.name)).toEqual(["workflow_return"]);
-    expect(correction.tools[0].parameters.properties.value).toEqual(schema);
+    // Pi keeps initial declarations in the cached prefix and announces removals in place.
+    const declared = correction.input.find((item: any) => item.type === "additional_tools").tools;
+    expect(declared.map((tool: any) => tool.name)).toEqual(["workflow_return", "fixture_work"]);
+    expect(declared[0].parameters.properties.value).toEqual(schema);
+    expect(declared[0].strict).toBe(true);
+    expect(correction.input).toContainEqual({
+      role: "developer",
+      content: "The following tools are no longer available. Do not call them:\n- fixture_work",
+    });
     expect(JSON.stringify(correction.input)).toContain("invented");
     expect(result.acceptance?.structuredReceipt?.spent).toMatchObject({ outputAttempts: 2, toolCalls: 1 });
   });

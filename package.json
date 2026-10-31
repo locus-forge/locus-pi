@@ -77,17 +77,17 @@
     "typebox": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-agent-core": "1.3.0",
-    "@earendil-works/pi-ai": "1.3.0",
-    "@earendil-works/pi-coding-agent": "1.3.0",
-    "@earendil-works/pi-tui": "1.3.0",
+    "@earendil-works/pi-agent-core": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.4.0",
+    "@earendil-works/pi-tui": "1.4.0",
     "@sinclair/typebox": "^0.34.41",
     "@types/node": "^24.0.0",
     "lint-staged": "^16.4.0",
     "prettier": "^3.9.5",
     "tsx": "^4.20.0",
     "typescript": "^5.8.0",
-    "vitest": "^3.2.0"
+    "vitest": "4.1.12"
   },
   "files": [
     "dist/public-catalogs.json",
@@ -110,5 +110,9 @@
   },
   "lint-staged": {
     "*.{js,mjs,cjs,ts,tsx,json,md,yml,yaml}": "prettier --write --ignore-unknown"
+  },
+  "overrides": {
+    "undici@8.10.2": "8.12.2",
+    "minimatch@10.2.6": "11.0.1"
   }
 }

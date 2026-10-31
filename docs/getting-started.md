@@ -14,7 +14,7 @@ description: "Describe the sequential first workflow taught by the create lesson
 # Getting started
 
 Requires Node.js `>=22.19.0`, Pi `>=1.3.0`, and a configured model provider.
-Development checks use Pi `1.3.0`. Pi supplies TypeBox to loaded extensions;
+Development checks use Pi `1.4.0`. Pi supplies TypeBox to loaded extensions;
 the package declares it as a peer to avoid a separate runtime copy.
 Choose one installation source: a Git checkout or the published npm package.
 The npm release can lag this repository. Use the documentation bundled with your
@@ -215,3 +215,46 @@ Inspect it with `/workflows status <runId>`, then continue it explicitly with `/
 ### A local workflow is untrusted
 
 Do not run it. Project and user workflows are JavaScript with host access; path validation and confirmation prompts are not a sandbox.
+
+## Development dependency graph and Pi transport limits
+
+Development checks pin all four Pi packages to `1.4.0` and Vitest to `4.1.12`.
+The checkout's root overrides replace external `undici@8.10.2` with `8.12.2`
+and `minimatch@10.2.6` with `11.0.1`.
+An npm override applies only in the consumer's root manifest; installing this
+package does not propagate its override to another project. A consumer that
+needs the same external SDK dependency correction must explicitly configure:
+
+```json
+{
+  "overrides": {
+    "undici@8.10.2": "8.12.2",
+    "minimatch@10.2.6": "11.0.1"
+  }
+}
+```
+
+This corrects the npm development/SDK graph, **not the entire Pi host**.
+Pi `1.4.0` also embeds an older undici implementation in its manifest-selected
+`dist/bundle/cli.js`. Root overrides, a clean npm audit, successful loading, and
+a successful HTTP request do not repair or certify that embedded CLI. A standard
+consumer without its own overrides retains the external undici and minimatch advisories as well.
+The minimatch major update also requires real Pi package-filter and model-glob
+compatibility checks, not audit alone; any embedded matcher remains upstream-owned.
+See the [upstream minimatch advisory](https://github.com/isaacs/minimatch/security/advisories/GHSA-g3hv-75wg-m249).
+The undici residual is not limited to custom TLS validation. The upstream
+[security advisories](https://github.com/nodejs/undici/security/advisories) also
+cover excessive content-encoding responses, TLS 1.2 renegotiation, EventSource
+and WebSocket resource exhaustion, integrity-token handling, and optional
+cache/redirect and decompress-interceptor compositions. Applicability depends
+on the API, configuration, and peer behavior described by each advisory;
+a successful local HTTP fixture neither exercises nor rules out these defects.
+
+The release consumer gate checks both root graphs and performs a real local HTTP
+request through both the manifest CLI and an unbundled diagnostic entry. The
+latter is only a transport diagnostic, not a supported alternative launcher.
+Host qualification owns the remaining CLI risk: a corrected public host requires
+an independently checked Pi artifact rebuilt with the corrected embedded code.
+Revisit this limitation when that artifact, a new advisory, or a compatibility
+failure becomes available. These checks do not establish public host release
+readiness and never call a paid model.
