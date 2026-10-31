@@ -289,7 +289,9 @@ Repository ignore rules govern version control, not delivery. Cleanup may
 remove disposable files belonging to this task; required deliverables remain.
 
 Correction receives the complete actionable findings and is followed by
-fresh review. A later delivery writer reports the reviewed state. If that
+fresh review. When evidence locates a defect in an upstream result, findings name its producer
+and the dependent results that need fresh work.
+A later delivery writer reports the reviewed state. If that
 writer performs a new required check, its failure must reach an explicit
 non-success route before successful completion.
 Read a correction record only on a path where a correction produced it. An initial

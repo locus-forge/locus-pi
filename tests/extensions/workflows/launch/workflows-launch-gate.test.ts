@@ -32,6 +32,30 @@ async function waitForBackground(predicate: () => boolean): Promise<void> {
   for (let attempt = 0; attempt < 50 && !predicate(); attempt += 1) await Promise.resolve();
 }
 
+async function expectCommandPathEscapeEvidence(): Promise<void> {
+  const root = mkdtempSync(path.join(os.tmpdir(), "wf-launch-"));
+  try {
+    const h = registerCommandHarness(root);
+    const approval = vi.spyOn(h.ctx.ui, "select");
+    const spy = vi.spyOn(runner, "runWorkflowScript");
+    try {
+      await h.commands.get("workflows")!.handler("run ../escape", h.ctx);
+      expect(approval).not.toHaveBeenCalled();
+      expect(spy).toHaveBeenCalledTimes(1);
+      const result = await spy.mock.results[0]?.value;
+      expect(result?.ok).toBe(false);
+      expect(String(result?.error ?? "")).toContain("escapes project root");
+      expect(readFileSync(workflowResultFile(result!.runDir), "utf8")).toContain("escapes project root");
+      expect(h.entries.some((entry) => entry.type === "decision")).toBe(false);
+    } finally {
+      approval.mockRestore();
+      spy.mockRestore();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 describe("/workflows run launch gate", () => {
   it("launches the installed Package post-code-review entry without an explicit workspace", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "workflow-package-post-review-launch-"));
@@ -789,23 +813,7 @@ describe("/workflows run launch gate", () => {
   });
 
   it("invalid path escape runs once, writes failed result evidence, and records no approval decision", async () => {
-    const root = mkdtempSync(path.join(os.tmpdir(), "wf-launch-"));
-    try {
-      const h = createHarness(root);
-      workflows(h.pi);
-      const approval = vi.spyOn(h.ctx.ui, "select");
-      const spy = vi.spyOn(runner, "runWorkflowScript");
-      await h.commands.get("workflows")!.handler("run ../escape", h.ctx);
-      expect(approval).not.toHaveBeenCalled();
-      expect(spy).toHaveBeenCalledTimes(1);
-      const result = await spy.mock.results[0]?.value;
-      expect(result?.ok).toBe(false);
-      expect(String(result?.error ?? "")).toContain("escapes project root");
-      expect(readFileSync(workflowResultFile(result!.runDir), "utf8")).toContain("escapes project root");
-      expect(h.entries.some((entry) => entry.type === "decision")).toBe(false);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+    await expectCommandPathEscapeEvidence();
   });
 
   it("does not implement Locus denial for command runs", async () => {
@@ -880,23 +888,7 @@ describe("/workflows run launch gate", () => {
   });
 
   it("writes failed result evidence for path escapes", async () => {
-    const root = mkdtempSync(path.join(os.tmpdir(), "wf-launch-"));
-    try {
-      const h = registerCommandHarness(root);
-      const approval = vi.spyOn(h.ctx.ui, "select");
-      const spy = vi.spyOn(runner, "runWorkflowScript");
-      await h.commands.get("workflows")!.handler("run ../escape", h.ctx);
-      expect(approval).not.toHaveBeenCalled();
-      expect(spy).toHaveBeenCalledTimes(1);
-      const result = spy.mock.results[0]?.value as Promise<{ ok: boolean; error?: string; runDir: string }> | undefined;
-      const resolved = await result!;
-      expect(resolved.ok).toBe(false);
-      expect(String(resolved.error ?? "")).toContain("escapes project root");
-      expect(readFileSync(workflowResultFile(resolved.runDir), "utf8")).toContain("escapes project root");
-      expect(h.entries.some((entry) => entry.type === "decision")).toBe(false);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+    await expectCommandPathEscapeEvidence();
   });
 
   it("shows available example names instead of a leaked path for an unknown workflow name", async () => {

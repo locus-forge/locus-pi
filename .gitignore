@@ -117,3 +117,6 @@ lpt[1-9].*
 # Stray demo output
 /test1.md
 /test2.md
+
+# Short plans are local execution state.
+.locus/plans/

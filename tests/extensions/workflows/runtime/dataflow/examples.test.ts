@@ -113,9 +113,14 @@ describe("verbatim documented dataflow graphs through actual Pi SDK and offline 
     expect(result.suppliedPrompts[2]).not.toContain("Unowned id");
     const wire = (
       result.payloads[0] as {
-        tools: { name: string; strict?: boolean; parameters: { properties: { value: unknown } } }[];
+        input: {
+          type?: string;
+          tools?: { name: string; strict?: boolean; parameters: { properties: { value: unknown } } }[];
+        }[];
       }
-    ).tools.find((tool) => tool.name === "workflow_return")!;
+    ).input
+      .find((item) => item.type === "additional_tools")!
+      .tools!.find((tool) => tool.name === "workflow_return")!;
     expect(wire.parameters.properties.value).toMatchObject({
       type: "object",
       properties: { id: { enum: ["A", "B"] } },
