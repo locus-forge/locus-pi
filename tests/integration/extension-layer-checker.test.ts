@@ -15,6 +15,14 @@ afterEach(async () => {
 });
 
 describe("extension layer checker negative rules", () => {
+  it("keeps Command Center row and repository projection behind the agents facade", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, "extensions/model/index.ts"),
+      '\nimport "../agents/fleet/command-center/model.js";\n',
+    );
+    await expectRule(root, "rule 6 (feature-internal facade)");
+  });
   it("keeps activity projection foundational and its global registry single-owned", async () => {
     const root = await extensionFixture();
     await appendFile(

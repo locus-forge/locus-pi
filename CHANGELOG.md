@@ -6,6 +6,13 @@ User-visible changes to the public package.
 
 ### Fixed
 
+- Agents Command Center now uses consistent execution labels and open/closed
+  session counts, makes projects selectable, and distinguishes repository,
+  launch and working directories. Selection uses a quiet full-row background
+  without bold text. Explicit pane focus, independent detail scrolling,
+  responsive layouts and contextual key hints make navigation visible; path
+  expansion updates project, workflow and agent details in place. Full agent
+  messages appear before long launch prompts.
 - Typed catalog `Start` now requests the native `workflow` tool directly. The
   tool shows canonical JSON in an extension-owned interactive confirmation
   before it attaches or imports the workflow. Every interactive call confirms a

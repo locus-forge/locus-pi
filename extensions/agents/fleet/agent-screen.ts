@@ -1,5 +1,5 @@
-import { guardCommandCenterInput } from "./command-center-editor.js";
-import { AgentsCommandCenter } from "./command-center.js";
+import { guardCommandCenterInput } from "./command-center/editor.js";
+import { AgentsCommandCenter } from "./command-center/center.js";
 import { activityStore, renderActivityStrip, type AgentActivity } from "../../_shared/agent-runtime/activity-store.js";
 import {
   renderStatusLines,
@@ -180,6 +180,7 @@ export class AgentScreen {
       () => this.tui.requestRender(),
       activityStore,
       [...activityStore.agents.values()].find((a) => a.row.id === this.#active && a.current)?.key,
+      this.theme,
     );
     this.tui.setLayoutRoot(this.#center);
     this.tui.setFocus(this.#center);
