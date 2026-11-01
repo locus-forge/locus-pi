@@ -129,6 +129,12 @@ interface FeatureInternalEntry {
 
 const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
   {
+    module: "extensions/agents/fleet/command-center/model.ts",
+    owner: "extensions/agents",
+    facade: "extensions/agents/fleet/command-center/center.ts",
+    reason: "Repository hints and activity rows are Command Center presentation, not runtime launch authority.",
+  },
+  {
     module: "extensions/model/selector/options.ts",
     owner: "extensions/model",
     facade: "extensions/model/index.ts",

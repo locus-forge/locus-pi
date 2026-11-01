@@ -1,5 +1,5 @@
 import { CustomEditor, getSelectListTheme } from "@earendil-works/pi-coding-agent";
-import type { ExtensionContext, EditorFactory } from "../../_shared/host/pi-api.js";
+import type { ExtensionContext, EditorFactory } from "../../../_shared/host/pi-api.js";
 
 /** Editor-local hook: modal/overlay focus and nonempty cursor navigation remain Pi-owned. */
 export function installCommandCenterEditor(ctx: ExtensionContext, open: () => void): () => void {

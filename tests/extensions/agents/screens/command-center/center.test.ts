@@ -5,15 +5,15 @@ import {
   commandCenterRows,
   commandCenterCounts,
   compactWorkflowPath,
-} from "../../../../extensions/agents/fleet/command-center.js";
+} from "../../../../../extensions/agents/fleet/command-center/center.js";
 import {
   activityStore,
   renderActivityStrip,
   projectWorkflowActivityHandoff,
-} from "../../../../extensions/_shared/agent-runtime/activity-store.js";
-import { agentLiveStore } from "../../../../extensions/_shared/agent-runtime/agent-live-store.js";
-import { installCommandCenterEditor } from "../../../../extensions/agents/fleet/command-center-editor.js";
-import { createHarness } from "../../../test-harness.js";
+} from "../../../../../extensions/_shared/agent-runtime/activity-store.js";
+import { agentLiveStore } from "../../../../../extensions/_shared/agent-runtime/agent-live-store.js";
+import { installCommandCenterEditor } from "../../../../../extensions/agents/fleet/command-center/editor.js";
+import { createHarness } from "../../../../test-harness.js";
 
 beforeEach(() => {
   agentLiveStore.reset();
@@ -52,7 +52,7 @@ it("counts unique executions, not mirrors or worktrees, and keeps replaced round
   agent("second", "/two/project");
   const rows = commandCenterRows();
   expect(rows.filter((r) => r.kind === "agent")).toHaveLength(3);
-  expect(rows.find((r) => r.key === "project:/one/project")?.text).toContain("2 sessions · 1 active · 1 inactive");
+  expect(rows.find((r) => r.key === "project:/one/project")?.text).toContain("2 sessions · 1 open · 1 closed");
   expect([...activityStore.agents.values()].find((a) => a.execution === old)?.current).toBe(false);
 });
 it("always expands authoritative nested workflows and isolates concurrent identical script paths", () => {
@@ -115,7 +115,8 @@ it("renders compact normal-case details, launch prompt and quiet selection; Esca
   expect(output).toContain("Launch prompt");
   expect(output).toContain("Validate build");
   expect(output).not.toContain("Task Details");
-  expect(output).not.toContain("\x1b[48;");
+  expect(output).toContain("\x1b[48;");
+  expect(output).not.toContain("\x1b[1m");
   center.handleInput("\x1b");
   center.handleInput("\x7f");
   expect(dismiss).toHaveBeenCalledTimes(2);
@@ -158,7 +159,7 @@ it("editor-local left hook preserves nonempty/multiline/modifier/completion/past
 
 it("narrow screens expose details via Tab and empty fillers never appear selected", () => {
   const empty = new AgentsCommandCenter(() => 20, vi.fn(), vi.fn(), vi.fn());
-  expect(empty.render(80).join("\n")).not.toContain("▧");
+  expect(empty.render(80).join("\n")).not.toContain("▸");
   agent("a");
   const center = new AgentsCommandCenter(() => 24, vi.fn(), vi.fn(), vi.fn());
   center.render(50);
@@ -211,7 +212,7 @@ it("working agents precede retained idle sessions when the strip is capped", () 
   );
   expect(renderActivityStrip(100)[0]).not.toContain("idle");
 });
-it("matches the accepted hierarchy palette, semantic status column and compact detail preview", () => {
+it("matches the accepted hierarchy palette, semantic status column and complete last message", () => {
   activityStore.workflow({
     runId: "w",
     projectRoot: "/project",
@@ -232,11 +233,14 @@ it("matches the accepted hierarchy palette, semantic status column and compact d
   expect(output).toContain("Status");
   expect(output).toContain("workflows/check.mjs");
   expect(output).toContain("└─");
-  expect(output).toContain("\x1b[38;5;84mworking");
+  expect(output).toContain("\x1b[38;5;84mrunning");
   expect(output).toContain("\x1b[38;5;141m");
   expect(output).toContain("\x1b[38;5;147mModel:");
-  expect(output).toContain("Launch prompt");
-  expect(output).not.toContain("\x1b[48;");
+  expect(output).toContain("Last message");
+  center.scrollDetailsBy(Number.MAX_SAFE_INTEGER);
+  expect(center.render(116).join("\n")).toContain("Launch prompt");
+  expect(output).toContain("\x1b[48;");
+  expect(output).not.toContain("\x1b[1m");
   for (const width of [50, 80, 116])
     for (const line of center.render(width)) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 });
@@ -291,11 +295,11 @@ it("keeps ordinary workflow details compact and exposes full paths only on expli
     status: "running",
   });
   const center = new AgentsCommandCenter(() => 24, vi.fn(), vi.fn(), vi.fn(), activityStore, "workflow:w");
-  expect(center.render(80).join("\n")).not.toContain("Full source path");
+  expect(center.render(220).join("\n")).not.toContain("/very/long/cloud/project/workflows/build.mjs");
   center.handleInput("p");
-  expect(center.render(80).join("\n")).toContain("Full source path");
+  expect(center.render(220).join("\n")).toContain("/very/long/cloud/project/workflows/build.mjs");
   center.handleInput("p");
-  expect(center.render(80).join("\n")).not.toContain("Full source path");
+  expect(center.render(220).join("\n")).not.toContain("/very/long/cloud/project/workflows/build.mjs");
 });
 
 it("projects a handoff into an old-shaped v1 singleton without requiring a new instance method", () => {
@@ -329,10 +333,10 @@ it("distinguishes execution totals, retained active sessions and observed runnin
   const output = center.render(120).join("\n");
   expect(output).toContain("Executions 2");
   expect(output).toContain("Known sessions 1");
-  expect(output).toContain("Active 1");
-  expect(output).toContain("active includes idle");
+  expect(output).toContain("Open 1");
+  expect(output).not.toContain("active includes idle");
   expect(output).toContain("Running 1");
-  expect(output).toContain("Inactive 0");
+  expect(output).toContain("Closed 0");
 });
 it("shows last declared workflow phase after termination, not a fabricated current phase", () => {
   activityStore.workflow({
@@ -343,6 +347,7 @@ it("shows last declared workflow phase after termination, not a fabricated curre
     phase: "Validate",
   });
   const center = new AgentsCommandCenter(() => 24, vi.fn(), vi.fn(), vi.fn(), activityStore, "workflow:w");
+  center.handleInput("\t");
   expect(center.render(100).join("\n")).toContain("Last phase");
   expect(center.render(100).join("\n")).toContain("Validate");
 });
@@ -385,7 +390,10 @@ it("normalizes native zero-viewport page deltas to a useful detail step without 
   native.scrollDetailsBy(0);
   expect(native.render(80)).toEqual(frame);
   native.scrollDetailsBy(-1);
-  expect(native.render(80)).toEqual(make().render(80));
+  const baseline = make();
+  baseline.render(80);
+  baseline.handleInput("\t");
+  expect(native.render(80)).toEqual(baseline.render(80));
 });
 
 it("counts only confirmed sessions, deduplicates rounds and ORs current active evidence", () => {
@@ -422,6 +430,6 @@ it.each([50, 80, 134])("keeps session and execution metrics readable at width %i
   const lines = center.render(width);
   expect(lines).toHaveLength(24);
   expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
-  expect(lines[1]).toContain("Known sessions 1 · Active 1 · Inactive 0");
-  expect(lines[2]).toContain("Executions 2 · Running 1 · active includes idle");
+  expect(lines[1]).toContain("Known sessions 1 · Open 1 · Closed 0");
+  expect(lines[2]).toContain("Executions 2 · Running 1");
 });

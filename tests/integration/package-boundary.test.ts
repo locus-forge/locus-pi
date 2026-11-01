@@ -328,6 +328,7 @@ describe("npm public package boundary", () => {
   });
 
   it("keeps the package allowlist directory-owned and compact", () => {
+    const packedPaths = dryRun.files.map((file) => file.path);
     expect(pkg.files).toEqual([
       "dist/public-catalogs.json",
       "docs/",
@@ -338,9 +339,9 @@ describe("npm public package boundary", () => {
       "schemas/extension-manifest.schema.json",
       "skills/",
     ]);
-    // Model-role file persistence and selector options remain inside the existing extension allowlist.
-    expect(dryRun.files).toHaveLength(293);
+    expect(dryRun.files).toHaveLength(294);
     for (const filename of [
+      ...["center", "editor", "model"].map((name) => `extensions/agents/fleet/command-center/${name}.ts`),
       "extensions/_shared/model/model-role-config.ts",
       "extensions/model/selector/options.ts",
       "extensions/workflows/catalog/workflow-action-prompt.ts",
@@ -355,10 +356,9 @@ describe("npm public package boundary", () => {
       ),
       ...["budget", "scheduler", "state"].map((name) => `extensions/_shared/runtime/execution-${name}.ts`),
     ])
-      expect(dryRun.files.map((file) => file.path)).toContain(filename);
-    expect(dryRun.files.map((file) => file.path)).not.toContain(
-      "extensions/workflows/runtime/location-state/workflow-bound-directory.ts",
-    );
+      expect(packedPaths).toContain(filename);
+    expect(packedPaths).not.toContain("extensions/workflows/runtime/location-state/workflow-bound-directory.ts");
+    expect(packedPaths.some((file) => /\/fleet\/command-center(?:-editor)?\.ts$/.test(file))).toBe(false);
   });
 
   it("ships every prompt resource a curated workflow renders", () => {

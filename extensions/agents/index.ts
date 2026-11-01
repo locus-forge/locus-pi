@@ -1,6 +1,6 @@
 import { loadActivityLimit } from "./fleet/activity-settings.js";
 import { activityStore } from "../_shared/agent-runtime/activity-store.js";
-import { installCommandCenterEditor } from "./fleet/command-center-editor.js";
+import { installCommandCenterEditor } from "./fleet/command-center/editor.js";
 import { shutdownAgentCommands } from "./run/run-launcher.js";
 import { AgentScreenController } from "./fleet/agent-screen-controller.js";
 /**

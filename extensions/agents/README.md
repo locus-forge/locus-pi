@@ -52,7 +52,9 @@ Standalone task defaults and workflow constraints are listed together in the
 - Parallel or multi-stage orchestration belongs to the workflow runtime, not one `spawn_agent` call.
 - Interactive `spawn_agent` defaults to `background: true`: it returns a **queued** handle immediately, without entering the agent. `agent_status({handle})` checks without waiting; `wait: true` explicitly joins the assignment and collects its bounded result. Handles belong to the launching session and never resume work. `background: false` and the headless default preserve awaited final-text behavior; workflow DSL calls keep their existing awaited contract. `/agent run` is also nonblocking. A one-line started event appears only after observed SDK dispatch, not on a queued/refused launch.
 - **Left** with a wholly empty focused editor opens **Agents Command Center** fullscreen; `/ps` and Shift+Down are compatibility entry points. Nonempty/multiline input, autocomplete and bracketed paste retain their normal behavior. Unknown third-party editor capabilities fail closed to `/ps`. The main renderer is stopped, never painted under a child overlay.
-- The center groups full project identities, always-expanded `.mjs` workflow runs (including nested workflow provenance), and leaf agents with descriptions. Known sessions count distinct confirmed SDK child-session IDs within each launch project, across retained snapshots; repeated execution rounds in the same session count once. Queued/refused attempts without a session ID count only under Executions. Active sessions include retained idle sessions; Inactive is the remaining known sessions. Running separately counts current observed `working` executions. Workflow/group mirrors are excluded; cwd/worktrees do not change the launch project identity. These are bounded known-child counts, not all-time or main-session totals. Project counts and path suffixes remain visible in compact terminals. Right Agent Details shows execution-backed model/reasoning/cwd, activity, last message and the author’s original launch prompt, never the generated execution capsule. At narrow widths Tab switches tree/details. Arrow keys select, Enter opens an existing agent, Escape/Backspace returns to the prior view. PgUp/PgDn scroll details. Stable selection never silently jumps to another execution after pruning.
+- The center groups runs and agents by the nearest repository when a `.git` directory or worktree marker exists; otherwise it uses the original launch directory. Repository discovery is a display hint captured while this center is open. It changes no launch identity, cwd, ownership, session key or count. Selectable `Project:` rows show repository and launch directories; workflow/agent cards distinguish repository, launch directory, actual working directory, source and run ID. Compact paths retain their beginning and ending; `P` expands the same fields in place, and the footer shows `Paths: short/full`.
+- Known sessions count distinct confirmed SDK child-session IDs within each original launch project, across retained snapshots; repeated execution rounds in the same session count once. Queued/refused attempts without a session ID count only under Executions. **Open** includes retained idle sessions; **Closed** is the remaining known sessions. **Running** separately counts observed working executions. Workflow/group mirrors are excluded. These are bounded known-child counts, not all-time or main-session totals. The center displays the same `running` label for active workflows and agents; runtime/journal states remain unchanged.
+- A soft full-row background and a stable marker show selection without bold text. `Tab` switches the visibly marked tree/details focus at every width; narrow terminals show the focused pane. Up/Down select rows in the tree and scroll in details. Right enters details; Left returns to the tree, then back to the prior screen. Enter opens an agent session or focuses project/workflow details. Escape/Backspace returns to the prior view. PgUp/PgDn scroll details by a viewport, and the footer shows the visible detail line range. Selection stays attached to the same execution after insertion or pruning.
 - Recent history is bounded to 200 child-execution snapshots and 100 terminal workflow runs in this Pi process, not a cross-restart disk session browser. Replaced/removed executions open read-only snapshots without implicit resume. Nested workflows are display provenance, not agent ownership or new lifecycle nesting support.
 - In the modern TUI, legacy passive fleet/phase/earlier-run progress panels are suppressed: conversation and composer remain primary. A failure or operator handoff keeps a short actionable notice; full evidence stays in the center and workflow commands.
 - The unified logical activity strip is **below** the violet status line in main and child views. It shows four items by default, workflows representing their active descendants once; retained/orphan active children remain visible when their workflow no longer represents them. Overflow is explicit. `/agent settings activityStrip.maxItems 2` persists the project preference in `.pi/agents-ui.json`, preserving unrelated fields and refusing concurrent/invalid writes. The terminal owns font size; rows use one-cell line height, one blank project separator and quiet violet selection rather than a saturated bar.
@@ -179,14 +181,23 @@ The alternative editor-container viewer was rejected because the host still rend
 
 ### Command Center visual hierarchy
 
-The center uses the accepted compact layout: violet project and section headings,
-lavender metadata, tree connectors, a dedicated status column, and a muted violet
-selection marker without a saturated background. Running, waiting, inactive and
-failed states keep textual labels as well as semantic colors. Narrow terminals
-retain the Tab details view. Terminal font sizing remains a terminal setting.
-Long last-message content has a short preview above the launch prompt; the full
-message remains available by scrolling details. Press `P` in the center to expand
-full source/project/working paths; the default details keep paths on one line.
+The center uses lavender metadata, tree connectors and a dedicated status column.
+Selection uses the theme's subdued user-message background (a quiet dark fallback
+when no theme is available) and a stable marker, without bold text. Textual status
+labels accompany semantic colors. Project rows remain identifiable by name rather
+than losing the repository prefix to a long absolute path. Repository grouping is
+presentation only; the selected card retains the original launch directory.
+
+The right card keeps identity, paths, diagnostics and the complete last message
+before the launch prompt; it never places the rest of a result behind its input. `P` expands the existing source/repository/launch/working fields in
+place; path mode and panel focus remain visible in the footer. Full paths wrap in
+details. `Tab` switches focus at wide and narrow sizes; arrows scroll details only
+while that pane is focused. Two panes appear only when each has at least 56
+columns; otherwise the focused pane uses the full width. The adaptive key hint
+keeps Enter, Escape, Tab and P visible in compact terminals. Enter names its
+contextual action: session, history or details. Terminal font sizing remains a terminal setting.
+The path shortcut also accepts `З`, the same physical key on a Russian keyboard;
+the footer labels it `P/З` so changing the input language is unnecessary.
 
 An answered operator handoff retains its historical `awaiting_operator` run
 outcome but projects its current claim as continuing, answered or retryable.
