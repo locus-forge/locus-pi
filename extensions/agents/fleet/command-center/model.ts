@@ -3,6 +3,7 @@ import { readFileSync, statSync } from "node:fs";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import {
   activityStore,
+  agentActivityLabel,
   type ActivityStore,
   type AgentActivity,
   type WorkflowActivity,
@@ -62,17 +63,6 @@ export const clean = (text: string) =>
   redactSecrets(text)
     .text.replace(/\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|$))/g, "")
     .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
-export function agentActivityLabel(agent: AgentActivity): string {
-  return !agent.current
-    ? "inactive · history"
-    : agent.active && agent.row.status === "done"
-      ? "idle"
-      : agent.row.status === "working"
-        ? "running"
-        : agent.row.status === "error"
-          ? "failed"
-          : agent.row.status;
-}
 export function workflowActivityLabel(run: WorkflowActivity): string {
   if (run.status !== "awaiting_operator") return run.status;
   return run.handoffState === "resolved" ? "answered" : run.handoffState === "running" ? "continuing" : "needs input";

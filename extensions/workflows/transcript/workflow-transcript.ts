@@ -15,6 +15,7 @@ import { notifyOperator } from "../../_shared/operator/operator-notify.js";
 import { type WorkflowTranscriptAnnouncement, type WorkflowTranscriptCompletion } from "../command/receipts.js";
 import {
   workflowCompletionPresentation,
+  workflowResultNavigation,
   workflowInputPresentation,
   firstTranscriptLine,
   compactTranscriptText,
@@ -215,18 +216,14 @@ export function createWorkflowTranscript(
       if (res.workspaceDir !== undefined && res.workspaceDir !== "") {
         fileLines.push(firstTranscriptLine(`workspace: ${res.workspaceDir}`));
       }
-      if (res.resultTextPath !== undefined && res.resultTextPath !== "") {
-        fileLines.push(firstTranscriptLine(`full result: ${res.resultTextPath}`));
-        commandLines.push(firstTranscriptLine(`read full result: /workflows result ${shortWorkflowRunId(res.runId)}`));
-      } else if (disposition.status !== "completed") {
-        // A run that ended badly and produced NO prose result — a script that
-        // returned a structured `{ok:false}` is the common case — used to leave
-        // the operator with a 160-character sentence fragment and a journal path.
-        // The reason it failed is in the structured result, so this names the one
-        // command that prints it. `/workflows result` deliberately refuses a
-        // non-prose result, so pointing there would send them to a dead end.
-        commandLines.push(firstTranscriptLine(`read full reason: /workflows status ${shortWorkflowRunId(res.runId)}`));
-      }
+      const navigation = workflowResultNavigation(
+        res.runId,
+        disposition.status,
+        res.resultTextPath,
+        res.resultPersistence,
+      );
+      if (navigation.fileLine !== undefined) fileLines.push(firstTranscriptLine(navigation.fileLine));
+      commandLines.push(firstTranscriptLine(navigation.commandLine));
       const transcriptDirectory = workflowAgentTranscriptDirectory(res.journal);
       if (transcriptDirectory !== undefined) {
         fileLines.push(firstTranscriptLine(`agent transcripts: ${transcriptDirectory}`));

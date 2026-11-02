@@ -6,6 +6,13 @@ User-visible changes to the public package.
 
 ### Fixed
 
+- Child agent conversations use Pi's native built-in tool presentation and
+  respect the configured tool-output expansion key in current sessions and
+  history. Activity labels now agree across the strip, Command Center and
+  child session; idle details distinguish completion of a turn from task
+  acceptance. Workflow completion cards identify persisted result records and
+  run inspection, and avoid a dead text-result command after a late canonical
+  record write failure.
 - Agents Command Center now uses consistent execution labels and open/closed
   session counts, makes projects selectable, and distinguishes repository,
   launch and working directories. Selection uses a quiet full-row background
