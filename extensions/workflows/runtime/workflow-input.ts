@@ -56,13 +56,21 @@ export async function prepareWorkflowTypedInput(
 ): Promise<WorkflowTypedInput | undefined> {
   const typed = Object.hasOwn(fields, "inputValue");
   if (!typed && inputSchema === undefined) return undefined;
-  if (!typed || inputSchema === undefined)
-    throw new Error("typed input requires explicit inputValue and meta.inputSchema");
+  if (!typed || inputSchema === undefined) {
+    const hint = typed ? "" : "; use inputValue matching meta.inputSchema; legacy input cannot launch a typed workflow";
+    throw new Error(`typed input requires explicit inputValue and meta.inputSchema${hint}`);
+  }
   const value = immutableJSON(fields.inputValue);
   const contract = normalizeWorkflowStructuredContract(inputSchema);
   const schema = contract.schema;
   const invalid = validateWorkflowProposal(value, await compileWorkflowSchema(contract));
-  if (invalid !== undefined) throw new Error(`typed input does not satisfy inputSchema: ${invalid}`);
+  if (invalid !== undefined) {
+    const hint =
+      typeof value === "string" && (schema.type === "object" || schema.type === "array")
+        ? `; received inputValue as a string. Pass a native JSON ${schema.type} directly, without JSON.stringify or extra quoting.`
+        : "";
+    throw new Error(`typed input does not satisfy inputSchema: ${invalid}${hint}`);
+  }
   return Object.freeze({
     value,
     schema,

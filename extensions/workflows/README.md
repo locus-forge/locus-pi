@@ -41,6 +41,32 @@ The `workflow` tool is the structured execution surface for agents. It supports 
 
 Create-only returns checked source and a command without execution. Authorized create-and-run continues through the run skill. `task/plan` writes the caller-assigned workflow.mjs in one author call, then performs at most three reviews and two revisions. `task/plan-light` grows the same exact file through at most six complete graph-node slices with mechanical and design gates. Every relevant stage receives the whole input with identical source, draft, design, report and log destinations. Source bytes never travel in model answers. Agents save files through ordinary tools; no DSL publication is required. Before launch the consumer reopens the assigned regular nonempty source, confirms successful review covers the current source and repeats current Node/source checks. Source or evidence changes require review of the affected scope against the design and Task; no stored source digest is required for this handoff. Completion never attests file delivery. See [authoring](../../docs/workflows/authoring.md).
 
+## Typed input launch errors
+
+Supply `inputValue` as the native JSON value required by `meta.inputSchema`.
+For an object schema with a `reviewMode` property, the tool arguments can be:
+
+```json
+{ "name": "typed-review", "inputValue": { "reviewMode": "adaptive" } }
+```
+
+Applying `JSON.stringify` to that inner object makes `inputValue` a string. When
+the schema requires an object or array, admission rejects the string and explains
+how to pass the native value. JSON-looking strings remain exact when the schema
+accepts strings. Legacy `input` cannot launch a workflow that declares
+`meta.inputSchema`; the error directs the caller to `inputValue`.
+
+In Pi's command editor, put all options before `--input-json` and use raw JSON:
+
+```text
+/workflows run typed-review --input-json {"reviewMode":"adaptive"}
+```
+
+Outer single quotes are literal command text, so `'{"reviewMode":"adaptive"}'`
+is invalid JSON. The parse error asks the caller to remove those quotes; it does
+not strip them or reinterpret valid JSON strings. A saved root uses just its
+name (`typed-review`); `typed-review/child` selects a separate child entry.
+
 ## Evidence and workspaces
 
 - Open `.locus-pi/runs/<storageRootRunId>/README.md`: it is the shared folder for the first launch, child executions, and resume attempts. The first launch stores `outputs/` and `runtime/` directly there; children live in `children/<runId>/`, and resume attempts in `attempts/<runId>/`.
