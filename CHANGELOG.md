@@ -6,6 +6,9 @@ User-visible changes to the public package.
 
 ### Fixed
 
+- Agents Command Center shows running duration and result age beside each status,
+  refreshing once per second while visible. Follow-up prompts use a fresh activity
+  interval without resetting budgets; missing timestamps remain explicit.
 - Child agent conversations use Pi's native built-in tool presentation and
   respect the configured tool-output expansion key in current sessions and
   history. Activity labels now agree across the strip, Command Center and
