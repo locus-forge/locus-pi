@@ -24,22 +24,31 @@ export function retainAgentSession(
     async (text) => {
       if (exited || unavailable || pending !== undefined) throw new Error("Agent is busy or exited.");
       controller = new AbortController();
-      agentLiveStore.patchExecution(execution, { status: "working" });
+      const startedAt = Date.now();
+      agentLiveStore.patchExecution(execution, { status: "working", startedAt, elapsedMs: undefined });
       pending = (async () => {
         try {
           await run(text, controller!.signal);
           if (!exited)
             agentLiveStore.patchExecution(execution, {
               status: controller!.signal.aborted ? "cancelled" : "done",
+              elapsedMs: Math.max(0, Date.now() - startedAt),
               ...(session.getLastAssistantText() === undefined ? {} : { finalAnswer: session.getLastAssistantText()! }),
             });
         } catch (error) {
           if (error instanceof AgentSessionUnsettledError) unavailable = true;
-          if (!exited) agentLiveStore.patchExecution(execution, { status: "error", errors: [String(error)] });
+          if (!exited)
+            agentLiveStore.patchExecution(execution, {
+              status: "error",
+              errors: [String(error)],
+              elapsedMs: Math.max(0, Date.now() - startedAt),
+            });
           throw error;
         } finally {
           pending = undefined;
           controller = undefined;
+          // Input readiness changes after the terminal status; refresh its display projection.
+          if (!exited) agentLiveStore.patchExecution(execution, {});
         }
       })();
       await pending;

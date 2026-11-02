@@ -15,6 +15,7 @@ import {
   workflowActivityLabel,
   commandCenterCounts,
   commandCenterRows,
+  commandCenterTime,
   type CenterRow,
   type ProjectContexts,
 } from "./model.js";
@@ -45,6 +46,7 @@ export class AgentsCommandCenter implements Component {
   #notice = "";
   #focus: "tree" | "details" = "tree";
   #fullPaths = false;
+  #clock: ReturnType<typeof setInterval> | undefined;
   readonly #projects: ProjectContexts = new Map();
   constructor(
     private readonly height: () => number,
@@ -58,6 +60,14 @@ export class AgentsCommandCenter implements Component {
     this.#selected = selected;
   }
   invalidate(): void {}
+  start(): void {
+    this.#clock ??= setInterval(() => this.repaint(), 1000);
+    this.#clock.unref?.();
+  }
+  dispose(): void {
+    clearInterval(this.#clock);
+    this.#clock = undefined;
+  }
   get selectedKey(): string | undefined {
     return this.#selected;
   }
@@ -106,6 +116,7 @@ export class AgentsCommandCenter implements Component {
     this.repaint();
   }
   render(width: number): string[] {
+    const now = Date.now();
     const safeWidth = Math.max(1, width),
       height = Math.max(5, this.height());
     const rows = commandCenterRows(this.store, this.#projects);
@@ -125,8 +136,9 @@ export class AgentsCommandCenter implements Component {
     const leftWidth = split ? Math.floor((safeWidth - 3) / 2) : safeWidth;
     const rightWidth = split ? Math.max(1, safeWidth - leftWidth - 3) : safeWidth;
     const statusWidth = leftWidth >= 35 ? 11 : 0;
-    const nameWidth = leftWidth - statusWidth - (statusWidth ? 1 : 0);
-    const details = this.details(selected, rightWidth).flatMap((line) => wrapTextWithAnsi(line, rightWidth));
+    const timeWidth = leftWidth >= 48 ? 12 : 0;
+    const nameWidth = leftWidth - statusWidth - (statusWidth ? 1 : 0) - (timeWidth ? timeWidth + 1 : 0);
+    const details = this.details(selected, rightWidth, now).flatMap((line) => wrapTextWithAnsi(line, rightWidth));
     this.#detailOffset = Math.min(this.#detailOffset, Math.max(0, details.length - contentHeight));
     const counts = commandCenterCounts([...this.store.agents.values()]);
     const detailTitle = selected?.projectPath
@@ -138,7 +150,8 @@ export class AgentsCommandCenter implements Component {
     const detailHeading = (this.#focus === "details" ? "› " : "  ") + detailTitle;
     const treeTitle =
       pad(violet(truncateToWidth(treeHeading, nameWidth)), nameWidth) +
-      (statusWidth ? quiet(pad("Status", statusWidth + 1)) : "");
+      (statusWidth ? quiet(" " + pad("Status", statusWidth)) : "") +
+      (timeWidth ? quiet(" " + pad("Time", timeWidth)) : "");
     const output = [
       truncateToWidth(violet("Agents Command Center"), safeWidth),
       truncateToWidth(
@@ -173,7 +186,11 @@ export class AgentsCommandCenter implements Component {
             : "";
         left =
           pad(quiet(prefix) + (row.projectPath || row.workflow ? quiet(name) : name), nameWidth) +
-          (statusWidth ? " " + statusColor(truncateToWidth(state, statusWidth)) : "");
+          (statusWidth ? " " + pad(statusColor(truncateToWidth(state, statusWidth)), statusWidth) : "") +
+          (timeWidth
+            ? " " +
+              quiet(pad(truncateToWidth(row.projectPath ? "" : commandCenterTime(row, now), timeWidth), timeWidth))
+            : "");
         left = pad(truncateToWidth(left, leftWidth), leftWidth);
         if (selectedRow) left = this.theme?.bg?.("userMessageBg", left) ?? `\x1b[48;2;38;34;48m${left}\x1b[49m`;
       } else if (!rows.length && i === 0) left = quiet("No agent sessions or workflows yet.");
@@ -208,7 +225,7 @@ export class AgentsCommandCenter implements Component {
     );
     return output;
   }
-  private details(row: CenterRow | undefined, width: number): string[] {
+  private details(row: CenterRow | undefined, width: number, now: number): string[] {
     const field = (name: string, value: string) => quiet(name + ": ") + clean(value);
     const showPath = (value: string, launchRoot: string) =>
       clean(this.#fullPaths ? value : contextPath(value, launchRoot, Math.max(8, width - 18), this.#projects));
@@ -250,6 +267,7 @@ export class AgentsCommandCenter implements Component {
         clean(`${a.row.displayName ?? a.row.agentName ?? "Agent"} — ${a.row.title ?? a.row.label}`),
         "",
         quiet("Activity: ") + statusColor(agentActivityLabel(a)),
+        field(a.current && a.row.status === "working" ? "Running for" : "Result received", commandCenterTime(row, now)),
         ...(agentActivityLabel(a) === "idle" ? [field("Last turn", "completed")] : []),
         field("Model", a.display.model ?? (a.row.modelConfirmed ? a.row.model : undefined) ?? "unknown"),
         field("Reasoning", a.display.thinking ?? (a.row.modelConfirmed ? a.row.thinking : undefined) ?? "unknown"),
@@ -283,6 +301,7 @@ export class AgentsCommandCenter implements Component {
         compactWorkflowPath(row.workflow.sourcePath, row.workflow.projectRoot, width),
         "",
         quiet("Activity: ") + statusColor(workflowActivityLabel(row.workflow)),
+        field(row.workflow.status === "running" ? "Running for" : "Result received", commandCenterTime(row, now)),
         ...(row.workflow.phase
           ? [field(row.workflow.status === "running" ? "Phase" : "Last phase", row.workflow.phase)]
           : []),

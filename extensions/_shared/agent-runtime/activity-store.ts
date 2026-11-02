@@ -14,6 +14,8 @@ export interface WorkflowActivity {
   /** Current handoff authority; historical run status is never rewritten. */
   handoffState?: "pending" | "running" | "resolved" | "retryable";
   status: "running" | "completed" | "failed" | "cancelled" | "awaiting_operator";
+  startedAt?: number;
+  finishedAt?: number;
 }
 export interface AgentActivity {
   key: string;
@@ -86,10 +88,6 @@ export class ActivityStore {
     for (const run of inactive.slice(0, Math.max(0, inactive.length - 100))) this.workflows.delete(run.runId);
     this.emitter.emit("change");
   }
-  settleWorkflow(runId: string, status: WorkflowActivity["status"]): void {
-    const run = this.workflows.get(runId);
-    if (run !== undefined) this.workflow({ ...run, status });
-  }
   setMaxItems(value: number): void {
     if (!Number.isInteger(value) || value < 1 || value > 20)
       throw new Error("activityStrip.maxItems must be an integer from 1 to 20");
@@ -100,6 +98,22 @@ export class ActivityStore {
 const KEY = Symbol.for("locus-pi.activity-store.v1");
 const globalStore = globalThis as unknown as Record<symbol, ActivityStore | undefined>;
 export const activityStore = globalStore[KEY] ?? (globalStore[KEY] = new ActivityStore());
+
+/** Publish lifecycle times through the v1 facade, including a store retained across reload. */
+export function startWorkflowActivity(
+  value: Pick<WorkflowActivity, "runId" | "projectRoot" | "sourcePath" | "parentRunId">,
+  store: Pick<ActivityStore, "workflow"> = activityStore,
+): void {
+  store.workflow({ ...value, status: "running", startedAt: Date.now() });
+}
+export function settleWorkflowActivity(
+  runId: string,
+  status: WorkflowActivity["status"],
+  store: Pick<ActivityStore, "workflows" | "workflow"> = activityStore,
+): void {
+  const run = store.workflows.get(runId);
+  if (run !== undefined) store.workflow({ ...run, status, finishedAt: run.finishedAt ?? Date.now() });
+}
 
 /** Stateless projection also works with a v1 store retained across extension reload. */
 export function projectWorkflowActivityHandoff(

@@ -93,7 +93,7 @@ export interface AgentLiveRow extends ModelRouteDisplay {
   startedAt?: number;
   /** First observed SDK event proves dispatch, unlike session allocation. */
   dispatchedAt?: number;
-  elapsedMs?: number;
+  elapsedMs?: number | undefined;
   lastActivityAt?: number;
   /** Launch project identity; unlike currentPath this does not change with worktrees. */
   projectRoot?: string;

@@ -52,6 +52,10 @@ it("projects only each run's ungrouped declared phase and preserves last phase a
     expect(snapshot.strip).toContain("Root prepare");
   }
   expect(activityStore.workflows.get(rootId)).toMatchObject({ phase: "Root prepare", status: "completed" });
+  const timing = activityStore.workflows.get(rootId)!;
+  expect(timing.startedAt).toEqual(expect.any(Number));
+  expect(timing.finishedAt).toEqual(expect.any(Number));
+  expect(timing.finishedAt!).toBeGreaterThanOrEqual(timing.startedAt!);
   expect([...activityStore.workflows.values()].find((run) => run.parentRunId === rootId)?.phase).toBe("Child phase");
 });
 it("supports no observer, absent phases and old-shaped reload stores without inferred defaults", async () => {

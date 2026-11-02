@@ -1,5 +1,6 @@
 import {
-  activityStore,
+  startWorkflowActivity,
+  settleWorkflowActivity,
   projectWorkflowActivityHandoff,
   projectWorkflowActivityPhase,
 } from "../../_shared/agent-runtime/activity-store.js";
@@ -550,7 +551,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
 
   const finishRun: typeof finalizeRun = (fields) => {
     const result = finalizeRun(fields);
-    activityStore.settleWorkflow(runId, result.disposition?.status ?? (result.ok ? "completed" : "failed"));
+    settleWorkflowActivity(runId, result.disposition?.status ?? (result.ok ? "completed" : "failed"));
     if (opts.operatorHandoffClaim !== undefined) {
       // Use the persisted claim/result owner, not the continuation's optimistic outcome.
       try {
@@ -784,11 +785,10 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   }
   if (opts.signal.aborted) return failExecution("Workflow launch cancelled before execution.");
 
-  activityStore.workflow({
+  startWorkflowActivity({
     runId,
     projectRoot,
     sourcePath: scriptIdentity.sourcePath,
-    status: "running",
     ...(coordination.parentRunId === undefined ? {} : { parentRunId: coordination.parentRunId }),
   });
   if (opts.operatorHandoffClaim !== undefined) {

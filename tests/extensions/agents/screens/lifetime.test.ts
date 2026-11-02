@@ -1,13 +1,47 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { agentLiveStore } from "../../../../extensions/_shared/agent-runtime/agent-live-store.js";
 import { retainAgentSession } from "../../../../extensions/_shared/agent-runtime/session/lifetime.js";
+import { formatAgentLiveRowLine } from "../../../../extensions/_shared/agent-runtime/agent-live-panel.js";
+import { activityStore, agentActivityLabel } from "../../../../extensions/_shared/agent-runtime/activity-store.js";
 
 afterEach(async () => {
   await agentLiveStore.shutdownAgents();
   agentLiveStore.reset();
+  vi.useRealTimers();
 });
 
 describe("flat agent lifetime", () => {
+  it("starts a fresh activity interval after idle without changing session identity", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    const execution = agentLiveStore.beginExecution({ id: "clock", label: "Clock" });
+    agentLiveStore.patchExecution(execution, { status: "done", startedAt: 1_000, elapsedMs: 10_000 });
+    let finish = () => {};
+    retainAgentSession(execution, { dispose() {}, getLastAssistantText: () => "done" }, async () => {
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const pending = agentLiveStore.sendInputForExecution(execution, "next");
+    expect(agentLiveStore.rowForExecution(execution)).toMatchObject({
+      status: "working",
+      startedAt: 100_000,
+      elapsedMs: undefined,
+    });
+    vi.advanceTimersByTime(2_000);
+    expect(formatAgentLiveRowLine(agentLiveStore.rowForExecution(execution)!)).toContain("2s");
+    finish();
+    await pending;
+    expect(agentLiveStore.rowForExecution(execution)).toMatchObject({
+      status: "done",
+      startedAt: 100_000,
+      elapsedMs: 2_000,
+    });
+    expect(agentLiveStore.captureExecutionAuthority("clock")).toBe(execution);
+    const activity = [...activityStore.agents.values()].find((entry) => entry.execution === execution)!;
+    expect(activity.active).toBe(true);
+    expect(agentActivityLabel(activity)).toBe("idle");
+  });
   it("keeps the same execution through repeated idle turns and disposes only on exit", async () => {
     const execution = agentLiveStore.beginExecution({ id: "a", label: "A" });
     const session = { dispose: vi.fn(), getLastAssistantText: () => "answer" };

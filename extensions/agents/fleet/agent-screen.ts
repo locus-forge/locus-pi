@@ -61,6 +61,7 @@ export class AgentScreen {
   }
 
   async select(id: string): Promise<void> {
+    this.#center?.dispose();
     ++this.#generation;
     if (id === "main") {
       this.returnMain();
@@ -166,17 +167,20 @@ export class AgentScreen {
   }
 
   suspend(): void {
+    this.#center?.dispose();
     this.#active = undefined;
     this.#center = undefined;
     ++this.#generation;
   }
 
   list(notice = ""): void {
+    this.#center?.dispose();
     ++this.#generation;
     activityStore.capture();
     if (notice) this.reportError(notice);
     const prior = this.#active === undefined ? undefined : this.#views.get(this.#active);
     const dismiss = () => {
+      this.#center?.dispose();
       this.#center = undefined;
       if (prior === undefined) this.returnMain();
       else {
@@ -199,12 +203,14 @@ export class AgentScreen {
       this.theme,
     );
     this.tui.setLayoutRoot(this.#center);
+    this.#center.start();
     this.tui.setFocus(this.#center);
     this.tui.requestRender(true);
   }
 
   private history(entry: AgentActivity): void {
     const center = this.#center;
+    center?.dispose();
     const conversation = new NativeAgentConversation(
       () => entry.conversation,
       this.tui,
@@ -220,6 +226,7 @@ export class AgentScreen {
       handleInput: (data) => {
         if (matchesKey(data, "escape") || matchesKey(data, "backspace")) {
           if (center) {
+            center.start();
             this.tui.setLayoutRoot(center);
             this.tui.setFocus(center);
             this.tui.requestRender(true);
@@ -284,6 +291,7 @@ export class AgentScreen {
   dispose(): void {
     if (this.#closed) return;
     this.#closed = true;
+    this.#center?.dispose();
     ++this.#generation;
     this.#unsubscribe();
     this.#views.clear();

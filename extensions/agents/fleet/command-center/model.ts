@@ -9,6 +9,7 @@ import {
   type WorkflowActivity,
 } from "../../../_shared/agent-runtime/activity-store.js";
 import { redactSecrets } from "../../../_shared/host/redaction.js";
+import { formatDuration } from "../../../_shared/agent-runtime/agent-live-panel.js";
 
 export interface CenterRow {
   key: string;
@@ -22,6 +23,27 @@ export interface CenterRow {
   counts?: string;
   depth?: number;
   branch?: string;
+}
+/** Running duration and terminal result age have different anchors; missing evidence stays unknown. */
+export function commandCenterTime(row: CenterRow, now: number): string {
+  const agent = row.agent;
+  const running = agent ? agent.current && agent.row.status === "working" : row.workflow?.status === "running";
+  const startedAt = agent?.row.startedAt ?? row.workflow?.startedAt;
+  const elapsedMs = agent?.row.elapsedMs;
+  const finishedAt = agent
+    ? agent.row.status !== "queued" &&
+      agent.row.status !== "working" &&
+      startedAt !== undefined &&
+      Number.isFinite(startedAt) &&
+      startedAt >= 0 &&
+      elapsedMs !== undefined &&
+      elapsedMs >= 0
+      ? startedAt + elapsedMs
+      : undefined
+    : row.workflow?.finishedAt;
+  const anchor = running ? startedAt : finishedAt;
+  if (anchor === undefined || !Number.isFinite(anchor) || anchor < 0 || !Number.isFinite(now)) return "—";
+  return formatDuration(Math.max(0, now - anchor)) + (running ? "" : " ago");
 }
 /** Presentation only: identity/selection always use canonical run/session keys. */
 export function compactWorkflowPath(value: string, project: string, width: number): string {
