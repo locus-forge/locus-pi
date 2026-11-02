@@ -1,6 +1,11 @@
 import { guardCommandCenterInput } from "./command-center/editor.js";
 import { AgentsCommandCenter } from "./command-center/center.js";
-import { activityStore, renderActivityStrip, type AgentActivity } from "../../_shared/agent-runtime/activity-store.js";
+import {
+  activityStore,
+  agentActivityLabel,
+  renderActivityStrip,
+  type AgentActivity,
+} from "../../_shared/agent-runtime/activity-store.js";
 import {
   renderStatusLines,
   paintStatusLines,
@@ -11,6 +16,7 @@ import type { ThemeLike } from "../../_shared/host/render-profile.js";
 import { NativeAgentConversation } from "./native-conversation.js";
 import {
   matchesKey,
+  getKeybindings,
   Editor,
   ScrollView,
   VStack,
@@ -97,6 +103,15 @@ export class AgentScreen {
         invalidate() {},
         render: (width) => {
           const current = agentLiveStore.rowForExecution(execution);
+          const activity =
+            [...activityStore.agents.values()].find((entry) => entry.execution === execution) ??
+            (current === undefined
+              ? undefined
+              : {
+                  row: current,
+                  current: true,
+                  active: agentLiveStore.canSendInputForExecution(execution),
+                });
           const display = agentLiveStore.sessionDisplay(execution);
           return paintStatusLines(
             renderStatusLines(
@@ -104,7 +119,7 @@ export class AgentScreen {
                 cwd: formatStatusCwd(display.cwd ?? "cwd:?"),
                 model: display.model ?? "model:?",
                 effort: display.thinking ?? "effort:?",
-                controls: `sub-agent ${current?.displayName ?? id} · ${current?.status ?? "exited"} · Esc main · ← agents`,
+                controls: `sub-agent ${current?.displayName ?? id} · ${activity ? agentActivityLabel(activity) : "exited"} · Esc main · ← agents`,
                 contextTokens: display.contextTokens ?? null,
                 contextWindow: display.contextWindow ?? 0,
                 contextPercent: display.contextPercent ?? null,
@@ -136,6 +151,7 @@ export class AgentScreen {
       const handleInput = input.handleInput.bind(input);
       input.handleInput = (data) => {
         if (matchesKey(data, "escape")) this.returnMain();
+        else if (getKeybindings().matches(data, "app.tools.expand")) conversation.toggleToolsExpanded();
         else if (matchesKey(data, "ctrl+c")) agentLiveStore.cancel(id);
         else handleInput(data);
       };
@@ -209,6 +225,7 @@ export class AgentScreen {
             this.tui.requestRender(true);
           } else this.returnMain();
         } else if (matchesKey(data, "up")) transcript.scrollBy(-1);
+        else if (getKeybindings().matches(data, "app.tools.expand")) conversation.toggleToolsExpanded();
         else if (matchesKey(data, "down")) transcript.scrollBy(1);
         else if (matchesKey(data, "pageUp")) transcript.scrollBy(-10);
         else if (matchesKey(data, "pageDown")) transcript.scrollBy(10);

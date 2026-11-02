@@ -2,6 +2,7 @@ import path from "node:path";
 import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component } from "@earendil-works/pi-tui";
 import {
   activityStore,
+  agentActivityLabel,
   type ActivityStore,
   type AgentActivity,
 } from "../../../_shared/agent-runtime/activity-store.js";
@@ -11,14 +12,14 @@ import {
   compactWorkflowPath,
   contextPath,
   repositoryRoot,
-  agentActivityLabel,
   workflowActivityLabel,
   commandCenterCounts,
   commandCenterRows,
   type CenterRow,
   type ProjectContexts,
 } from "./model.js";
-export { compactWorkflowPath, agentActivityLabel, commandCenterCounts, commandCenterRows } from "./model.js";
+export { compactWorkflowPath, commandCenterCounts, commandCenterRows } from "./model.js";
+export { agentActivityLabel } from "../../../_shared/agent-runtime/activity-store.js";
 export type { CenterRow } from "./model.js";
 
 const quiet = (text: string) => `\x1b[38;5;147m${text}\x1b[39m`;
@@ -249,6 +250,7 @@ export class AgentsCommandCenter implements Component {
         clean(`${a.row.displayName ?? a.row.agentName ?? "Agent"} — ${a.row.title ?? a.row.label}`),
         "",
         quiet("Activity: ") + statusColor(agentActivityLabel(a)),
+        ...(agentActivityLabel(a) === "idle" ? [field("Last turn", "completed")] : []),
         field("Model", a.display.model ?? (a.row.modelConfirmed ? a.row.model : undefined) ?? "unknown"),
         field("Reasoning", a.display.thinking ?? (a.row.modelConfirmed ? a.row.thinking : undefined) ?? "unknown"),
         "",

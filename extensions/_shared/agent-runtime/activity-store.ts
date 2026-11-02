@@ -24,6 +24,20 @@ export interface AgentActivity {
   current: boolean;
   active: boolean;
 }
+/** Session activity is a display projection, never a rewrite of execution state. */
+export function agentActivityLabel(
+  agent: Pick<AgentActivity, "current" | "active"> & { row: Pick<AgentLiveRow, "status"> },
+): string {
+  return !agent.current
+    ? "inactive · history"
+    : agent.active && agent.row.status === "done"
+      ? "idle"
+      : agent.row.status === "working"
+        ? "running"
+        : agent.row.status === "error"
+          ? "failed"
+          : agent.row.status;
+}
 /** Display evidence only. No cancellation, resume or agent ownership authority. */
 export class ActivityStore {
   readonly emitter = new EventEmitter();
@@ -149,7 +163,7 @@ export function activityStripItems(
       .map((agent) => ({
         key: agent.key,
         rank: agent.row.status === "done" ? 2 : 1,
-        label: `${agent.row.displayName ?? agent.row.agentName ?? "agent"} · ${agent.row.status === "done" ? "idle" : agent.row.status}`,
+        label: `${agent.row.displayName ?? agent.row.agentName ?? "agent"} · ${agentActivityLabel(agent)}`,
       })),
   ].sort((a, b) => a.rank - b.rank);
 }

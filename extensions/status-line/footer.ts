@@ -94,7 +94,7 @@ export function snapshotStatusLine(
     effort: ctx.thinkingLevel ?? "off",
     cwd: formatStatusCwd(cwd),
     ...(branch === null ? {} : { branch }),
-    controls: `${defaultControlHints()} · ← agents (empty)`,
+    controls: `${defaultControlHints()} · ← agents (empty editor)`,
     contextTokens: context?.tokens ?? null,
     contextWindow: context?.contextWindow ?? numericField(ctx.model, "contextWindow") ?? 0,
     contextPercent: context?.percent ?? null,

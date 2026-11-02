@@ -3,17 +3,47 @@ import {
   AssistantMessageComponent,
   UserMessageComponent,
   ToolExecutionComponent,
+  createBashToolDefinition,
+  createReadToolDefinition,
+  createWriteToolDefinition,
+  createEditToolDefinition,
+  createFindToolDefinition,
+  createGrepToolDefinition,
+  createLsToolDefinition,
+  createPowerShellToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 
 /** Render the SDK-owned conversation, not the bounded roster preview. Never writes the session. */
 export class NativeAgentConversation implements Component {
   #components = new Map<string, Component>();
+  #toolsExpanded = false;
+  readonly #tools = new Map<string, NonNullable<ConstructorParameters<typeof ToolExecutionComponent>[4]>>();
   constructor(
     private readonly read: () => readonly unknown[],
     private readonly tui: TUI,
     private readonly cwd: string,
     private readonly initialTask?: () => string | undefined,
-  ) {}
+  ) {
+    // Display definitions only: these tools are never registered or executed by the viewer.
+    for (const definition of [
+      createBashToolDefinition(cwd),
+      createReadToolDefinition(cwd),
+      createWriteToolDefinition(cwd),
+      createEditToolDefinition(cwd),
+      createFindToolDefinition(cwd),
+      createGrepToolDefinition(cwd),
+      createLsToolDefinition(cwd),
+      createPowerShellToolDefinition(cwd),
+    ])
+      this.#tools.set(definition.name, definition);
+  }
+  toggleToolsExpanded(): void {
+    this.#toolsExpanded = !this.#toolsExpanded;
+    for (const component of this.#components.values()) {
+      if (component instanceof ToolExecutionComponent) component.setExpanded(this.#toolsExpanded);
+    }
+    this.tui.requestRender();
+  }
   invalidate(): void {
     for (const component of this.#components.values()) component.invalidate();
   }
@@ -69,10 +99,11 @@ export class NativeAgentConversation implements Component {
               call.id,
               call.arguments,
               { showImages: false },
-              undefined,
+              this.#tools.get(call.name),
               this.tui,
               this.cwd,
             );
+            tool.setExpanded(this.#toolsExpanded);
             this.#components.set(toolKey, tool);
           }
           tool.updateArgs(call.arguments);

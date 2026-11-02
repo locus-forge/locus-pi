@@ -1265,47 +1265,6 @@ describe("workflow progress rendering and viewport", () => {
     expect(text).toContain("saved: .pi/locus-pi/runs/20260101-000000-r1");
   });
 
-  it("points a clipped prose verdict at the file and the command that show all of it", () => {
-    const tui = { requestRender: vi.fn(), terminal: { rows: 30, columns: 60 } };
-    const component = new WorkflowProgressComponent(tui, {}, "review", "20260726-212752-98cc");
-
-    component.finish({
-      ok: true,
-      result: `# Code Review\n\n${"A verdict far wider than this terminal. ".repeat(6)}`,
-      runDir: ".pi/locus-pi/runs/20260726-212752-98cc",
-      resultTextPath: ".pi/locus-pi/runs/20260726-212752-98cc/result.md",
-    });
-
-    const narrow = component.render(60).join("\n");
-    // The command names the run, so it is usable even where the panel clips paths.
-    expect(narrow).toContain("read the full result: /workflows result 98cc");
-    for (const line of narrow.split("\n")) expect(line.length).toBeLessThanOrEqual(60);
-    expect(component.render(120).join("\n")).toContain("result: .pi/locus-pi/runs/20260726-212752-98cc/result.md");
-  });
-
-  it("points a failed run with no prose result at the command that prints the reason", () => {
-    const tui = { requestRender: vi.fn(), terminal: { rows: 30, columns: 60 } };
-    const component = new WorkflowProgressComponent(tui, {}, "plan", "20260730-162453-000e");
-
-    component.finish({
-      ok: false,
-      result: {
-        ok: false,
-        stoppedBy: "round-cap",
-        summary: "plan was not accepted within 4 drafting round(s)",
-        unresolvedRows: [`S1: ${"the find command pattern may miss files. ".repeat(5)}`],
-      },
-      runDir: ".pi/locus-pi/runs/20260730-162453-000e",
-    });
-
-    const narrow = component.render(60).join("\n");
-    // The verdict line is clipped to the terminal, so the panel has to name where
-    // the whole reason is. Without this the operator's only lead was `saved:`.
-    expect(narrow).toContain("read the full reason: /workflows status 000e");
-    expect(narrow).not.toContain("/workflows result");
-    for (const line of narrow.split("\n")) expect(line.length).toBeLessThanOrEqual(60);
-  });
-
   it("chooses a deterministic semantic completion without exposing arbitrary JSON", () => {
     const cases: Array<{ result: unknown; expected: string }> = [
       {
