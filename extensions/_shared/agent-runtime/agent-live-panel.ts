@@ -899,11 +899,14 @@ export function elapsedSinceStart(row: AgentLiveRow): number | undefined {
 }
 
 /**
- * Human-readable elapsed with s → m → h tiers; sub-second is hidden as `<1s`
- * instead of noisy millisecond counts (T-188 W7, fix-candidate #7).
+ * Human-readable elapsed with s → m → h → d tiers; sub-second is hidden as `<1s`
+ * instead of noisy millisecond counts (T-188 W7, fix-candidate #7). From one whole
+ * day the day/hour buckets are floored from the actual milliseconds, so sub-day
+ * second rounding never promotes the last half-second of a day into a day.
  */
 export function formatDuration(ms: number | undefined): string {
   if (ms === undefined) return "";
+  if (ms >= 86_400_000) return formatDaysAndHours(ms);
   if (ms < 1000) return "<1s";
   const totalSeconds = Math.round(ms / 1000);
   if (totalSeconds < 60) return `${totalSeconds}s`;
@@ -924,6 +927,7 @@ export function formatDuration(ms: number | undefined): string {
  */
 export function formatDurationCoarse(ms: number | undefined): string {
   if (ms === undefined) return "";
+  if (ms >= 86_400_000) return formatDaysAndHours(ms);
   const totalSeconds = Math.floor(ms / 1000);
   if (totalSeconds < 10) return "<10s";
   if (totalSeconds < 60) return `${Math.floor(totalSeconds / 10) * 10}s`;
@@ -932,6 +936,13 @@ export function formatDurationCoarse(ms: number | undefined): string {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   return minutes > 0 ? `${hours}h${minutes}m` : `${hours}h`;
+}
+
+/** `1d`, `2d3h`: floored days and whole hours; minutes and seconds never appear. */
+function formatDaysAndHours(ms: number): string {
+  const hours = Math.floor(ms / 3_600_000);
+  const days = Math.floor(hours / 24);
+  return hours % 24 > 0 ? `${days}d${hours % 24}h` : `${days}d`;
 }
 
 export function truncate(value: string, width: number): string {

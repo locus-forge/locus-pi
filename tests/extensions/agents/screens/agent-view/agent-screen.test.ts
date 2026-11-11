@@ -105,6 +105,36 @@ it("fullscreen center dismissal restores the exact child editor draft and layout
   screen.dispose();
 });
 
+it("returns to main from the center's Main conversation row without stopping the child", async () => {
+  let focused: { handleInput?(data: string): void; selectedKey?: string } | undefined;
+  const main = vi.fn();
+  const tui = {
+    terminal: { rows: 24, columns: 160 },
+    requestRender() {},
+    setLayoutRoot() {},
+    setFocus(component: object) {
+      focused = component as typeof focused;
+    },
+  } as unknown as TUI & { setLayoutRoot(component: Component): void };
+  activityStore.agents.clear();
+  activityStore.workflows.clear();
+  const execution = agentLiveStore.beginExecution({ id: "a", label: "A" });
+  agentLiveStore.patchExecution(execution, { status: "working" });
+  const cancel = vi.fn();
+  agentLiveStore.registerCancelForExecution(execution, cancel);
+  const screen = new AgentScreen(tui, main);
+  await screen.select("a");
+  focused!.handleInput!("\x1b[D");
+  expect(focused?.selectedKey).toBeDefined();
+  for (let i = 0; i < 8 && focused!.selectedKey !== "main"; i += 1) focused!.handleInput!("\x1b[A");
+  expect(focused?.selectedKey).toBe("main");
+  focused!.handleInput!("\r");
+  expect(main).toHaveBeenCalledOnce();
+  expect(cancel).not.toHaveBeenCalled();
+  expect(agentLiveStore.rowForExecution(execution)!.status).toBe("working");
+  screen.dispose();
+});
+
 it("opens the center rather than leaving a blank terminal on an unknown initial target", async () => {
   const main = vi.fn();
   const error = vi.fn();

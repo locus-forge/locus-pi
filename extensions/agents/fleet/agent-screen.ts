@@ -188,7 +188,8 @@ export class AgentScreen {
     this.#center = new AgentsCommandCenter(
       () => this.tui.terminal?.rows ?? 24,
       (entry) => {
-        if (entry.current && agentLiveStore.isExecutionAuthorityCurrent(entry.execution)) {
+        if (entry === "main") void this.select("main").catch((error) => this.reportError(String(error)));
+        else if (entry.current && agentLiveStore.isExecutionAuthorityCurrent(entry.execution)) {
           void this.select(entry.row.id).catch((error) => this.reportError(String(error)));
         } else this.history(entry);
       },

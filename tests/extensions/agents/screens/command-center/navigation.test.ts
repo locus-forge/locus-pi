@@ -63,6 +63,43 @@ it.each(["directory", "worktree marker"])("groups nested attempts under their re
   expect(full).toContain(roots[1]);
 });
 
+it("leads with a selectable Main conversation row that returns to main", () => {
+  const execution = begin("one");
+  const dismiss = vi.fn();
+  const choose = vi.fn();
+  const center = new AgentsCommandCenter(() => 24, choose, dismiss, vi.fn());
+  const firstContent = plain([center.render(120)[5]!]);
+  expect(firstContent).toContain("Main conversation");
+  expect(center.selectedKey).not.toBe("main");
+  center.handleInput("\x1b[A");
+  center.handleInput("\x1b[A");
+  expect(center.selectedKey).toBe("main");
+  const frame = plain(center.render(120));
+  expect(frame).toContain("Main Conversation");
+  expect(frame).toContain("Enter main");
+  center.handleInput("\r");
+  expect(choose).toHaveBeenCalledOnce();
+  expect(choose).toHaveBeenCalledWith("main");
+  expect(dismiss).not.toHaveBeenCalled();
+  expect(agentLiveStore.rowForExecution(execution)!.status).toBe("queued");
+});
+
+it("keeps Main conversation selectable in an empty center", () => {
+  const choose = vi.fn();
+  const dismiss = vi.fn();
+  const center = new AgentsCommandCenter(() => 24, choose, dismiss, vi.fn());
+  const frame = plain(center.render(120));
+  expect(center.selectedKey).toBe("main");
+  expect(frame).toContain("▸ Main conversation");
+  expect(frame).toContain("No agent sessions or workflows yet.");
+  expect(frame).toContain("Enter main");
+  expect(frame).not.toContain("Enter details");
+  center.handleInput("\r");
+  expect(choose).toHaveBeenCalledWith("main");
+  expect(dismiss).not.toHaveBeenCalled();
+  expect(plain(center.render(120))).toContain("Focus: tree");
+});
+
 it("keeps unknown/non-Git launch directories distinct and selectable", () => {
   begin("one", "/not-a-git-repository/one");
   begin("two", "/not-a-git-repository/two");
@@ -228,6 +265,7 @@ it.each([40, 50, 60, 70, 114, 115, 173])(
     for (const [selected, action] of [
       ["project:/project", "Enter details"],
       ["workflow:w", "Enter details"],
+      ["main", "Enter main"],
       [key(historical), "Enter history"],
       [key(current), "Enter session"],
     ]) {
@@ -243,7 +281,7 @@ it.each([40, 50, 60, 70, 114, 115, 173])(
 it.each([40, 120])("does not promise opening details without an available selection at width %i", (width) => {
   const empty = new AgentsCommandCenter(() => 24, vi.fn(), vi.fn(), vi.fn());
   const emptyControls = plain([empty.render(width).at(-2)!]);
-  expect(emptyControls).toContain("No selection");
+  expect(emptyControls).toContain("Enter main");
   expect(emptyControls).not.toContain("Enter details");
   begin("one");
   begin("two");

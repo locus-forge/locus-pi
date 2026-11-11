@@ -159,7 +159,9 @@ it("editor-local left hook preserves nonempty/multiline/modifier/completion/past
 
 it("narrow screens expose details via Tab and empty fillers never appear selected", () => {
   const empty = new AgentsCommandCenter(() => 20, vi.fn(), vi.fn(), vi.fn());
-  expect(empty.render(80).join("\n")).not.toContain("▸");
+  const emptyFrame = empty.render(80).join("\n");
+  expect(emptyFrame.match(/▸ /g)).toHaveLength(1);
+  expect(emptyFrame.replace(/\x1b\[[0-9;]*m/g, "")).toContain("▸ Main conversation");
   agent("a");
   const center = new AgentsCommandCenter(() => 24, vi.fn(), vi.fn(), vi.fn());
   center.render(50);

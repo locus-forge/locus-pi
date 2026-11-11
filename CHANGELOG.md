@@ -6,6 +6,11 @@ User-visible changes to the public package.
 
 ### Fixed
 
+- Agents Command Center lists a selectable `Main conversation` row that returns
+  to the main conversation without stopping agents, including when the center is
+  opened from a child view or has no agent sessions. Elapsed times of a day or
+  more now read as floored days and whole hours (`1d`, `2d3h`) instead of hour
+  totals such as `49h3m`.
 - Child agent conversations use Pi's native built-in tool presentation and
   respect the configured tool-output expansion key in current sessions and
   history. Activity labels now agree across the strip, Command Center and
