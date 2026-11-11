@@ -14,7 +14,7 @@ import {
   repositoryRoot,
   workflowActivityLabel,
   commandCenterCounts,
-  commandCenterRows,
+  commandCenterNavigationRows,
   type CenterRow,
   type ProjectContexts,
 } from "./model.js";
@@ -48,7 +48,7 @@ export class AgentsCommandCenter implements Component {
   readonly #projects: ProjectContexts = new Map();
   constructor(
     private readonly height: () => number,
-    private readonly choose: (agent: AgentActivity) => void,
+    private readonly choose: (entry: AgentActivity | "main") => void,
     private readonly dismiss: () => void,
     private readonly repaint: () => void,
     private readonly store: ActivityStore = activityStore,
@@ -91,15 +91,18 @@ export class AgentsCommandCenter implements Component {
       const delta = matchesKey(data, "up") ? -1 : 1;
       if (this.#focus === "details") this.#detailOffset = Math.max(0, this.#detailOffset + delta);
       else {
-        const rows = commandCenterRows(this.store, this.#projects).filter((row) => row.kind !== "gap");
+        const rows = commandCenterNavigationRows(this.store, this.#projects).filter((row) => row.kind !== "gap");
         const index = rows.findIndex((row) => row.key === this.#selected);
         this.#selected = rows[(index + delta + rows.length) % rows.length]?.key;
         this.#detailOffset = 0;
       }
       this.#notice = "";
     } else if (matchesKey(data, "enter")) {
-      const row = commandCenterRows(this.store, this.#projects).find((candidate) => candidate.key === this.#selected);
-      if (row?.agent) this.choose(row.agent);
+      const row = commandCenterNavigationRows(this.store, this.#projects).find(
+        (candidate) => candidate.key === this.#selected,
+      );
+      if (row?.kind === "main") this.choose("main");
+      else if (row?.agent) this.choose(row.agent);
       else if (row) this.#focus = "details";
       else this.#notice = "Selection no longer available. Choose another row.";
     }
@@ -108,7 +111,8 @@ export class AgentsCommandCenter implements Component {
   render(width: number): string[] {
     const safeWidth = Math.max(1, width),
       height = Math.max(5, this.height());
-    const rows = commandCenterRows(this.store, this.#projects);
+    const rows = commandCenterNavigationRows(this.store, this.#projects);
+    const empty = rows.length === 1;
     if (this.#selected === undefined)
       this.#selected = rows.find((r) => r.kind === "workflow" || r.kind === "agent")?.key ?? rows[0]?.key;
     const selected = rows.find((row) => row.key === this.#selected);
@@ -129,11 +133,14 @@ export class AgentsCommandCenter implements Component {
     const details = this.details(selected, rightWidth).flatMap((line) => wrapTextWithAnsi(line, rightWidth));
     this.#detailOffset = Math.min(this.#detailOffset, Math.max(0, details.length - contentHeight));
     const counts = commandCenterCounts([...this.store.agents.values()]);
-    const detailTitle = selected?.projectPath
-      ? "Project Details"
-      : selected?.workflow
-        ? "Workflow Details"
-        : "Agent Details";
+    const detailTitle =
+      selected?.kind === "main"
+        ? "Main Conversation"
+        : selected?.projectPath
+          ? "Project Details"
+          : selected?.workflow
+            ? "Workflow Details"
+            : "Agent Details";
     const treeHeading = (this.#focus === "tree" ? "› " : "  ") + "Agents / Workflows";
     const detailHeading = (this.#focus === "details" ? "› " : "  ") + detailTitle;
     const treeTitle =
@@ -160,11 +167,14 @@ export class AgentsCommandCenter implements Component {
         const selectedRow = row.key === this.#selected;
         const prefix = (row.branch ?? "") + (selectedRow ? "▸ " : "  ");
         const available = Math.max(1, nameWidth - visibleWidth(prefix));
-        const label = row.projectPath
-          ? `Project: ${path.basename(row.projectPath) || row.projectPath}`
-          : row.agent
-            ? `${row.agent.row.displayName ?? row.agent.row.agentName ?? "agent"} — ${row.agent.row.title ?? row.agent.row.request ?? row.agent.row.label}`
-            : compactWorkflowPath(row.workflow!.sourcePath, row.workflow!.projectRoot, available);
+        const label =
+          row.kind === "main"
+            ? "Main conversation"
+            : row.projectPath
+              ? `Project: ${path.basename(row.projectPath) || row.projectPath}`
+              : row.agent
+                ? `${row.agent.row.displayName ?? row.agent.row.agentName ?? "agent"} — ${row.agent.row.title ?? row.agent.row.request ?? row.agent.row.label}`
+                : compactWorkflowPath(row.workflow!.sourcePath, row.workflow!.projectRoot, available);
         const name = truncateToWidth(clean(label).replace(/\s*\n\s*/g, " "), available);
         const state = row.agent
           ? agentActivityLabel(row.agent).replace("inactive · history", "inactive")
@@ -176,7 +186,7 @@ export class AgentsCommandCenter implements Component {
           (statusWidth ? " " + statusColor(truncateToWidth(state, statusWidth)) : "");
         left = pad(truncateToWidth(left, leftWidth), leftWidth);
         if (selectedRow) left = this.theme?.bg?.("userMessageBg", left) ?? `\x1b[48;2;38;34;48m${left}\x1b[49m`;
-      } else if (!rows.length && i === 0) left = quiet("No agent sessions or workflows yet.");
+      } else if (empty && i === 1) left = quiet("No agent sessions or workflows yet.");
       left = pad(truncateToWidth(left, leftWidth), leftWidth);
       const right = details[this.#detailOffset + i] ?? "";
       output.push(split ? `${left}${violet(" │ ")}${right}` : this.#focus === "details" ? right : left);
@@ -184,9 +194,11 @@ export class AgentsCommandCenter implements Component {
     output.push(violet("─".repeat(safeWidth)));
     const enter = !selected
       ? "No selection"
-      : selected.agent
-        ? `Enter ${selected.agent.current ? "session" : "history"}`
-        : "Enter details";
+      : selected.kind === "main"
+        ? "Enter main"
+        : selected.agent
+          ? `Enter ${selected.agent.current ? "session" : "history"}`
+          : "Enter details";
     const arrows = this.#focus === "tree" ? "select" : "scroll";
     const controls =
       [
@@ -227,6 +239,13 @@ export class AgentsCommandCenter implements Component {
             ]),
       ];
     };
+    if (row?.kind === "main")
+      return [
+        "Main conversation",
+        "",
+        field("Enter", "return to the main Pi conversation"),
+        quiet("Agents and workflows keep running; Left on an empty editor or /ps reopens this center."),
+      ];
     if (row?.projectPath)
       return [
         `Project: ${clean(path.basename(row.projectPath) || row.projectPath)}`,

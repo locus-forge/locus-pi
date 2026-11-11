@@ -12,7 +12,7 @@ import { redactSecrets } from "../../../_shared/host/redaction.js";
 
 export interface CenterRow {
   key: string;
-  kind: "project" | "workflow" | "agent" | "gap";
+  kind: "main" | "project" | "workflow" | "agent" | "gap";
   text: string;
   agent?: AgentActivity;
   workflow?: WorkflowActivity;
@@ -206,4 +206,17 @@ export function commandCenterRows(
       (hasNext(row.depth) ? "├─" : "└─");
   }
   return rows;
+}
+
+/** The main conversation is a navigation destination, never an execution row. */
+const mainConversationRow: CenterRow = { key: "main", kind: "main", text: "Main conversation" };
+
+/** Navigation projection: the main-conversation destination always leads the activity tree. */
+export function commandCenterNavigationRows(
+  store: ActivityStore = activityStore,
+  contexts: ProjectContexts = new Map(),
+): CenterRow[] {
+  const activity = commandCenterRows(store, contexts);
+  if (activity.length === 0) return [mainConversationRow];
+  return [mainConversationRow, { key: "gap:main", kind: "gap", text: "" }, ...activity];
 }
