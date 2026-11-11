@@ -15,20 +15,26 @@ interface InputCase {
   fields: Record<string, unknown>;
   expected?: unknown;
   error?: string;
+  hint?: string;
   name?: string;
 }
 const cases: InputCase[] = [
   { fields: { inputValue: minimal }, expected: minimal },
   { fields: { inputValue: full }, expected: full },
-  { fields: { inputValue: JSON.stringify(minimal) }, error: "must be object" },
+  { fields: { inputValue: JSON.stringify(minimal) }, error: "must be object", hint: "native JSON object directly" },
   { fields: { inputValue: null }, error: "must be object" },
   { fields: { inputValue: [] }, error: "must be object" },
   { fields: { inputValue: { mode: "invalid" } }, error: "allowed values" },
   { fields: { inputValue: { ...minimal, context: 7 } }, error: "must be string" },
   { fields: { inputValue: {} }, error: "required" },
   { fields: { inputValue: { ...minimal, extra: true } }, error: "additional properties" },
-  { fields: { input: JSON.stringify(minimal) }, error: "requires explicit inputValue and meta.inputSchema" },
+  {
+    fields: { input: JSON.stringify(minimal) },
+    error: "requires explicit inputValue and meta.inputSchema",
+    hint: "legacy input cannot launch a typed workflow",
+  },
   { fields: {}, error: "requires explicit inputValue and meta.inputSchema" },
+  { name: "typed-string", fields: { inputValue: JSON.stringify(minimal) }, expected: JSON.stringify(minimal) },
   { name: "legacy-echo", fields: { input: "  exact legacy input\n" }, expected: "  exact legacy input\n" },
 ];
 
@@ -56,6 +62,8 @@ describe.each(["sdk", "bundled-cli"] as const)("typed workflow tool through Pi %
         body,
     );
     writeFileSync(path.join(workflowDir, "legacy-echo.workflow.mjs"), body);
+    const stringSource = 'export const meta={inputSchema:{type:"string"}};' + body;
+    writeFileSync(path.join(workflowDir, "typed-string.workflow.mjs"), stringSource);
     const previousHome = process.env.HOME;
     const previousConfig = process.env.XDG_CONFIG_HOME;
     const previousCwd = process.cwd();
@@ -154,11 +162,16 @@ describe.each(["sdk", "bundled-cli"] as const)("typed workflow tool through Pi %
         ).toBe(false);
         if (request.error !== undefined) {
           expect(persisted.error, detail).toContain(request.error);
+          if (request.hint !== undefined) {
+            expect(persisted.error, detail).toContain(request.hint);
+            expect(JSON.stringify(result.content), detail).toContain(request.hint);
+          }
           expect(existsSync(bindingPath), detail).toBe(false);
         } else {
           expect(persisted.result, detail).toEqual(request.expected);
           const binding = JSON.parse(readFileSync(bindingPath, "utf8"));
-          if (request.name === undefined) expect(binding.typedInput.value, detail).toEqual(request.expected);
+          const typed = Object.hasOwn(request.fields, "inputValue");
+          if (typed) expect(binding.typedInput.value, detail).toEqual(request.expected);
           else expect(binding.typedInput, detail).toBeUndefined();
         }
       }

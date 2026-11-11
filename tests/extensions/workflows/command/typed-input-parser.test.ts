@@ -13,8 +13,26 @@ describe("typed slash input uses JSON syntax rather than shell quoting", () => {
     });
   });
 
-  it.each(['\'{"mode":"compact"}\'', "'\"a JSON string\"'"])(
-    "rejects literal outer single quotes instead of stripping shell syntax: %s",
+  it.each(['\'{"mode":"compact"}\'', "'\"a JSON string\"'", '\n  \'{"mode":"compact"}\'  \n'])(
+    "explains literal outer single quotes without stripping shell syntax: %s",
+    (tail) => {
+      expect(parseRunCommand(`run typed --input-json ${tail}`)).toEqual({
+        scriptRef: "typed",
+        inputJSONError:
+          "--input-json requires one complete JSON value as the entire remaining tail. Pass raw JSON directly in Pi; remove the outer single quotes.",
+      });
+    },
+  );
+
+  it.each(['{"mode":"compact"}', "reviewer's note", "'quoted text'"])("preserves a valid JSON string: %s", (value) => {
+    expect(parseRunCommand(`run typed --input-json ${JSON.stringify(value)}`)).toEqual({
+      scriptRef: "typed",
+      inputValue: value,
+    });
+  });
+
+  it.each(['{"mode":', '{"mode":"compact"} --force', '{"mode":"review\'s",}'])(
+    "keeps other JSON errors distinct from outer shell quotes: %s",
     (tail) => {
       expect(parseRunCommand(`run typed --input-json ${tail}`)).toEqual({
         scriptRef: "typed",
@@ -22,12 +40,4 @@ describe("typed slash input uses JSON syntax rather than shell quoting", () => {
       });
     },
   );
-
-  it("preserves a valid JSON string as a string for later schema admission", () => {
-    const value = '{"mode":"compact"}';
-    expect(parseRunCommand(`run typed --input-json ${JSON.stringify(value)}`)).toEqual({
-      scriptRef: "typed",
-      inputValue: value,
-    });
-  });
 });

@@ -84,7 +84,9 @@ export const WorkflowParams = Type.Object(
     inputValue: Type.Optional(
       Type.Unknown({
         description:
-          "Explicit finite JSON input, mutually exclusive with input; requires the target's static meta.inputSchema.",
+          "Explicit finite JSON input matching the target's static meta.inputSchema; mutually exclusive with input. " +
+          'Pass the native value directly, e.g. inputValue: {"reviewMode":"adaptive"}, without JSON.stringify. ' +
+          "JSON-looking strings remain strings and must satisfy the declared schema as strings.",
       }),
     ),
     items: Type.Optional(
