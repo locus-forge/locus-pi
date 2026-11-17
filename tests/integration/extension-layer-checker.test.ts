@@ -88,6 +88,15 @@ describe("extension layer checker negative rules", () => {
     await rm(path.join(root, owner));
     await expectRule(root, "rule 3 (complete ownership)");
   });
+  it.each(["startup", "startup-format"])("keeps %s below feature policy", async (owner) => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, `extensions/_shared/agent-runtime/session/${owner}.ts`),
+      '\nimport "../../../workflows/index.js";\n',
+    );
+    await expectRule(root, "rule 1 (no upward import)");
+  });
+
   it("rejects a shared module importing feature code", async () => {
     const root = await extensionFixture();
     await appendFile(

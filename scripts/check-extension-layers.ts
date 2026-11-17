@@ -97,6 +97,8 @@ const SHARED_LAYER_MEMBERS: Record<SharedLayer, readonly string[]> = {
     "agent-read-only-policy",
     "agent-runner",
     "agent-sdk-host",
+    "session/startup",
+    "session/startup-format",
     "session/lifetime",
     "session/state",
     "session/live-events",

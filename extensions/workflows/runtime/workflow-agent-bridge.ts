@@ -7,6 +7,11 @@
  * so tests can mock createSession and prove the wiring.
  */
 
+import {
+  AgentStartup,
+  AgentStartupTimeoutError,
+  workflowStartupTimeoutMs,
+} from "../../_shared/agent-runtime/session/startup.js";
 import { createWorkflowReturnController } from "./workflow-return.js";
 import type { ExtensionAPI, ExtensionContext, ThinkingLevel } from "../../_shared/host/pi-api.js";
 import { getProjectRoot, getWorkingDirectory } from "../../_shared/host/pi-api.js";
@@ -191,7 +196,29 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
   // it never bleeds across distinct slots. First call = 1 (badge hidden), then 2, 3, ….
   const roundByRowId = new Map<string, number>();
 
-  return async function runWorkflowAgent(req: WorkflowAgentRequest): Promise<WorkflowAgentResult> {
+  return async (req, onStartup): Promise<WorkflowAgentResult> => {
+    const startup = new AgentStartup(workflowStartupTimeoutMs(), onStartup);
+    try {
+      return { ...(await runWorkflowAgent(req, startup)), startup: [...startup.marks] };
+    } catch (error) {
+      if (!(error instanceof AgentStartupTimeoutError)) throw error;
+      return {
+        ok: false,
+        status: "failed",
+        failureCause: error.failureCause,
+        summary: error.message,
+        diagnostics: [error.message],
+        executionMode: req.executionMode ?? (req.agent === undefined ? "bare" : "named"),
+        ...(req.agent === undefined ? {} : { agent: req.agent }),
+        workspaceMode: resolveWorkspaceMode({ reqMode: req.workspaceMode, sandbox: req.sandbox }),
+        startup: [...startup.marks],
+      };
+    } finally {
+      startup.close();
+    }
+  };
+
+  async function runWorkflowAgent(req: WorkflowAgentRequest, startup: AgentStartup): Promise<WorkflowAgentResult> {
     const projectRoot = getProjectRoot(ctx);
     const executionMode = req.executionMode ?? (req.agent === undefined ? "bare" : "named");
 
@@ -273,8 +300,12 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
     //    runs on, and it decides it BEFORE any child is spawned so a refusal costs
     //    nothing. `modelRoleResolution` continues to travel into the request capsule
     //    and the run-result artifact exactly as it did before.
-    const modelRoles = await loadModelRolesState(getProjectRoot(ctx));
-    const tier = await resolveWorkflowTier({ req, agent, modelRoles, resolveModelFn });
+    startup.mark("model_roles_load_start");
+    const modelRoles = await startup.wait(loadModelRolesState(getProjectRoot(ctx)));
+    startup.mark("model_roles_loaded");
+    startup.mark("model_resolve_start");
+    const tier = await startup.wait(resolveWorkflowTier({ req, agent, modelRoles, resolveModelFn }));
+    startup.mark("model_resolved");
     if (tier.kind === "refused") {
       return {
         ok: false,
@@ -316,6 +347,7 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
       };
     }
 
+    startup.mark("capability_checked");
     const modelRoleResolution = tier.roleResolution;
     const modelRole =
       req.model === undefined &&
@@ -474,6 +506,7 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
       ...(returnController?.tool === undefined ? [] : [returnController.tool]),
     ];
     const requestInput = {
+      startup,
       ...(maxTurns === undefined ? {} : { maxTurns }),
       approvalTier,
       allowedTools: req.capabilityMode === "tool-free" ? [] : ["*"],
@@ -665,7 +698,8 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
         // The fuse below is THIS module's, so the host can only report the cancellation
         // it observed — or return a late success after the fuse already fired. Finalize
         // both status and cause before the envelope is written.
-        finalizeResult: (result) => {
+        finalizeResult: (observed) => {
+          const result = { ...observed, startup: [...startup.marks] };
           if (
             abortOwner !== "timeout" &&
             abortOwner !== "ask-unavailable" &&
@@ -809,7 +843,7 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
       ...(boundary.activeToolNames === undefined ? {} : { activeToolNames: boundary.activeToolNames }),
     };
     return result;
-  };
+  }
 }
 
 /** Who is asking, in the operator's terms — rendered above the question body so

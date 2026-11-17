@@ -1,3 +1,4 @@
+import type { AgentStartup, AgentStartupMark } from "./session/startup.js";
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext, ThinkingLevel } from "../host/pi-api.js";
 import { getProjectRoot, getSessionId, getWorkingDirectory } from "../host/pi-api.js";
@@ -55,6 +56,7 @@ export type {
 import type { AgentResponseAcceptance, AgentOutputAcceptance } from "./output-acceptance/agent-output-contract.js";
 
 export interface AgentRunRequestBase {
+  startup?: AgentStartup; // Internal instrumentation, never serialized as request authority.
   task: string;
   parentSessionId: string;
   projectRoot?: string;
@@ -121,6 +123,7 @@ export const EXECUTED_MODEL_UNAVAILABLE = "unavailable";
 export const AGENT_BUDGET_UNBOUNDED = "unbounded" as const;
 
 export interface AgentRunResult {
+  startup?: AgentStartupMark[];
   errorLogPath?: string;
   errorLogWarning?: string;
   errorId?: string;
@@ -129,8 +132,7 @@ export interface AgentRunResult {
   executionMode?: AgentExecutionMode;
   agentName?: string;
   reason: string;
-  /** Why this run did not complete. Absent on success, and on results written before
-   *  the field existed — a reader treats absence as `unclassified`, never as retryable. */
+  /** Absent on success or legacy results; absence is unclassified, never retryable. */
   failureCause?: AgentFailureCause;
   /**
    * What the CHILD SESSION reported it ran on, read back from the host after the
@@ -237,6 +239,7 @@ export interface AgentRunBoundaryOptions {
 // child kickoff should reference that explicit payload instead of pretending the
 // host supplied conversation history.
 export async function executeAgentRunBoundary(options: AgentRunBoundaryOptions): Promise<AgentRunResult> {
+  options.request.startup?.mark("runner_enter");
   const projectRoot = getProjectRoot(options.ctx);
   const parentSessionId = getSessionId(options.ctx);
   const request: AgentRunRequest = {
@@ -345,8 +348,8 @@ export function createBareAgentRunRequest(
 }
 
 function copyOptionalRunFields(request: AgentRunRequestWithoutContext, input: AgentRunRequestInput): void {
-  // Both builders are allowlists. Keep every optional field in one place so a
-  // named and a bare child cannot silently diverge in artifacts or host policy.
+  // One allowlist keeps named and bare children aligned.
+  if (input.startup !== undefined) request.startup = input.startup;
   if (input.maxTurns !== undefined) request.maxTurns = input.maxTurns;
   if (input.metadata !== undefined) request.metadata = input.metadata;
   if (input.modelRoleResolution !== undefined) request.modelRoleResolution = input.modelRoleResolution;
@@ -423,11 +426,7 @@ export function writeAgentRunResultArtifact(
     version: "locus.agent.run-result.v2",
     status: result.status,
     reason: result.reason,
-    // The machine-readable half of `reason`. Without it the only durable record of WHY a
-    // child failed is English prose, which is exactly the matching W1 exists to remove —
-    // and a consumer reading envelopes back (an operator, a report, a later run) would have
-    // to re-derive the classification the host already made. Undefined on success, and on
-    // envelopes written before the field existed; a reader treats absence as unclassified.
+    // Carry the host's cause; absent on success and legacy envelopes.
     failureCause: result.failureCause,
     executionMode: result.executionMode,
     agentName: result.agentName,
@@ -456,6 +455,7 @@ export function writeAgentRunResultArtifact(
     // -but-never-prompted session has an id and must not qualify. Undefined keys are
     // dropped by `JSON.stringify`, so this omits the field rather than writing a null.
     modelRoleFallback: result.executedModel === undefined ? undefined : request.modelRoleFallback,
+    startup: result.startup,
     diagnostics: result.diagnostics,
     lifecycleEntryIds: result.lifecycleEntryIds,
     evidence: result.evidence,

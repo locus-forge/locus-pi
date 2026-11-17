@@ -1,3 +1,4 @@
+import { AgentStartup } from "../../../extensions/_shared/agent-runtime/session/startup.js";
 /**
  * Shared substrate for the agent-failure-cause family.
  *
@@ -298,4 +299,19 @@ export async function runAcceptanceHost(config: {
     new AbortController().signal,
   );
   return { result, prompts: () => prompts };
+}
+
+/** A startup timeout is produced by the host's bounded session creation, never by prose. */
+export async function startupFailureCause(): Promise<AgentFailureCause | undefined> {
+  const startup = new AgentStartup(100);
+  const executor = createAgentSdkSessionExecutor({ createSession: () => new Promise(() => {}) });
+  try {
+    const result = await executor.run({ ...hostRequest(), startup }, new AbortController().signal);
+    if (!result.reason.includes("sdk_host_enter") || (await retriesOn(result.failureCause))) {
+      throw new Error("Startup deadline lost its stage or became retryable");
+    }
+    return result.failureCause;
+  } finally {
+    startup.close();
+  }
 }

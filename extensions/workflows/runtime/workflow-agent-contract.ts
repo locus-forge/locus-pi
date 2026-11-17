@@ -46,9 +46,14 @@ import type { WorkflowAgentRowOccurrence } from "./workflow-groups.js";
 import type { WorkflowInvocationReservation } from "./workflow-execution-state.js";
 import type { WorkflowReturnContract } from "./workflow-return.js";
 
+import type { AgentStartupMark } from "../../_shared/agent-runtime/session/startup-format.js";
+
 /** The single agent-execution callback the runtime depends on. The bridge supplies
  *  the real implementation; tests supply a fake. The runtime never imports the SDK. */
-export type WorkflowAgentRunner = (req: WorkflowAgentRequest) => Promise<WorkflowAgentResult>;
+export type WorkflowAgentRunner = (
+  req: WorkflowAgentRequest,
+  onStartup?: (mark: AgentStartupMark) => void,
+) => Promise<WorkflowAgentResult>;
 
 /** Read-only host validation used by compositions that must validate every leg
  *  before the first model call. It resolves declarations but spawns no child. */
@@ -162,6 +167,7 @@ export interface WorkflowAgentRequest {
 }
 
 export interface WorkflowAgentResult {
+  startup?: AgentStartupMark[];
   outputAcceptance?: AgentOutputAcceptance;
   ok: boolean; // true when status === "completed"
   status: "completed" | "failed" | "cancelled" | "blocked";

@@ -208,7 +208,21 @@ export function createWorkflowAgentAttempt(
         finalResult = await invocation.run(async () => {
           executionStartedAtMs = Date.now();
           emitAdmission("agent_start");
-          return agentRunner(req);
+          return agentRunner(req, (startup) =>
+            emit({
+              ts: startup.ts,
+              runId,
+              kind: "log",
+              source: "runtime",
+              callId,
+              ...(req.label === undefined ? {} : { label: req.label }),
+              ...(req.phase === undefined ? {} : { phase: req.phase }),
+              ...(req.itemPath === undefined ? {} : { itemPath: req.itemPath }),
+              ...activeGroupFields(),
+              startup,
+              message: `Agent startup ${startup.stage}: wall ${startup.wallMs.toFixed(1)} ms, CPU user ${startup.cpuUserMs.toFixed(1)} ms, system ${startup.cpuSystemMs.toFixed(1)} ms, event-loop max ${startup.eventLoopDelayMs.toFixed(1)} ms`,
+            }),
+          );
         });
       } catch (err) {
         const durationMs = Date.now() - executionStartedAtMs;
