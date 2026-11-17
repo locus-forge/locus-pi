@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AgentStartup,
   AgentStartupTimeoutError,
+  captureAgentStartupEpoch,
 } from "../../../../extensions/_shared/agent-runtime/session/startup.js";
 import { agentStartupMarkProblem } from "../../../../extensions/_shared/agent-runtime/session/startup-format.js";
 import { workflowJournalLineProblem } from "../../../../extensions/workflows/runtime/workflow-journal-format.js";
@@ -82,6 +83,32 @@ describe("startup measurements and expiry boundaries", () => {
     } finally {
       startup.close();
     }
+  });
+
+  it("arms only the time remaining from the admission snapshot", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const epoch = captureAgentStartupEpoch();
+    clock = 40;
+    const startup = new AgentStartup(100, undefined, epoch);
+    let failed = false;
+    const pending = startup.wait(new Promise<never>(() => {})).catch((error) => {
+      failed = true;
+      return error;
+    });
+    try {
+      expect(startup.marks[0]?.ts).toBe(epoch.ts);
+      clock = 99;
+      await vi.advanceTimersByTimeAsync(59);
+      expect(failed).toBe(false);
+      clock = 100;
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await pending).toBeInstanceOf(AgentStartupTimeoutError);
+    } finally {
+      startup.close();
+    }
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("cleans timers when a startup journal observer throws", () => {

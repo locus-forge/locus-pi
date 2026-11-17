@@ -29,7 +29,9 @@ uses a 10 ms sampler and samples again at each mark to retain synchronous blocki
 before the timer can run.
 
 Startup has a separate **120,000 ms** limit, from admission `agent_start` to
-`session_ready`; queue wait is excluded. Set `LOCUS_PI_WORKFLOW_STARTUP_TIMEOUT_MS`
+`session_ready`; queue wait is excluded. The host captures a shared monotonic/wall-clock
+and process-CPU snapshot immediately before writing `agent_start`, so synchronous journal
+and event-handler time counts in both the measurements and the startup deadline. Set `LOCUS_PI_WORKFLOW_STARTUP_TIMEOUT_MS`
 in Pi's environment to a positive integer number of milliseconds to override it.
 Invalid values fail explicitly. The overall call timeout, model selection and retry
 allowlist retain their existing behavior. First provider request/response are measured
@@ -38,7 +40,10 @@ after readiness and remain governed by the existing call/turn deadlines.
 If startup expires, the call fails with `failureCause: "startup-timeout"` and a reason
 such as `Agent startup exceeded its 120000 ms limit; last completed stage: resources_load_start.`
 This cause is not automatically retried. Pending SDK work cannot always be interrupted,
-but late-created sessions are disposed without prompting. A synchronous JavaScript block
+but late-created sessions are disposed exactly once without prompting, including a
+synchronous factory overrun returning an already-resolved Promise. Run cancellation also
+interrupts role loading and model resolution immediately, preserves `cancelled`, and
+releases the startup deadline and sampler. A synchronous JavaScript block
 cannot be preempted: expiry is enforced at its next mark or bounded await. These marks
 expose the location of a slow launch; they do not diagnose or repair its cause.
 

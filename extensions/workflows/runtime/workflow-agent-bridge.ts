@@ -10,6 +10,7 @@
 import {
   AgentStartup,
   AgentStartupTimeoutError,
+  captureAgentStartupEpoch,
   workflowStartupTimeoutMs,
 } from "../../_shared/agent-runtime/session/startup.js";
 import { createWorkflowReturnController } from "./workflow-return.js";
@@ -196,18 +197,19 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
   // it never bleeds across distinct slots. First call = 1 (badge hidden), then 2, 3, ….
   const roundByRowId = new Map<string, number>();
 
-  return async (req, onStartup): Promise<WorkflowAgentResult> => {
-    const startup = new AgentStartup(workflowStartupTimeoutMs(), onStartup);
+  const run: WorkflowAgentRunner = async (req, onStartup, epoch): Promise<WorkflowAgentResult> => {
+    const startup = new AgentStartup(workflowStartupTimeoutMs(), onStartup, epoch);
     try {
       return { ...(await runWorkflowAgent(req, startup)), startup: [...startup.marks] };
     } catch (error) {
-      if (!(error instanceof AgentStartupTimeoutError)) throw error;
+      if (!(error instanceof AgentStartupTimeoutError) && !signal.aborted) throw error;
+      const reason = signal.aborted ? "Agent run was cancelled during startup." : (error as Error).message;
       return {
         ok: false,
-        status: "failed",
-        failureCause: error.failureCause,
-        summary: error.message,
-        diagnostics: [error.message],
+        status: signal.aborted ? "cancelled" : "failed",
+        failureCause: signal.aborted ? "cancelled" : "startup-timeout",
+        summary: reason,
+        diagnostics: [reason],
         executionMode: req.executionMode ?? (req.agent === undefined ? "bare" : "named"),
         ...(req.agent === undefined ? {} : { agent: req.agent }),
         workspaceMode: resolveWorkspaceMode({ reqMode: req.workspaceMode, sandbox: req.sandbox }),
@@ -217,6 +219,8 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
       startup.close();
     }
   };
+
+  return Object.assign(run, { captureStartupEpoch: captureAgentStartupEpoch });
 
   async function runWorkflowAgent(req: WorkflowAgentRequest, startup: AgentStartup): Promise<WorkflowAgentResult> {
     const projectRoot = getProjectRoot(ctx);
@@ -301,10 +305,10 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
     //    nothing. `modelRoleResolution` continues to travel into the request capsule
     //    and the run-result artifact exactly as it did before.
     startup.mark("model_roles_load_start");
-    const modelRoles = await startup.wait(loadModelRolesState(getProjectRoot(ctx)));
+    const modelRoles = await startup.wait(loadModelRolesState(getProjectRoot(ctx)), signal);
     startup.mark("model_roles_loaded");
     startup.mark("model_resolve_start");
-    const tier = await startup.wait(resolveWorkflowTier({ req, agent, modelRoles, resolveModelFn }));
+    const tier = await startup.wait(resolveWorkflowTier({ req, agent, modelRoles, resolveModelFn }), signal);
     startup.mark("model_resolved");
     if (tier.kind === "refused") {
       return {

@@ -22,6 +22,13 @@ export const AGENT_STARTUP_STAGES = [
 
 export type AgentStartupStage = (typeof AGENT_STARTUP_STAGES)[number];
 
+/** Internal snapshot immediately before admission; CPU values are process microseconds. */
+export interface AgentStartupEpoch {
+  ts: string;
+  monotonicMs: number;
+  cpu: { user: number; system: number };
+}
+
 export interface AgentStartupMark {
   stage: AgentStartupStage;
   ts: string;

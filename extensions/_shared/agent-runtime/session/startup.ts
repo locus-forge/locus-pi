@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { scheduleLongTimeout } from "../../runtime/long-timer.js";
 
-import type { AgentStartupMark, AgentStartupStage } from "./startup-format.js";
+import type { AgentStartupEpoch, AgentStartupMark, AgentStartupStage } from "./startup-format.js";
 export type { AgentStartupMark, AgentStartupStage } from "./startup-format.js";
 
 export const WORKFLOW_STARTUP_TIMEOUT_ENV = "LOCUS_PI_WORKFLOW_STARTUP_TIMEOUT_MS";
@@ -28,13 +28,17 @@ export class AgentStartupTimeoutError extends Error {
   }
 }
 
+export function captureAgentStartupEpoch(): AgentStartupEpoch {
+  return { ts: new Date().toISOString(), monotonicMs: performance.now(), cpu: process.cpuUsage() };
+}
+
 /** One physical launch owns its deadline, process measurements and late-work fencing. */
 export class AgentStartup {
   readonly marks: AgentStartupMark[] = [];
-  private readonly started = performance.now();
-  private previous = this.started;
-  private cpu = process.cpuUsage();
-  private sampledAt = this.started;
+  private readonly started: number;
+  private previous: number;
+  private cpu: NodeJS.CpuUsage;
+  private sampledAt: number;
   private maxDelay = 0;
   private ready = false;
   private closed = false;
@@ -47,13 +51,18 @@ export class AgentStartup {
   constructor(
     private readonly timeoutMs: number,
     private readonly onMark?: (mark: AgentStartupMark) => void,
+    private readonly epoch: AgentStartupEpoch = captureAgentStartupEpoch(),
   ) {
+    this.started = epoch.monotonicMs;
+    this.previous = this.sampledAt = this.started;
+    this.cpu = epoch.cpu;
     this.deadline = new Promise((_, reject) => {
       this.rejectDeadline = reject;
     });
     // Expiry can occur during synchronous work, before the next bounded await.
     void this.deadline.catch(() => {});
-    this.cancelDeadline = scheduleLongTimeout(timeoutMs, () => this.expire(), "agent startup timeout");
+    const remainingMs = Math.max(0, Math.ceil(timeoutMs - (performance.now() - this.started)));
+    this.cancelDeadline = scheduleLongTimeout(remainingMs, () => this.expire(), "agent startup timeout");
     this.sampler = setInterval(() => {
       const now = performance.now();
       this.maxDelay = Math.max(this.maxDelay, now - this.sampledAt - 10);
@@ -79,14 +88,15 @@ export class AgentStartup {
   }
 
   mark(stage: AgentStartupStage): void {
-    this.check();
-    if (this.closed || this.marks.some((mark) => mark.stage === stage)) return;
     const first = this.marks.length === 0;
+    // Retain the admission mark even when its synchronous observer consumed the limit.
+    if (!first) this.check();
+    if (this.closed || this.marks.some((mark) => mark.stage === stage)) return;
     const now = first ? this.started : performance.now();
-    const cpu = process.cpuUsage();
+    const cpu = first ? this.cpu : process.cpuUsage();
     const mark: AgentStartupMark = {
       stage,
-      ts: new Date().toISOString(),
+      ts: first ? this.epoch.ts : new Date().toISOString(),
       elapsedMs: first ? 0 : now - this.started,
       wallMs: first ? 0 : now - this.previous,
       cpuUserMs: first ? 0 : (cpu.user - this.cpu.user) / 1000,
@@ -108,8 +118,8 @@ export class AgentStartup {
 
   async wait<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
     void pending.catch(() => {});
-    this.check();
     signal?.throwIfAborted();
+    this.check();
     let onAbort: (() => void) | undefined;
     const aborted = new Promise<never>((_, reject) => {
       onAbort = () => reject(signal?.reason);
@@ -117,8 +127,8 @@ export class AgentStartup {
     });
     try {
       const result = await Promise.race([pending, this.deadline, aborted]);
-      this.check();
       signal?.throwIfAborted();
+      this.check();
       return result;
     } finally {
       if (onAbort !== undefined) signal?.removeEventListener("abort", onAbort);

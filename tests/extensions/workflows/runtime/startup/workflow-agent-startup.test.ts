@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,19 +10,28 @@ import {
   agentStartupMarkProblem,
 } from "../../../../../extensions/_shared/agent-runtime/session/startup-format.js";
 import { workflowStartupTimeoutMs } from "../../../../../extensions/_shared/agent-runtime/session/startup.js";
-import type {
-  SdkAgentSessionLike,
-  SdkAgentSessionEventLike,
+import {
+  createAgentSdkSessionExecutor,
+  type CreateAgentSessionFactory,
+  type SdkAgentSessionLike,
+  type SdkAgentSessionEventLike,
 } from "../../../../../extensions/_shared/agent-runtime/agent-sdk-host.js";
 import { agentLiveStore } from "../../../../../extensions/_shared/agent-runtime/agent-live-store.js";
 import { createWorkflowAgentRunner } from "../../../../../extensions/workflows/runtime/workflow-agent-bridge.js";
 import { createWorkflowRuntime } from "../../../../../extensions/workflows/runtime/workflow-runtime.js";
-import type { WorkflowAgentResult } from "../../../../../extensions/workflows/runtime/workflow-agent-contract.js";
+import type {
+  WorkflowAgentResult,
+  WorkflowAgentRunner,
+} from "../../../../../extensions/workflows/runtime/workflow-agent-contract.js";
 import {
   createWorkflowJournalSink,
   readWorkflowRunJournalState,
 } from "../../../../../extensions/workflows/runtime/workflow-journal.js";
-import { workflowJournalLineProblem } from "../../../../../extensions/workflows/runtime/workflow-journal-format.js";
+import * as modelSettings from "../../../../../extensions/_shared/model/model-settings.js";
+import {
+  workflowJournalLineProblem,
+  type WorkflowJournalLine,
+} from "../../../../../extensions/workflows/runtime/workflow-journal-format.js";
 import { createHarness } from "../../../../test-harness.js";
 
 const sdk = vi.hoisted(() => ({
@@ -67,13 +77,22 @@ beforeEach(() => {
   vi.stubEnv("LOCUS_PI_WORKFLOW_STARTUP_TIMEOUT_MS", "1000");
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllEnvs();
   agentLiveStore.reset();
   rmSync(root, { recursive: true, force: true });
 });
 
-function stack(responseGate?: Promise<void>, rawResponse = false) {
+function stack(
+  responseGate?: Promise<void>,
+  rawResponse = false,
+  hooks: {
+    onEvent?: (line: WorkflowJournalLine) => void;
+    createSession?: CreateAgentSessionFactory;
+    signal?: AbortSignal;
+  } = {},
+) {
   const model = getModel("openai", "gpt-4o-mini");
   let emit: (event: SdkAgentSessionEventLike) => void = () => {};
   const onResponse = vi.fn();
@@ -117,20 +136,41 @@ function stack(responseGate?: Promise<void>, rawResponse = false) {
     abort: async () => {},
   };
   const h = createHarness(root, { sessionId: "startup-parent" });
-  const runner = createWorkflowAgentRunner({ pi: h.pi, ctx: h.ctx, signal: new AbortController().signal });
+  const createSession = hooks.createSession;
+  const runner = createWorkflowAgentRunner({
+    pi: h.pi,
+    ctx: h.ctx,
+    signal: hooks.signal ?? new AbortController().signal,
+    ...(createSession === undefined
+      ? {}
+      : {
+          createExecutor: ({ live, ...options }) =>
+            createAgentSdkSessionExecutor({ ...options, ...(live === undefined ? {} : { live }), createSession }),
+        }),
+  });
   const sink = createWorkflowJournalSink(root, "startup-run");
   let result: WorkflowAgentResult | undefined;
   const reached = new Map<string, ReturnType<typeof deferred>>();
+  const observedRunner: WorkflowAgentRunner = async (req, onStartup, epoch) => {
+    result = await runner(
+      req,
+      (mark) => {
+        onStartup?.(mark);
+        reached.get(mark.stage)?.resolve();
+      },
+      epoch,
+    );
+    return result;
+  };
   const runtime = createWorkflowRuntime({
     runId: "startup-run",
     journal: sink,
-    agentRunner: async (req, onStartup) => {
-      result = await runner(req, (mark) => {
-        onStartup?.(mark);
-        reached.get(mark.stage)?.resolve();
-      });
-      return result;
-    },
+    maxConcurrentAgents: 1,
+    ...(hooks.onEvent === undefined ? {} : { onEvent: hooks.onEvent }),
+    agentRunner: Object.assign(
+      observedRunner,
+      runner.captureStartupEpoch === undefined ? {} : { captureStartupEpoch: runner.captureStartupEpoch },
+    ),
   });
   return {
     ...runtime,
@@ -252,6 +292,127 @@ describe("workflow startup timing without any provider calls", () => {
     expect(result.summary).toContain("model_resolve_start");
     expect(result.startup!.map((mark) => mark.stage)).toEqual(marks);
     expect(sdk.creates).toBe(0);
+  });
+
+  it.each(["model_roles_load_start", "model_resolve_start"])(
+    "cancels a stalled %s immediately and clears every timer",
+    async (stage) => {
+      const entered = deferred();
+      const h = createHarness(root);
+      const controller = new AbortController();
+      if (stage === "model_roles_load_start") {
+        vi.spyOn(modelSettings, "loadModelRolesState").mockImplementation(() => {
+          entered.resolve();
+          return new Promise<never>(() => {});
+        });
+      }
+      const runner = createWorkflowAgentRunner({
+        pi: h.pi,
+        ctx: h.ctx,
+        signal: controller.signal,
+        resolveModel: () => {
+          entered.resolve();
+          return new Promise<never>(() => {});
+        },
+      });
+      const pending = runner({ prompt: "work", model: "fixture/model" });
+      await entered.promise;
+      controller.abort(new Error("operator cancelled"));
+      const result = await pending;
+      expect(result).toMatchObject({ status: "cancelled", failureCause: "cancelled" });
+      expect(result.startup!.at(-1)?.stage).toBe(stage);
+      expect(sdk.creates).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it.each(["deadline", "abort"])(
+    "disposes an already-resolved session exactly once when %s wins before assignment",
+    async (stop) => {
+      const controller = new AbortController();
+      if (stop === "deadline") vi.stubEnv("LOCUS_PI_WORKFLOW_STARTUP_TIMEOUT_MS", "100");
+      const s = stack(undefined, false, {
+        signal: controller.signal,
+        createSession: () => {
+          if (stop === "deadline") {
+            const started = performance.now();
+            while (performance.now() - started < 150) {
+              /* Synchronous factory overrun before any promise continuation. */
+            }
+          } else controller.abort();
+          return Promise.resolve({ session: sdk.session! });
+        },
+      });
+      const error = await s.dsl.agent("work").catch((error) => error);
+      expect(error.result.failureCause).toBe(stop === "deadline" ? "startup-timeout" : "cancelled");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(s.dispose).toHaveBeenCalledOnce();
+      expect(s.prompt).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it("includes synchronous admission handling in elapsed time, process CPU and event-loop delay without reordering the journal", async () => {
+    let clock = 0;
+    let user = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    vi.spyOn(process, "cpuUsage").mockImplementation(() => ({ user, system: 0 }));
+    const s = stack(undefined, false, {
+      onEvent: (line) => {
+        if (line.kind === "agent_start") {
+          clock += 50;
+          user += 5000;
+        }
+      },
+    });
+    await expect(s.dsl.agent("work")).resolves.toBe("same answer");
+    expect(s.result().startup![1]).toMatchObject({
+      stage: "model_roles_load_start",
+      elapsedMs: 50,
+      wallMs: 50,
+      cpuUserMs: 5,
+      eventLoopDelayMs: 40,
+    });
+    const lines = s.getJournal();
+    expect(lines.findIndex((line) => line.kind === "agent_start")).toBeLessThan(
+      lines.findIndex((line) => line.startup !== undefined),
+    );
+  });
+
+  it("refuses an admission handler that consumed the startup limit before roles or session creation", async () => {
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const s = stack(undefined, false, {
+      onEvent: (line) => {
+        if (line.kind === "agent_start") clock += 1500;
+      },
+    });
+    const error = await s.dsl.agent("work").catch((error) => error);
+    expect(error.result.failureCause).toBe("startup-timeout");
+    expect(error.message).toContain("last completed stage: agent_start");
+    expect(sdk.creates).toBe(0);
+    expect(s.prompt).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("excludes queue time from the snapshot passed to the next admitted child", async () => {
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const gate = deferred();
+    const s = stack(gate.promise);
+    const sent = s.stage("first_provider_request");
+    const first = s.dsl.agent("first");
+    await sent;
+    const second = s.dsl.agent("second");
+    expect(s.getJournal().filter((line) => line.kind === "agent_queued")).toHaveLength(2);
+    expect(s.getJournal().filter((line) => line.kind === "agent_start")).toHaveLength(1);
+    clock = 2000;
+    gate.resolve();
+    await expect(first).resolves.toBe("same answer");
+    await expect(second).resolves.toBe("same answer");
+    expect(s.result().startup!.every((mark) => mark.elapsedMs === 0)).toBe(true);
+    const queue = s.getJournal().filter((line) => line.kind === "agent_queued");
+    expect(queue).toHaveLength(2);
   });
 
   it("keeps the 120-second default and rejects invalid environment settings", () => {

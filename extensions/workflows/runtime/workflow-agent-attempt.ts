@@ -207,21 +207,25 @@ export function createWorkflowAgentAttempt(
       try {
         finalResult = await invocation.run(async () => {
           executionStartedAtMs = Date.now();
+          const startupEpoch = agentRunner.captureStartupEpoch?.();
           emitAdmission("agent_start");
-          return agentRunner(req, (startup) =>
-            emit({
-              ts: startup.ts,
-              runId,
-              kind: "log",
-              source: "runtime",
-              callId,
-              ...(req.label === undefined ? {} : { label: req.label }),
-              ...(req.phase === undefined ? {} : { phase: req.phase }),
-              ...(req.itemPath === undefined ? {} : { itemPath: req.itemPath }),
-              ...activeGroupFields(),
-              startup,
-              message: `Agent startup ${startup.stage}: wall ${startup.wallMs.toFixed(1)} ms, CPU user ${startup.cpuUserMs.toFixed(1)} ms, system ${startup.cpuSystemMs.toFixed(1)} ms, event-loop max ${startup.eventLoopDelayMs.toFixed(1)} ms`,
-            }),
+          return agentRunner(
+            req,
+            (startup) =>
+              emit({
+                ts: startup.ts,
+                runId,
+                kind: "log",
+                source: "runtime",
+                callId,
+                ...(req.label === undefined ? {} : { label: req.label }),
+                ...(req.phase === undefined ? {} : { phase: req.phase }),
+                ...(req.itemPath === undefined ? {} : { itemPath: req.itemPath }),
+                ...activeGroupFields(),
+                startup,
+                message: `Agent startup ${startup.stage}: wall ${startup.wallMs.toFixed(1)} ms, CPU user ${startup.cpuUserMs.toFixed(1)} ms, system ${startup.cpuSystemMs.toFixed(1)} ms, event-loop max ${startup.eventLoopDelayMs.toFixed(1)} ms`,
+              }),
+            startupEpoch,
           );
         });
       } catch (err) {

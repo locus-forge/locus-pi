@@ -571,13 +571,11 @@ async function runChildSession(
   let created: SdkCreateSessionResultLike | undefined;
   let abandonedCreation = false;
   try {
-    const pending = createSession(sessionOptions);
-    void pending.then(
-      (late) => {
-        if (abandonedCreation) disposeQuietly(late.session);
-      },
-      () => {},
-    );
+    const pending = createSession(sessionOptions).then((result) => {
+      created = result;
+      if (abandonedCreation) disposeQuietly(result.session);
+      return result;
+    });
     created = request.startup === undefined ? await pending : await request.startup.wait(pending, signal);
     request.startup?.mark("session_ready");
   } catch (error) {
