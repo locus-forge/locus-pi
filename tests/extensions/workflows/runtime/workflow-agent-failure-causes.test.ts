@@ -27,6 +27,7 @@ import type { WorkflowReplayController } from "../../../../extensions/workflows/
 import { createHarness } from "../../../test-harness.js";
 import {
   bridgeProject,
+  startupFailureCause,
   hostRequest,
   retriesOn,
   runAcceptanceHost,
@@ -75,6 +76,7 @@ const neverRuns: AgentExecutor = {
 };
 
 const CAUSE_MATRIX: Record<AgentFailureCause, CauseCase> = {
+  "startup-timeout": { what: "pre-session deadline", produce: startupFailureCause },
   "output-refused": { what: "raw protocol refusal never enters correction", produce: () => structuredCause("refusal") },
   "output-incomplete": {
     what: "raw incomplete never commits a proposal",
@@ -484,10 +486,7 @@ describe("agent failure cause — the closed list, member by member", () => {
   it.each(AGENT_FAILURE_CAUSES.map((cause) => [cause, CAUSE_MATRIX[cause].what] as const))(
     "%s — %s",
     async (cause) => {
-      // A member nobody produced is a member nobody can trust: either the site that
-      // sets it is unreachable, or the enum grew without a case proving where it
-      // comes from. Asserting the RETURNED cause is what makes this a production
-      // claim rather than a declaration.
+      // Obtain each cause from its producing path, rather than asserting its declaration.
       await expect(CAUSE_MATRIX[cause].produce()).resolves.toBe(cause);
     },
     15_000,

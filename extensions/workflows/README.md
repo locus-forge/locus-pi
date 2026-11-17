@@ -2,6 +2,51 @@
 
 `workflows` is the trusted JavaScript workflow runtime. It discovers Package, project, user, and retained-history entries; runs child-agent graphs; and persists inspectable evidence.
 
+## Child startup timing
+
+Every fresh workflow child records startup marks in the native `journal.ndjson` as
+`kind: "log"`, `source: "runtime"`, with `callId`, a readable `message`, and a structured
+`startup` mark. The per-call result envelope and bridge result contain the ordered
+`startup` array, including marks retained on failure. Replayed calls create no child
+and produce no fresh startup measurements.
+
+The marks, in order, are `agent_start`, `model_roles_load_start`, `model_roles_loaded`,
+`model_resolve_start`, `model_resolved`, `capability_checked`, `runner_enter`,
+`sdk_host_enter`, `sdk_import_start`, `sdk_imported`, `session_options_start`,
+`session_manager_start`, `session_manager_created`, `resources_load_start`,
+`resources_loaded`, `create_session_start`, `session_ready`, `first_provider_request`,
+and `first_provider_response`. Resource loading includes extension discovery/loading
+through `DefaultResourceLoader.reload`; session construction includes Pi's subsequent
+extension initialization. Provider marks observe the stream dispatch and first response
+or raw stream-event callback (including WebSocket responses), rather than inferring a provider call from Pi's `agent_start` or `model_change`.
+Marks for work that never happens are absent.
+
+Each mark carries ISO wall-clock `ts`, cumulative monotonic `elapsedMs`, and intervals
+since the previous mark: `wallMs`, `cpuUserMs`, `cpuSystemMs`, and maximum
+`eventLoopDelayMs`. The first mark has zero intervals. CPU measures the whole process,
+including concurrent children; it is not a per-agent CPU allocation. Event-loop delay
+uses a 10 ms sampler and samples again at each mark to retain synchronous blocking
+before the timer can run.
+
+Startup has a separate **120,000 ms** limit, from admission `agent_start` to
+`session_ready`; queue wait is excluded. The host captures a shared monotonic/wall-clock
+and process-CPU snapshot immediately before writing `agent_start`, so synchronous journal
+and event-handler time counts in both the measurements and the startup deadline. Set `LOCUS_PI_WORKFLOW_STARTUP_TIMEOUT_MS`
+in Pi's environment to a positive integer number of milliseconds to override it.
+Invalid values fail explicitly. The overall call timeout, model selection and retry
+allowlist retain their existing behavior. First provider request/response are measured
+after readiness and remain governed by the existing call/turn deadlines.
+
+If startup expires, the call fails with `failureCause: "startup-timeout"` and a reason
+such as `Agent startup exceeded its 120000 ms limit; last completed stage: resources_load_start.`
+This cause is not automatically retried. Pending SDK work cannot always be interrupted,
+but late-created sessions are disposed exactly once without prompting, including a
+synchronous factory overrun returning an already-resolved Promise. Run cancellation also
+interrupts role loading and model resolution immediately, preserves `cancelled`, and
+releases the startup deadline and sampler. A synchronous JavaScript block
+cannot be preempted: expiry is enforced at its next mark or bounded await. These marks
+expose the location of a slow launch; they do not diagnose or repair its cause.
+
 ## Surface
 
 ```text

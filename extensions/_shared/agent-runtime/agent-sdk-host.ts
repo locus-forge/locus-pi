@@ -1,3 +1,4 @@
+import { AgentStartupTimeoutError, type AgentStartup } from "./session/startup.js";
 import { driveChildTurn, type ChildTurnLedger } from "./session/turn-driver.js";
 import { retainAgentSession, AgentSessionUnsettledError } from "./session/lifetime.js";
 import { agentOutputAcceptance } from "./output-acceptance/agent-output-contract.js";
@@ -138,6 +139,7 @@ export interface SdkAgentSessionLike {
 }
 /** The two pre-dispatch admission hooks this host installs on a child's agent loop. */
 export interface SdkAgentAdmissionHooksLike {
+  streamFunction?: AgentSession["agent"]["streamFunction"];
   /** Runs before a tool executes; `{ block: true }` means the tool never runs. */
   onProviderStreamEvent?: ((event: unknown, model: unknown) => void | Promise<void>) | undefined;
   prepareRequest?: ((context: unknown, signal?: AbortSignal) => unknown | Promise<unknown>) | undefined;
@@ -162,6 +164,8 @@ export interface SdkCreateSessionResultLike {
   session: SdkAgentSessionLike;
 }
 export interface SdkCreateSessionOptionsLike {
+  /** Internal instrumentation; stripped before passing options to Pi. */
+  startup?: AgentStartup;
   cwd?: string;
   /** Host SessionManager. The default adapter supplies a run-scoped file-backed
    *  manager outside Pi's operator session catalog. */
@@ -298,6 +302,7 @@ export function createAgentSdkSessionExecutor(options: AgentSdkSessionExecutorOp
   const thinkingLevel = options.thinkingLevel;
   return {
     async run(request, signal) {
+      request.startup?.mark("sdk_host_enter");
       const executionName = agentRunDisplayName(request);
       // A per-child controller lets the fleet menu stop exactly one selected row.
       // The caller's signal is still authoritative and is forwarded into the same
@@ -519,6 +524,7 @@ async function runChildSession(
     diagnostics.push(`Tool access "*" means every host tool except: ${[...excludedTools].sort().join(", ")}.`);
   }
   const sessionOptions: SdkCreateSessionOptionsLike = {
+    ...(request.startup === undefined ? {} : { startup: request.startup }),
     ...(request.responseAcceptance?.observedReturn === undefined ? {} : { observeOutput: true }),
     cwd,
     evidenceSessionDir: path.join(
@@ -562,10 +568,19 @@ async function runChildSession(
   } else if (appendSystemPrompt !== undefined) {
     sessionOptions.appendSystemPrompt = appendSystemPrompt;
   }
-  let created: SdkCreateSessionResultLike;
+  let created: SdkCreateSessionResultLike | undefined;
+  let abandonedCreation = false;
   try {
-    created = await createSession(sessionOptions);
+    const pending = createSession(sessionOptions).then((result) => {
+      created = result;
+      if (abandonedCreation) disposeQuietly(result.session);
+      return result;
+    });
+    created = request.startup === undefined ? await pending : await request.startup.wait(pending, signal);
+    request.startup?.mark("session_ready");
   } catch (error) {
+    abandonedCreation = true;
+    if (created !== undefined) disposeQuietly(created.session);
     if (error instanceof AgentSdkUnavailableError) {
       // Substrate genuinely unavailable -> blocked, with a detectable diagnostic
       // token the wiring keys its graceful fallback on. The reason is HONEST,
@@ -589,13 +604,19 @@ async function runChildSession(
     }
     const reason = errorMessage(error);
     agentLiveStore.patchExecutionWithoutReadback(execution, "model", {
-      status: "error",
+      status: signal.aborted ? "cancelled" : "error",
       errors: [reason],
       finalAnswer: reason,
     });
+    if (signal.aborted) return cancelledResult(request, reason, [...diagnostics, reason]);
     // Catch-all: this branch also carries a bad model id, a rejected tool allowlist and any
     // option-assembly bug. None of those is transient, so none of them may be retried.
-    return failedResult(request, reason, "unclassified", [...diagnostics, reason]);
+    return failedResult(
+      request,
+      reason,
+      error instanceof AgentStartupTimeoutError ? error.failureCause : "unclassified",
+      [...diagnostics, reason],
+    );
   }
 
   const session = created.session;
@@ -616,6 +637,7 @@ async function runChildSession(
       };
     },
   );
+  const restoreStartupProvider = installStartupProviderMarks(session, request.startup);
   let restoreObservedOutput: (() => void) | undefined;
   let childSession = createSdkSessionRecord(request, session.sessionId);
   let activeToolNames: string[] | undefined;
@@ -634,6 +656,7 @@ async function runChildSession(
         errors: [reason],
         finalAnswer: reason,
       });
+      restoreStartupProvider();
       disposeQuietly(session);
       return failedResult(request, reason, "unclassified", [...diagnostics, reason], undefined, childSession);
     }
@@ -645,6 +668,7 @@ async function runChildSession(
       errors: [reason],
       finalAnswer: reason,
     });
+    restoreStartupProvider();
     disposeQuietly(session);
     return failedResult(request, reason, "unclassified", [...diagnostics, reason], undefined, childSession);
   }
@@ -659,6 +683,7 @@ async function runChildSession(
       errors: [reason],
       finalAnswer: reason,
     });
+    restoreStartupProvider();
     disposeQuietly(session);
     return failedResult(request, reason, "unclassified", [...diagnostics, reason], undefined, childSession);
   }
@@ -1126,6 +1151,7 @@ async function runChildSession(
       preservedTrace,
     );
   } finally {
+    restoreStartupProvider();
     restoreObservedOutput?.();
     unregisterOperatorCancel();
     const keep = retained || (operatorCancelled && session.isStreaming === false);
@@ -1162,12 +1188,14 @@ function disposeQuietly(session: SdkAgentSessionLike): void {
 }
 
 async function defaultCreateAgentSession(opts: SdkCreateSessionOptionsLike): Promise<SdkCreateSessionResultLike> {
+  opts.startup?.mark("sdk_import_start");
   let mod: unknown;
   try {
     mod = await import("@earendil-works/pi-coding-agent");
   } catch (error) {
     throw new AgentSdkUnavailableError(`Pi SDK module could not be imported: ${errorMessage(error)}`);
   }
+  opts.startup?.mark("sdk_imported");
   let create: unknown;
   try {
     create = (mod as { createAgentSession?: unknown }).createAgentSession;
@@ -1179,7 +1207,9 @@ async function defaultCreateAgentSession(opts: SdkCreateSessionOptionsLike): Pro
   if (typeof create !== "function") {
     throw new AgentSdkUnavailableError("Installed Pi host does not export createAgentSession (host too old).");
   }
+  opts.startup?.mark("session_options_start");
   const sessionOptions = await materializeSdkSessionOptions(mod, opts);
+  opts.startup?.mark("create_session_start");
   const result = await (create as (o: unknown) => Promise<unknown>)(sessionOptions);
   if (!isRecord(result) || !isRecord(result.session)) {
     throw new AgentSdkUnavailableError("createAgentSession returned an unexpected shape.");
@@ -1209,6 +1239,7 @@ export async function materializeSdkSessionOptions(
   opts: SdkCreateSessionOptionsLike,
 ): Promise<Record<string, unknown>> {
   const {
+    startup,
     appendSystemPrompt,
     resourceLoaderOptions,
     evidenceSessionDir,
@@ -1225,10 +1256,12 @@ export async function materializeSdkSessionOptions(
       "Installed Pi host does not expose SessionManager.create for isolated child sessions.",
     );
   }
+  startup?.mark("session_manager_start");
   const isolatedSessionManager = SessionManager.create(
     opts.cwd,
     evidenceSessionDir ?? path.join(runtimeStateDir(opts.cwd ?? process.cwd()), "reports", ".sessions"),
   );
+  startup?.mark("session_manager_created");
   const isolatedSessionOptions: Record<string, unknown> = { ...sessionOptions, sessionManager: isolatedSessionManager };
   if (appendSystemPrompt === undefined && resourceLoaderOptions === undefined) return isolatedSessionOptions;
   if (!isRecord(mod) || typeof mod.DefaultResourceLoader !== "function") {
@@ -1254,9 +1287,35 @@ export async function materializeSdkSessionOptions(
           appendSystemPromptOverride: () => [],
         };
   if (typeof mod.getAgentDir === "function") loaderOptions.agentDir = (mod.getAgentDir as () => string)();
+  startup?.mark("resources_load_start");
   const loader = new DefaultResourceLoader(loaderOptions);
   await loader.reload?.();
+  startup?.mark("resources_loaded");
   return { ...isolatedSessionOptions, resourceLoader: loader };
+}
+
+/** Observe the transport boundary, preserving Pi's payload/response hooks and request options. */
+function installStartupProviderMarks(session: SdkAgentSessionLike, startup: AgentStartup | undefined): () => void {
+  const agent = session.agent;
+  const stream = agent?.streamFunction;
+  if (startup === undefined || agent === undefined || stream === undefined) return () => {};
+  agent.streamFunction = (model, context, options) => {
+    startup.mark("first_provider_request");
+    return stream.call(agent, model, context, {
+      ...options,
+      onResponse: async (response, responseModel) => {
+        startup.mark("first_provider_response");
+        await options?.onResponse?.(response, responseModel);
+      },
+      onProviderStreamEvent: async (event, responseModel) => {
+        startup.mark("first_provider_response");
+        await options?.onProviderStreamEvent?.(event, responseModel);
+      },
+    });
+  };
+  return () => {
+    agent.streamFunction = stream;
+  };
 }
 
 /** Keep SDK hooks while separating its HTTP idle default from CLI process deadlines. */

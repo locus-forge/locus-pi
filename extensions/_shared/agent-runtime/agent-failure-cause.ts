@@ -30,6 +30,8 @@ export const AGENT_FAILURE_CAUSES = [
   "host-turn-timeout",
   /** The per-call wall-clock fuse expired and the child was aborted. TRANSPORT. */
   "call-timeout",
+  /** The separate pre-session startup deadline expired. Never a transport retry. */
+  "startup-timeout",
   /** A stage declared `ask: true` but the parent session cannot mount an operator
    *  question (no UI / non-interactive mode). Fail-closed refusal declared by the
    *  workflow bridge, never an error string left in the child's context. TRANSPORT. */

@@ -50,6 +50,8 @@ repeating it, so there is one place to correct if it ever changes.
    budget_ — a statement about what it may still spend, never a verdict on the answers
    it already produced, all of which stay stored and readable. See
    [run budget](budgets.md#run-budget) for the axes.
+   Child session preparation additionally has a configurable 120-second startup limit;
+   see [startup timing](../../extensions/workflows/README.md#child-startup-timing).
 3. **A capability that cannot be honoured is refused before the child starts.** If a
    transport or model cannot carry a declared contract, the call fails by name up front
    (`output-contract-unavailable`) rather than imitating the capability by grading the

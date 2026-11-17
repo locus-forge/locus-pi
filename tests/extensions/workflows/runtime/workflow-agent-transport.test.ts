@@ -123,6 +123,7 @@ describe("agent failure cause — bridge", () => {
       createExecutor: (): AgentExecutor => ({
         async run(request, signal) {
           children += 1;
+          controller.abort({ kind: "operator_stop" }); // after startup; startup cancellation is tested separately
           await new Promise<void>((resolve) => {
             if (signal.aborted) resolve();
             else signal.addEventListener("abort", () => resolve(), { once: true });
@@ -154,7 +155,6 @@ describe("agent failure cause — bridge", () => {
       attempts: 2,
       timeoutMs: 20,
     });
-    setTimeout(() => controller.abort({ kind: "operator_stop" }), 5);
 
     await expect(pending).rejects.toThrow(/run cancelled by operator/u);
     expect(children).toBe(1);

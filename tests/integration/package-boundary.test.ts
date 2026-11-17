@@ -339,9 +339,11 @@ describe("npm public package boundary", () => {
       "schemas/extension-manifest.schema.json",
       "skills/",
     ]);
-    expect(dryRun.files).toHaveLength(294);
+    expect(dryRun.files).toHaveLength(296);
     for (const filename of [
       ...["center", "editor", "model"].map((name) => `extensions/agents/fleet/command-center/${name}.ts`),
+      "extensions/_shared/agent-runtime/session/startup.ts",
+      "extensions/_shared/agent-runtime/session/startup-format.ts",
       "extensions/_shared/model/model-role-config.ts",
       "extensions/model/selector/options.ts",
       "extensions/workflows/catalog/workflow-action-prompt.ts",
@@ -402,11 +404,8 @@ describe("npm public package boundary", () => {
       })
       .sort();
 
-    // The load-bearing assertion of the scanned registry: what a checkout
-    // resolves by name and what an install ships must be the same set. A
-    // workflow present here and missing from `package.json#files` would work in
-    // this repository and be gone after `npm i`, which is the one way "the
-    // folder is the registry" could lie to an operator.
+    // Named checkout workflows and installed workflows must be the same set;
+    // otherwise a working local workflow disappears after npm install.
     expect(packedPaths).not.toContain("examples/README.md");
     expect(packedPaths).toContain("examples/workflows/README.md");
     expect(packedPaths.some((file) => file.startsWith("extensions/workflows/examples/"))).toBe(false);
