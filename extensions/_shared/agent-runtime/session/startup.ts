@@ -116,7 +116,19 @@ export class AgentStartup {
     this.onMark?.(mark);
   }
 
+  /** True once a startup wait ended because the run was cancelled, not by the limit. */
+  cancelled = false;
+
   async wait<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
+    try {
+      return await this.waitBounded(pending, signal);
+    } catch (error) {
+      if (signal?.aborted && !(error instanceof AgentStartupTimeoutError)) this.cancelled = true;
+      throw error;
+    }
+  }
+
+  private async waitBounded<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
     void pending.catch(() => {});
     signal?.throwIfAborted();
     this.check();

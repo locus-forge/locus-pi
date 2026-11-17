@@ -202,12 +202,12 @@ export function createWorkflowAgentRunner(options: WorkflowAgentBridgeOptions): 
     try {
       return { ...(await runWorkflowAgent(req, startup)), startup: [...startup.marks] };
     } catch (error) {
-      if (!(error instanceof AgentStartupTimeoutError) && !signal.aborted) throw error;
-      const reason = signal.aborted ? "Agent run was cancelled during startup." : (error as Error).message;
+      if (!(error instanceof AgentStartupTimeoutError) && !startup.cancelled) throw error;
+      const reason = startup.cancelled ? "Agent run was cancelled during startup." : (error as Error).message;
       return {
         ok: false,
-        status: signal.aborted ? "cancelled" : "failed",
-        failureCause: signal.aborted ? "cancelled" : "startup-timeout",
+        status: startup.cancelled ? "cancelled" : "failed",
+        failureCause: startup.cancelled ? "cancelled" : "startup-timeout",
         summary: reason,
         diagnostics: [reason],
         executionMode: req.executionMode ?? (req.agent === undefined ? "bare" : "named"),
