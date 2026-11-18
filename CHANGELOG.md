@@ -4,6 +4,21 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-18
+
+### Added
+
+- Interactive child agents can run in the background, keep their session for a
+  follow-up, and open in a dedicated conversation. The Agents Command Center
+  shows workflows, child sessions, and their observed activity.
+- Projects can define model roles and select an assigned role for a child agent.
+- Workflow runs record startup timing for each fresh child. The default startup
+  deadline is 120 seconds. A timeout identifies the last completed stage.
+
+### Changed
+
+- The supported Pi host floor is 1.3.0. Development and SDK checks use Pi 1.4.0.
+
 ### Fixed
 
 - Agents Command Center lists a selectable `Main conversation` row that returns
