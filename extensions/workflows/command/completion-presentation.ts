@@ -5,6 +5,29 @@ import type { CustomUiComponent, ExtensionAPI, ThemeLike } from "../../_shared/h
 import { WORKFLOW_RESULT_CUSTOM_TYPE, WORKFLOW_RUN_CUSTOM_TYPE } from "./receipts.js";
 import type { RunWorkflowScriptResult } from "../runtime/workflow-runner.js";
 import { WORKFLOW_SAVED_SOURCE_RELATIVE_ROOT } from "../runtime/workflow-run-layout.js";
+import type { WorkflowDispositionProjection, WorkflowResultPersistence } from "../runtime/workflow-result.js";
+
+/** Link to persisted evidence without interpreting the workflow's own result object. */
+export function workflowResultNavigation(
+  runId: string,
+  status: WorkflowDispositionProjection["status"],
+  resultTextPath?: string,
+  persistence?: WorkflowResultPersistence,
+): { fileLine?: string; commandLine: string } {
+  if (resultTextPath !== undefined && resultTextPath !== "") {
+    return {
+      fileLine: `full result: ${resultTextPath}`,
+      commandLine:
+        persistence?.ok === true
+          ? `read full result: /workflows result ${shortWorkflowRunId(runId)}`
+          : `inspect run: /workflows status ${shortWorkflowRunId(runId)}`,
+    };
+  }
+  return {
+    ...(status === "completed" && persistence?.ok ? { fileLine: `result record: ${persistence.path}` } : {}),
+    commandLine: `${status === "completed" ? "inspect run" : "read full reason"}: /workflows status ${shortWorkflowRunId(runId)}`,
+  };
+}
 
 export interface WorkflowCompletionPresentation {
   generatedRunCommand?: string;
@@ -31,6 +54,13 @@ export function registerWorkflowTranscriptRenderers(pi: ExtensionAPI): void {
   if (pi.registerMessageRenderer === undefined) return;
   pi.registerMessageRenderer(WORKFLOW_RUN_CUSTOM_TYPE, (message, { outputPad }, theme) => {
     if (typeof message.content !== "string") return undefined;
+    if (message.details?.eventKind === "workflow_start" && typeof message.details.displayLabel === "string") {
+      const label = compactTranscriptText(message.details.displayLabel).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+      return {
+        invalidate() {},
+        render: (width: number) => [truncateToWidth(`● workflow ${label} started`, Math.max(1, width))],
+      };
+    }
     const title = workflowRunTitle(message.details?.eventKind);
     // Only the run card gets digest tone: its content is the digest, whose line
     // vocabulary is known. The result card below carries the workflow's own prose,

@@ -4,6 +4,59 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-18
+
+### Added
+
+- Interactive child agents can run in the background, keep their session for a
+  follow-up, and open in a dedicated conversation. The Agents Command Center
+  shows workflows, child sessions, and their observed activity.
+- Projects can define model roles and select an assigned role for a child agent.
+- Workflow runs record startup timing for each fresh child. The default startup
+  deadline is 120 seconds. A timeout identifies the last completed stage.
+
+### Changed
+
+- The supported Pi host floor is 1.3.0. Development and SDK checks use Pi 1.4.0.
+
+### Fixed
+
+- Agents Command Center lists a selectable `Main conversation` row that returns
+  to the main conversation without stopping agents, including when the center is
+  opened from a child view or has no agent sessions. Elapsed times of a day or
+  more now read as floored days and whole hours (`1d`, `2d3h`) instead of hour
+  totals such as `49h3m`.
+- Child agent conversations use Pi's native built-in tool presentation and
+  respect the configured tool-output expansion key in current sessions and
+  history. Activity labels now agree across the strip, Command Center and
+  child session; idle details distinguish completion of a turn from task
+  acceptance. Workflow completion cards identify persisted result records and
+  run inspection, and avoid a dead text-result command after a late canonical
+  record write failure.
+- Agents Command Center now uses consistent execution labels and open/closed
+  session counts, makes projects selectable, and distinguishes repository,
+  launch and working directories. Selection uses a quiet full-row background
+  without bold text. Explicit pane focus, independent detail scrolling,
+  responsive layouts and contextual key hints make navigation visible; path
+  expansion updates project, workflow and agent details in place. Full agent
+  messages appear before long launch prompts.
+- Typed catalog `Start` now requests the native `workflow` tool directly. The
+  tool shows canonical JSON in an extension-owned interactive confirmation
+  before it attaches or imports the workflow. Every interactive call confirms a
+  resolved source locator and entry-byte digest, then admission enforces that
+  digest and the displayed workspace selection, including its project root. Typed catalog Start retains its
+  exact selection behind a one-use request ID, so unrelated calls cannot consume
+  it; a newer Start supersedes the prior unsubmitted editor handoff, steering or
+  follow-up input carrying the ID marks it submitted, later streaming input
+  preserves it until its tool call, and the next idle input retires any ID it
+  does not carry. Explicit reuse still fails. Full
+  launch arguments are
+  detached before the dialog; confirmation is abort-aware, settles fail-closed
+  after five minutes even if an adapter ignores the signal, and reports timeout
+  or operator refusal as a machine-readable tool error. The
+  route no longer requires a loaded skill command, prepares a second slash
+  command, or permits shell fallback.
+
 ## [0.14.1] - 2026-10-08
 
 ### Added

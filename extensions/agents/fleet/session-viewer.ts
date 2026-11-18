@@ -694,25 +694,16 @@ export class AgentSessionViewer implements CustomUiComponent {
    * The wheel half was previously offered only next to an editor, so a settled row
    * under `LOCUS_DRILL_MOUSE=1` captured wheel reports while advertising keys alone.
    *
-   * The key half is absent in fullscreen because it does not work there, and this
-   * component cannot make it work. `TuiAltScreen` registers `handleViewportInput`
-   * as a TUI-wide input listener in its own constructor
-   * (`@earendil-works/pi-tui/dist/tui-alt-screen.js:77`), and that listener answers
-   * `{ consume: true }` for `tui.altScreen.pageUp`, `pageDown`, `top` and `bottom` —
-   * bound by default to PageUp, PageDown, Home and End
-   * (`@earendil-works/pi-tui/dist/keybindings.js:91-116`), with the upstream comment
-   * saying they "intentionally shadow the unmodified editor bindings in fullscreen
-   * mode". Input listeners run to completion before `handleTerminalInput` ever
-   * reaches the focused component (`@earendil-works/pi-tui/dist/tui.js:557-563`), and
-   * the alt-screen listener is registered before any component exists, so no
-   * ordering, focus or overlay trick puts this viewer in front of it. The keys are
-   * still handled below: an operator who rebinds those four `tui.altScreen.*`
-   * actions gets them back, and regular mode never had the problem.
+   * In fullscreen Pi's TUI-wide viewport listener consumes PageUp/PageDown before
+   * the focused component, while Pi 1.0.3 moved top/bottom to Ctrl+Home/Ctrl+End.
+   * Unmodified Home/End therefore reach this viewer when its reply editor is closed.
+   * Regular mode also keeps PageUp/PageDown. The wheel remains host-owned in
+   * fullscreen and is offered only when this viewer enabled mouse reporting.
    */
   #historyControls(): string {
     const keys = process.platform === "darwin" ? "fn+Up/Down" : "pgup/pgdn";
     if (this.#mouseScrollOwned) return `wheel/${keys} history`;
-    return this.tui.mode === "fullscreen" ? "" : `${keys} history`;
+    return this.tui.mode === "fullscreen" ? "home/end history" : `${keys} history`;
   }
 }
 

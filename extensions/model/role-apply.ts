@@ -1,3 +1,4 @@
+import { getProjectRoot } from "../_shared/host/pi-api.js";
 /**
  * extensions/model/role-apply.ts — what happens when the selector applies one
  * route: validate the model/effort pair, mutate the Pi session only when the
@@ -8,7 +9,7 @@
 
 import {
   formatAssignment,
-  getModelRolesConfigPath,
+  loadModelRolesState,
   setModelRoleSetting,
   type ModelRoleAssignment,
 } from "../_shared/model/model-settings.js";
@@ -27,7 +28,18 @@ export async function applyModelRole(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   selection: ModelRoleSelection,
+  configPath?: string,
 ): Promise<AppliedModelRoleState> {
+  const selectedFile = await loadModelRolesState(getProjectRoot(ctx));
+  if (configPath !== undefined && configPath !== selectedFile.path)
+    return {
+      ...(await currentModelRoleState(pi, ctx, undefined)),
+      receipt: {
+        kind: "error",
+        text: "The model-role configuration source changed. Reopen /model-roles before saving.",
+      },
+    };
+  const path = selectedFile.path;
   const assignment = assignmentFromModel(selection.model, selection.thinking);
   if (!assignment) {
     return {
@@ -79,7 +91,7 @@ export async function applyModelRole(
           currentThinking = pi.getThinkingLevel();
           thinkingApplied = currentThinking === selection.thinking;
           if (!thinkingApplied) {
-            applyError = `Pi clamped effort ${selection.thinking} to ${currentThinking}; DEFAULT route was not saved.`;
+            applyError = `Pi clamped effort ${selection.thinking} to ${currentThinking}; default route was not saved.`;
           }
         }
       }
@@ -92,7 +104,7 @@ export async function applyModelRole(
   const hostApplySucceeded = !shouldApplyModel || (modelApplied && thinkingApplied);
   if (hostApplySucceeded) {
     try {
-      const persistence = await setModelRoleSetting(selection.action.role, assignment);
+      const persistence = await setModelRoleSetting(selection.action.role, assignment, path);
       rolePersisted = persistence.rolePersisted;
       lockReleaseError = persistence.lockReleaseError;
     } catch (error) {
@@ -133,7 +145,7 @@ export async function applyModelRole(
     ...(rolePersistenceError === undefined ? {} : { rolePersistenceError }),
     ...(lockReleaseError === undefined ? {} : { lockReleaseError }),
     customEntryAppended,
-    configPath: getModelRolesConfigPath(),
+    configPath: path,
   });
 
   const succeeded = rolePersisted && hostApplySucceeded;
@@ -154,7 +166,7 @@ export async function applyModelRole(
     ].join(" ");
   } else if (partialSessionApply) {
     receiptKind = "warning";
-    receiptText = `Current session changed to ${assignment.model} · effort ${selection.thinking}, but DEFAULT route was not saved${rolePersistenceError ? `: ${rolePersistenceError}` : "."}`;
+    receiptText = `Current session changed to ${assignment.model} · effort ${selection.thinking}, but default route was not saved${rolePersistenceError ? `: ${rolePersistenceError}` : "."}`;
   } else {
     receiptKind = "error";
     receiptText = applyError ?? rolePersistenceError ?? `${selection.action.tag} route was not saved.`;

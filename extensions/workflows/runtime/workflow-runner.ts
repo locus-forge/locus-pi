@@ -1,4 +1,9 @@
 import {
+  activityStore,
+  projectWorkflowActivityHandoff,
+  projectWorkflowActivityPhase,
+} from "../../_shared/agent-runtime/activity-store.js";
+import {
   snapshotWorkflowInput,
   workflowTypedInputProjection,
   type WorkflowInputValue,
@@ -119,6 +124,8 @@ import {
   assertWorkflowHandoffClaimEligibility,
   assertWorkflowHandoffClaimForContinuation,
   bindWorkflowHandoffClaim,
+  readPersistedWorkflowOperatorHandoff,
+  projectWorkflowHandoffState,
   type WorkflowHandoffClaimLease,
 } from "./workflow-handoff.js";
 
@@ -182,6 +189,12 @@ export interface RunWorkflowScriptOptions {
   script?: string;
   /** Host-owned resolved target; prevents launch-time raw-reference re-resolution. */
   targetBinding?: ResolvedWorkflowTarget;
+  /** Host-owned confirmed/catalog entry-byte identity; admission refuses drift before import. */
+  expectedScriptSha256?: string;
+  /** Host-owned interactive workspace selection; admission refuses drift before creating it. */
+  expectedWorkspaceAbsolutePath?: string;
+  /** Host-owned interactive project root; every launch refuses a changed root. */
+  expectedProjectRoot?: string;
   /** Optional bounded human semantic request. */
   input?: string;
   inputValue?: WorkflowInputValue;
@@ -511,7 +524,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
   // The terminal sequence has one owner. Every `finishRun(...)` route below hands
   // it the same field shape; the ORDER, the exactly-once lease release and the
   // mandatory/best-effort split live in `workflow-run-finalization.ts`.
-  const finishRun = createWorkflowRunFinalizer({
+  const finalizeRun = createWorkflowRunFinalizer({
     projectRoot,
     runId,
     runDir,
@@ -535,14 +548,30 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     unhandledGroupFailure: () => unhandledGroupFailure,
   });
 
+  const finishRun: typeof finalizeRun = (fields) => {
+    const result = finalizeRun(fields);
+    activityStore.settleWorkflow(runId, result.disposition?.status ?? (result.ok ? "completed" : "failed"));
+    if (opts.operatorHandoffClaim !== undefined) {
+      // Use the persisted claim/result owner, not the continuation's optimistic outcome.
+      try {
+        const source = readPersistedWorkflowOperatorHandoff(projectRoot, opts.operatorHandoffClaim.sourceRunId);
+        if (source.status === "ready")
+          projectWorkflowActivityHandoff(
+            source.handoff.originRunId,
+            projectWorkflowHandoffState(projectRoot, source.handoff).status,
+          );
+      } catch {
+        /* Display projection cannot change the durable execution result. */
+      }
+    }
+    return result;
+  };
+
   try {
     if (inputFailure !== undefined) throw inputFailure;
+    if (opts.expectedProjectRoot !== undefined && path.resolve(projectRoot) !== path.resolve(opts.expectedProjectRoot))
+      throw new Error("workflow project root changed after confirmation");
     items = snapshotWorkflowItems(opts.items);
-    try {
-      opts.onRunStart?.({ runId, runDir });
-    } catch {
-      // Presentation callback failure must not turn successful workflow execution into a crash.
-    }
     assertWorkflowInput(opts.input);
     if (opts.continuation !== undefined) assertWorkflowContinuation(opts.continuation);
     if (hasResume) resumeFromRunId = assertWorkflowRunId(requestedResumeFromRunId);
@@ -731,6 +760,37 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     return failExecution(error);
   }
   const executionCoordination = coordination;
+  if (opts.signal.aborted) return failExecution("Workflow launch cancelled before execution.");
+  // A claimed ID is only queued; announce after source/workspace admission and root lease acquisition.
+  try {
+    opts.onRunStart?.({ runId, runDir });
+  } catch {
+    /* Presentation cannot change the admitted run outcome. */
+  }
+
+  // Start observers can synchronously change project files. Preserve the saved-child
+  // admission boundary before importing even a retained snapshot or running an agent.
+  try {
+    const expected = inheritedCoordination?.expectedChildSource;
+    if (
+      expected !== undefined &&
+      (realpathSync(target.path) !== expected.canonicalPath ||
+        sha256WorkflowBytes(readFileSync(target.path)) !== expected.scriptSha256)
+    ) {
+      return failExecution(`saved child workflow source changed before execution: ${JSON.stringify(target.ref)}`);
+    }
+  } catch (error) {
+    return failExecution(error instanceof Error ? error.message : String(error));
+  }
+  if (opts.signal.aborted) return failExecution("Workflow launch cancelled before execution.");
+
+  activityStore.workflow({
+    runId,
+    projectRoot,
+    sourcePath: scriptIdentity.sourcePath,
+    status: "running",
+    ...(coordination.parentRunId === undefined ? {} : { parentRunId: coordination.parentRunId }),
+  });
   if (opts.operatorHandoffClaim !== undefined) {
     try {
       assertWorkflowHandoffClaimEligibility(opts.operatorHandoffClaim, { target, scriptIdentity });
@@ -832,6 +892,7 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     try {
       bindWorkflowHandoffClaim(opts.operatorHandoffClaim, runId);
       handoffClaimBound = true;
+      projectWorkflowActivityHandoff(opts.operatorHandoffClaim.sourceRunId, "running");
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       emitPrelude({ ts: new Date().toISOString(), runId, kind: "error", source: "runtime", message: error });
@@ -923,7 +984,21 @@ export async function runWorkflowScript(opts: RunWorkflowScriptOptions): Promise
     ...(budget.timeoutMs === undefined ? {} : { defaultTimeoutMs: budget.timeoutMs }),
     ...(budget.toolCalls === undefined ? {} : { defaultMaxToolCalls: budget.toolCalls }),
     ...(budget.turns === undefined ? {} : { defaultMaxTurns: budget.turns }),
-    ...(opts.onEvent !== undefined ? { onEvent: opts.onEvent } : {}),
+    onEvent: (line) => {
+      try {
+        if (
+          line.runId === runId &&
+          line.kind === "phase" &&
+          line.groupId === undefined &&
+          line.parentGroupId === undefined &&
+          line.phase !== undefined
+        )
+          projectWorkflowActivityPhase(runId, line.phase);
+      } catch {
+        /* A failed read-only activity listener cannot suppress the observer. */
+      }
+      opts.onEvent?.(line);
+    },
     ...(noOperator === undefined ? {} : { operatorInputForbidden: true }),
     onAwaitOperator: (declaration) => {
       if (awaitOperatorDeclaration !== undefined) {

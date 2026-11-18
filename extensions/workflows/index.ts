@@ -40,6 +40,7 @@ import {
 } from "./operator/progress-widget.js";
 import { createWorkflowCommandLauncher } from "./launch/workflow-command-launcher.js";
 import { registerWorkflowTool } from "./tool/workflow-tool.js";
+import { workflowCatalogLaunchSelection } from "./catalog/workflow-action-prompt.js";
 import { registerWorkflowSourceCheckTool } from "./tool/workflow-source-check-tool.js";
 import { registerFusionSurface } from "./fusion/surface.js";
 import {
@@ -62,6 +63,8 @@ export default function workflows(pi: ExtensionAPI): void {
    */
   const sessionRunIds = new Set<string>();
   const sessionPanels = new Set<WorkflowProgressComponent>();
+  const catalogLaunches = new Map<string, NonNullable<ReturnType<typeof workflowCatalogLaunchSelection>>>();
+  const submittedCatalogLaunches = new Set<string>();
   let completionProjectRoot = process.cwd();
   let completionWorkingDirectory = completionProjectRoot;
   const rememberCompletionContext = (ctx: ExtensionContext): void => {
@@ -239,6 +242,22 @@ export default function workflows(pi: ExtensionAPI): void {
   registerTransientUiCleanup(pi, "workflows", cleanupTransientSurface);
   registerTransientUiCleanup(pi, WORKFLOW_LIVE_WIDGET_KEY, cleanupTransientSurface);
   pi.on("turn_end", (_event, ctx) => cleanupCompletedSurface(ctx));
+  pi.on("input", (event) => {
+    if (event.source === "extension" || typeof event.text !== "string") return;
+    if (event.streamingBehavior !== undefined) {
+      for (const catalogSelectionId of catalogLaunches.keys()) {
+        if (event.text.includes(catalogSelectionId)) submittedCatalogLaunches.add(catalogSelectionId);
+      }
+      return;
+    }
+    for (const catalogSelectionId of catalogLaunches.keys()) {
+      if (event.text.includes(catalogSelectionId)) submittedCatalogLaunches.add(catalogSelectionId);
+      else {
+        catalogLaunches.delete(catalogSelectionId);
+        submittedCatalogLaunches.delete(catalogSelectionId);
+      }
+    }
+  });
   pi.on("agent_settled", (_event, ctx) => {
     observeHandoffPump(ctx, () => pumpSessionHandoffs(ctx));
   });
@@ -252,18 +271,38 @@ export default function workflows(pi: ExtensionAPI): void {
     resetWorkflowLiveExecutions();
     disposeSessionPanels();
     sessionRunIds.clear();
+    catalogLaunches.clear();
+    submittedCatalogLaunches.clear();
     rememberCompletionContext(ctx);
     commandLauncher.startSession(ctx);
   });
   pi.on("session_shutdown", async (_event, _ctx) => {
     resetWorkflowLiveExecutions();
     disposeSessionPanels();
+    catalogLaunches.clear();
+    submittedCatalogLaunches.clear();
     await commandLauncher.shutdown();
     unpinTransientUiKey(pi, WORKFLOW_LIVE_WIDGET_KEY);
   });
 
   registerWorkflowTool(pi, {
     commandLauncher,
+    resolveCatalogLaunchSelection: ({ catalogSelectionId, name }) => {
+      if (catalogSelectionId !== undefined) {
+        const selected = catalogLaunches.get(catalogSelectionId);
+        if (selected === undefined) return { status: "invalid", message: "catalog selection id is unknown or used" };
+        if (name !== selected.target.ref) {
+          return { status: "invalid", message: "catalog selection id does not match the requested workflow name" };
+        }
+        catalogLaunches.delete(catalogSelectionId);
+        submittedCatalogLaunches.delete(catalogSelectionId);
+        return { status: "selected", ...selected };
+      }
+      if (name !== undefined && [...catalogLaunches.values()].some((selected) => selected.target.ref === name)) {
+        return { status: "required", message: "catalogSelectionId is required for this catalog-selected workflow" };
+      }
+      return { status: "none" };
+    },
     onRunStarted: (runId) => sessionRunIds.add(runId),
     onRunCompleted: (runId) => completedRunIds.add(runId),
   });
@@ -279,5 +318,13 @@ export default function workflows(pi: ExtensionAPI): void {
       workingDirectory: completionWorkingDirectory,
     }),
     actionableRunIds: (projectRoot) => handoffController.eligibleRunIds(projectRoot),
+    rememberCatalogLaunchSelection: (intent, catalogSelectionId) => {
+      const selected = workflowCatalogLaunchSelection(intent);
+      if (selected === undefined || catalogSelectionId === undefined) return;
+      for (const retainedId of catalogLaunches.keys()) {
+        if (!submittedCatalogLaunches.has(retainedId)) catalogLaunches.delete(retainedId);
+      }
+      catalogLaunches.set(catalogSelectionId, selected);
+    },
   });
 }

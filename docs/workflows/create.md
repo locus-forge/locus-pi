@@ -339,7 +339,7 @@ names. The global user model table resolves `modelRole`; a concrete `model` is a
 explicit override. If an exact assigned role is required, `requireModelRole`
 fails when it is unassigned. Otherwise fallback to the parent model is recorded.
 Check the executed model in the run evidence before claiming Claude/Codex
-independence. Configure routes through `/model-roles` or `~/.pi/agent/model-roles/config.json`; project-local model-role files are not read. No automatic load-based engine scheduler is added by this pattern.
+independence. Configure routes through `/model-roles`; `<project>/.pi/model-roles/config.json` replaces the user file when present, otherwise `~/.pi/agent/model-roles/config.json` is used. No automatic load-based engine scheduler is added by this pattern.
 
 ### Return a result and continue
 

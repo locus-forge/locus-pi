@@ -54,11 +54,27 @@ builtins still allow filesystem, subprocess, network, dynamic code and other hos
 effects, including indirect loaders the AST policy cannot enumerate. Identity
 coverage is not isolation, runtime dependency closure or determinism.
 
-The model-callable `workflow` tool declares Pi `approval: "exec"`; its native
-approval details warn that the selected file has full host Node.js/module access
-and no sandbox. Approval records consent but does not constrain the module.
-`/workflows run` is an explicit operator command and does not pass through the
-tool-approval path; `locus-pi` adds no second launch prompt or `decision` entry.
+The model-callable `workflow` tool owns an awaited confirmation in interactive
+TUI and RPC sessions. It detaches the complete launch request, then shows the
+resolved source locator and entry SHA-256, effective workspace, bounded canonical
+typed input, and a warning that the selected file has full host Node.js/module
+access and no sandbox before it attaches or imports the workflow. Admission
+enforces the confirmed target, digest, and displayed explicit, named, or resumed
+workspace selection, including its owning project root. Confirmation records consent but does
+not constrain the module. Parent cancellation, a local five-minute timeout,
+operator refusal, and dialog failure all fail closed before attach. For typed
+catalog Start, a one-use `catalogSelectionId` looks up the selected target and
+entry-byte digest in extension-owned session state; unrelated calls cannot
+consume it. A newer Start supersedes the previous unsubmitted editor handoff.
+Steering or follow-up input carrying a known ID marks it submitted, and later
+streaming input preserves it until its tool call; the next idle user input
+retires an ID it does not carry. Missing or
+mismatched IDs are refused while the submitted catalog request remains
+outstanding, and explicitly reusing an old ID remains refused. One-shot `print`
+and `json` hosts have no reachable
+operator and bypass that prompt; their caller must supply explicit non-interactive
+authorization. `/workflows run` is itself an explicit operator command and does
+not pass through the tool-confirmation path.
 
 ## Approval / trust discipline
 

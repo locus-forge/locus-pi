@@ -113,9 +113,23 @@ A fixed control skeleton does not require precomputed implementation work. The e
 
 ## Executor selection
 
-Pi already has responsibility roles and concrete selectors. Omit `model`, `modelRole`, `requireModelRole`, and effort selectors by default. Use `{ modelRole: "reviewer" }` only when the user or project explicitly requests that routing and the role exists in the global user model table. A configured role alone does not authorize choosing it. Model-less calls follow user routing, including an assigned `agent` role, and otherwise inherit the session model. If a particular route is essential, use `requireModelRole: true` so an unassigned role fails instead of inheriting silently. Configure roles through `/model-roles` or `~/.pi/agent/model-roles/config.json`, the only persistent model-role authority; project-local role files are not read. A role name is a configuration key, not proof of Claude, Codex, subscription billing or reviewer independence.
+Pi already has responsibility roles and concrete selectors. Omit `model`, `modelRole`, `requireModelRole`, and
+effort selectors by default. Use `{ modelRole: "reviewer" }` only when the user or project explicitly requests that
+routing and the role is assigned in the selected project or user model-role file. A configured role alone does not
+authorize choosing it. Model-less calls follow user routing, including an assigned `agent` role, and otherwise
+inherit the session model. If a particular route is essential, use `requireModelRole: true` so an unassigned role
+fails instead of inheriting silently. Follow the [canonical model-role
+configuration](../../../docs/workflows/models.md#use-model-roles): `<project>/.pi/model-roles/config.json`, when
+present, replaces the entire user file `~/.pi/agent/model-roles/config.json`. An empty project file suppresses user
+assignments; an invalid project file fails rather than falling back. An invalid existing assignment is an error, not
+fallback. `/model-roles` displays and saves to the selected file. A role name is a configuration key, not proof of
+Claude, Codex, subscription billing or reviewer independence.
 
-An explicit verified condition can select an author-owned options record at a visible callsite; do not add `chooseEngine`/`agentOpts` wrappers or parse model prose to choose a provider. Pi has no built-in live-load scheduler for choosing an engine. Resolve availability in the design or global user configuration or through a real `choice` edge when the task requires it. Do not invent automatic failover or silently change a required executor.
+An explicit verified condition can select an author-owned options record at a visible callsite; do not add
+`chooseEngine`/`agentOpts` wrappers or parse model prose to choose a provider. Pi has no built-in live-load
+scheduler for choosing an engine. Resolve availability in the design or selected project/user configuration or
+through a real `choice` edge when the task requires it. Do not invent automatic failover or silently change a
+required executor.
 
 Keep literal responsibility labels (`review`, `correct`) and human work titles. Name a provider/model in a title only when its route was verified. Confirm `executedModel` and recorded fallback evidence when evaluating a run. Different role names alone are not different engines. The generic references deliberately inherit the session model and promise independent sessions/roles, not cross-provider review.
 
@@ -230,7 +244,9 @@ The additional sequence is justified by a consumer dependency, not a desire to c
 
 Choose checks that resolve uncertainty about the requested outcomes.
 Start with focused normal, failure and boundary cases. Expand verification
-for a concrete unresolved question; explain what the added check establishes.
+only for a named Task/contract requirement or concrete unresolved risk;
+explain what the added check establishes. Generic caution or a desire for
+more confidence does not justify widening the checks.
 
 Bound large searches so they can terminate. Use exhaustive enumeration when
 the task requires it and the chosen bounds make completion attainable.
@@ -250,6 +266,9 @@ bounds and failure exits. A separate design-review agent is not required by defa
 After Build, review the actual source against this record; a correct design does not prove
 that its implementation has the same edges. Keep any independent review required by the Task
 or selected authoring workflow. Do not add another reviewer merely to restate the design.
+Once required reviews accept the current product bytes and evidence, do not run another full-scope
+review of that unchanged state. Reopen acceptance only for changed bytes or evidence, or a named
+unresolved requirement or risk; scope the added review to that delta or question.
 
 For each acceptance edge, trace blocking criteria to the request or an
 authoritative contract and identify evidence an available child can obtain.
@@ -284,7 +303,9 @@ Repository ignore rules govern version control, not delivery. Cleanup may
 remove disposable files belonging to this task; required deliverables remain.
 
 Correction receives the complete actionable findings and is followed by
-fresh review. A later delivery writer reports the reviewed state. If that
+fresh review. When evidence locates a defect in an upstream result, findings name its producer
+and the dependent results that need fresh work.
+A later delivery writer reports the reviewed state. If that
 writer performs a new required check, its failure must reach an explicit
 non-success route before successful completion.
 Read a correction record only on a path where a correction produced it. An initial
@@ -346,10 +367,13 @@ An optional check not performed does not, by itself, make a completed implementa
 The packaged `task/plan` and `task/plan-light` own their authoring review loops and
 caller-assigned source/evidence paths in the [task authoring manual](../../../examples/workflows/task/README.md).
 They do not inherit an extra design-review stage from this lesson. Use the same exact source
-for Node, the project-confined checker, reviewer and launcher. Retain its path, checked-byte
-SHA-256 and actual outcomes. Before launch, reopen the regular nonempty source and compare
-reviewed evidence; correction or replay requires current checks. Missing, drifted or failed
-source forbids execution. Native completion prose does not attest file delivery.
+for Node, the project-confined checker, reviewer and launcher. Retain its exact path, review
+findings and actual check outcomes. Before launch, reopen the regular nonempty source and
+confirm that current source and evidence satisfy the reviewed design and Task. Source or evidence
+changes require review of the affected scope; correction or replay requires current checks.
+Missing or invalid source, failed review and exhaustion forbid execution. Native completion
+prose does not attest file delivery. This handoff requires no stored source digest; runtime-owned
+snapshot integrity and launch-confirmation identity remain separate contracts.
 
 A successful Build returns `/workflows run <name>` (or the qualified child ref).
 Create-only stops there. Create-and-run continues through

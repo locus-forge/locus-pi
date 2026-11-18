@@ -78,7 +78,7 @@ export function rawTurn(values: string[], terminal = "completed", extra: object[
 /** Shared synthetic transport factory; source-run tests use the real runner/identity owner. */
 export async function createStructuredSdkExecutor(
   root: string,
-  scripted: object[][],
+  scripted: object[][] | ((payload: unknown) => object[]),
   tweak?: (session: sdk.AgentSession) => void,
 ) {
   const counters = {
@@ -120,7 +120,9 @@ export async function createStructuredSdkExecutor(
         if (typeof body === "string") payloads.push(JSON.parse(body));
         else if (body instanceof Uint8Array && new Headers(init?.headers).get("content-encoding") === "zstd")
           payloads.push(JSON.parse(zstdDecompressSync(body).toString("utf8")));
-        const events = scripted[counters.generations++] ?? rawTurn([]);
+        const generation = counters.generations++;
+        const events =
+          typeof scripted === "function" ? scripted(payloads.at(-1)) : (scripted[generation] ?? rawTurn([]));
         return new Response(events.map((event) => "data: " + JSON.stringify(event) + "\n\n").join(""), {
           headers: { "Content-Type": "text/event-stream" },
         });

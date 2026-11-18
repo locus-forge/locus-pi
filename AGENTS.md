@@ -13,7 +13,7 @@ manifests, packaged workflows, co-located manuals, focused tests, and
 
 ## Start here
 
-Use Node.js `>=22.19.0`, Pi `>=0.84.3`, and `ripgrep`.
+Use Node.js `>=22.19.0`, Pi `>=1.3.0`, and `ripgrep`.
 
 ```bash
 npm ci --ignore-scripts

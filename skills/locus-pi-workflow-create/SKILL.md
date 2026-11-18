@@ -98,11 +98,12 @@ unique literal `label` and useful `title`. Check every exact file with `workflow
 the same non-executing gate: `npm run check:workflow-source -- --mode orchestration-only <exact-path>`.
 Never import unchecked source.
 An unavailable or failed gate means Build failed; never report success after skipping it.
-Review the complete actual diff, including uncommitted work. Retain full findings and failed/missing/skipped checks.
-Required evidence stays binding; optional unavailability alone is disclosed. Correction needs fresh review;
-exhaustion preserves work, unmet criteria and next action as `{ ok: false, status }`, never an accepted unreviewed fix.
-Execution errors propagate; [budgets](../../docs/workflows/budgets.md#run-budget) own launch defaults and override policy.
-Create-only ends with checked source: return the checked target, exact checks and `/workflows run <name>`.
+Review the full diff, including uncommitted work; keep findings and failed/missing/skipped checks.
+Required evidence stays binding; note optional gaps. Corrections require fresh review.
+Do not repeat full review of accepted unchanged work and evidence. Expand checks only for a named requirement/risk.
+Exhaustion retains work, unmet criteria and next action as `{ ok: false, status }`.
+Errors propagate; [budgets](../../docs/workflows/budgets.md#run-budget) own launch defaults and override policy.
+Create-only returns the checked target, exact checks and `/workflows run <name>`.
 Authorized create-and-run continues through the [run skill](../locus-pi-workflow-run/SKILL.md) without repeat approval.
 Design-only pauses; `Build design: <path>` and `Build approved design: <path>` remain Build-only requests.
 

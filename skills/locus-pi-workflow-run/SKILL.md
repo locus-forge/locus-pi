@@ -28,15 +28,45 @@ Require one exact saved name or project-relative `.workflow.mjs` path. Source cr
 to the ordinary or detailed [authoring route](../../docs/workflows/create.md#choose-an-authoring-route).
 Accept either checked-source handoff under existing execution authorization.
 For `task/plan` or `task/plan-light`, reopen the exact workflow.mjs path assigned in the original whole input.
-Require completed successful review, a regular nonempty file, matching persisted checked/reviewed-byte SHA-256
-evidence and current Node/orchestration-only checks before launch, including after correction or replay.
-Missing/drifted source or failed/exhausted review forbids execution; never guess another file or reconstruct prose.
+Require successful review covering the current source, a regular nonempty file and current
+Node/orchestration-only checks before launch, including after correction or replay. Review changes against
+the accepted design and Task before reusing acceptance; this handoff requires no stored source digest.
+Missing/invalid source or failed/exhausted review forbids execution; never guess another file or reconstruct prose.
 Check an existing session/run before replacing it; silence or a lost tool handle does not prove it stopped.
+
+## Choose the input contract before launch
+
+Inspect the exact resolved source without importing it. If it has no statically
+admitted `meta.inputSchema`, preserve the user's semantic text as `input`. If it
+declares `meta.inputSchema`, build one explicit JSON `inputValue` that satisfies
+that schema. Never hide typed JSON inside legacy `input`, or invent required
+values, defaults, coercions, or unknown properties.
+
+When the request is preparation-only, return the canonical JSON and an exact
+editable `/workflows run ... --input-json <JSON>` command, then stop. Do not call
+the workflow tool, invoke Pi, submit the command, or start the workflow. The user
+reviews that value and launches in a separate action. For an explicit programmatic
+run request, show the canonical value before the tool call; interactive
+confirmation and the current-call tool card repeat a bounded preview without persisting the value in
+result details. In an interactive TUI/RPC session the tool itself awaits the
+operator's confirmation before it attaches or imports the workflow; abort,
+timeout, or refusal is terminal for that call. Catalog Start also supplies a
+one-use `catalogSelectionId`; pass it unchanged so the native tool can look up
+the extension-retained target and entry-byte digest and refuse source drift
+instead of silently running a new shadow. A slash
+launch keeps the JSON visible in the editable command and bypasses model-tool
+confirmation and the tool card.
+
+Typed slash input is the complete raw `--input-json <JSON>` tail. These are Pi
+command bytes, not shell syntax, so do not wrap the JSON in shell quotes. On
+rejection, report the exact attempted canonical value and schema validation paths.
+A rejected pre-start value has no admitted launch binding to recover from later.
 
 ## Native Pi path
 
 Read the [workflow tool contract](../../docs/workflows/running.md#workflow-tool-programmatic).
-Supply exactly one of `name` or `scriptPath`, plus the original semantic `input` and required options.
+Supply exactly one of `name` or `scriptPath`, plus the explicit `input` or `inputValue`
+selected from the target's contract and any required options.
 Do not spawn Pi or translate the request into a slash command when the structured tool exists.
 Use `resumeFromRunId` only through [run recovery](references/recovery.md), not as a general retry switch.
 `continuation` carries a real operator answer to a recorded handoff; never synthesize that answer.

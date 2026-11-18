@@ -516,7 +516,7 @@ describe("an unresolvable concrete selector fails the call", () => {
     // typo'd assignment used to arrive at the bridge indistinguishable from a role
     // nobody assigned — and OD5 degrades an unassigned role. The operator therefore
     // got the parent's model under the name `smol`, plus a note claiming the role was
-    // "not assigned in the global model-roles config" that their own file contradicts.
+    // "not assigned in the model-roles config" that their own file contradicts.
     // A typo is OD5's fail-closed case.
     const h = await harnessWithRoles({ smol: "deepseek-v4-flash" });
     const probe = sdkProbe();
@@ -534,9 +534,9 @@ describe("an unresolvable concrete selector fails the call", () => {
     expect(diagnostic).toContain('"smol"');
     // The value as written and the layer that carried it — the two facts needed to fix it.
     expect(diagnostic).toContain('"deepseek-v4-flash"');
-    expect(diagnostic).toContain("global model-roles config");
+    expect(diagnostic).toContain("model-roles config");
     // And it must NOT be described as unassigned, which is the false statement.
-    expect(diagnostic).not.toContain("is not assigned in the global model-roles config");
+    expect(diagnostic).not.toContain("is not assigned in the model-roles config");
     expect(probe.captured).toHaveLength(0);
   });
 

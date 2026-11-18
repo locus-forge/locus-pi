@@ -51,6 +51,12 @@ const WorkflowContinuationParams = Type.Object(
 
 export const WorkflowParams = Type.Object(
   {
+    catalogSelectionId: Type.Optional(
+      Type.String({
+        pattern: WORKFLOW_SAFE_COMPONENT_PATTERN,
+        description: "One-use host-owned lookup key emitted only by typed interactive catalog Start.",
+      }),
+    ),
     name: Type.Optional(
       Type.String({
         description:

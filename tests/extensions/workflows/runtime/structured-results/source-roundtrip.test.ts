@@ -268,7 +268,21 @@ export default async function run({ agent, parallel }) {
   checked(source);
   await withStructuredSourceSdk(
     source,
-    [returns(["one", "two"]), returns("first"), returns("second")],
+    (payload) => {
+      // Parallel sessions may reach the provider in either order. Answer the actual
+      // submitted task, so the assertion still detects result/replay misassociation.
+      const input = (payload as { input: Array<{ role?: string; content?: Array<{ text?: string }> }> }).input;
+      const text = input
+        .filter((item) => item.role === "user")
+        .flatMap((item) => item.content ?? [])
+        .map((item) => item.text ?? "")
+        .join("\n");
+      const task = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)).task as string;
+      if (task.endsWith("\n\nRows")) return returns(["one", "two"]);
+      if (task.endsWith("\n\none")) return returns("first");
+      if (task.endsWith("\n\ntwo")) return returns("second");
+      throw new Error("Unexpected parallel fixture task");
+    },
     async (fixture) => {
       const first = await fixture.run();
       expect(first.ok, first.error).toBe(true);

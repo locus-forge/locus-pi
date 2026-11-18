@@ -2,7 +2,7 @@
   "extensions": [
     {
       "id": "agents",
-      "tools": ["spawn_agent"],
+      "tools": ["spawn_agent", "agent_status"],
       "commands": [
         "agent list",
         "agent inspect",
@@ -11,7 +11,9 @@
         "agent summary",
         "agent drill",
         "agent ps",
-        "ps"
+        "ps",
+        "exit",
+        "agent settings"
       ],
       "hooks": ["session_start", "session_shutdown", "before_agent_start", "input"],
       "risk": "high"

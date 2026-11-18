@@ -15,6 +15,38 @@ afterEach(async () => {
 });
 
 describe("extension layer checker negative rules", () => {
+  it("keeps Command Center row and repository projection behind the agents facade", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, "extensions/model/index.ts"),
+      '\nimport "../agents/fleet/command-center/model.js";\n',
+    );
+    await expectRule(root, "rule 6 (feature-internal facade)");
+  });
+  it("keeps activity projection foundational and its global registry single-owned", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, "extensions/_shared/agent-runtime/activity-store.ts"),
+      '\nimport "../../agents/index.js";\n',
+    );
+    await expectRule(root, "rule 1 (no upward import)");
+    await appendFile(
+      path.join(root, CROSS_FEATURE_READER),
+      '\nconst duplicateActivity = Symbol.for("locus-pi.activity-store.v1");\n',
+    );
+    await expectRule(root, "rule 4");
+  });
+
+  it("keeps model-role persistence below features and selector choices inside model", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, "extensions/_shared/model/model-role-config.ts"),
+      '\nimport "../../agents/index.js";\n',
+    );
+    await expectRule(root, "rule 1 (no upward import)");
+    await appendFile(path.join(root, CROSS_FEATURE_READER), '\nimport "../model/selector/options.js";\n');
+    await expectRule(root, "rule 6 (feature-internal facade)");
+  });
   it("keeps typed input admission inside the workflow facade and free of filesystem I/O", async () => {
     const root = await extensionFixture();
     await appendFile(
@@ -56,6 +88,15 @@ describe("extension layer checker negative rules", () => {
     await rm(path.join(root, owner));
     await expectRule(root, "rule 3 (complete ownership)");
   });
+  it.each(["startup", "startup-format"])("keeps %s below feature policy", async (owner) => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, `extensions/_shared/agent-runtime/session/${owner}.ts`),
+      '\nimport "../../../workflows/index.js";\n',
+    );
+    await expectRule(root, "rule 1 (no upward import)");
+  });
+
   it("rejects a shared module importing feature code", async () => {
     const root = await extensionFixture();
     await appendFile(
@@ -109,7 +150,7 @@ describe("extension layer checker negative rules", () => {
     const root = await extensionFixture();
     await appendFile(
       path.join(root, CROSS_FEATURE_READER),
-      '\nvoid Symbol.for("locus-pi.agent-live-store.v5");\n',
+      '\nvoid Symbol.for("locus-pi.agent-live-store.v6");\n',
       "utf8",
     );
 

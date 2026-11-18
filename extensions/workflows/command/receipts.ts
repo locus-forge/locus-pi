@@ -32,6 +32,7 @@ export interface WorkflowTranscriptRejection {
 
 export interface WorkflowTranscriptAnnouncement {
   eventKind: "workflow_start";
+  displayLabel?: string;
   runId: string;
   text: string;
   runDir: string;
@@ -72,6 +73,7 @@ export function announceCommandWorkflowStart(
     display: true,
     details: {
       eventKind: announcement.eventKind,
+      ...(announcement.displayLabel === undefined ? {} : { displayLabel: announcement.displayLabel }),
       runId: announcement.runId,
       runDir: announcement.runDir,
       journalPath: announcement.journalPath,

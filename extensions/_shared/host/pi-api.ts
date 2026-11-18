@@ -383,6 +383,8 @@ export interface ExtensionContext {
   isIdle(): boolean;
   /** Abort the active parent agent turn (real Pi: ctx.abort()). */
   abort?(): void;
+  /** Gracefully exit the host application. */
+  shutdown?(): void;
   /** Active parent-agent abort signal when a turn is running (real Pi: ctx.signal). */
   signal?: AbortSignal;
   /** Current context usage for the active model (real Pi: ctx.getContextUsage()). */
@@ -399,7 +401,7 @@ export interface ExtensionContext {
     ): Promise<SelectReturn>;
     input(title: string, opts?: { default?: string; placeholder?: string }): Promise<InputResult>;
     editor(title: string, content: string, opts?: { language?: string }): Promise<EditorResult>;
-    confirm(title: string, message: string): Promise<boolean>;
+    confirm(title: string, message: string, opts?: { timeout?: number; signal?: AbortSignal }): Promise<boolean>;
     notify(message: string, level?: "info" | "warning" | "error"): void;
     /** Listen to raw terminal input in interactive mode. Returns an unsubscribe function. */
     onTerminalInput?(handler: (data: string) => { consume?: boolean; data?: string } | undefined): () => void;

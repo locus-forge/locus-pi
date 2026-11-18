@@ -90,3 +90,41 @@ describe("release consumer workflow verification", () => {
     ).toThrow(/Installed workflow bytes differ from checked source/);
   }, 30_000);
 });
+
+describe("release consumer HTTP response evidence", () => {
+  const response = async (events: unknown[], answer = "fixture-answer") => {
+    const { assertAssistantResponse } = await import("../../scripts/lib/release-consumer-transport.mjs");
+    assertAssistantResponse(events.map((event) => JSON.stringify(event)).join("\n"), answer);
+  };
+  const accepted = {
+    type: "message_end",
+    message: { role: "assistant", content: [{ type: "text", text: "fixture-answer" }], stopReason: "stop" },
+  };
+
+  it("requires a completed assistant response rather than the echoed prompt", async () => {
+    await expect(response([accepted])).resolves.toBeUndefined();
+    await expect(
+      response([{ type: "message_end", message: { role: "user", content: "fixture-answer" } }]),
+    ).rejects.toThrow();
+    await expect(response([{ ...accepted, message: { ...accepted.message, stopReason: "error" } }])).rejects.toThrow();
+    await expect(response([accepted], "different-answer")).rejects.toThrow();
+    await expect(response([accepted, accepted])).rejects.toThrow();
+    await expect(response([])).rejects.toThrow();
+  });
+});
+
+describe("installed Pi glob consumers", () => {
+  it("preserves package filters and model scope through actual SDK exports", async () => {
+    const { verifyConsumerGlobs } = await import("../../scripts/lib/release-consumer-globs.mjs");
+    const result = await verifyConsumerGlobs(process.cwd());
+    expect(result.packageCases).toEqual([
+      "wildcard",
+      "globstar",
+      "include-exclude",
+      "case-sensitive",
+      "literal",
+      "negative",
+    ]);
+    expect(result.modelCases).toEqual(["wildcard", "globstar", "nocase", "literal", "negative"]);
+  });
+});

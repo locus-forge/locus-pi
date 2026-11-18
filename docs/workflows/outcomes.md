@@ -172,6 +172,7 @@ answer — there is no answer to reject.
 | -------------------------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------- |
 | `host-turn-timeout`                                                        | yes     | the host's turn budget expired and the child was aborted                                              |
 | `call-timeout`                                                             | yes     | the call's own `timeoutMs` fuse expired and the child was aborted                                     |
+| `startup-timeout`                                                          | no      | the separate session-startup limit expired; the last completed stage is in the reason                 |
 | `sdk-unavailable`                                                          | no      | there is no channel to re-ask on                                                                      |
 | `cancelled`                                                                | no      | re-asking would override the operator                                                                 |
 | `tool-call-budget`                                                         | no      | a fuse that re-arms is not a fuse                                                                     |

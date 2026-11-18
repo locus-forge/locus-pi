@@ -20,10 +20,8 @@
  * ---------------------------------------------------------------------------
  * The per-kind field matrix, as persisted today
  * ---------------------------------------------------------------------------
- * Every line carries `ts`, `runId` and `kind`. Beyond those three, each event kind has an
- * ALLOWED set (`WORKFLOW_JOURNAL_FIELDS_BY_KIND`, any other field is refused as unknown)
- * and a REQUIRED set (`WORKFLOW_JOURNAL_REQUIRED_FIELDS_BY_KIND`). The two tables below
- * are the contract; this summary exists so a reader can see it without unfolding both.
+ * Every line carries `ts`, `runId` and `kind`. The allowed/required field tables below
+ * reject unknown fields and missing requirements; this summary describes their contract.
  *
  *   kind          required beyond ts/runId/kind
  *   ------------- -----------------------------------------------------------
@@ -60,6 +58,7 @@
  *     line, and that canonical log line is refused without them.
  */
 
+import { agentStartupMarkProblem, type AgentStartupMark } from "../../_shared/agent-runtime/session/startup-format.js";
 import { AGENT_FAILURE_CAUSES, type AgentFailureCause } from "../../_shared/agent-runtime/agent-failure-cause.js";
 import {
   assertWorkflowRunId,
@@ -178,6 +177,7 @@ export interface WorkflowChoiceDecision {
 }
 
 export interface WorkflowJournalLine {
+  startup?: AgentStartupMark; // Child-launch measurements on runtime log lines.
   /** Optional project error-index projection, supplied by the journal sink. */
   errorLogPath?: string;
   errorLogWarning?: string;
@@ -335,6 +335,15 @@ export function workflowJournalLineProblem(value: unknown, expectedRunId: string
     if (value[requiredField] === undefined) {
       return `Field ${requiredField} is required for ${eventKind} events.`;
     }
+  }
+
+  if (
+    value.startup !== undefined &&
+    (value.source !== "runtime" ||
+      typeof value.callId !== "string" ||
+      agentStartupMarkProblem(value.startup) !== undefined)
+  ) {
+    return "Field startup must be a valid runtime call mark.";
   }
 
   const stringProblem = optionalFieldsProblem(
@@ -582,6 +591,7 @@ const AGENT_FAILURE_CAUSE_NAMES: readonly WorkflowAgentFailureCause[] = AGENT_FA
 const WORKFLOW_JOURNAL_FIELDS_BY_KIND = {
   phase: ["phase", "groupId", "groupKind", "groupLabel"],
   log: [
+    "startup",
     "source",
     "phase",
     "message",
@@ -705,6 +715,7 @@ const WORKFLOW_JOURNAL_FIELDS_BY_KIND = {
     "workspaceMode",
     "usage",
     "model",
+    "modelRole",
     "executedModel",
     "modelRoleFallback",
     "thinking",
@@ -739,6 +750,7 @@ const WORKFLOW_JOURNAL_FIELDS_BY_KIND = {
     "logicalCallId",
     "durationMs",
     "model",
+    "modelRole",
     "executedModel",
     "modelRoleFallback",
     "thinking",

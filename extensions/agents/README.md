@@ -1,6 +1,6 @@
 # agents
 
-`agents` owns the discovered agent catalog, child-session execution, `/agent`, `/ps`, and the model-callable `spawn_agent` tool.
+`agents` owns the discovered agent catalog, child-session execution, `/agent`, `/ps`, and the model-callable `spawn_agent` / `agent_status` tools.
 
 ## Surface
 
@@ -10,13 +10,14 @@
 /agent run [--yes|--approve] [--title <title>] <name> <task>
 /agent observe
 /agent summary
+/agent settings activityStrip.maxItems <1–20>
 /agent drill <row-id|agent|last>
 /ps [row-id|agent|last]
 ```
 
-`spawn_agent` accepts one required `task` plus optional `agent`, `title`, and explicit parent context. Omitting `agent` starts a clean child without a role profile. An explicit name resolves only from the project or user catalog.
+`spawn_agent` accepts one required `task` plus optional `background`, `agent`, `modelRole`, `requireModelRole`, `title`, and explicit parent context. Omitting `agent` starts a clean child without a role profile. An explicit name resolves only from the project or user catalog.
 
-Bare standalone children inherit the current session model without consulting the
+Without an explicit `modelRole`, bare standalone children inherit the current session model without consulting the
 `agent` model role. Bare children and named profiles whose model tier inherits also
 receive known parent thinking; unknown parent thinking leaves Pi SDK defaults.
 A resolved profile selector or assigned role uses its `:off|minimal|low|medium|high|xhigh`
@@ -24,6 +25,21 @@ suffix. Without a suffix it leaves the SDK's per-model/global thinking fallback,
 even under a high parent. Separate profile `thinking-level`/`thinkingLevel` fields
 do not affect this routing. Pi still clamps effort to model capabilities; terminal
 evidence records the child's effective readback, leaving it absent when unavailable.
+
+An explicit `modelRole` (for example `tier-s:high`) overrides the selected profile's
+model preference, or selects a model for a bare child. Roles come from the project
+`.pi/model-roles/config.json` when present, otherwise the user
+`~/.pi/agent/model-roles/config.json`; the project replaces all user assignments.
+The `modelRole` parameter advertises assigned roles and their source path before
+each parent turn. `requireModelRole: true` requires an explicit assigned role and
+refuses before creating a child when it is missing. Other missing roles inherit the
+parent model with recorded fallback; malformed assignments fail.
+
+Rows and tool cards display the literal role with model and effort, such as
+`tier-s (provider/model, high)`. Until execution is confirmed the label says
+`requested`; confirmed fields come from the child, and parent fallback is explicit.
+A role selects a model; the `agent` catalog supplies instructions. Adding a role
+never creates an agent profile.
 
 ## Contract and limits
 
@@ -34,16 +50,25 @@ Standalone task defaults and workflow constraints are listed together in the
 - Direct child-to-child delegation is blocked by removing `spawn_agent` from child sessions.
 - Read-only intent and effective tool access differ across standalone profiles, workflow children, external CLI adapters, and Fusion tool-free; see [trust and permission limits](../../docs/workflows/trust.md#approval--trust-discipline).
 - Parallel or multi-stage orchestration belongs to the workflow runtime, not one `spawn_agent` call.
-- `/ps` and `/agent drill` inspect live and retained child rows; closing the view does not stop a child.
-- In TUI mode `/ps` focuses the agent roster already visible below the editor instead of drawing a second copy. Recursive `├─`, `└─`, and `│` rails keep workflow groups, agents, latest messages, and tool activity attached across the focused viewport. Its row membership and order stay fixed until close, live fields keep updating, and Up/Down can reach every leaf through the eight-row viewport. Reopen `/ps` to include agents that arrived while it was focused. Escape from a drill opened by `/ps` returns to `/ps` on the same row, with membership re-read on return; `q` leaves the agent surface for the editor instead, and so does a drill whose row retired while it was open.
-- `/agent drill` uses the full viewport only when its request/transcript needs it. Short retained results stay top-aligned at their real content height; long results keep tail-follow. Its header says where a workflow child sits — run, stage, enclosing group, agent — and one status line beneath it carries the row's state and how long it has been running.
-- In Pi's regular mode Home, End, PageUp and PageDown move that history. On a MacBook, PageUp and PageDown are `fn+Up` and `fn+Down`, which the visible footer names. The viewer accepts whichever PageUp/PageDown or Home/End encoding the terminal sends, including `ESC[5~`/`ESC[6~`, `ESC[1~`/`ESC[4~` under `tmux-256color`, `ESC O H`/`ESC O F` under `xterm-256color`, and the `ESC[H`/`ESC[F` pair. Home and End used to answer to the last pair alone, so both keys were dead in tmux.
-- In Pi fullscreen the screen's history does not scroll at all, and the footer promises no history control there. This is a host limitation the component cannot route around: Pi's alt-screen TUI registers a viewport input listener in its own constructor, before any component exists (`@earendil-works/pi-tui/dist/tui-alt-screen.js:77`), that listener consumes PageUp, PageDown, Home and End for `tui.altScreen.pageUp`/`pageDown`/`top`/`bottom` (`@earendil-works/pi-tui/dist/keybindings.js:91-116`), and every input listener runs to completion before the focused component is reached (`@earendil-works/pi-tui/dist/tui.js:557`). The wheel is Pi's there by design, so in fullscreen a transcript taller than the viewport is readable only at its tail. An operator who rebinds those four `tui.altScreen.*` actions gets the keys back, because the screen still handles them.
-- Fullscreen costs the screen one row. Pi mounts the component in a dock stacked under a transcript `ScrollView` that never shrinks below one line, so a screen claiming every row but Pi's footer had its own footer clipped off the bottom with nowhere to scroll to. The screen reserves that row and gives up one line of transcript instead.
-- The agent screen no longer enables terminal mouse tracking in regular mode, so the wheel and the host terminal's own scrollback stay with the terminal and history moves by key. `LOCUS_DRILL_MOUSE=1` restores the previous wheel-scrolled history, and the footer offers `wheel` only where the screen captures it. In Pi fullscreen the screen writes no mouse sequences at all and leaves wheel reports to Pi; a host that gives the component a terminal wrapper with no mode is treated the same way, so the variable has no effect there (`docs/workflows/index.md`).
-- The reply box is Pi's own editor component mounted whole, with its frame and its own key hints. It needs 18 terminal rows; below that the screen says `resize terminal for input` instead.
+- Interactive `spawn_agent` defaults to `background: true`: it returns a **queued** handle immediately, without entering the agent. `agent_status({handle})` checks without waiting; `wait: true` explicitly joins the assignment and collects its bounded result. Handles belong to the launching session and never resume work. `background: false` and the headless default preserve awaited final-text behavior; workflow DSL calls keep their existing awaited contract. `/agent run` is also nonblocking. A one-line started event appears only after observed SDK dispatch, not on a queued/refused launch.
+- **Left** with a wholly empty focused editor opens **Agents Command Center** fullscreen; `/ps` and Shift+Down are compatibility entry points. Nonempty/multiline input, autocomplete and bracketed paste retain their normal behavior. Unknown third-party editor capabilities fail closed to `/ps`. The main renderer is stopped, never painted under a child overlay.
+- The center groups runs and agents by the nearest repository when a `.git` directory or worktree marker exists; otherwise it uses the original launch directory. Repository discovery is a display hint captured while this center is open. It changes no launch identity, cwd, ownership, session key or count. Selectable `Project:` rows show repository and launch directories; workflow/agent cards distinguish repository, launch directory, actual working directory, source and run ID. Compact paths retain their beginning and ending; `P` expands the same fields in place, and the footer shows `Paths: short/full`.
+- Known sessions count distinct confirmed SDK child-session IDs within each original launch project, across retained snapshots; repeated execution rounds in the same session count once. Queued/refused attempts without a session ID count only under Executions. **Open** includes retained idle sessions; **Closed** is the remaining known sessions. **Running** separately counts observed working executions. Workflow/group mirrors are excluded. These are bounded known-child counts, not all-time or main-session totals. The center displays the same `running` label for active workflows and agents; runtime/journal states remain unchanged.
+- A soft full-row background and a stable marker show selection without bold text. The first tree row, `Main conversation`, returns to main on Enter without stopping any agent; Enter on an agent opens its session or read-only history, and on a project or workflow it focuses details. `Tab` switches the visibly marked tree/details focus at every width; narrow terminals show the focused pane. Up/Down select rows in the tree and scroll in details. Right enters details; Left returns to the tree, then back to the prior screen. Escape/Backspace returns to the prior view, which is the child when the center was opened from one. PgUp/PgDn scroll details by a viewport, and the footer shows the visible detail line range. Selection stays attached to the same execution after insertion or pruning.
+- Recent history is bounded to 200 child-execution snapshots and 100 terminal workflow runs in this Pi process, not a cross-restart disk session browser. Replaced/removed executions open read-only snapshots without implicit resume. Nested workflows are display provenance, not agent ownership or new lifecycle nesting support.
+- In the modern TUI, legacy passive fleet/phase/earlier-run progress panels are suppressed: conversation and composer remain primary. A failure or operator handoff keeps a short actionable notice; full evidence stays in the center and workflow commands.
+- The unified logical activity strip is **below** the violet status line in main and child views. It shows four items by default, workflows representing their active descendants once; retained/orphan active children remain visible when their workflow no longer represents them. Overflow is explicit. `/agent settings activityStrip.maxItems 2` persists the project preference in `.pi/agents-ui.json`, preserving unrelated fields and refusing concurrent/invalid writes. The terminal owns font size; rows use one-cell line height, one blank project separator and quiet violet selection rather than a saturated bar.
+- The child uses the same native message components, thinking-level editor border, responsive violet Locus status-line renderer and compact bottom agent strip as main (with the status-line extension loaded). Child model, thinking, cwd and context come from that SDK session; unavailable context/compaction facts show `?`, not fabricated zeroes or parent metrics.
+- `/ps main`, the center's `Main conversation` row, or Escape outside the center switches to main without stopping the selected agent. Each agent keeps its native multiline editor draft/history and independent ScrollView. PageUp/PageDown, Ctrl+Home/Ctrl+End, mouse scrolling and the native Jump to latest message indicator affect only that view. New output does not force a scrolled viewport to the bottom.
+- `/cancel` or Ctrl+C cancels the selected generation, not the agent. `/exit` in an agent stops only that agent and returns to main. `/exit` in main, or Pi's native `/quit`, shuts down all registered agents. A cancellation whose abort cannot establish an idle SDK session does not make that session available for another prompt.
+- Successful assignments and verified operator cancellations retain their SDK session in interactive mode. A subsequent explicit prompt uses the same session and original permissions. Cumulative tool, turn and time budgets are never reset. An exhausted budget refuses a follow-up. Caller/workflow cancellation, failed setup, and noninteractive runs still dispose their sessions.
+- Workflow agents use the same SDK execution and lifecycle implementation. Workflow launches stay in the background instead of stealing focus for every stage; `/ps` opens them. After assignment completion, explicit interactive follow-ups cannot change the accepted workflow result or resume its graph. Assignment-only return tools are removed; the original permitted work tools remain unchanged. A completed idle workflow slot session is disposed when a new round replaces that slot; persisted round history remains in the journal. An active predecessor is never cancelled by row reuse.
+- Agent screens read the full in-memory SDK conversation, including streaming messages, instead of the bounded roster preview. The SDK remains the only session writer. Native assistant, tool and user-text components render the conversation. The agent editor currently handles `/ps`, `/cancel`, and `/exit`; main-only application/configuration commands remain on main. User-image rendering and arbitrary extension-command forwarding are not added by this change.
+- The activity strip, Command Center and child session use the same `running`, `idle` and `failed` display labels. `idle` means the open session's last turn completed; its details say `Last turn: completed`. This does not mean the workflow or its task was accepted. Runtime and journal statuses remain unchanged.
+- Child conversations use Pi's native built-in tool presentation, including readable multiline shell commands. The configured tool-expansion key (`Ctrl+O` by default) expands or collapses output in current sessions and read-only history. Unknown tools retain the generic presentation; viewing a conversation never executes its tools.
+- Pi 1.3.0 is the supported host floor for the independent renderer and native ScrollView APIs. Both regular and fullscreen main modes return to the original renderer after leaving an agent.
 - Workflow completion rows retain the durable catalog identity and add the same session petname shown by `/ps`. Fresh transcript filenames include their stage and petname, and an enabled HTML render uses that human identity as its browser title when the host export exposes a title element.
-- Package-owned SDK children use a file-backed Pi session manager inside the owning run/report evidence directory and therefore do not appear beside operator sessions in `pi --resume`. Their durable named JSONL evidence is always exported explicitly before disposal; a readable HTML render is added only with [`LOCUS_PI_HTML_TRANSCRIPTS=1`](../../docs/environment-variables.md#locus_pi_html_transcripts).
+- Package-owned SDK children use a file-backed Pi session manager inside the owning run/report evidence directory and therefore do not appear beside operator sessions in `pi --resume`. Their durable named JSONL evidence is always exported explicitly at assignment completion; a readable HTML render is added only with [`LOCUS_PI_HTML_TRANSCRIPTS=1`](../../docs/environment-variables.md#locus_pi_html_transcripts).
 
 The catalog follows project -> user precedence: project `.agents/agents/`, then user `~/.agents/agents/`. The package ships no profiles.
 
@@ -145,3 +170,51 @@ sessions are idle. The local smoke harness and raw result remain runtime data.
 
 Updating Locus alone does not install or update the separate adapter. Both
 changes must be present to get readable CLI events and tail-following previews.
+
+## Screen and lifetime design
+
+One Pi host owns the main session. One flat registry owns execution handles; creator and workflow IDs are metadata, not cascading ownership. Each SDK assignment and later interactive continuation shares the same permission and budget boundary.
+
+The active child uses an independent `TuiAltScreen`. A terminal lease stops the main renderer before starting it, and stops it before restoring main. It never patches private renderer layout fields, opens another writer on a live JSONL file, or mounts the child as an overlay. Per-agent native ScrollViews and editors survive switching; only the selected view receives terminal input.
+
+`working -> idle` means a turn finished, not that the agent exited. Cancellation aborts the current turn and returns to idle only after verified SDK settlement. Explicit exit disposes one execution. Main exit waits for all registered execution cleanups, including an older execution whose workflow row ID was replaced. Cleanup errors are not success receipts.
+
+The alternative editor-container viewer was rejected because the host still rendered and scrolled its own transcript around it. A new process per visit was rejected because it would restart the agent or create two writers for the same session. Direct access to private host layout roots was rejected in favor of the public terminal handoff.
+
+### Command Center visual hierarchy
+
+The center uses lavender metadata, tree connectors and a dedicated status column.
+Selection uses the theme's subdued user-message background (a quiet dark fallback
+when no theme is available) and a stable marker, without bold text. Textual status
+labels accompany semantic colors. Project rows remain identifiable by name rather
+than losing the repository prefix to a long absolute path. Repository grouping is
+presentation only; the selected card retains the original launch directory.
+
+The right card keeps identity, paths, diagnostics and the complete last message
+before the launch prompt; it never places the rest of a result behind its input. `P` expands the existing source/repository/launch/working fields in
+place; path mode and panel focus remain visible in the footer. Full paths wrap in
+details. `Tab` switches focus at wide and narrow sizes; arrows scroll details only
+while that pane is focused. Two panes appear only when each has at least 56
+columns; otherwise the focused pane uses the full width. The adaptive key hint
+keeps Enter, Escape, Tab and P visible in compact terminals. Enter names its
+contextual action: session, history or details. Terminal font sizing remains a terminal setting.
+The path shortcut also accepts `З`, the same physical key on a Russian keyboard;
+the footer labels it `P/З` so changing the input language is unnecessary.
+
+An answered operator handoff retains its historical `awaiting_operator` run
+outcome but projects its current claim as continuing, answered or retryable.
+Only unresolved/retryable questions appear as needs-input in the activity strip;
+a successful continuation does not rewrite the source run as completed.
+
+### Workflow phases and concise lifecycle notices
+
+The activity strip shows a workflow phase only after that run explicitly emits an
+ungrouped phase. Branch-local phases and nested runs cannot overwrite the root's
+phase. Completed workflow details call this **Last phase**, not current progress;
+no default phase or percentage is invented. Phase text is bounded independently
+so the workflow identity and actual state remain visible.
+
+Expected agent cancellation produces one informational acknowledgment. Genuine
+failures retain a concise cause and `/ps` details action. Full diagnostics, result
+artifact and error-index paths remain in Agent Details (use `P` for full paths)
+and durable result/error records; shortening the notification does not erase them.

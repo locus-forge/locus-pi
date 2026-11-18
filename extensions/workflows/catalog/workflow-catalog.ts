@@ -1,5 +1,4 @@
 import { workflowAuthoringProfileExplanation as authoringProfileExplanation } from "./workflow-meta.js";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   listWorkflowRuns,
@@ -11,19 +10,19 @@ import {
   listWorkflowDefinitions,
   safeWorkflowSourceLocator,
   workflowTargetComposition,
-  listWorkflowCatalogTargets,
   type ResolvedWorkflowTarget,
 } from "../runtime/workflow-discovery.js";
 import { isWorkflowSavedName } from "../runtime/workflow-saved-name.js";
 import { WORKFLOW_SAVED_SOURCE_RELATIVE_ROOT } from "../runtime/workflow-run-layout.js";
 import type { OperatorBlock } from "../../_shared/operator/operator-ui.js";
-import { buildWorkflowRunCommand, formatWorkflowCommandToken, workflowRunUsage } from "../command/command-parser.js";
+import { formatWorkflowCommandToken, workflowRunUsage } from "../command/command-parser.js";
 import {
   readWorkflowMeta,
   staticWorkflowMeta,
   type WorkflowAuthoringProfile,
   type WorkflowMetaPhase,
 } from "./workflow-meta.js";
+import type { WorkflowSourceReadState } from "./workflow-catalog-source.js";
 
 const RECENT_WORKFLOW_LIMIT = 5;
 const HISTORICAL_WORKFLOW_DESCRIPTION = "historical run snapshot";
@@ -80,13 +79,9 @@ export interface WorkflowCatalogModel {
   history: WorkflowCatalogHistoryRow[];
 }
 
-export type WorkflowSourceReadState =
-  | { kind: "ready"; row: WorkflowCatalogCurrentRow | WorkflowCatalogHistoryRow; path: string; source: string }
-  | {
-      kind: "missing" | "shadowed" | "unreadable" | "legacy" | "invalid" | "tampered" | "stale";
-      row: WorkflowCatalogCurrentRow | WorkflowCatalogHistoryRow;
-      message: string;
-    };
+export { buildWorkflowActionPrompt } from "./workflow-action-prompt.js";
+export { readSelectedWorkflowSource, readWorkflowCatalogSource } from "./workflow-catalog-source.js";
+export type { WorkflowSourceReadState } from "./workflow-catalog-source.js";
 
 export type WorkflowEditorAction = "start" | "edit" | "review";
 export type WorkflowCopyAction = "copy-project" | "copy-personal";
@@ -264,86 +259,6 @@ export function buildWorkflowCatalogBlockFromModel(
   };
 }
 
-/** Revalidate the exact selected first-wins target, then read it as inert UTF-8 text. */
-export function readSelectedWorkflowSource(
-  selected: WorkflowCatalogCurrentRow,
-  projectRoot: string,
-  workingDirectory: string,
-): WorkflowSourceReadState {
-  const current = listWorkflowCatalogTargets(projectRoot, workingDirectory).find(
-    (target) => target.ref === selected.target.ref,
-  );
-  if (current === undefined) {
-    return {
-      kind: "missing",
-      row: selected,
-      message: `Selected workflow ${JSON.stringify(selected.name)} is no longer in the current catalog. Return and refresh /workflows list.`,
-    };
-  }
-  if (!sameResolvedTarget(current, selected.target)) {
-    return {
-      kind: "shadowed",
-      row: selected,
-      message: `Selected workflow changed precedence from ${selected.sourceLocator} to ${safeWorkflowSourceLocator(current, projectRoot)}. Nothing was opened; return and refresh /workflows list.`,
-    };
-  }
-  try {
-    return { kind: "ready", row: selected, path: current.path, source: readFileSync(current.path, "utf8") };
-  } catch (error) {
-    return {
-      kind: "unreadable",
-      row: selected,
-      message: `Selected workflow could not be read: ${errorMessage(error)}. Fix access or return to the catalog.`,
-    };
-  }
-}
-
-/**
- * Deterministic editor handoff. Start uses the direct slash-command runtime
- * path; edit/review point at the packaged workflow-authoring skill because
- * they require source work. The pointer must stay something an installed
- * package actually provides.
- * The returned text is editable but never submitted here.
- */
-export function buildWorkflowActionPrompt(intent: WorkflowBrowserIntent): string {
-  if (intent.action === "copy-project" || intent.action === "copy-personal") {
-    throw new Error(`Workflow copy action ${JSON.stringify(intent.action)} does not produce an editor prompt.`);
-  }
-  if (intent.row.kind === "history" && intent.action !== "review") {
-    throw new Error(`Historical workflow actions are review-only; received ${JSON.stringify(intent.action)}.`);
-  }
-  const row = intent.row;
-  if (row.kind === "current" && intent.action === "start") {
-    if (intent.sourceState.kind !== "ready") {
-      throw new Error(
-        `Current workflow start requires a ready source; received ${JSON.stringify(intent.sourceState.kind)}.`,
-      );
-    }
-    return buildWorkflowRunCommand(row.target);
-  }
-  let request: string;
-  if (row.kind === "current") {
-    const action = intent.action[0]!.toUpperCase() + intent.action.slice(1);
-    request = `${action} the exact current workflow at ${JSON.stringify(row.target.path)}.`;
-  } else {
-    const identity = [
-      `run ${JSON.stringify(row.runId)}`,
-      `target ${JSON.stringify(`${row.target.kind}:${row.target.ref}`)}`,
-    ];
-    if (intent.sourceState.kind === "ready") {
-      identity.push(`at ${JSON.stringify(row.originPath)}`);
-      if (row.snapshot.sha256 !== undefined) identity.push(`SHA-256 ${JSON.stringify(row.snapshot.sha256)}`);
-      request = `Review the immutable workflow snapshot for ${identity.join(", ")}.`;
-    } else {
-      identity.push(`with snapshot state ${JSON.stringify(intent.sourceState.kind)}`);
-      if (row.snapshot.path !== undefined) identity.push(`path ${JSON.stringify(row.snapshot.path)}`);
-      if (row.snapshot.sha256 !== undefined) identity.push(`SHA-256 ${JSON.stringify(row.snapshot.sha256)}`);
-      request = `Review the recorded workflow identity for ${identity.join(", ")}; diagnose why the immutable snapshot is unavailable.`;
-    }
-  }
-  return [`Request: ${request}`, "Skill: locus-pi-workflow-create", "", "Additional instructions:", ""].join("\n");
-}
-
 /** Passive source-backed explanation. It reads static metadata but never imports workflow code. */
 export function buildWorkflowInfoBlock(projectRoot: string, workingDirectory: string, name?: string): OperatorBlock {
   const requested = name;
@@ -448,27 +363,6 @@ function workflowContractLines(): string[] {
   ];
 }
 
-/** Read the selected current file or exact run snapshot without importing JavaScript. */
-export function readWorkflowCatalogSource(
-  selected: WorkflowCatalogCurrentRow | WorkflowCatalogHistoryRow,
-  projectRoot: string,
-  workingDirectory: string,
-): WorkflowSourceReadState {
-  if (selected.kind === "current") return readSelectedWorkflowSource(selected, projectRoot, workingDirectory);
-  const snapshot = readWorkflowRunScriptSnapshot(projectRoot, selected.runId);
-  if (!sameRunSnapshotIdentity(selected.snapshot, snapshot)) {
-    return {
-      kind: "stale",
-      row: selected,
-      message: `Run ${selected.runId} snapshot identity changed after catalog selection. Nothing was opened; return and refresh /workflows list.`,
-    };
-  }
-  if (snapshot.kind === "ready") {
-    return { kind: "ready", row: selected, path: snapshot.path, source: snapshot.source };
-  }
-  return { kind: snapshot.kind, row: selected, message: snapshot.message };
-}
-
 function compactWorkflowCatalogBody(
   recentRows: readonly WorkflowCatalogHistoryRow[],
   catalogRows: readonly WorkflowCatalogCurrentRow[],
@@ -571,24 +465,6 @@ function safeSnapshotLocator(snapshotPath: string | undefined, projectRoot: stri
   return relative !== "" && relative !== ".." && !relative.startsWith("../") && !path.isAbsolute(relative)
     ? relative
     : `run:${runId}`;
-}
-
-function sameRunSnapshotIdentity(left: WorkflowRunScriptSnapshot, right: WorkflowRunScriptSnapshot): boolean {
-  return (
-    left.runId === right.runId &&
-    samePersistedTarget(left.target, right.target) &&
-    left.path === right.path &&
-    left.sha256 === right.sha256 &&
-    left.identityCoverage === right.identityCoverage
-  );
-}
-
-function samePersistedTarget(
-  left: WorkflowRunResultEnvelope["target"],
-  right: WorkflowRunResultEnvelope["target"],
-): boolean {
-  if (left === undefined || right === undefined) return left === right;
-  return left.kind === right.kind && left.ref === right.ref && left.source === right.source;
 }
 
 function rowsForSource<Row extends WorkflowCatalogRow>(rows: Row[], source: WorkflowCatalogRow["source"]): Row[] {
@@ -727,17 +603,4 @@ function compareCatalogRows(a: WorkflowCatalogRow, b: WorkflowCatalogRow): numbe
 
 function compactWorkflowCatalogLine(value: string): string {
   return value.replace(/\s+/gu, " ").trim();
-}
-
-function sameResolvedTarget(left: ResolvedWorkflowTarget, right: ResolvedWorkflowTarget): boolean {
-  return (
-    left.kind === right.kind &&
-    left.ref === right.ref &&
-    left.source === right.source &&
-    path.resolve(left.path) === path.resolve(right.path)
-  );
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message.trim() !== "" ? error.message : String(error);
 }

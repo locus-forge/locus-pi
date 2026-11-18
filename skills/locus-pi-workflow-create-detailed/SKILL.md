@@ -97,10 +97,11 @@ Re-review material algorithm changes. Check every exact file with `workflow_chec
 `mode: "orchestration-only"`, and `node --check <exact-path>`; without the native tool, use
 `npm run check:workflow-source -- --mode orchestration-only <exact-path>`. Never import unchecked source.
 An unavailable or failed gate means Build failed; never report success after skipping it.
-Review the complete actual diff, including uncommitted work. Retain full findings and failed/missing/skipped checks.
-Required defects/evidence need action; optional unavailability alone is disclosed. Fresh review follows correction.
-Exhaustion retains latest reviewed work, unmet criteria and next action as `{ ok: false, status }`.
-No last unreviewed correction is accepted. Errors propagate; [budgets](../../docs/workflows/budgets.md#run-budget)
+Review the full diff, including uncommitted work; keep findings and failed/missing/skipped checks.
+Required evidence stays binding; note optional gaps. Corrections require fresh review.
+Do not repeat full review of accepted unchanged work and evidence. Expand checks only for a named requirement/risk.
+Exhaustion keeps latest reviewed work, unmet criteria and next action as `{ ok: false, status }`.
+Errors propagate; [budgets](../../docs/workflows/budgets.md#run-budget)
 own launch defaults. The design justifies task-specific allowances rather than inheriting sample numbers.
 Return checked targets, exact checks and `/workflows run <name>`; create-only states execution did not start.
 Authorized create-and-run uses the [run skill](../locus-pi-workflow-run/SKILL.md) without repeat approval.

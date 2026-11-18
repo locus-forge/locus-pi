@@ -1,12 +1,23 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
 import type { ThinkingLevel } from "../host/pi-api.js";
+import {
+  getModelRolesConfigPath,
+  isThinkingLevel,
+  loadModelRoleConfig,
+  persistModelRole,
+  validateRoleName,
+  type ModelRoleAssignment,
+  type ModelRoleValue,
+  type ModelRolesConfig,
+  type ModelRolePersistenceOutcome,
+} from "./model-role-config.js";
+export {
+  getModelRolesConfigPath,
+  type ModelRoleAssignment,
+  type ModelRoleValue,
+  type ModelRolesConfig,
+  type ModelRolePersistenceOutcome,
+} from "./model-role-config.js";
 
-const USER_HOME_ENV = "PI_MODEL_ROLES_HOME";
-const CONFIG_LOCK_RETRY_MS = 25;
-const CONFIG_LOCK_TIMEOUT_MS = 2_000;
 export const DEFAULT_MODEL_ROLES = [
   "default",
   "smol",
@@ -18,28 +29,17 @@ export const DEFAULT_MODEL_ROLES = [
   "designer",
   "commit",
   "task",
+  "tier-s",
+  "tier-a",
+  "tier-b",
+  "tier-c",
 ] as const;
 export const DEFAULT_MODEL_CYCLE_ORDER = ["smol", "default", "slow"] as const;
 
-const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
-
 export const MODEL_ROLES_SESSION_ENTRY_TYPE = "model-roles";
 
-export type ModelRoleSource = "user" | "agent" | "unset";
+export type ModelRoleSource = "user" | "project" | "agent" | "unset";
 export type ModelRolePurpose = "prompt-planning" | "summary" | "agent" | "default";
-
-export interface ModelRoleAssignment {
-  model: string;
-  thinking?: ThinkingLevel;
-}
-
-export type ModelRoleValue = string | ModelRoleAssignment | null;
-
-export interface ModelRolesConfig {
-  version?: 1;
-  roles?: Record<string, ModelRoleValue>;
-  cycleOrder?: string[];
-}
 
 export interface ModelRoleSessionEntry {
   version?: 1;
@@ -56,7 +56,7 @@ export interface ModelRoleSessionEntry {
  * Distinct from "unset" on purpose. Collapsing the two is what let
  * `smol: "deepseek-v4-flash"` (a missing `provider/`) read as an unassigned role and
  * quietly run the parent's model under the name `smol`, while the degradation note
- * told the operator the role "is not assigned in the global model-roles config" — a
+ * told the operator the role "is not assigned in the selected model-roles config" — a
  * false statement about their own config file, and the exact requested-vs-executed
  * conflation this task exists to remove. A typo is OD5's fail-closed case.
  */
@@ -68,6 +68,7 @@ export interface MalformedRoleAssignment {
 export interface EffectiveRole {
   role: string;
   source: ModelRoleSource;
+  configPath?: string;
   inherited: boolean;
   assignment?: ModelRoleAssignment;
   malformed?: MalformedRoleAssignment;
@@ -75,14 +76,11 @@ export interface EffectiveRole {
 
 export interface ModelRolesState {
   path: string;
+  source: "user" | "project";
+  exists: boolean;
   config: ModelRolesConfig;
   effective: Map<string, EffectiveRole>;
   cycleOrder: string[];
-}
-
-export interface ModelRolePersistenceOutcome {
-  rolePersisted: true;
-  lockReleaseError?: string;
 }
 
 export interface ModelRoleResolution {
@@ -90,6 +88,7 @@ export interface ModelRoleResolution {
   requestedRoles: string[];
   role: string;
   source: ModelRoleSource;
+  configPath?: string;
   inherited: boolean;
   assignment?: ModelRoleAssignment;
   /** Set when the role's assignment exists but is not a parseable selector. */
@@ -102,34 +101,35 @@ export interface ModelRoleResolutionRecord {
   requestedRoles: string[];
   role: string;
   source: ModelRoleSource;
+  configPath?: string;
   inherited: boolean;
   fallback: boolean;
   model?: string;
   thinking?: ThinkingLevel;
 }
 
-export function getModelRolesConfigPath(env: NodeJS.ProcessEnv = process.env): string {
-  const userRoot = env[USER_HOME_ENV] ?? join(homedir(), ".pi", "agent");
-  return join(userRoot, "model-roles", "config.json");
+export async function loadModelRolesState(projectRoot?: string): Promise<ModelRolesState> {
+  const file = await loadModelRoleConfig(projectRoot);
+  return buildModelRolesState(file.path, file.config, file.source, file.exists);
 }
 
-export async function loadModelRolesState(): Promise<ModelRolesState> {
-  const path = getModelRolesConfigPath();
-  return buildModelRolesState(path, await readConfig(path));
-}
-
-export function buildModelRolesState(path: string, config: ModelRolesConfig): ModelRolesState {
+export function buildModelRolesState(
+  path: string,
+  config: ModelRolesConfig,
+  source: "user" | "project" = "user",
+  exists = true,
+): ModelRolesState {
   const cycleOrder = config.cycleOrder ?? [...DEFAULT_MODEL_CYCLE_ORDER];
   const roles = new Set([...DEFAULT_MODEL_ROLES, ...Object.keys(config.roles ?? {}), ...cycleOrder]);
   const effective = new Map<string, EffectiveRole>();
   for (const role of roles) {
-    const value = config.roles?.[role];
+    const value = config.roles !== undefined && Object.hasOwn(config.roles, role) ? config.roles[role] : undefined;
     // A value the operator wrote but this code cannot parse is recorded as
     // `malformed`, never as plain "unset": the caller has to be able to tell a role
     // nobody assigned (degrade, per OD5) from a typo (fail closed, per OD5).
     const present = (configured: Exclude<ModelRoleValue, null>): EffectiveRole => {
       const assignment = normalizeAssignment(configured);
-      if (assignment) return { role, source: "user", inherited: false, assignment };
+      if (assignment) return { role, source, configPath: path, inherited: false, assignment };
       return {
         role,
         source: "unset",
@@ -142,7 +142,7 @@ export function buildModelRolesState(path: string, config: ModelRolesConfig): Mo
       value === undefined || value === null ? { role, source: "unset", inherited: false } : present(value),
     );
   }
-  return { path, config, effective, cycleOrder };
+  return { path, source, exists, config, effective, cycleOrder };
 }
 
 export function resolveModelRoleForPurpose(
@@ -159,6 +159,7 @@ export function resolveModelRoleForPurpose(
         requestedRoles,
         role,
         source: effective.source,
+        configPath: state.path,
         inherited: effective.inherited,
         assignment: effective.assignment,
         fallback: role !== requestedRoles[0],
@@ -234,11 +235,29 @@ export function resolveDeclaredModelRole(state: ModelRolesState, role: string): 
     requestedRoles: [role],
     role: declaredRole,
     source: effective?.source ?? "unset",
+    configPath: state.path,
     inherited: effective?.inherited ?? false,
     ...(assignment !== undefined ? { assignment } : {}),
     ...(effective?.malformed !== undefined ? { malformed: effective.malformed } : {}),
     fallback: false,
   };
+}
+
+/** One explicit role request shared by workflow and standalone callers. */
+export function selectDeclaredModelRole(state: ModelRolesState, token: string, required = false): ModelRoleResolution {
+  if (token.includes("/"))
+    throw new Error(
+      `modelRole ${JSON.stringify(token)} is not a role name: use model: ${JSON.stringify(token)} for a concrete provider/id selector.`,
+    );
+  validateRoleName(splitRoleSelector(token).role);
+  const selected = resolveDeclaredModelRole(state, token);
+  if (selected.malformed !== undefined)
+    throw new Error(malformedRoleAssignmentNote(token, "modelRole", selected.malformed, state.path));
+  if (required && selected.assignment === undefined)
+    throw new Error(
+      `modelRole ${JSON.stringify(token)} is required, but is not assigned in ${state.path}. Assign it with /model-roles before running.`,
+    );
+  return selected;
 }
 
 /**
@@ -324,7 +343,7 @@ export function unassignedAgentTierNote(
  */
 export function unassignedRoleNote(role: string, origin: string, state: ModelRolesState): string {
   return (
-    `${origin} ${JSON.stringify(role)} is not assigned in the global model-roles config ` +
+    `${origin} ${JSON.stringify(role)} is not assigned in the selected model-roles config ` +
     `(${state.path}); the child inherited the parent session model.`
   );
 }
@@ -336,10 +355,15 @@ export function unassignedRoleNote(role: string, origin: string, state: ModelRol
  * Present tense and no claim about a child: this refusal is issued BEFORE anything
  * is created, which is the point — a typo must never reach `createSession`.
  */
-export function malformedRoleAssignmentNote(role: string, origin: string, malformed: MalformedRoleAssignment): string {
+export function malformedRoleAssignmentNote(
+  role: string,
+  origin: string,
+  malformed: MalformedRoleAssignment,
+  path?: string,
+): string {
   return (
     `${origin} ${JSON.stringify(role)} is assigned ${JSON.stringify(malformed.value)} by the ` +
-    `global model-roles config, but that is not a "provider/id" selector ` +
+    `model-roles config${path === undefined ? "" : ` (${path})`}, but that is not a "provider/id" selector ` +
     `(an optional ":off|minimal|low|medium|high|xhigh" reasoning-effort suffix is allowed). ` +
     `Fix or remove that assignment — a malformed assignment is a configuration error, not an ` +
     `unassigned role, so it is NOT degraded to the session model.`
@@ -400,6 +424,7 @@ export function modelRoleResolutionRecord(resolution: ModelRoleResolution): Mode
     requestedRoles: [...resolution.requestedRoles],
     role: resolution.role,
     source: resolution.source,
+    ...(resolution.configPath === undefined ? {} : { configPath: resolution.configPath }),
     inherited: resolution.inherited,
     fallback: resolution.fallback,
   };
@@ -413,21 +438,9 @@ export function modelRoleResolutionRecord(resolution: ModelRoleResolution): Mode
 export async function setModelRoleSetting(
   role: string,
   assignment: ModelRoleAssignment,
+  path = getModelRolesConfigPath(),
 ): Promise<ModelRolePersistenceOutcome> {
-  const path = getModelRolesConfigPath();
-  const outcome = await withConfigLock(path, async () => {
-    const config = await readConfig(path);
-    const next: ModelRolesConfig = {
-      ...config,
-      version: 1,
-      roles: { ...(config.roles ?? {}), [role]: formatAssignment(assignment) },
-    };
-    await writeConfig(path, next);
-  });
-  return {
-    rolePersisted: true,
-    ...(outcome.lockReleaseError === undefined ? {} : { lockReleaseError: outcome.lockReleaseError }),
-  };
+  return persistModelRole(path, role, formatAssignment(assignment));
 }
 
 /** The assignment as the operator wrote it, for quoting back in a refusal. */
@@ -465,108 +478,4 @@ function defaultRolesForPurpose(purpose: ModelRolePurpose): string[] {
     case "default":
       return ["default"];
   }
-}
-
-async function readConfig(path: string): Promise<ModelRolesConfig> {
-  try {
-    const raw = await readFile(path, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    return isConfig(parsed) ? parsed : {};
-  } catch (error) {
-    if (isNotFound(error)) return {};
-    throw error;
-  }
-}
-
-async function writeConfig(path: string, value: ModelRolesConfig): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const temporaryPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
-    await rename(temporaryPath, path);
-  } catch (error) {
-    await unlink(temporaryPath).catch(() => undefined);
-    throw error;
-  }
-}
-
-interface ConfigLockOutcome<T> {
-  value: T;
-  lockReleaseError?: string;
-}
-
-async function withConfigLock<T>(path: string, operation: () => Promise<T>): Promise<ConfigLockOutcome<T>> {
-  await mkdir(dirname(path), { recursive: true });
-  const lockPath = `${path}.lock`;
-  const deadline = Date.now() + CONFIG_LOCK_TIMEOUT_MS;
-  while (true) {
-    let lockCreated = false;
-    try {
-      const handle = await open(lockPath, "wx");
-      lockCreated = true;
-      try {
-        await handle.writeFile(
-          `${JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() })}\n`,
-          "utf8",
-        );
-      } finally {
-        await handle.close();
-      }
-      break;
-    } catch (error) {
-      if (lockCreated) await unlink(lockPath).catch(() => undefined);
-      if (!isCode(error, "EEXIST")) throw error;
-      if (Date.now() >= deadline) {
-        throw new Error(
-          `Timed out waiting for model-role config lock: ${lockPath}. ` +
-            "If no Pi process is changing model roles, remove this lock file and retry.",
-        );
-      }
-      await delay(CONFIG_LOCK_RETRY_MS);
-    }
-  }
-  let value: T;
-  try {
-    value = await operation();
-  } catch (operationError) {
-    // The write error is the primary failure. A secondary cleanup error must
-    // never replace it; the surviving lock makes the next attempt fail closed.
-    await unlink(lockPath).catch(() => undefined);
-    throw operationError;
-  }
-  try {
-    await unlink(lockPath);
-    return { value };
-  } catch (error) {
-    return {
-      value,
-      lockReleaseError:
-        `Could not release model-role config lock ${lockPath}: ${describeError(error)}. ` +
-        "If no Pi process is changing model roles, remove this lock file before the next change.",
-    };
-  }
-}
-
-function isConfig(value: unknown): value is ModelRolesConfig {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isThinkingLevel(value: string): value is ThinkingLevel {
-  return THINKING_LEVELS.has(value);
-}
-
-function isNotFound(error: unknown): boolean {
-  return isCode(error, "ENOENT");
-}
-
-function isCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code;
-}
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

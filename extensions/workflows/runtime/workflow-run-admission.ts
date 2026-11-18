@@ -110,6 +110,9 @@ function workflowDefaultWorkspaceName(target: ResolvedWorkflowTarget): string {
 /** The launch request fields admission reads. Deliberately narrower than the runner's options. */
 export interface WorkflowRunAdmissionLaunch {
   targetBinding?: ResolvedWorkflowTarget;
+  /** Host-owned confirmed/catalog entry-byte identity retained outside model authority. */
+  expectedScriptSha256?: string;
+  expectedWorkspaceAbsolutePath?: string;
   name?: string;
   scriptPath?: string;
   script?: string;
@@ -256,6 +259,11 @@ export async function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Pr
   try {
     scriptIdentity = createWorkflowScriptSnapshot(target.path, runtimeDir);
     assertWorkflowOutputDirRemoved(scriptIdentity.snapshotPath);
+    if (opts.expectedScriptSha256 !== undefined && scriptIdentity.scriptSha256 !== opts.expectedScriptSha256) {
+      throw new Error(
+        `workflow source changed after confirmation or catalog selection: expected ${opts.expectedScriptSha256}, got ${scriptIdentity.scriptSha256}`,
+      );
+    }
     const schema = workflowSourceInputSchema(readFileSync(scriptIdentity.snapshotPath, "utf8"));
     let operatorContext: WorkflowOperatorContext | undefined;
     const consumedOrigins = new Map<string, string>();
@@ -515,6 +523,9 @@ export async function admitWorkflowRun(request: WorkflowRunAdmissionRequest): Pr
         workingDirectory,
         { runId },
       );
+    const expectedWorkspace = opts.expectedWorkspaceAbsolutePath;
+    if (expectedWorkspace !== undefined && candidateWorkspacePath.absolutePath !== expectedWorkspace)
+      throw new Error("workflow workspace changed after confirmation");
     const reusesLegacyWorkspace = isLegacyWorkflowWorkspacePath(candidateWorkspacePath.relativePath);
     if (
       resumeSourceWorkspace !== undefined &&

@@ -84,4 +84,21 @@ describe("duration tiers (T-188 W7)", () => {
     expect(formatDuration(3600000)).toBe("1h");
     expect(formatDuration(3660000)).toBe("1h1m");
   });
+
+  it("floors days and whole hours from one whole day without changing sub-day rounding", () => {
+    const H = 3_600_000;
+    const D = 24 * H;
+    expect(formatDuration(D - 501)).toBe("23h59m");
+    // Sub-day second rounding is preserved: half a second short of a day still reads 24h.
+    expect(formatDuration(D - 500)).toBe("24h");
+    expect(formatDuration(D)).toBe("1d");
+    // Partial hours never round up.
+    expect(formatDuration(D + 59 * 60_000 + 59_999)).toBe("1d");
+    expect(formatDuration(D + H)).toBe("1d1h");
+    expect(formatDuration(D + H + 59 * 60_000 + 59_999)).toBe("1d1h");
+    expect(formatDuration(2 * D + 23 * H + 59 * 60_000 + 59_999)).toBe("2d23h");
+    expect(formatDuration(49 * H + 3 * 60_000)).toBe("2d1h");
+    expect(formatDuration(2 * D)).toBe("2d");
+    for (const ms of [D, D + H, 2 * D + 23 * H]) expect(formatDuration(ms)).toMatch(/^\d+d(\d+h)?$/);
+  });
 });

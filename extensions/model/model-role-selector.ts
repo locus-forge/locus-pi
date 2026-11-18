@@ -17,218 +17,29 @@ import {
   type OperatorBlock,
   type OperatorThemeLike,
 } from "../_shared/operator/operator-ui.js";
+import { formatAssignment } from "../_shared/model/model-settings.js";
+
+export * from "./selector/options.js";
 import {
-  formatAssignment,
-  type ModelRoleAssignment,
-  type ModelRolesState,
-  type ModelRoleSource,
-} from "../_shared/model/model-settings.js";
-
-export type ModelRoleSupport = "active" | "fallback" | "dormant";
-
-export const MODEL_ROLE_ACTIONS = [
-  {
-    role: "default",
-    tag: "DEFAULT",
-    label: "Set as DEFAULT",
-    capability: "active · main/current model",
-    narrowCapability: "active · current model",
-    support: "active",
-    appliesCurrentModel: true,
-  },
-  {
-    role: "agent",
-    tag: "AGENT",
-    label: "Set as AGENT",
-    capability: "active · model-less agents/workflows",
-    narrowCapability: "active · model-less agents",
-    support: "active",
-    appliesCurrentModel: false,
-  },
-  {
-    role: "task",
-    tag: "TASK",
-    label: "Set as TASK",
-    capability: "active · explicit task role",
-    narrowCapability: "active · task role",
-    support: "active",
-    appliesCurrentModel: false,
-  },
-  {
-    role: "plan",
-    tag: "PLAN",
-    label: "Set as PLAN",
-    capability: "dormant · beta prompt planning",
-    narrowCapability: "dormant · beta",
-    support: "dormant",
-    appliesCurrentModel: false,
-  },
-  {
-    role: "summary",
-    tag: "SUMMARY",
-    label: "Set as SUMMARY",
-    capability: "dormant · resolver only",
-    narrowCapability: "dormant · resolver",
-    support: "dormant",
-    appliesCurrentModel: false,
-  },
-  {
-    role: "smol",
-    tag: "SMOL",
-    label: "Set as SMOL",
-    capability: "fallback-only · summary resolver",
-    narrowCapability: "fallback-only",
-    support: "fallback",
-    appliesCurrentModel: false,
-  },
-] as const;
-
-export const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
-
-export type ModelRoleAction = (typeof MODEL_ROLE_ACTIONS)[number];
-
-export interface ModelRoleSelection {
-  model: ModelLike;
-  action: ModelRoleAction;
-  thinking: ThinkingLevel;
-}
-
-export interface ModelRoleReceipt {
-  kind: "success" | "warning" | "error";
-  text: string;
-}
-
-export interface AppliedModelRoleState {
-  currentSelector: string | undefined;
-  currentThinking: ThinkingLevel | undefined;
-  roleSummaries: RoleSummary[];
-  receipt: ModelRoleReceipt;
-}
-
-export interface ModelRow {
-  model: ModelLike;
-  selector: string;
-  label: string;
-  provider: string;
-  roleTags: string[];
-  current: boolean;
-  rank: number;
-}
-
-export interface RoleSummary {
-  role: string;
-  tag: string;
-  source: ModelRoleSource;
-  inherited: boolean;
-  assignment?: ModelRoleAssignment;
-}
-
-export interface ModelEffortCapability {
-  levels: ThinkingLevel[];
-  source: "registry" | "legacy" | "unknown";
-  known: boolean;
-}
-
-interface CapabilityModel extends ModelLike {
-  reasoning?: boolean;
-  thinkingLevelMap?: Partial<Record<ThinkingLevel, string | null>>;
-}
-
-export interface ModelRoleSelectorOptions {
-  rows: ModelRow[];
-  roleSummaries: RoleSummary[];
-  currentSelector: string | undefined;
-  currentThinking: ThinkingLevel | undefined;
-  applySelection(selection: ModelRoleSelection): Promise<AppliedModelRoleState>;
-  done?: () => void;
-}
-
+  modelRoleAction,
+  modelRowRank,
+  modelSelector,
+  modelEffortCapability,
+  effortLevelsForModel,
+  type ModelRoleSelectorOptions,
+  type ModelRoleSelection,
+  type AppliedModelRoleState,
+  type ModelRow,
+  type RoleSummary,
+  type ModelRoleAction,
+  type ModelRoleReceipt,
+} from "./selector/options.js";
 type SelectorStage = "models" | "roles" | "effort";
-
 const ALL_PROVIDER_FILTER = "ALL";
 
-/** Pi-compatible effort projection from registry capability metadata. */
-export function modelEffortCapability(model: ModelLike | undefined): ModelEffortCapability {
-  if (model === undefined) return { levels: ["off"], source: "unknown", known: false };
-
-  const capability = model as CapabilityModel;
-  if (typeof capability.reasoning === "boolean" || capability.thinkingLevelMap !== undefined) {
-    if (capability.reasoning === false) return { levels: ["off"], source: "registry", known: true };
-    const levels = THINKING_LEVELS.filter((level) => {
-      const mapped = capability.thinkingLevelMap?.[level];
-      if (mapped === null) return false;
-      if (level === "xhigh") return mapped !== undefined;
-      return true;
-    });
-    return { levels: [...levels], source: "registry", known: true };
-  }
-
-  if (Array.isArray(capability.thinking)) {
-    const advertised = capability.thinking.filter((level): level is ThinkingLevel =>
-      (THINKING_LEVELS as readonly string[]).includes(level),
-    );
-    return {
-      levels: [...new Set<ThinkingLevel>(["off", ...advertised])],
-      source: "legacy",
-      known: advertised.length > 0,
-    };
-  }
-
-  return { levels: ["off"], source: "unknown", known: false };
-}
-
-export function effortLevelsForModel(model: ModelLike | undefined): ThinkingLevel[] {
-  return [...modelEffortCapability(model).levels];
-}
-
-export function buildModelRows(
-  models: ModelLike[],
-  state: ModelRolesState,
-  currentSelector: string | undefined,
-): ModelRow[] {
-  const rowsBySelector = new Map<string, ModelRow>();
-  for (const [index, model] of models.entries()) {
-    const selector = modelSelector(model);
-    const roleTags = assignedRoleTags(selector, state);
-    const current = currentSelector === selector;
-    const row: ModelRow = {
-      model,
-      selector,
-      label: modelLabel(model),
-      provider: cleanSelectorPart(model.provider),
-      roleTags,
-      current,
-      rank: modelRowRank(roleTags, current, index),
-    };
-    const existing = rowsBySelector.get(selector);
-    rowsBySelector.set(selector, existing ? preferredDuplicateRow(existing, row) : row);
-  }
-  return [...rowsBySelector.values()].sort(
-    (left, right) => left.rank - right.rank || left.label.localeCompare(right.label),
-  );
-}
-
-export function roleSummaries(state: ModelRolesState): RoleSummary[] {
-  return MODEL_ROLE_ACTIONS.map((action) => {
-    const effective = state.effective.get(action.role);
-    return {
-      role: action.role,
-      tag: action.tag,
-      source: effective?.source ?? "unset",
-      inherited: effective?.inherited ?? false,
-      ...(effective?.assignment === undefined ? {} : { assignment: effective.assignment }),
-    };
-  });
-}
-
-export function modelSelector(model: ModelLike): string {
-  const provider = cleanSelectorPart(model.provider);
-  const id = cleanSelectorPart(model.id);
-  if (!provider || !id) return "";
-  return id.includes("/") ? id : `${provider}/${id}`;
-}
-
 export class ModelRoleSelectorComponent implements CustomUiComponent {
+  readonly #configPath: string | undefined;
+  #configExists: boolean;
   readonly #tui: CustomUiTui;
   readonly #theme: OperatorThemeLike;
   #rows: ModelRow[];
@@ -252,6 +63,8 @@ export class ModelRoleSelectorComponent implements CustomUiComponent {
     this.#theme = theme;
     this.#rows = options.rows;
     this.#roleSummaries = options.roleSummaries;
+    this.#configPath = options.configPath;
+    this.#configExists = options.configExists ?? true;
     this.#currentSelector = options.currentSelector;
     this.#currentThinking = options.currentThinking;
     this.#applySelection = options.applySelection;
@@ -331,6 +144,10 @@ export class ModelRoleSelectorComponent implements CustomUiComponent {
       primary: `${semanticText(this.#theme, currentTone, "Current", true)} session model: ${semanticText(this.#theme, "accent", current, true)}${effort}`,
       badges: [{ text: this.#stage, tone: "accent" }],
       body,
+      metadata:
+        this.#configPath === undefined
+          ? []
+          : [`File: ${this.#configPath}${this.#configExists ? "" : " (not created)"}`],
       controls: [this.#controls()],
     };
   }
@@ -343,7 +160,7 @@ export class ModelRoleSelectorComponent implements CustomUiComponent {
 
   #modelBody(width: number): string[] {
     const rows = this.#visibleRows();
-    const limit = visibleModelLimit(width);
+    const limit = Math.min(visibleModelLimit(width), this.#roleLimit(width));
     const start = windowStart(this.#selectedIndex, rows.length, limit);
     const end = Math.min(start + limit, rows.length);
     return [
@@ -360,12 +177,16 @@ export class ModelRoleSelectorComponent implements CustomUiComponent {
   #roleBody(width: number): string[] {
     const row = this.#selectedRow();
     if (row === undefined) return ["Action for: no selected model"];
+    const actions = this.#roleSummaries.map((summary) => modelRoleAction(summary.role));
+    const limit = this.#roleLimit(width);
+    const start = windowStart(this.#roleIndex, actions.length, limit);
     return [
-      ...this.#modelBody(width),
+      this.#filterLine(width),
+      `Selected model: ${row.selector}`,
       "",
       `Action for ${semanticText(this.#theme, "accent", row.selector, true)}:`,
-      ...MODEL_ROLE_ACTIONS.map((action, index) => {
-        const selected = index === this.#roleIndex;
+      ...actions.slice(start, start + limit).map((action, index) => {
+        const selected = index + start === this.#roleIndex;
         const marker = selected ? semanticText(this.#theme, "accent", ">", true) : " ";
         const capability = width < 60 ? action.narrowCapability : action.capability;
         const warning = selected && roleTone(action.tag) === "warning";
@@ -405,10 +226,10 @@ export class ModelRoleSelectorComponent implements CustomUiComponent {
 
   #defaultRouteLine(): string {
     const summary = this.#roleSummaries.find((item) => item.role === "default");
-    // Only an unset DEFAULT route still needs attention on this line.
+    // Only an unset default route still needs attention on this line.
     if (summary?.assignment === undefined)
-      return `${semanticText(this.#theme, "warning", "DEFAULT", true)} route: unset`;
-    const label = semanticText(this.#theme, "success", "DEFAULT", true);
+      return `${semanticText(this.#theme, "warning", "default", true)} route: unset`;
+    const label = semanticText(this.#theme, "success", "default", true);
     const inherited = summary.inherited ? " · inherited" : "";
     const assignment = semanticText(this.#theme, "success", formatAssignment(summary.assignment), true);
     return `${label} route: ${assignment} · ${summary.source}${inherited}`;
@@ -420,13 +241,21 @@ export class ModelRoleSelectorComponent implements CustomUiComponent {
     // Every row here is an existing assignment, so the whole line is settled.
     return [
       "Routing roles:",
-      ...assigned.map((item) =>
-        truncateToWidth(
-          `  ${semanticText(this.#theme, "success", item.tag, true)}=${semanticText(this.#theme, "success", formatAssignment(item.assignment!), true)}`,
-          Math.max(1, width - 4),
+      ...assigned
+        .slice(0, 3)
+        .map((item) =>
+          truncateToWidth(
+            `  ${semanticText(this.#theme, "success", item.tag, true)}=${semanticText(this.#theme, "success", formatAssignment(item.assignment!), true)}`,
+            Math.max(1, width - 4),
+          ),
         ),
-      ),
+      ...(assigned.length > 3 ? [`  +${assigned.length - 3} more assigned roles`] : []),
     ];
+  }
+
+  #roleLimit(width: number): number {
+    const pathLines = Math.ceil((this.#configPath?.length ?? 0) / Math.max(1, width - 4));
+    return Math.max(1, Math.min(8, (this.#tui.terminal?.rows ?? 40) - 16 - pathLines));
   }
 
   #filterLine(width: number): string {
@@ -484,7 +313,8 @@ export class ModelRoleSelectorComponent implements CustomUiComponent {
     }
     if (this.#stage === "roles") {
       const row = this.#selectedRow();
-      const action = MODEL_ROLE_ACTIONS[this.#roleIndex];
+      const role = this.#roleSummaries[this.#roleIndex]?.role;
+      const action = role === undefined ? undefined : modelRoleAction(role);
       if (row === undefined || action === undefined) return;
       this.#selectedAction = action;
       const levels = effortLevelsForModel(row.model);
@@ -518,6 +348,7 @@ export class ModelRoleSelectorComponent implements CustomUiComponent {
       this.#currentSelector = applied.currentSelector;
       this.#currentThinking = applied.currentThinking;
       this.#roleSummaries = applied.roleSummaries;
+      if (applied.configExists !== undefined) this.#configExists = applied.configExists;
       this.#receipt = applied.receipt;
       this.#refreshRows();
       this.#restoreSelectedModel(row.selector);
@@ -563,7 +394,7 @@ export class ModelRoleSelectorComponent implements CustomUiComponent {
   #moveFocus(delta: number): void {
     if (this.#stage === "models") this.#moveSelection(delta);
     else if (this.#stage === "roles") {
-      this.#roleIndex = cycleIndex(this.#roleIndex, delta, MODEL_ROLE_ACTIONS.length);
+      this.#roleIndex = cycleIndex(this.#roleIndex, delta, this.#roleSummaries.length);
       this.#requestRender();
     } else {
       const row = this.#selectedRow();
@@ -629,42 +460,11 @@ function semanticText(theme: OperatorThemeLike, tone: ModelSelectorTone, text: s
 
 // Action tone only; assignments use success after they are saved.
 function roleTone(tag: string): "warning" | "accent" {
-  return tag === "CURRENT" || tag === "DEFAULT" || tag === "SMOL" ? "warning" : "accent";
+  return tag === "CURRENT" || tag === "default" || tag === "smol" ? "warning" : "accent";
 }
 
 function modelNameSuffix(model: ModelLike): string {
   return typeof model.name === "string" && model.name.trim() ? ` — ${model.name.trim()}` : "";
-}
-
-function preferredDuplicateRow(left: ModelRow, right: ModelRow): ModelRow {
-  const winner = right.label.length < left.label.length ? right : left;
-  return {
-    ...winner,
-    current: left.current || right.current,
-    roleTags: [...new Set([...left.roleTags, ...right.roleTags])],
-    rank: Math.min(left.rank, right.rank),
-  };
-}
-
-function assignedRoleTags(selector: string, state: ModelRolesState): string[] {
-  return MODEL_ROLE_ACTIONS.filter((action) => state.effective.get(action.role)?.assignment?.model === selector).map(
-    (action) => action.tag,
-  );
-}
-
-function modelRowRank(roleTags: string[], current: boolean, originalIndex: number): number {
-  if (current) return -1;
-  const firstRoleIndex = MODEL_ROLE_ACTIONS.findIndex((action) => roleTags.includes(action.tag));
-  return firstRoleIndex >= 0 ? firstRoleIndex : MODEL_ROLE_ACTIONS.length + originalIndex;
-}
-
-function modelLabel(model: ModelLike): string {
-  const name = typeof model.name === "string" && model.name.trim() ? ` — ${model.name.trim()}` : "";
-  return `${modelSelector(model)}${name}`;
-}
-
-function cleanSelectorPart(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
 }
 
 function preferredEffortIndex(

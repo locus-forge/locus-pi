@@ -113,9 +113,10 @@ JavaScript is not supported.
 by `/workflows run`: scan-based discovery for Project, User, and Package alike.
 It does not add a separate UI-only registry or change resolution semantics. The
 focused catalog presents `Project`, `User`, `Package`, and review-only `History`
-as persistent tabs. It opens on the current source with the most selectable
-workflows, resolving equal counts in Project, User, Package order; History is
-the fallback only when all current sources are empty. Tab or Right moves
+as persistent tabs. It opens on Project whenever that source has a selectable
+workflow for the current query. Otherwise it opens on the current source with
+the most selectable workflows, with User before Package when their counts tie;
+History is the fallback only when all current sources are empty. Tab or Right moves
 forward, Left moves back, and Up/Down
 selects only inside the active source. Every row leads with the workflow name and
 a compact source badge (`[P]`, `[U]`, or `[PKG]`); descriptions wrap at word
@@ -192,7 +193,7 @@ actions use the success color (normally green). `[VIEW]`, `Source:`, `Path:`, an
 the equivalent history metadata labels use the same semantic success styling so
 metadata stays distinct from highlighted code:
 
-- A ready current source offers `Back`, `Start`, `Edit`, and `Review`. A
+- A ready current source focuses `Start` first, followed by `Back`, `Edit`, and `Review`. A
   folder-owned Package namespace also offers `Copy to Project` and `Copy to
 User`; Project/User sources offer the opposite editable destination.
 - A history source offers `Back` and `Review`; it never offers `Start` or `Edit`.
@@ -208,10 +209,29 @@ folder or compatible flat root is reported and never merged or overwritten.
 `Back` and cancellation return no intent. `Start`, `Edit`, and `Review` return a
 typed intent from the custom component. The `/workflows` command awaits the
 shared inline `ctx.ui.custom(..., { overlay:false })` surface, restores Pi's main
-editor, and only then calls `setEditorText()` once. `Start` prefills the direct
-`/workflows run <resolved-name>` command; submitting it reaches the runtime
-without a model planning or authoring turn, and optional semantic input can be
-appended on the same command line. `Edit` and `Review` still prefill the compact
+editor, and only then calls `setEditorText()` once. For an untyped source,
+`Start` prefills the direct `/workflows run <resolved-name>` command; submitting
+it reaches the runtime without a model planning or authoring turn, and optional
+semantic input can be appended on the same command line. For a source with a
+statically admitted `meta.inputSchema`, `Start` instead prefills a complete
+native-run request. Submitting it asks the agent to prepare canonical JSON and
+call the native `workflow` tool. The tool's extension-owned interactive
+confirmation displays that value as the separate user decision before trusted
+workflow execution; an unavailable tool fails visibly instead of falling back
+to Pi, a shell, or `/workflows`. The request includes a one-use
+`catalogSelectionId` that looks up the selected target and entry-byte SHA-256 in
+extension-owned session state; unrelated tool calls do not consume it. A newer
+Start supersedes the previous unsubmitted editor handoff. The idle input that
+submits the request retains the exact ID it carries. Steering or follow-up input
+that carries a known ID also marks it submitted, and later streaming input during
+that active request does not retire it. The next idle user input retires an
+abandoned submitted selection, so an independent later same-name call is not
+blocked. Missing or mismatched IDs fail closed while the submitted catalog
+request remains outstanding; each retained ID is consumed once, and explicitly
+reusing an old ID still fails. The tool refuses precedence or byte drift before
+confirmation, and admission checks the digest again before import. This route
+does not require package skills.
+`Edit` and `Review` still prefill the compact
 `Request: ...`, `Skill: locus-pi-workflow-create`, and
 `Additional instructions:` handoff because those actions require source work.
 The packaged skill owns workflow-authoring instructions. No global catalog

@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { runWorkflowScript } from "../../../../extensions/workflows/runtime/workflow-runner.js";
+import { resolveWorkflowTarget } from "../../../../extensions/workflows/runtime/workflow-discovery.js";
+import { sha256WorkflowBytes } from "../../../../extensions/workflows/runtime/workflow-script-identity.js";
 import { createHarness } from "../../../test-harness.js";
 import { executor, project, writeWorkflow } from "../../../fixtures/workflow-durable-project.js";
 
@@ -15,6 +17,35 @@ import { executor, project, writeWorkflow } from "../../../fixtures/workflow-dur
  */
 
 describe("workspace admission before execution", () => {
+  it("refuses catalog-selected entry-byte drift before module evaluation", async () => {
+    const root = project();
+    const marker = path.join(root, "imported.txt");
+    writeWorkflow(root, "switch", 'export default () => "selected";\n');
+    const target = resolveWorkflowTarget({ name: "switch" }, root, root);
+    const selectedSha256 = sha256WorkflowBytes(readFileSync(target.path));
+    const announced = vi.fn();
+    writeFileSync(
+      target.path,
+      `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "imported"); export default () => "changed";\n`,
+    );
+    const harness = createHarness(root);
+
+    const result = await runWorkflowScript({
+      pi: harness.pi,
+      ctx: harness.ctx,
+      signal: new AbortController().signal,
+      name: "switch",
+      targetBinding: target,
+      expectedScriptSha256: selectedSha256,
+      onRunStart: announced,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("workflow source changed after confirmation or catalog selection");
+    expect(existsSync(marker)).toBe(false);
+    expect(announced).not.toHaveBeenCalled();
+  });
+
   it("gives post-code-review a unique default planning workspace", async () => {
     const root = project();
     writeWorkflow(root, "post-code-review", `export default () => "ok";\n`);
@@ -235,4 +266,31 @@ export default (dsl) => dsl.agent("must not run");
     expect(result.error).toContain("unsafe path component");
     expect(existsSync(path.join(root, ".local"))).toBe(false);
   });
+});
+
+it("does not announce or execute a workflow cancelled before admission; successful admission announces once", async () => {
+  const root = project();
+  writeWorkflow(root, "start-proof", 'export default () => "ok";\n');
+  const h = createHarness(root);
+  const announced = vi.fn();
+  const cancelled = new AbortController();
+  cancelled.abort();
+  const result = await runWorkflowScript({
+    pi: h.pi,
+    ctx: h.ctx,
+    signal: cancelled.signal,
+    name: "start-proof",
+    onRunStart: announced,
+  });
+  expect(result.ok).toBe(false);
+  expect(announced).not.toHaveBeenCalled();
+  const success = await runWorkflowScript({
+    pi: h.pi,
+    ctx: h.ctx,
+    signal: new AbortController().signal,
+    name: "start-proof",
+    onRunStart: announced,
+  });
+  expect(success.ok, success.error).toBe(true);
+  expect(announced).toHaveBeenCalledOnce();
 });

@@ -60,12 +60,20 @@ export function workflowUnknownCommandBlock(text: string, available: string[]): 
     primary: `Unknown workflow command: ${text}`,
     body: available.length === 0 ? [] : [`Available curated Package workflows: ${available.join(", ")}`],
     controls: [
-      `Usage: /workflows | dashboard | list [query] | info [name] | status [runId] | result [runId|last] | ${workflowRunUsage("<name|path>", "run")} | continue <runId> [--answer <text>] | stop [runId|last] | skills <sync|status|remove> [--host codex|claude|all] [--scope user|project]`,
+      `Usage: /workflows | list [query] | dashboard | info [name] | status [runId] | result [runId|last] | ${workflowRunUsage("<name|path>", "run")} | continue <runId> [--answer <text>] | stop [runId|last] | skills <sync|status|remove> [--host codex|claude|all] [--scope user|project]`,
     ],
   };
 }
 
 export function workflowRunConflictBlock(runId: string): OperatorBlock {
+  if (runId === "settling workflow callbacks" || runId === "current run") {
+    return {
+      type: "WARN",
+      subject: "Workflow run",
+      primary: "Workflow not started: settling workflow callbacks.",
+      metadata: ["Try again after the current workflow has finished stopping."],
+    };
+  }
   return {
     type: "WARN",
     subject: "Workflow run",

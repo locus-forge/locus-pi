@@ -26,6 +26,8 @@ describe("agent drill command and inline interaction", () => {
     ];
     agents(h.pi);
     await emit(h, "session_start");
+    // Exercise legacy viewer compatibility; native full-screen behavior has its own suite.
+    agentLiveStore.retainSessions = false;
 
     expect(h.notifications).toContain(
       "Multiple /ps commands are loaded (ps:1, ps:2). Use /agent ps as the stable Locus fallback.",
@@ -73,6 +75,8 @@ describe("agent drill command and inline interaction", () => {
     h.ctx.hasUI = true;
     agents(h.pi);
     await emit(h, "session_start");
+    // Exercise legacy viewer compatibility; native full-screen behavior has its own suite.
+    agentLiveStore.retainSessions = false;
     registerRow("reused-direct-row", "working");
     const beforeListeners = agentLiveStore.emitter.listenerCount("change");
     const notificationsBefore = [...h.notifications];
@@ -80,6 +84,8 @@ describe("agent drill command and inline interaction", () => {
       const opening = invoke(h, "reused-direct-row");
       await vi.waitFor(() => expect(capabilitySpy).toHaveBeenCalledOnce());
       await emit(h, "session_start");
+      // Exercise legacy viewer compatibility; native full-screen behavior has its own suite.
+      agentLiveStore.retainSessions = false;
       registerRow("reused-direct-row", "working");
       resolveCapability({ ok: true, capability: {} as never });
       await opening;
@@ -106,6 +112,8 @@ describe("agent drill command and inline interaction", () => {
     h.ctx.hasUI = true;
     agents(h.pi);
     await emit(h, "session_start");
+    // Exercise legacy viewer compatibility; native full-screen behavior has its own suite.
+    agentLiveStore.retainSessions = false;
     registerRow("reused-focused-row", "working");
     const beforeListeners = agentLiveStore.emitter.listenerCount("change");
     const notificationsBefore = [...h.notifications];
@@ -114,6 +122,8 @@ describe("agent drill command and inline interaction", () => {
       const opening = h.commands.get("ps")!.handler("", h.ctx);
       await vi.waitFor(() => expect(capabilitySpy).toHaveBeenCalledOnce());
       await emit(h, "session_start");
+      // Exercise legacy viewer compatibility; native full-screen behavior has its own suite.
+      agentLiveStore.retainSessions = false;
       registerRow("reused-focused-row", "working");
       resolveCapability({ ok: true, capability: {} as never });
       await opening;

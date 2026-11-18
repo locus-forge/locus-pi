@@ -2,6 +2,14 @@ import type { ExtensionAPI, ExtensionContext, ModelLike, ThinkingLevel } from ".
 import type { ModelRoleAssignment } from "./model-settings.js";
 import { parseModelSelector } from "./model-settings.js";
 
+export interface ModelRouteDisplay {
+  model?: string;
+  thinking?: string;
+  modelRole?: string;
+  modelConfirmed?: boolean;
+  modelRoleFallback?: string;
+}
+
 export interface LiveModelDisplay {
   model?: string;
   thinking?: ThinkingLevel;
@@ -30,7 +38,13 @@ export function resolveLiveModelDisplay(input: {
   const currentModel = modelSelectorFromModel(input.ctx?.model);
   const currentThinking = input.pi?.getThinkingLevel?.();
   const model = input.executedModel ?? requested?.model ?? input.assignment?.model ?? currentModel;
-  const thinking = requested?.thinking ?? currentThinking ?? input.assignment?.thinking;
+  // Explicit routes without an effort use the child SDK default, not the parent's effort.
+  const thinking =
+    requested !== undefined
+      ? requested.thinking
+      : input.assignment !== undefined
+        ? input.assignment.thinking
+        : currentThinking;
   if (model === undefined && thinking === undefined) return undefined;
   return {
     ...(model !== undefined ? { model } : {}),

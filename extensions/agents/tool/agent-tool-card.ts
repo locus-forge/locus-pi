@@ -15,7 +15,11 @@ import type {
   ToolRenderResultOptions,
   ToolResult,
 } from "../../_shared/host/pi-api.js";
-import { agentLiveDisplayName, agentLiveTitle } from "../../_shared/agent-runtime/agent-live-panel.js";
+import {
+  agentLiveDisplayName,
+  agentLiveTitle,
+  formatModelBadge,
+} from "../../_shared/agent-runtime/agent-live-panel.js";
 import { agentLiveStore, type AgentLiveStatus } from "../../_shared/agent-runtime/agent-live-store.js";
 import {
   AGENT_ANSWER_BAR,
@@ -69,6 +73,14 @@ export function renderAgentToolResultCard(
     (row === undefined ? undefined : singleLine(agentLiveTitle(row))) ??
     (typeof details.title === "string" ? singleLine(details.title) : "");
   const technicalLines: string[] = [];
+  const route = row ?? {
+    ...(typeof details.modelRole === "string" ? { modelRole: details.modelRole } : {}),
+    ...(typeof details.model === "string" ? { model: details.model } : {}),
+    ...(typeof details.thinking === "string" ? { thinking: details.thinking } : {}),
+    ...(typeof details.modelRoleFallback === "string" ? { modelRoleFallback: details.modelRoleFallback } : {}),
+    modelConfirmed: details.modelConfirmed === true,
+  };
+  if (route.modelRole !== undefined) technicalLines.push(formatModelBadge(route));
   if (options.expanded && typeof details.childSessionId === "string") {
     technicalLines.push(`session: ${details.childSessionId}`);
   }

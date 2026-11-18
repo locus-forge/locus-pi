@@ -9,6 +9,8 @@
 - `{ questions: [...] }` for one or more option questions; or
 - `{ question, kind, ... }` for one rich `select`, `multi-select`, `text`, or `editor` question.
 
+The provider-facing schema exposes both shapes as root object fields. Empty arguments, a rich question without `kind`, an empty batch, and malformed nested values are rejected before a prompt opens. Raw arguments are validated before Pi can coerce their types.
+
 Option questions support recommendations, multi-selection, custom input, navigation, and per-question timeouts. Native text/editor dialogs reject timeouts because the host does not provide cancellable timing for those controls.
 
 Rich questions marked `sensitivity: "secret"` redact their answers before the public result, Pi decision entry, or JSONL decision journal is produced. This applies to text/editor, selected options, and custom answers from single- and multi-select. Collection does not write provisional answers: each completed question is finalized once, after navigation ends. A cancelled batch records only the cancelled question; superseded, unavailable, or failed prompts write no decision.

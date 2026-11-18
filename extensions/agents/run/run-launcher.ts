@@ -11,7 +11,7 @@ import {
   type ApprovalTier,
 } from "../../_shared/agent-runtime/agent-runner.js";
 import { createAgentSdkSessionExecutor } from "../../_shared/agent-runtime/agent-sdk-host.js";
-import { agentLiveStore } from "../../_shared/agent-runtime/agent-live-store.js";
+import { agentLiveStore, type AgentLiveExecutionHandle } from "../../_shared/agent-runtime/agent-live-store.js";
 import {
   formatAgentFinishedEventLine,
   formatAgentStartedEventLine,
@@ -24,6 +24,7 @@ import {
   resolveAgentModelPreference,
   malformedRoleAssignmentNote,
   unassignedAgentTierNote,
+  unassignedRoleNote,
   type ModelRoleResolution,
 } from "../../_shared/model/model-settings.js";
 import { resolveWorkflowModel } from "../../_shared/model/workflow-model-resolve.js";
@@ -68,6 +69,7 @@ interface AgentLiveTaskBaseInput {
   title: string;
   task: string;
   approvalTier: ApprovalTier;
+  modelRole?: string;
   liveModel: { model?: string; thinking?: string } | undefined;
   /** Explicit wall clock for this whole interactive child. */
   childTimeoutMs: number;
@@ -77,7 +79,7 @@ interface AgentLiveTaskBaseInput {
 
 export type AgentLiveTaskInput = AgentLiveTaskBaseInput &
   (
-    | { executionMode: "bare"; agent?: never; resolvedAgent?: never; modelRoleResolution?: never }
+    | { executionMode: "bare"; agent?: never; resolvedAgent?: never; modelRoleResolution?: ModelRoleResolution }
     | {
         executionMode: "named";
         agent: AgentDefinition;
@@ -100,22 +102,19 @@ export async function runAgentLiveTask(
   const { ctx, rowId, label, title, liveModel } = input;
   const execution = agentLiveStore.beginExecution({
     id: rowId,
+    projectRoot: getProjectRoot(ctx),
     ...(input.executionMode === "named" ? { agentName: input.resolvedAgent } : {}),
     label,
     title,
     request: input.task,
+    ...(input.modelRoleResolution === undefined || input.modelRoleResolution.source === "agent"
+      ? {}
+      : { modelRole: input.modelRoleResolution.role }),
     ...(liveModel?.model !== undefined ? { model: liveModel.model } : {}),
     ...(liveModel?.thinking !== undefined ? { thinking: liveModel.thinking } : {}),
     isolated: false,
     noMcp: false,
   });
-  const startedRow = agentLiveStore.rowForExecution(execution);
-  // REQ-011: append-only transcript event line at kickoff.
-  if (startedRow !== undefined) {
-    const startedLine = formatAgentStartedEventLine(startedRow);
-    input.onStarted?.(startedLine);
-    emitAgentEventLine(ctx, startedLine, "info");
-  }
   // Parity with the workflow bridge (OD2): `/agent run reviewer` and a workflow stage
   // naming `reviewer` resolve their model the same way, so the same agent cannot run
   // on two different models with nothing in the evidence to explain why. The
@@ -123,9 +122,10 @@ export async function runAgentLiveTask(
   // model — and an unresolvable CONCRETE selector fails the run by name rather than
   // silently inheriting. This is the one call site both interactive triggers share.
   const tier =
-    input.executionMode === "named" ? await resolveAgentExecutorModel(ctx, input.agent, input.modelRoleResolution) : {};
+    input.modelRoleResolution === undefined
+      ? {}
+      : await resolveAgentExecutorModel(ctx, input.agent, input.modelRoleResolution, input.modelRole);
   if (tier.refusal !== undefined) {
-    if (input.executionMode !== "named") throw new Error("bare execution cannot produce a profile refusal");
     // The refusal lands before any session is created, so the row's seeded
     // `model`/`thinking` are the REQUEST talking to itself. Leaving them on a terminal
     // row shows an operator a model that never ran and cannot be told apart from one
@@ -136,10 +136,10 @@ export async function runAgentLiveTask(
       errors: [tier.refusal],
       finalAnswer: tier.refusal,
     });
-    return recordStandaloneFailure(input, {
+    return recordStandaloneFailure(input, execution, {
       status: "failed",
-      executionMode: "named",
-      agentName: input.agent.name,
+      executionMode: input.executionMode,
+      ...(input.agent === undefined ? {} : { agentName: input.agent.name }),
       reason: tier.refusal,
       diagnostics: [tier.refusal],
       lifecycleEntryIds: [],
@@ -147,6 +147,7 @@ export async function runAgentLiveTask(
   }
   // Inherited models keep known parent effort. Concrete tiers use their suffix,
   // or leave SDK per-model/global defaults intact when no suffix was declared.
+  if (tier.fallback !== undefined) agentLiveStore.patchExecution(execution, { modelRoleFallback: tier.fallback });
   const thinkingLevel = tier.model === undefined ? input.pi.getThinkingLevel?.() : tier.thinking;
   const executor = createAgentSdkSessionExecutor({
     model: tier.model ?? (ctx as { model?: unknown }).model,
@@ -163,6 +164,7 @@ export async function runAgentLiveTask(
   });
   const requestInput = {
     approvalTier: input.approvalTier,
+    ...(input.modelRoleResolution === undefined ? {} : { modelRoleResolution: input.modelRoleResolution }),
     // Travels on the request for the same reason it does in the bridge: the
     // run-result artifact is written inside the boundary. `writeAgentRunResultArtifact`
     // only promotes it once `executedModel` is set — i.e. after the child was actually
@@ -177,19 +179,31 @@ export async function runAgentLiveTask(
           modelRoleResolution: input.modelRoleResolution,
         })
       : createBareAgentRunRequest(input.task, requestInput);
+  let announced = false;
+  const announce = () => {
+    const row = agentLiveStore.rowForExecution(execution);
+    if (announced || row?.dispatchedAt === undefined) return;
+    announced = true;
+    const line = formatAgentStartedEventLine(row);
+    input.onStarted?.(line);
+    emitAgentEventLine(ctx, line, "info");
+  };
+  agentLiveStore.emitter.on("change", announce);
   let boundary: Awaited<ReturnType<typeof executeAgentRunBoundary>>;
   try {
     boundary = await executeAgentRunBoundary({ pi: input.pi, ctx, request, executor, signal: input.signal });
   } catch (err) {
-    recordStandaloneFailure(input, {
+    recordStandaloneFailure(input, execution, {
       status: "failed",
       reason: errorMessage(err),
       diagnostics: [],
       lifecycleEntryIds: [],
     });
     throw err;
+  } finally {
+    agentLiveStore.emitter.off("change", announce);
   }
-  if (boundary.status !== "completed") boundary = recordStandaloneFailure(input, boundary);
+  if (boundary.status !== "completed") boundary = recordStandaloneFailure(input, execution, boundary);
   // A run whose envelope could not be stored is NOT a done run — it prints as the storage
   // failure it is, through the same failure receipt as every other non-completion. What it
   // is also not is a lost answer: the child answered, so the row keeps that answer and the
@@ -200,6 +214,7 @@ export async function runAgentLiveTask(
     status: boundary.status === "completed" ? "done" : boundary.status === "cancelled" ? "cancelled" : "error",
     ...(boundary.childSession?.id !== undefined ? { childSessionId: boundary.childSession.id } : {}),
     ...(boundary.resultArtifact?.path !== undefined ? { resultArtifact: boundary.resultArtifact.path } : {}),
+    ...(boundary.errorLogPath !== undefined ? { errorLogPath: boundary.errorLogPath } : {}),
     finalAnswer: answerSurvivedStorageFailure === true && boundary.text !== undefined ? boundary.text : boundary.reason,
     errors: boundary.status === "completed" ? [] : [boundary.reason, ...boundary.diagnostics],
   });
@@ -213,9 +228,10 @@ export async function runAgentLiveTask(
 /** Final standalone facts only. Workflow children are indexed by their own journal owner. */
 function recordStandaloneFailure(
   input: AgentLiveTaskInput,
+  execution: AgentLiveExecutionHandle,
   result: Awaited<ReturnType<typeof executeAgentRunBoundary>>,
 ): Awaited<ReturnType<typeof executeAgentRunBoundary>> {
-  const row = agentLiveStore.rows.get(input.rowId);
+  const row = agentLiveStore.rowForExecution(execution);
   const parentSessionId = getSessionId(input.ctx);
   const receipt = appendProjectError(getProjectRoot(input.ctx), {
     ts: new Date().toISOString(),
@@ -233,19 +249,23 @@ function recordStandaloneFailure(
     resultPath: result.resultArtifact?.path,
     transcriptPath: result.childTrace?.path,
   });
-  const details = result.resultArtifact?.path ?? result.childTrace?.path;
+  agentLiveStore.patchExecution(execution, {
+    errorLogPath: receipt.path,
+    status: result.status === "cancelled" ? "cancelled" : "error",
+    errors: [result.reason, ...result.diagnostics],
+    ...(result.resultArtifact?.path ? { resultArtifact: result.resultArtifact.path } : {}),
+  });
+  const name = row?.displayName ?? result.agentName ?? "(unnamed)";
+  const reason = result.reason.replace(/\s+/g, " ");
   emitAgentEventLine(
     input.ctx,
-    [
-      `Agent ${row?.displayName ?? result.agentName ?? "(unnamed)"} ${result.status}: ${result.reason}`,
-      `task: ${input.title}`,
-      ...(result.failureCause === undefined ? [] : [`cause: ${result.failureCause}`]),
-      ...(details === undefined ? [] : [`details: ${details}`]),
-      `errors: ${receipt.path}`,
-      ...(receipt.warning === undefined ? [] : [receipt.warning]),
-    ].join("\n"),
-    result.status === "cancelled" ? "warning" : "error",
+    result.status === "cancelled"
+      ? `Agent ${name} cancelled.`
+      : `Agent ${name} ${result.status}: ${reason.length > 140 ? reason.slice(0, 137) + "…" : reason} · /ps for details`,
+    result.status === "cancelled" ? "info" : "error",
   );
+  if (receipt.warning !== undefined)
+    emitAgentEventLine(input.ctx, `Agent diagnostics could not be indexed: ${receipt.warning}`, "warning");
   return {
     ...result,
     errorLogPath: receipt.path,
@@ -254,29 +274,22 @@ function recordStandaloneFailure(
   };
 }
 
-/**
- * The interactive half of the tier chain.
- *
- * The workflow bridge owns the full three-term precedence because only a workflow
- * call can declare a per-call `model` / `modelRole`. An interactive child has no
- * call site to declare one, so the chain here is the agent's own resolved tier, then
- * the session model. The two asymmetric outcomes are the same as the bridge's: a
- * concrete selector that does not resolve refuses by name, an unassigned role
- * inherits (OD5).
- */
+/** Resolve an explicit spawn role or profile preference before creating a child. */
 async function resolveAgentExecutorModel(
   ctx: ExtensionContext,
-  agent: AgentDefinition,
+  agent: AgentDefinition | undefined,
   resolution: ModelRoleResolution,
+  explicitRole?: string,
 ): Promise<{ model?: unknown; thinking?: ThinkingLevel; refusal?: string; fallback?: string }> {
   if (resolution.malformed !== undefined) {
     // Same rule as the bridge (OD2 parity): a malformed assignment is a config error
     // and refuses, only a genuinely unassigned role degrades.
     return {
       refusal: malformedRoleAssignmentNote(
-        agent.model?.[0] ?? resolution.role,
-        `agent "${agent.name}" frontmatter model`,
+        explicitRole ?? agent?.model?.[0] ?? resolution.role,
+        explicitRole === undefined ? `agent "${agent?.name}" frontmatter model` : "modelRole",
         resolution.malformed,
+        resolution.configPath,
       ),
     };
   }
@@ -286,10 +299,13 @@ async function resolveAgentExecutorModel(
     // the same unexplained-model problem OD2 asked us to close for `/agent run` and
     // `spawn_agent`, so the note the bridge writes is written here too. The roles
     // state is re-read only on this path, so the common case pays nothing.
-    const declared = agent.model?.[0];
+    const declared = explicitRole ?? agent?.model?.[0];
     if (declared === undefined) return {};
     return {
-      fallback: unassignedAgentTierNote(agent.name, declared, resolution, await loadModelRolesState()),
+      fallback:
+        explicitRole === undefined && agent !== undefined
+          ? unassignedAgentTierNote(agent.name, declared, resolution, await loadModelRolesState(getProjectRoot(ctx)))
+          : unassignedRoleNote(declared, "modelRole", await loadModelRolesState(getProjectRoot(ctx))),
     };
   }
   const resolved = await resolveWorkflowModel(formatAssignment(resolution.assignment), ctx);
@@ -297,7 +313,7 @@ async function resolveAgentExecutorModel(
     return { model: resolved.model, ...(resolved.thinking === undefined ? {} : { thinking: resolved.thinking }) };
   return {
     refusal:
-      `Agent "${agent.name}" declares the model ${JSON.stringify(agent.model?.[0] ?? resolution.role)}, ` +
+      `Agent "${agent?.name ?? "bare"}" declares the model ${JSON.stringify(explicitRole ?? agent?.model?.[0] ?? resolution.role)}, ` +
       `resolved to ${JSON.stringify(formatAssignment(resolution.assignment))} by the ${resolution.source} layer, ` +
       `but that ${resolved.message}`,
   };
@@ -333,20 +349,47 @@ function headOfPrompt(prompt: string): string {
     .join(" ");
 }
 
-/**
- * `/agent run` — the single-agent slash trigger. T-188 W2: it is now a client of
- * the shared live-row model (agentLiveStore + the AgentLivePanel installed by
- * installWorkflowProgress), exactly like the `task`/`spawn_agent` tool. There is
- * no replacement-session transcript switch (the T-187 root cause of "who is
- * working?", the upward jump, and `drill last → not found`): the run streams into
- * the live panel above the editor, its row survives for `/agent drill`, and the
- * detailed flow goes through drill + the JSONL journal.
+/** Slash-launched assignments use the same SDK boundary as chat/workflow agents.
+ * The runtime continues independently of the command handler and visible screen.
  */
-export async function executeAgentRunCommand(
+const commandRuns = new Map<AbortController, Promise<unknown>>();
+
+/** Detached tool preflight shares the same exit barrier as slash launches. */
+export function trackAgentLaunch<T>(controller: AbortController, run: Promise<T>): Promise<T> {
+  const tracked = run.finally(() => commandRuns.delete(controller));
+  commandRuns.set(controller, tracked);
+  return tracked;
+}
+
+/** Include preflight work in shutdown so a late catalog read cannot create a new agent. */
+export async function shutdownAgentCommands(): Promise<void> {
+  const pending = [...commandRuns.entries()];
+  for (const [controller] of pending) controller.abort();
+  await Promise.allSettled(pending.map(([, run]) => run));
+}
+
+export function executeAgentRunCommand(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   name: string,
   task: string,
+  approvalTier: CommandApprovalTier = "prompt",
+  title?: string,
+): Promise<void> {
+  const controller = new AbortController();
+  const running = executeAgentRunCommandOwned(pi, ctx, name, task, controller, approvalTier, title).finally(() =>
+    commandRuns.delete(controller),
+  );
+  commandRuns.set(controller, running);
+  return running;
+}
+
+async function executeAgentRunCommandOwned(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  name: string,
+  task: string,
+  controller: AbortController,
   approvalTier: CommandApprovalTier = "prompt",
   title?: string,
 ): Promise<void> {
@@ -357,13 +400,13 @@ export async function executeAgentRunCommand(
     return;
   }
   const { agent, resolvedAgent } = resolution;
-  const modelRoles = await loadModelRolesState();
+  const modelRoles = await loadModelRolesState(getProjectRoot(ctx));
+  if (controller.signal.aborted) return;
   const modelRoleResolution = resolveAgentModelPreference(modelRoles, agent.model ?? []);
   const liveModel = resolveLiveModelDisplay({ pi, ctx, assignment: modelRoleResolution.assignment });
   const hasUI = ctx.hasUI === true;
   const panel = hasUI ? installWorkflowProgress(ctx, AGENTS_WIDGET_KEY, `run ${resolvedAgent}`, "agent") : undefined;
   if (hasUI) pinTransientUiKey(pi, AGENTS_WIDGET_KEY);
-  const controller = new AbortController();
   try {
     const boundary = await runAgentLiveTask({
       pi,

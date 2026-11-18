@@ -1,7 +1,6 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import fsPromises from "node:fs/promises";
-import { syncBuiltinESMExports } from "node:module";
+import * as modelSettings from "../../../../extensions/_shared/model/model-settings.js";
 import { expect, it, vi } from "vitest";
 import { createWorkflowRuntime } from "../../../../extensions/workflows/runtime/workflow-runtime.js";
 import {
@@ -393,18 +392,16 @@ export default async function runWorkflow(dsl) {
     const thirdGate = new Promise<void>((resolve) => {
       releaseThird = resolve;
     });
-    const configPath = path.join(root, ".pi-user", "model-roles", "config.json");
-    const originalReadFile = fsPromises.readFile;
+    const originalLoad = modelSettings.loadModelRolesState;
     let configReads = 0;
-    const readFile = vi.spyOn(fsPromises, "readFile").mockImplementation(async (...args) => {
-      if (reorderReads && String(args[0]) === configPath) {
+    const loadRoles = vi.spyOn(modelSettings, "loadModelRolesState").mockImplementation(async (...args) => {
+      if (reorderReads && args[0] === root) {
         const ordinal = ++configReads;
         if (ordinal === 1) await firstGate;
         if (ordinal === 3) await thirdGate;
       }
-      return originalReadFile(...args);
+      return originalLoad(...args);
     });
-    syncBuiltinESMExports();
     try {
       const first = await runWorkflow(root, "mapped-replay", {
         answer: (prompt) => {
@@ -415,7 +412,7 @@ export default async function runWorkflow(dsl) {
       });
       expect(first.ok).toBe(true);
       const prompts = ["classify one", "classify two", "classify three"];
-      // Executor arrival follows asynchronous model-role reads, not logical admission.
+      // Delay the loader boundary in admission order; filesystem operations may already finish out of order.
       expect([...first.executedPrompts].sort()).toEqual([...prompts].sort());
       if (reorderReads) {
         expect(configReads).toBe(3);
@@ -461,8 +458,7 @@ export default async function runWorkflow(dsl) {
     } finally {
       releaseFirst();
       releaseThird();
-      readFile.mockRestore();
-      syncBuiltinESMExports();
+      loadRoles.mockRestore();
       cleanupReplayProjects();
     }
   },

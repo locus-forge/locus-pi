@@ -87,6 +87,9 @@ not copied `pi-subagents` UI code. One agent is one line, and the line has one g
 <icon> <name>  <title>  ·  <model> <effort>  ·  r<N>  ·  <elapsed>  ·  ↑<in> ↓<out>
 ```
 
+`<elapsed>` reads `1m30s` and `1h5m`; from one whole day it shows only floored
+days and whole hours (`1d`, `2d3h`), never minutes or seconds.
+
 The status icon and its color carry the state, so the row deliberately has no
 `[Working]` word and no `on task`, `activity=`, `args=`, `steps=`, `turns=`,
 `tokens=`, `childSession=` field and no raw JSON: those key/value forms are not part

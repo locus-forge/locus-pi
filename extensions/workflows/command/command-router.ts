@@ -20,12 +20,7 @@ import { listWorkflowRunIds, readWorkflowRunResultText, resolveWorkflowRunId } f
 import { WORKFLOW_RUN_GROUP_STORAGE_PATTERN } from "../runtime/workflow-run-layout.js";
 import { WorkflowCatalogViewer, WorkflowInfoViewer } from "../catalog/catalog-viewer.js";
 import { workflowArgumentCompletions, workflowFlatCommandCompletions } from "../launch/command-completions.js";
-import {
-  buildWorkflowRunCommand,
-  formatWorkflowCommandToken,
-  parseContinueCommand,
-  parseWorkflowCommandToken,
-} from "./command-parser.js";
+import { formatWorkflowCommandToken, parseContinueCommand, parseWorkflowCommandToken } from "./command-parser.js";
 import type { WorkflowHandoffPumpResult } from "../operator/operator-handoff-controller.js";
 import { clearWorkflowWidget, presentWorkflowHandoffPumpResult } from "../operator/operator-surface.js";
 import {
@@ -49,24 +44,25 @@ import {
   WORKFLOW_RPC_STATUS_ROWS,
 } from "../run/run-evidence.js";
 import {
-  buildWorkflowActionPrompt,
   buildWorkflowCatalogBlockFromModel,
   buildWorkflowCatalogModel,
   buildWorkflowInfoBlock,
+  readWorkflowCatalogSource,
   type WorkflowBrowserIntent,
 } from "../catalog/workflow-catalog.js";
 import type { WorkflowCommandLauncher } from "../launch/workflow-command-launcher.js";
 import { handleWorkflowRunCommand } from "./run.js";
 import { presentWorkflowSkillHostCommand } from "./skills.js";
+import { fillWorkflowEditor, prepareWorkflowEditorHandoff } from "./workflow-editor-handoff.js";
 
 /** Canonical ordered root menu data for the `/workflows` command. */
 const WORKFLOW_MENU_DESCRIPTIONS = {
-  dashboard: "inspect persisted runs and evidence",
   list: "browse available workflows",
+  dashboard: "inspect persisted runs and evidence",
   info: "inspect one workflow's details",
   status: "view recent run progress",
   result: "read a finished run's output",
-  run: "start a workflow",
+  run: "fill the editor for a workflow launch",
   continue: "answer a pending handoff",
   stop: "stop an active run",
   skills: "install workflow skills for external agents",
@@ -84,8 +80,6 @@ const WORKFLOW_RESULT_WIDGET_LINES = 40;
 const WORKFLOW_MENU_OPTION_LIMIT = 20;
 /** Pi 0.83 throttles TUI renders to a 16 ms frame. Let a closed native selector restore the editor first. */
 const NATIVE_SELECTOR_TEARDOWN_MS = 20;
-/** Clearing an unused status is the host API's no-visible-change way to request the post-prefill render. */
-const WORKFLOW_EDITOR_PREFILL_RENDER_STATUS_KEY = "workflows:editor-prefill-render";
 
 type WorkflowMenuSelection =
   { status: "selected"; value: string } | { status: "dismissed" } | { status: "failed"; message: string };
@@ -105,10 +99,12 @@ export interface WorkflowCommandRouterDependencies {
   rememberCompletionContext: (ctx: ExtensionCommandContext) => void;
   completionContext: () => { projectRoot: string; workingDirectory: string };
   actionableRunIds: (projectRoot: string) => string[];
+  /** Replace any prior catalog launch binding after a successful editor handoff. */
+  rememberCatalogLaunchSelection: (intent: WorkflowBrowserIntent, catalogSelectionId?: string) => void;
 }
 
 export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommandRouterDependencies): void {
-  const { commandLauncher, pumpCurrentHandoffs, rememberCompletionContext } = deps;
+  const { commandLauncher, pumpCurrentHandoffs, rememberCompletionContext, rememberCatalogLaunchSelection } = deps;
 
   const handleWorkflowCommand = async (args: CommandArgs, ctx: ExtensionCommandContext): Promise<void> => {
     const rawText = getCommandText(args);
@@ -127,6 +123,7 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
           getWorkingDirectory(ctx),
           commandLauncher,
           deps.actionableRunIds,
+          rememberCatalogLaunchSelection,
           (command) => handleWorkflowCommand(command, ctx),
         );
       } else {
@@ -199,9 +196,12 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
           }
           return;
         }
-        const prompt = buildWorkflowActionPrompt(intent);
+        const prepared = prepareWorkflowEditorHandoff(ctx, intent);
+        if (prepared === undefined) return;
         await waitForNativeSelectorTeardown();
-        fillWorkflowEditor(ctx, prompt);
+        if (fillWorkflowEditor(ctx, prepared.prompt)) {
+          rememberCatalogLaunchSelection(intent, prepared.catalogSelectionId);
+        }
         return;
       }
       const passive = buildWorkflowCatalogBlockFromModel(catalog, { compact: ctx.mode !== "tui" });
@@ -426,6 +426,7 @@ async function openWorkflowCommandMenu(
   workingDirectory: string,
   commandLauncher: WorkflowCommandLauncher,
   actionableRunIds: (projectRoot: string) => string[],
+  rememberCatalogLaunchSelection: (intent: WorkflowBrowserIntent, catalogSelectionId?: string) => void,
   route: (command: string) => Promise<void>,
 ): Promise<void> {
   const root = await requestWorkflowMenuSelection(
@@ -467,8 +468,17 @@ async function openWorkflowCommandMenu(
     case "run": {
       const selected = await selectWorkflowTarget(ctx, projectRoot, workingDirectory, "run");
       if (selected !== undefined) {
+        const intent: WorkflowBrowserIntent = {
+          action: "start",
+          row: selected,
+          sourceState: readWorkflowCatalogSource(selected, projectRoot, workingDirectory),
+        };
+        const prepared = prepareWorkflowEditorHandoff(ctx, intent);
+        if (prepared === undefined) return;
         await waitForNativeSelectorTeardown();
-        fillWorkflowEditor(ctx, buildWorkflowRunCommand(selected.target));
+        if (fillWorkflowEditor(ctx, prepared.prompt)) {
+          rememberCatalogLaunchSelection(intent, prepared.catalogSelectionId);
+        }
       }
       return;
     }
@@ -541,10 +551,7 @@ async function selectWorkflowTarget(
   projectRoot: string,
   workingDirectory: string,
   action: "info" | "run",
-): Promise<
-  | { name: string; ref: string; target: ReturnType<typeof buildWorkflowCatalogModel>["current"][number]["target"] }
-  | undefined
-> {
+): Promise<ReturnType<typeof buildWorkflowCatalogModel>["current"][number] | undefined> {
   let rows: ReturnType<typeof buildWorkflowCatalogModel>["current"];
   try {
     rows = buildWorkflowCatalogModel(projectRoot, workingDirectory).current.slice(0, WORKFLOW_MENU_OPTION_LIMIT);
@@ -575,7 +582,7 @@ async function selectWorkflowTarget(
   );
   if (!presentWorkflowMenuSelectionFailure(ctx, selected, `Retry /workflows ${action} <name>.`)) return undefined;
   const choice = choices.find((candidate) => candidate.label === selected.value);
-  if (choice !== undefined) return { name: choice.name, ref: choice.ref, target: choice.target };
+  if (choice !== undefined) return rows.find((row) => row.name === choice.name && row.target.ref === choice.ref);
   setOperatorWidget(
     ctx,
     "workflows",
@@ -667,33 +674,6 @@ function presentWorkflowMenuSelectionFailure(
 
 async function waitForNativeSelectorTeardown(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, NATIVE_SELECTOR_TEARDOWN_MS));
-}
-
-function fillWorkflowEditor(ctx: ExtensionCommandContext, command: string): void {
-  if (ctx.ui.setEditorText === undefined) {
-    setOperatorWidget(
-      ctx,
-      "workflows",
-      workflowWarningBlock(
-        "Workflow action could not fill the editor because this Pi host does not expose setEditorText().",
-        "Nothing was started or stopped; use the matching /workflows subcommand directly.",
-      ),
-    );
-    return;
-  }
-  try {
-    ctx.ui.setEditorText(command);
-    ctx.ui.setStatus(WORKFLOW_EDITOR_PREFILL_RENDER_STATUS_KEY, undefined);
-  } catch (error) {
-    setOperatorWidget(
-      ctx,
-      "workflows",
-      workflowWarningBlock(
-        `Workflow action could not fill the editor: ${errorMessage(error)}.`,
-        "Nothing was started or stopped.",
-      ),
-    );
-  }
 }
 
 function registerWorkflowCommandAliases(

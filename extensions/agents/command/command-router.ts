@@ -1,3 +1,6 @@
+import { persistActivityLimit, activitySettingsPath } from "../fleet/activity-settings.js";
+import { activityStore } from "../../_shared/agent-runtime/activity-store.js";
+import { agentLiveStore } from "../../_shared/agent-runtime/agent-live-store.js";
 /**
  * extensions/agents/command/command-router.ts — the `/ps` and `/agent` grammars and their
  * dispatch. Both commands are registered with their transient-UI lifecycle here;
@@ -40,6 +43,7 @@ export interface AgentCommandDependencies {
   /** Open the interactive fleet for this session. */
   openFleetMenu(ctx: ExtensionContext): Promise<void>;
   agentSessionAuthority: AgentSessionAuthority;
+  openAgentScreen?(ctx: ExtensionContext, target?: string): Promise<void>;
 }
 
 export function registerAgentCommands(pi: ExtensionAPI, deps: AgentCommandDependencies): void {
@@ -67,7 +71,9 @@ export function registerAgentCommands(pi: ExtensionAPI, deps: AgentCommandDepend
           });
           return;
         }
-        if (target === "") await openFleetMenu(ctx);
+        if (deps.openAgentScreen !== undefined && agentLiveStore.retainSessions)
+          await deps.openAgentScreen(ctx, target);
+        else if (target === "") await openFleetMenu(ctx);
         else await executeAgentDrillCommand(ctx as ExtensionCommandContext, { target }, agentSessionAuthority);
       },
     },
@@ -87,6 +93,27 @@ export function registerAgentCommands(pi: ExtensionAPI, deps: AgentCommandDepend
         const discovery = refreshAgents(getProjectRoot(ctx));
         clearAgentsStatus(ctx);
         const text = getCommandText(args).trim();
+        if (text === "settings" || text.startsWith("settings ")) {
+          const match = /^settings activityStrip\.maxItems (\d+)$/.exec(text);
+          if (match !== null) {
+            try {
+              await persistActivityLimit(getProjectRoot(ctx), Number(match[1]));
+              activityStore.setMaxItems(Number(match[1]));
+            } catch (error) {
+              ctx.ui.notify(String(error), "error");
+              return;
+            }
+          } else if (text !== "settings") {
+            ctx.ui.notify("Usage: /agent settings activityStrip.maxItems <1–20>", "warning");
+            return;
+          }
+          ctx.ui.notify(
+            `activityStrip.maxItems = ${activityStore.maxItems} (${activitySettingsPath(getProjectRoot(ctx))})`,
+            "info",
+          );
+          return;
+        }
+
         if (text === "list" || text === "") {
           const catalog = [...agentCatalog.values()];
           const fullBlock = agentCatalogBlock(catalog, discovery.diagnostics);
@@ -114,13 +141,17 @@ export function registerAgentCommands(pi: ExtensionAPI, deps: AgentCommandDepend
         const drillCommand = parseAgentDrillCommand(text);
         if (drillCommand !== undefined) {
           clearAgentsTransient(ctx);
-          await executeAgentDrillCommand(ctx as ExtensionCommandContext, drillCommand, agentSessionAuthority);
+          if (deps.openAgentScreen !== undefined && agentLiveStore.retainSessions)
+            await deps.openAgentScreen(ctx, drillCommand.target);
+          else await executeAgentDrillCommand(ctx as ExtensionCommandContext, drillCommand, agentSessionAuthority);
           return;
         }
         const psTarget = parseAgentPsCommand(text);
         if (psTarget !== undefined) {
           clearAgentsTransient(ctx);
-          if (psTarget === "") await openFleetMenu(ctx);
+          if (deps.openAgentScreen !== undefined && agentLiveStore.retainSessions)
+            await deps.openAgentScreen(ctx, psTarget);
+          else if (psTarget === "") await openFleetMenu(ctx);
           else
             await executeAgentDrillCommand(ctx as ExtensionCommandContext, { target: psTarget }, agentSessionAuthority);
           return;
@@ -148,7 +179,7 @@ export function registerAgentCommands(pi: ExtensionAPI, deps: AgentCommandDepend
           });
           return;
         }
-        await executeAgentRunCommand(
+        const running = executeAgentRunCommand(
           pi,
           ctx as ExtensionCommandContext,
           runCommand.name,
@@ -156,6 +187,11 @@ export function registerAgentCommands(pi: ExtensionAPI, deps: AgentCommandDepend
           runCommand.approvalTier,
           runCommand.title,
         );
+        // A terminal command must release Pi command admission while the agent runs.
+        // The live runtime owns cancellation/shutdown; failures remain visible.
+        if (ctx.mode === "tui" && agentLiveStore.retainSessions && deps.openAgentScreen !== undefined) {
+          void running.catch((error) => ctx.ui.notify(`Agent run failed: ${String(error)}`, "error"));
+        } else await running;
       },
     },
   );

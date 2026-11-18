@@ -9,6 +9,7 @@ import type {
 import type { ToolDefinition } from "../../../../extensions/_shared/host/pi-api.js";
 import workflows from "../../../../extensions/workflows/index.js";
 import { agentLiveStore } from "../../../../extensions/_shared/agent-runtime/agent-live-store.js";
+import { workflowConfirmationDetails } from "../../../../extensions/workflows/tool/workflow-tool.js";
 import { snapshotWorkflowToolCardAgents } from "../../../../extensions/workflows/tool/workflow-tool-card.js";
 import { createHarness } from "../../../test-harness.js";
 
@@ -156,6 +157,28 @@ describe("workflow tool card", () => {
     );
     expect(awaiting).toContain("│ LOCUS · workflow review · AWAITING OPERATOR");
     expect(awaiting).toContain("│ ◐ waiting for operator decision");
+  });
+
+  it("shows current-call typed JSON without persisting it in result details", () => {
+    const tool = workflowTool();
+    const inputValue = { task: "Review", mode: "adaptive" };
+    expect(workflowConfirmationDetails({ name: "typed-review", inputValue }, process.cwd())).toContain(
+      'Input (JSON): {"mode":"adaptive","task":"Review"}',
+    );
+    expect(workflowConfirmationDetails({ name: "plain-review" }, process.cwd())).not.toContain(
+      expect.stringContaining("Input (JSON)"),
+    );
+
+    const result: ToolResult = {
+      content: [{ type: "text", text: "streaming" }],
+      details: { workflowName: "typed-review", status: "running", agentRows: [] },
+    };
+    const lines = plain(
+      render(tool, result, { expanded: true, isPartial: true }, { name: "typed-review", inputValue }),
+    );
+
+    expect(lines).toContain('│ input (JSON): {"mode":"adaptive","task":"Review"}');
+    expect(result.details).not.toHaveProperty("inputValue");
   });
 
   it("preserves workflow identity and state at narrow widths without overflowing", () => {

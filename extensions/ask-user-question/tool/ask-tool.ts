@@ -10,7 +10,7 @@
 
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "../../_shared/host/pi-api.js";
-import { validateParams } from "../../_shared/host/validation.js";
+import { prepareValidatedParams, validateParams } from "../../_shared/host/validation.js";
 import { askRichQuestion } from "../interactive/rich-ask.js";
 import type { OmpQuestion } from "../question/question-prompt.js";
 import { askOmpCompatible } from "../interactive/question-runner.js";
@@ -71,12 +71,21 @@ export interface OmpAskParams {
 
 const AskParams = Type.Union([OmpAskParams, RichAskParamsSchema]);
 
+// Non-strict provider adapters may retain only root properties/required. Expose
+// both shapes there, while the host and raw-argument guard still require one.
+const AskToolParams = Type.Object(
+  { ...Type.Partial(OmpAskParams).properties, ...Type.Partial(RichAskParamsSchema).properties },
+  { anyOf: [{ required: ["questions"] }, { required: ["question", "kind"] }] },
+);
+
 export function registerAskTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "ask",
-    description: "Ask the interactive user one or more option questions, or one rich select, text, or editor question.",
-    parameters: AskParams,
+    description:
+      'Ask the interactive user. Supply either { questions: [{ id, question, options: [{ label }] }] } for option questions, or { question, kind, ... } for one rich question. kind is required for a rich question: "select", "multi-select", "text", or "editor".',
+    parameters: AskToolParams,
     approval: "read",
+    prepareArguments: (params) => prepareValidatedParams(AskParams, params),
     async execute(_toolCallId, params, signal, _update, ctx) {
       const valid = validateParams(AskParams, params);
       if (!valid.ok) return valid.result;

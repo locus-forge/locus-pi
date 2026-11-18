@@ -1,3 +1,4 @@
+import { loadModelRolesState } from "../../_shared/model/model-settings.js";
 /**
  * extensions/agents/catalog/catalog.ts — the agent catalog.
  *
@@ -34,7 +35,23 @@ const AGENT_PARAM_CATALOG_HEADING = "Available agents (name — description):";
 // cap here refuses a job before anyone looks at it, on a number this surface invented.
 // `minLength: 1` stays on `task`: an empty instruction is missing, not short.
 export const TaskParams = Type.Object({
+  background: Type.Optional(
+    Type.Boolean({
+      description:
+        "Return a queued handle immediately. Defaults true in interactive TUI, false headless. Use agent_status to collect the result; false awaits exact final text.",
+    }),
+  ),
   agent: Type.Optional(Type.String({ description: AGENT_PARAM_BASE_DESCRIPTION })),
+  modelRole: Type.Optional(
+    Type.String({
+      minLength: 1,
+      description:
+        "Optional model role; overrides the catalog profile's model. Unassigned roles inherit the current model unless requireModelRole is true.",
+    }),
+  ),
+  requireModelRole: Type.Optional(
+    Type.Boolean({ description: "Require an explicit modelRole assignment; refuse before starting if it is missing." }),
+  ),
   task: Type.String({ description: "Self-contained subagent instructions", minLength: 1 }),
   title: Type.Optional(
     Type.String({
@@ -102,4 +119,18 @@ export function listAvailableAgents(): Array<{ name: string; source: string; des
   return [...agentCatalog.values()]
     .map((agent) => ({ name: agent.name, source: agent.source ?? "unknown", description: agent.description }))
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Publish choices on the tool parameter the calling model actually uses. */
+export async function refreshModelRoleHint(projectRoot: string): Promise<void> {
+  const field = TaskParams.properties.modelRole;
+  try {
+    const state = await loadModelRolesState(projectRoot);
+    const roles = [...state.effective.values()]
+      .filter((item) => item.assignment !== undefined)
+      .map((item) => item.role);
+    field.description = `Optional model role; overrides the profile model. Unassigned roles inherit unless requireModelRole is true. Source: ${state.path}${state.exists ? "" : " (not created)"}. Assigned roles: ${roles.map((role) => JSON.stringify(role)).join(", ") || "none"}.`;
+  } catch (error) {
+    field.description = `Model roles are unavailable: ${error instanceof Error ? error.message : String(error)}. Fix the configuration before selecting a role.`;
+  }
 }

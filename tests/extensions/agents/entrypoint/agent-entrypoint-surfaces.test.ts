@@ -53,6 +53,8 @@ describe("fleet menu close", () => {
     h.ctx.hasUI = true;
     agents(h.pi);
     await emit(h, "session_start");
+    // Exercise legacy viewer compatibility; native full-screen behavior has its own suite.
+    agentLiveStore.retainSessions = false;
     agentLiveStore.begin({ id: "fleet-working", agentName: "reviewer", label: "Review one" });
     agentLiveStore.patch("fleet-working", { status: "working" });
     agentLiveStore.begin({ id: "fleet-queued", agentName: "reviewer", label: "Review two" });
@@ -68,6 +70,8 @@ describe("fleet menu close", () => {
     h.ctx.hasUI = true;
     agents(h.pi);
     await emit(h, "session_start");
+    // Exercise legacy viewer compatibility; native full-screen behavior has its own suite.
+    agentLiveStore.retainSessions = false;
     agentLiveStore.begin({ id: "fleet-done", agentName: "reviewer", label: "Review done" });
     agentLiveStore.patch("fleet-done", { status: "done" });
     h.customInputQueue.push("escape");

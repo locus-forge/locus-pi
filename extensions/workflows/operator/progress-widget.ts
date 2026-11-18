@@ -1,3 +1,4 @@
+import { workflowResultNavigation } from "../command/completion-presentation.js";
 import type { CustomUiComponent, ExtensionContext, WidgetFactoryTui } from "../../_shared/host/pi-api.js";
 import { DEFAULT_RENDER_MIN_INTERVAL_MS, framesEqual, RenderScheduler } from "../../_shared/host/render-scheduler.js";
 import { coerceTheme, defaultRenderProfile, type ThemeLike } from "../../_shared/host/render-profile.js";
@@ -77,6 +78,8 @@ const WORKFLOW_VIEWER_RESERVATION_OWNER = "workflow-live";
 const NOOP_TUI: WidgetFactoryTui = { requestRender: () => {} };
 
 export interface WorkflowProgressOptions {
+  /** Modern TUI owns passive activity in the footer; keep only actionable notices here. */
+  compactActivity?: boolean;
   scope?: "fleet" | "workflow";
   /** Statically declared stages (`meta.phases`): titles plus their planned detail. */
   declaredStages?: readonly WorkflowDeclaredStage[];
@@ -235,6 +238,22 @@ export class WorkflowProgressComponent implements CustomUiComponent {
 
   /** Pull-based projection. Never serves a cached frame — the cache is only a comparison baseline. */
   #project(width: number): string[] {
+    if (this.options.compactActivity) {
+      const actionable = this.done !== undefined && this.done.status !== "completed";
+      const lines = actionable
+        ? [
+            truncate(`${workflowProgressDonePresentation(this.done!.status).marker} ${this.done!.summary}`, width),
+            truncate(
+              this.options.scope === "workflow"
+                ? `Details: /workflows status ${shortWorkflowRunId(this.runId)}`
+                : "Details: ← Agents Command Center",
+              width,
+            ),
+          ]
+        : [];
+      setViewerExternalRows(WORKFLOW_VIEWER_RESERVATION_OWNER, lines.length);
+      return lines;
+    }
     const rows = this.tui.terminal?.rows ?? 24;
     const budget = Math.max(1, Math.min(rows - 6, 24));
     const liveRows = this.visibleRows();
@@ -571,29 +590,21 @@ export class WorkflowProgressComponent implements CustomUiComponent {
         lines.push(this.#fg("dim", truncate(line, width)));
       }
     }
-    // The verdict line above is clipped to the terminal width, so a run whose
-    // result is prose needs one line saying where the whole text is and the one
-    // command that opens it.
-    // Gated on the same fact the digest uses: a readable text copy exists. A run
-    // that produced none must not be told to go and read one.
-    if (this.done.resultTextPath !== undefined) {
-      const command = `read the full result: /workflows result ${shortWorkflowRunId(this.runId)}`;
-      lines.push(this.#fg("dim", truncate(command, width)));
-      lines.push(this.#fg("dim", truncate(`result: ${this.done.resultTextPath}`, width)));
-    } else if (this.done.status !== "completed") {
-      // Same rule for the run that ended badly with no prose result: the clipped
-      // verdict line above is all the operator got, and the reason lives in the
-      // structured result that only this command prints.
-      const command = `read the full reason: /workflows status ${shortWorkflowRunId(this.runId)}`;
-      lines.push(this.#fg("dim", truncate(command, width)));
-    }
+    const navigation = workflowResultNavigation(
+      this.runId,
+      this.done.status,
+      this.done.resultTextPath,
+      this.done.resultPersistence,
+    );
+    lines.push(this.#fg("dim", truncate(navigation.commandLine, width)));
+    if (navigation.fileLine !== undefined) lines.push(this.#fg("dim", truncate(navigation.fileLine, width)));
     // Honest pointer to the saved run on disk (T-188 W5, fix-candidate #8).
     if (this.done.runDir !== undefined) lines.push(this.#fg("dim", truncate(`saved: ${this.done.runDir}`, width)));
     return lines;
   }
 
   #syncLiveTimer(): void {
-    if (this.#disposed || this.done !== undefined) {
+    if (this.options.compactActivity || this.#disposed || this.done !== undefined) {
       this.#stopLiveTimer();
       return;
     }
@@ -700,7 +711,8 @@ export function installWorkflowProgress(
 ): WorkflowProgressComponent {
   const component = new WorkflowProgressComponent(NOOP_TUI, coerceTheme(undefined), scriptRef, runIdPlaceholder, {
     ...options,
-    ownsFleetProjection: true,
+    ownsFleetProjection: !(ctx.mode === "tui" && agentLiveStore.retainSessions),
+    compactActivity: ctx.mode === "tui" && agentLiveStore.retainSessions,
   });
   if (ctx.hasUI === true) {
     if (ctx.mode !== "tui") {

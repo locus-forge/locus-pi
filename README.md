@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@locus-forge/locus-pi?color=2D4A6E)](https://www.npmjs.com/package/@locus-forge/locus-pi)
 [![License: MIT](https://img.shields.io/badge/license-MIT-6B8E7F)](LICENSE)
 [![Node.js: >=22.19.0](https://img.shields.io/badge/Node.js-%E2%89%A522.19.0-C99A3A)](docs/getting-started.md)
-[![Pi: >=0.84.3](https://img.shields.io/badge/Pi-%E2%89%A50.84.3-C0482E)](docs/getting-started.md)
+[![Pi: >=1.3.0](https://img.shields.io/badge/Pi-%E2%89%A51.3.0-C0482E)](docs/getting-started.md)
 
 **Describe a task. Let an agent build a reusable workflow. Run it in Pi.**
 
@@ -62,7 +62,7 @@ or choose the resources you need with [package filters](docs/getting-started.md#
 
 ## Install
 
-Requires Node.js `>=22.19.0`, Pi `>=0.84.3`, and a configured model provider.
+Requires Node.js `>=22.19.0`, Pi `>=1.3.0`, and a configured model provider.
 
 **From Git:**
 
@@ -130,6 +130,19 @@ Review `evaluator-optimizer.design.md` and `evaluator-optimizer.workflow.mjs` sa
 /ps
 /workflows result last
 ```
+
+Catalog `Start` keeps the direct command for text-input workflows. For typed
+input it restores a complete native-run request: the agent prepares canonical
+JSON and calls the `workflow` tool, whose interactive confirmation shows the
+value before the user authorizes execution. A one-use `catalogSelectionId`
+correlates that request with the extension-retained target and entry-byte digest,
+so unrelated calls cannot consume it and source drift is refused. A newer Start
+supersedes the previous unsubmitted editor handoff. Steering and follow-up input
+that carries the ID marks it submitted, and later streaming input preserves it
+until its tool call; the next idle input retires an ID it does not carry.
+Explicit reuse still fails. It does not
+require package skills and never falls back to a shell or slash command. See
+[Run and inspect](docs/workflows/running.md#start-from-the-catalog).
 
 [Create your first workflow](docs/workflows/create.md) explains the skill and includes
 complete copyable source. [Run and inspect](docs/workflows/running.md) covers progress,

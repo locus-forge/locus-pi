@@ -50,3 +50,7 @@ The [workflow topic index](workflows/index.md) lists the remaining detailed cont
 [Architecture and repository boundaries](architecture.md) explains source ownership.
 [Environment variables](environment-variables.md) and the [TUI design guide](tui-design.md)
 cover configuration and interface conventions.
+
+## UI review
+
+- [Terminal UI design-review checklist](design-review.md)

@@ -1,4 +1,5 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import { promisify } from "node:util";
 import {
   existsSync,
   mkdirSync,
@@ -31,10 +32,7 @@ interface PackageJson {
   devDependencies: Record<string, string>;
 }
 
-interface PackResult {
-  filename: string;
-  files: Array<{ path: string }>;
-}
+type PackResult = { filename: string; files: Array<{ path: string }> };
 
 const root = process.cwd();
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as PackageJson;
@@ -321,7 +319,7 @@ describe("npm public package boundary", () => {
     expect(testedVersion).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
     for (const packageName of PI_PACKAGES) {
       const peerRange = pkg.peerDependencies[packageName]!;
-      expect(peerRange, `${packageName} peer floor`).toBe(">=0.84.3");
+      expect(peerRange, `${packageName} peer floor`).toBe(">=1.3.0");
       expect(pkg.devDependencies[packageName], `${packageName} development pin`).toBe(testedVersion);
       expect(supportsPiVersion(peerRange, testedVersion)).toBe(true);
       expect(supportsPiVersion(peerRange, "999.0.0")).toBe(true);
@@ -330,6 +328,7 @@ describe("npm public package boundary", () => {
   });
 
   it("keeps the package allowlist directory-owned and compact", () => {
+    const packedPaths = dryRun.files.map((file) => file.path);
     expect(pkg.files).toEqual([
       "dist/public-catalogs.json",
       "docs/",
@@ -340,9 +339,15 @@ describe("npm public package boundary", () => {
       "schemas/extension-manifest.schema.json",
       "skills/",
     ]);
-    // Six-file authoring consolidates nine reference leaves without changing the allowlist.
-    expect(dryRun.files).toHaveLength(273);
+    expect(dryRun.files).toHaveLength(296);
     for (const filename of [
+      ...["center", "editor", "model"].map((name) => `extensions/agents/fleet/command-center/${name}.ts`),
+      "extensions/_shared/agent-runtime/session/startup.ts",
+      "extensions/_shared/agent-runtime/session/startup-format.ts",
+      "extensions/_shared/model/model-role-config.ts",
+      "extensions/model/selector/options.ts",
+      "extensions/workflows/catalog/workflow-action-prompt.ts",
+      "extensions/workflows/command/workflow-editor-handoff.ts",
       "extensions/workflows/source/workflow-source-structured.ts",
       "extensions/workflows/source/workflow-source-structured-rules.ts",
       "extensions/workflows/source/workflow-source-provenance-query.ts",
@@ -353,10 +358,9 @@ describe("npm public package boundary", () => {
       ),
       ...["budget", "scheduler", "state"].map((name) => `extensions/_shared/runtime/execution-${name}.ts`),
     ])
-      expect(dryRun.files.map((file) => file.path)).toContain(filename);
-    expect(dryRun.files.map((file) => file.path)).not.toContain(
-      "extensions/workflows/runtime/location-state/workflow-bound-directory.ts",
-    );
+      expect(packedPaths).toContain(filename);
+    expect(packedPaths).not.toContain("extensions/workflows/runtime/location-state/workflow-bound-directory.ts");
+    expect(packedPaths.some((file) => /\/fleet\/command-center(?:-editor)?\.ts$/.test(file))).toBe(false);
   });
 
   it("ships every prompt resource a curated workflow renders", () => {
@@ -400,11 +404,8 @@ describe("npm public package boundary", () => {
       })
       .sort();
 
-    // The load-bearing assertion of the scanned registry: what a checkout
-    // resolves by name and what an install ships must be the same set. A
-    // workflow present here and missing from `package.json#files` would work in
-    // this repository and be gone after `npm i`, which is the one way "the
-    // folder is the registry" could lie to an operator.
+    // Named checkout workflows and installed workflows must be the same set;
+    // otherwise a working local workflow disappears after npm install.
     expect(packedPaths).not.toContain("examples/README.md");
     expect(packedPaths).toContain("examples/workflows/README.md");
     expect(packedPaths.some((file) => file.startsWith("extensions/workflows/examples/"))).toBe(false);
@@ -563,13 +564,23 @@ describe("npm public package boundary", () => {
     }
   }, 30_000);
 
-  it("runs the Pi-native source checker from a real consumer install", () => {
+  it("runs the Pi-native source checker from a real consumer install", async () => {
     const temporaryRoot = mkdtempSync(path.join(tmpdir(), "locus-pi-installed-checker-"));
-    try {
-      const packOutput = execFileSync("npm", ["pack", "--silent", "--json", "--pack-destination", temporaryRoot], {
-        cwd: root,
+    // Keep the worker event loop responsive to Vitest RPC throughout the real install/probe.
+    // A shared subprocess deadline ends before the existing test timeout, leaving time for cleanup.
+    const deadline = Date.now() + 110_000;
+    const run = async (file: string, args: string[], cwd: string): Promise<string> => {
+      const { stdout } = await promisify(execFile)(file, args, {
+        cwd,
         encoding: "utf8",
+        maxBuffer: 1024 * 1024,
+        timeout: Math.max(1, deadline - Date.now()),
+        killSignal: "SIGKILL",
       });
+      return stdout;
+    };
+    try {
+      const packOutput = await run("npm", ["pack", "--silent", "--json", "--pack-destination", temporaryRoot], root);
       const [packed] = JSON.parse(packOutput) as PackResult[];
       if (!packed) throw new Error("npm pack returned no package result");
 
@@ -581,7 +592,7 @@ describe("npm public package boundary", () => {
         path.join(workflowDirectory, "consumer.workflow.mjs"),
         readFileSync(path.join(root, PACKAGE_WORKFLOW_PATHS["live-smoke"]), "utf8"),
       );
-      execFileSync(
+      await run(
         "npm",
         [
           "install",
@@ -591,7 +602,7 @@ describe("npm public package boundary", () => {
           "--legacy-peer-deps",
           path.join(temporaryRoot, packed.filename),
         ],
-        { cwd: consumerRoot, encoding: "utf8" },
+        consumerRoot,
       );
       const installedMatrix = [
         {
@@ -764,10 +775,7 @@ describe("npm public package boundary", () => {
         process.stdout.write(JSON.stringify(results));
       `;
       const results = JSON.parse(
-        execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", probeScript], {
-          cwd: root,
-          encoding: "utf8",
-        }),
+        await run(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", probeScript], root),
       ) as Array<{ name: string; accepted: boolean; passed: boolean }>;
       for (const result of results) expect(result.passed, result.name).toBe(result.accepted);
     } finally {

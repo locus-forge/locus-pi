@@ -46,9 +46,18 @@ import type { WorkflowAgentRowOccurrence } from "./workflow-groups.js";
 import type { WorkflowInvocationReservation } from "./workflow-execution-state.js";
 import type { WorkflowReturnContract } from "./workflow-return.js";
 
+import type { AgentStartupEpoch, AgentStartupMark } from "../../_shared/agent-runtime/session/startup-format.js";
+
 /** The single agent-execution callback the runtime depends on. The bridge supplies
  *  the real implementation; tests supply a fake. The runtime never imports the SDK. */
-export type WorkflowAgentRunner = (req: WorkflowAgentRequest) => Promise<WorkflowAgentResult>;
+export type WorkflowAgentRunner = ((
+  req: WorkflowAgentRequest,
+  onStartup?: (mark: AgentStartupMark) => void,
+  startupEpoch?: AgentStartupEpoch,
+) => Promise<WorkflowAgentResult>) & {
+  /** Host measurement port; the pure attempt takes the snapshot before writing admission. */
+  captureStartupEpoch?: () => AgentStartupEpoch;
+};
 
 /** Read-only host validation used by compositions that must validate every leg
  *  before the first model call. It resolves declarations but spawns no child. */
@@ -162,6 +171,7 @@ export interface WorkflowAgentRequest {
 }
 
 export interface WorkflowAgentResult {
+  startup?: AgentStartupMark[];
   outputAcceptance?: AgentOutputAcceptance;
   ok: boolean; // true when status === "completed"
   status: "completed" | "failed" | "cancelled" | "blocked";
@@ -194,6 +204,7 @@ export interface WorkflowAgentResult {
    * when the peer exposes no model on its session; never back-filled from the
    * request, because repeating a request back proves only that we remember it.
    */
+  modelRole?: string;
   executedModel?: string;
   /**
    * Set when a declared tier had no assignment in the global config and the child therefore

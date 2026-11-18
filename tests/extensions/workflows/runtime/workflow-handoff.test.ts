@@ -1,3 +1,4 @@
+import { activityStore, activityStripItems } from "../../../../extensions/_shared/agent-runtime/activity-store.js";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -642,6 +643,11 @@ describe("workflow operator handoff", () => {
       },
     });
     expect(child.ok).toBe(true);
+    expect(activityStore.workflows.get(source.handoff.originRunId)).toMatchObject({
+      status: "awaiting_operator",
+      handoffState: "resolved",
+    });
+    expect(activityStripItems().some((item) => item.key === `workflow:${source.handoff.originRunId}`)).toBe(false);
     expect(readWorkflowHandoffClaim(root, source.handoff)).toMatchObject({
       status: "ready",
       state: { childRunId: child.runId },
@@ -671,6 +677,11 @@ describe("workflow operator handoff", () => {
       operatorHandoffClaim: secondClaim.claim,
     });
     expect(failed.ok).toBe(false);
+    expect(activityStore.workflows.get(secondSource.handoff.originRunId)).toMatchObject({
+      status: "awaiting_operator",
+      handoffState: "retryable",
+    });
+    expect(activityStripItems().some((item) => item.key === `workflow:${secondSource.handoff.originRunId}`)).toBe(true);
     expect(projectWorkflowHandoffState(root, secondSource.handoff)).toEqual({
       status: "retryable",
       childRunId: failed.runId,

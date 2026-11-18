@@ -45,6 +45,7 @@ export function installAgentInterruptGuard(ctx: ExtensionContext): void {
           ctx.ui.notify("Agent operation continues.", "info");
           return;
         }
+        for (const row of activeRows) agentLiveStore.cancel(row.id);
         ctx.abort?.();
         ctx.ui.notify("Agent cancellation requested.", "warning");
       })

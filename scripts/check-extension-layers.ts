@@ -1,34 +1,12 @@
 /**
- * check-extension-layers.ts — the steady-state ownership guardrail for
- * `extensions/_shared` and selected cross-feature boundaries.
- *
- * The shared tree has five named layers. This gate keeps their current contract
- * explicit and mechanically enforced:
- *
- *   1. No upward import. Shared code may not import feature code.
- *   2. Layer order. A shared module may import only its own layer or a lower
- *      layer. `operator` is a leaf: it may reach only `host` and itself, and no
- *      other shared layer may import it.
- *   3. Complete ownership. Every shared TypeScript file appears exactly once in
- *      `SHARED_LAYER_MEMBERS` and sits in the matching layer directory.
- *   4. Registry ownership. Every `Symbol.for("locus-pi.…")` in executable
- *      extension source has exactly one declared owning module.
- *   5. Mutable module state. Named mutable bindings remain with their declared
- *      owner, and new mutable exported containers under `_shared` fail closed.
- *   6. Feature-internal facades. A declared feature-internal module may be
- *      imported from another feature only through its declared read facade.
- *   7. Pure modules. A declared pure module's transitive VALUE-import closure
- *      may not reach a host-bound Node builtin (`node:fs`, `node:path`, and the
- *      rest of `PURE_MODULE_FORBIDDEN_BUILTINS`).
- *
- * Registry and feature-import sweeps cover executable source under
- * `extensions/**`; tests are intentionally out of scope. Imports are read from
- * the TypeScript AST, including static imports, re-exports, import types, and
- * literal dynamic imports. Rules 1-3 and 6 enforce type-only edges too, because
- * a type-only edge still encodes ownership; rule 7 is the one rule that follows
- * value edges only, since it is about what actually loads at runtime. Type-only
- * is read per specifier, so `import { a, type B }` is a value edge while
- * `import { type A, type B }` is not.
+ * Steady-state ownership checks for extensions/_shared and cross-feature imports.
+ * Shared code cannot import features; shared imports follow LAYER_RANK, with operator
+ * restricted to host/operator and forbidden to the other layers. The ledger covers
+ * each shared file once, each global registry has one owner, and mutable state stays
+ * with its declared owner. Feature-internal modules require their read facade.
+ * Pure-module value closures cannot reach host-bound Node builtins.
+ * AST checks include static/dynamic literal imports, re-exports and type edges;
+ * only purity follows value imports alone. Tests are outside the inspected tree.
  */
 
 import type { Dirent } from "node:fs";
@@ -96,7 +74,13 @@ const SHARED_LAYER_MEMBERS: Record<SharedLayer, readonly string[]> = {
     "execution-scheduler",
     "execution-state",
   ],
-  model: ["model-settings", "live-model-display", "workflow-model-resolve", "session-tool-transport"],
+  model: [
+    "model-role-config",
+    "model-settings",
+    "live-model-display",
+    "workflow-model-resolve",
+    "session-tool-transport",
+  ],
   "agent-runtime": [
     "agents",
     "agent-context-extras",
@@ -105,12 +89,20 @@ const SHARED_LAYER_MEMBERS: Record<SharedLayer, readonly string[]> = {
     /** The closed failure-cause list is value-imported by workflow runtime; keep this module import-free. */
     "agent-failure-cause",
     "agent-live-panel",
+    "status-line-render",
     "agent-live-store",
+    "activity-store",
     "agent-live-transcript",
     "agent-names",
     "agent-read-only-policy",
     "agent-runner",
     "agent-sdk-host",
+    "session/startup",
+    "session/startup-format",
+    "session/lifetime",
+    "session/state",
+    "session/live-events",
+    "session/turn-driver",
     "output-acceptance/agent-output-admission",
     "output-acceptance/agent-output-contract",
     "agent-system-prompt",
@@ -138,6 +130,18 @@ interface FeatureInternalEntry {
 }
 
 const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
+  {
+    module: "extensions/agents/fleet/command-center/model.ts",
+    owner: "extensions/agents",
+    facade: "extensions/agents/fleet/command-center/center.ts",
+    reason: "Repository hints and activity rows are Command Center presentation, not runtime launch authority.",
+  },
+  {
+    module: "extensions/model/selector/options.ts",
+    owner: "extensions/model",
+    facade: "extensions/model/index.ts",
+    reason: "Selector choices and capability labels are model-extension presentation, not shared routing policy.",
+  },
   {
     module: "extensions/workflows/runtime/workflow-input.ts",
     owner: "extensions/workflows",
@@ -374,7 +378,8 @@ interface RegistryEntry {
 
 /** Symbol string -> the one executable module allowed to name it. */
 const REGISTRIES: readonly RegistryEntry[] = [
-  { symbol: "locus-pi.agent-live-store.v5", owner: "extensions/_shared/agent-runtime/agent-live-store.ts" },
+  { symbol: "locus-pi.activity-store.v1", owner: "extensions/_shared/agent-runtime/activity-store.ts" },
+  { symbol: "locus-pi.agent-live-store.v6", owner: "extensions/_shared/agent-runtime/agent-live-store.ts" },
   { symbol: "locus-pi.workflow-live-executions.v1", owner: "extensions/workflows/runtime/workflow-live.ts" },
   { symbol: "locus-pi.fleet-menu-state.v3", owner: "extensions/_shared/agent-runtime/fleet-menu.ts" },
   { symbol: "locus-pi.fleet-viewed-row.v1", owner: "extensions/_shared/agent-runtime/fleet-menu.ts" },

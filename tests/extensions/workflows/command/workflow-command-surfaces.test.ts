@@ -98,23 +98,21 @@ function compactHarness(root: string): Harness {
 }
 
 describe("/workflows help and unknown commands", () => {
-  it("uses a workflow target chooser for run", async () => {
+  it("uses a native typed-tool request from the workflow target chooser", async () => {
     const root = makeRoot();
     const workflowDir = path.join(root, ".locus-pi", "workflows");
     mkdirSync(workflowDir, { recursive: true });
     writeFileSync(
-      path.join(workflowDir, "alpha.workflow.mjs"),
-      'export const meta={name:"alpha",description:"Alpha workflow"}; export default async()=>null;\n',
+      path.join(workflowDir, "typed.workflow.mjs"),
+      'export const meta={inputSchema:{type:"object",properties:{mode:{type:"string"}},required:["mode"],additionalProperties:false}}; export default async()=>null;\n',
       "utf8",
     );
-    const runId = "20260726-212752-98cc";
-    writeRun(root, runId);
-
     const run = createHarness(root);
-    run.selectQueue.push("run", "alpha");
+    run.selectQueue.push("run", "typed");
     workflows(run.pi);
     await run.commands.get("workflows")!.handler("", run.ctx);
-    expect(run.editorText).toBe("/workflows run alpha");
+    expect(run.editorText).toMatch(/^Start the exact current workflow "typed"/u);
+    expect(run.editorText).toContain('call the native workflow tool with name "typed", catalogSelectionId');
     expect(run.selectCalls.flatMap((call) => call.options).every((option) => typeof option === "string")).toBe(true);
   });
 
@@ -153,7 +151,7 @@ describe("/workflows help and unknown commands", () => {
     let selectCount = 0;
     run.ctx.ui.select = vi.fn(async () => {
       selectCount += 1;
-      if (selectCount === 1) return "run — start a workflow";
+      if (selectCount === 1) return "run — fill the editor for a workflow launch";
       return target.promise;
     });
     workflows(run.pi);
@@ -515,7 +513,7 @@ describe("/workflows help and unknown commands", () => {
     const widget = await runCommand(wideHarness(makeRoot()), "frobnicate");
 
     expect(widget).toContain("Unknown workflow command: frobnicate");
-    expect(widget).toContain("Usage: /workflows | dashboard | list [query]");
+    expect(widget).toContain("Usage: /workflows | list [query] | dashboard");
     expect(widget).not.toContain("Available curated Package workflows");
   });
 

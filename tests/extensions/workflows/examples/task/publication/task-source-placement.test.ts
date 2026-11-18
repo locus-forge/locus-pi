@@ -15,6 +15,7 @@ const roots: string[] = [];
 const source =
   'export const meta = { name: "generated", profile: "standard" };\nexport default function run({ publishPrimaryArtifact }) { return publishPrimaryArtifact("answer.md", "deliverable"); }\n';
 const correctedSource = source.replace("deliverable", "corrected deliverable");
+const invalidSource = source.replace("return publishPrimaryArtifact", "return await publishPrimaryArtifact");
 type Variant = "plan" | "plan-light";
 type Scenario = "valid" | "repair" | "missing" | "misplaced" | "drift";
 
@@ -41,9 +42,8 @@ function fixture(variant: Variant, scenario: Scenario = "valid") {
   const harness = createHarness(root);
   registerWorkflowSourceCheckTool(harness.pi);
   const edits: Array<{ label: string; path: string }> = [];
-  const checks: Array<{ label: string; path: string; sha256: unknown; failed: boolean }> = [];
+  const checks: Array<{ label: string; path: string; source: string | undefined; failed: boolean }> = [];
   let failedCheck = false;
-  let lastReviewedDigest: unknown;
   const writers = new Set([
     "workflow-author",
     "workflow-revise",
@@ -100,18 +100,20 @@ function fixture(variant: Variant, scenario: Scenario = "valid") {
           }
         }
         if (inspectors.has(label)) {
+          expect(request.task).not.toMatch(/SHA-256|checked-byte digest/iu);
           const checked = await runTool(harness, "workflow_check_source", {
             path: path.relative(root, assignedSource),
             mode: "orchestration-only",
           });
           failedCheck = checked.isError === true;
           if (!failedCheck) execFileSync(process.execPath, ["--check", assignedSource]);
-          lastReviewedDigest = checked.details?.sha256;
-          checks.push({ label, path: assignedSource, sha256: lastReviewedDigest, failed: failedCheck });
-          writeFileSync(
-            review,
-            JSON.stringify({ source: assignedSource, sha256: lastReviewedDigest, passed: !failedCheck }),
-          );
+          checks.push({
+            label,
+            path: assignedSource,
+            source: existsSync(assignedSource) ? readFileSync(assignedSource, "utf8") : undefined,
+            failed: failedCheck,
+          });
+          writeFileSync(review, JSON.stringify({ source: assignedSource, passed: !failedCheck }));
         }
         answer = failedCheck
           ? `Failed exact source check: ${assignedSource}`
@@ -122,7 +124,7 @@ function fixture(variant: Variant, scenario: Scenario = "valid") {
         scenario === "drift" &&
         ((variant === "plan" && label === "workflow-review-route") || label === "workflow-source-final-route")
       )
-        writeFileSync(assignedSource, correctedSource);
+        writeFileSync(assignedSource, invalidSource);
       return {
         status: "completed",
         agentName: request.agent?.name ?? "sub-agent",
@@ -158,7 +160,6 @@ function fixture(variant: Variant, scenario: Scenario = "valid") {
         path: path.relative(root, assignedSource),
         mode: "orchestration-only",
       }),
-    reviewedDigest: () => lastReviewedDigest,
   };
 }
 
@@ -171,7 +172,7 @@ describe.each<Variant>(["plan", "plan-light"])("task/%s exact file chain through
     expect(f.checks.length).toBeGreaterThan(0);
     expect(f.checks.every((check) => check.path === f.assignedSource && !check.failed)).toBe(true);
     expect(readFileSync(f.assignedSource, "utf8")).toBe(source);
-    expect(JSON.parse(readFileSync(f.review, "utf8"))).toMatchObject({ source: f.assignedSource, passed: true });
+    expect(JSON.parse(readFileSync(f.review, "utf8"))).toEqual({ source: f.assignedSource, passed: true });
     expect(result).not.toHaveProperty("primaryFile");
     expect(existsSync(path.join(f.nativeWorkspace, "outputs/workflow.mjs"))).toBe(false);
     expect(existsSync(path.join(result.runDir, "outputs/workflow.mjs"))).toBe(false);
@@ -183,8 +184,9 @@ describe.each<Variant>(["plan", "plan-light"])("task/%s exact file chain through
     expect(result.ok, result.error).toBe(true);
     expect(f.edits.every((edit) => edit.path === f.assignedSource)).toBe(true);
     expect(readFileSync(f.assignedSource, "utf8")).toBe(correctedSource);
+    expect(f.checks.at(-1)?.source).toContain('"corrected deliverable"');
     const current = await f.currentCheck();
-    expect(current.details?.sha256).toBe(f.reviewedDigest());
+    expect(current.isError).not.toBe(true);
   });
 
   it.each<Scenario>(["missing", "misplaced"])(
@@ -203,17 +205,44 @@ describe.each<Variant>(["plan", "plan-light"])("task/%s exact file chain through
     },
   );
 
-  it("exposes current byte drift to the actual consumer despite native completion", async () => {
+  it("rejects newly invalid source on current checks despite earlier acceptance and native completion", async () => {
     const f = fixture(variant, "drift");
     const result = await f.run();
     expect(result.ok, result.error).toBe(true);
     const checked = await f.currentCheck();
-    expect(checked.isError).not.toBe(true);
-    expect(checked.details?.sha256).not.toEqual(f.reviewedDigest());
-    // The operator gate compares these actual bytes; native completion cannot authorize launch.
+    expect(checked.isError).toBe(true);
+    expect(checked.details?.diagnostics).toContainEqual(expect.objectContaining({ code: "WF_SOURCE_PARSE" }));
+    // Earlier passing evidence cannot replace checks of the file the consumer now opens.
     const persistedReview = JSON.parse(readFileSync(f.review, "utf8"));
-    expect(checked.details?.sha256).not.toBe(persistedReview.sha256);
+    expect(persistedReview).toEqual({ source: f.assignedSource, passed: true });
     rmSync(f.assignedSource);
     expect((await f.currentCheck()).isError).toBe(true);
   });
+});
+
+it("requires current source review and checks for handoff without a manual digest pin", () => {
+  for (const relativePath of [
+    "skills/locus-pi-workflow-create/references/design-and-build.md",
+    "skills/locus-pi-workflow-run/SKILL.md",
+    "docs/workflows/dsl.md",
+    "docs/workflows/running.md",
+    "examples/workflows/task/README.md",
+    "extensions/workflows/README.md",
+    "extensions/workflows/manifest.json",
+  ]) {
+    const text = readFileSync(path.resolve(relativePath), "utf8").replace(/\s+/gu, " ");
+    expect(text, relativePath).not.toMatch(
+      /checked\/reviewed(?:-byte)? SHA-256|checked-byte SHA-256|persisted reviewed-byte identity|SHA-256 of (?:the )?persisted checked bytes/u,
+    );
+    expect(text, relativePath).toMatch(/source or evidence changes|changes against|Source or evidence changes/u);
+    expect(text, relativePath).toMatch(/(?:no|without a|not a) stored source digest/u);
+  }
+  const design = readFileSync(
+    path.resolve("skills/locus-pi-workflow-create/references/design-and-build.md"),
+    "utf8",
+  ).replace(/\s+/gu, " ");
+  expect(design).toContain("current source and evidence satisfy the reviewed design and Task");
+  expect(design).toContain("correction or replay requires current checks");
+  expect(design).toContain("Missing or invalid source, failed review and exhaustion forbid execution");
+  expect(design).toContain("snapshot integrity and launch-confirmation identity remain separate contracts");
 });

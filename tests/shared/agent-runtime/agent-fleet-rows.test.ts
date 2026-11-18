@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PetnameRegistry, SCIENTIST_NAMES, petname } from "../../../extensions/_shared/agent-runtime/agent-names.js";
 import {
   AgentLivePanel,
@@ -33,6 +33,7 @@ function makeRow(over: Partial<AgentLiveRow> = {}): AgentLiveRow {
 
 afterEach(() => {
   agentLiveStore.reset();
+  vi.useRealTimers();
 });
 
 describe("petnames (REQ-002)", () => {
@@ -298,6 +299,44 @@ describe("calm rendering (render-profile)", () => {
     expect(formatDurationCoarse(119_999)).toBe("1m");
     expect(formatDurationCoarse(61 * 60_000)).toBe("1h1m");
     expect(formatDurationCoarse(120 * 60_000)).toBe("2h");
+  });
+
+  it("formatDurationCoarse floors days and whole hours from one whole day", () => {
+    const H = 3_600_000;
+    const D = 24 * H;
+    expect(formatDurationCoarse(D - 1)).toBe("23h59m");
+    expect(formatDurationCoarse(D)).toBe("1d");
+    expect(formatDurationCoarse(D + H + 59 * 60_000 + 59_999)).toBe("1d1h");
+    expect(formatDurationCoarse(2 * D)).toBe("2d");
+  });
+
+  it("renders a recorded day-scale duration as floored days and hours, never hour totals", () => {
+    const H = 3_600_000;
+    const row = makeRow({
+      displayName: "Curie",
+      status: "done",
+      elapsedMs: 49 * H + 3 * 60_000 + 7_000,
+      finalAnswer: "finished",
+    });
+    const line = formatAgentLiveRowLine(row, statusMeta("done", 0), Number.POSITIVE_INFINITY);
+    expect(line).toContain("2d1h");
+    expect(line).not.toContain("49h");
+    const finished = formatAgentFinishedEventLine(row);
+    expect(finished).toContain("· 2d1h —");
+    expect(finished).not.toContain("49h");
+  });
+
+  it("renders a live day-scale reading in both the calm and exact row paths", () => {
+    const H = 3_600_000;
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-11T12:00:00.000Z"));
+    const row = makeRow({ displayName: "Bohr", status: "working", startedAt: Date.now() - 26 * H });
+    const meta = statusMeta("working", 0);
+    const exact = formatAgentLiveRowLine(row, meta, Number.POSITIVE_INFINITY);
+    const calm = formatAgentLiveRowLine(row, meta, Number.POSITIVE_INFINITY, { calm: true });
+    expect(exact).toContain("1d2h");
+    expect(calm).toContain("1d2h");
+    expect(exact).not.toContain("26h");
   });
 });
 

@@ -435,6 +435,7 @@ describe("completed workflow live-row retention", () => {
       agentLiveStore.reset();
       expect(workflowLiveExecutionCount()).toBe(1);
       await emit(harness, "session_start");
+      agentLiveStore.retainSessions = false;
       expect(workflowLiveExecutionCount()).toBe(0);
 
       applyWorkflowJournalLineToAgentLiveStore(start);

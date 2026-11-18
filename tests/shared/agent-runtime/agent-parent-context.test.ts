@@ -39,7 +39,10 @@ function pi(): ExtensionAPI {
   };
 }
 
-function ctx(projectRoot: string, getBranch: ReturnType<typeof vi.fn>): ExtensionContext {
+function ctx(
+  projectRoot: string,
+  getBranch: NonNullable<NonNullable<ExtensionContext["sessionManager"]>["getBranch"]>,
+): ExtensionContext {
   return {
     cwd: projectRoot,
     isIdle() {
