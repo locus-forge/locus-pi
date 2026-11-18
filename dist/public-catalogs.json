@@ -26,7 +26,13 @@
       "hooks": [],
       "risk": "high"
     },
-    { "id": "model", "tools": [], "commands": ["model-roles"], "hooks": ["session_start", "input"], "risk": "medium" },
+    {
+      "id": "model",
+      "tools": [],
+      "commands": ["model-roles", "clean"],
+      "hooks": ["session_start", "input"],
+      "risk": "medium"
+    },
     {
       "id": "status-line",
       "tools": [],

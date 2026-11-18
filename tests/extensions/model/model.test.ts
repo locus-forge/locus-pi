@@ -68,8 +68,8 @@ describe("model extension", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it("registers only /model-roles and leaves model/thinking controls to Pi", () => {
-    expect([...harness.commands.keys()]).toEqual(["model-roles"]);
+  it("registers /model-roles and /clean alongside Pi’s built-in controls", () => {
+    expect([...harness.commands.keys()]).toEqual(["model-roles", "clean"]);
     expect(harness.commands.has("model")).toBe(false);
     expect(harness.commands.has("models")).toBe(false);
     expect(harness.commands.has("thinking")).toBe(false);

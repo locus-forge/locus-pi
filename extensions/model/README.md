@@ -7,8 +7,11 @@ It does not enforce Pi's `enabledModels` setting. That list keeps its Pi meaning
 ## Commands
 
 ```text
+/clean
 /model-roles
 ```
+
+`/clean` starts an empty Pi session with the provider, model and thinking level selected in the current session. Saved conversations remain available through `/resume`. Use Pi’s built-in `/new` to start with the configured defaults.
 
 `/model-roles` opens an interactive selector for the current model and saved roles such as `default`, `agent`, and `tier-s`. Non-default assignments affect matching child-agent and workflow role resolution; they do not silently change the current Pi session model.
 

@@ -4,6 +4,10 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+### Added
+
+- `/clean` starts an empty Pi session with the current model and thinking level.
+
 ## [0.15.0] - 2026-11-18
 
 ### Added
