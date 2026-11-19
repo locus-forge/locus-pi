@@ -43,16 +43,20 @@ export function operatorBlockPlacement(block: Pick<OperatorBlock, "type">): "abo
 export interface SetOperatorWidgetOptions {
   placement?: "aboveEditor" | "belowEditor";
   fallbackWidth?: number;
-  onOverflow?: () => void;
+  /** Hide this presentation while another view uses its rows. Returns its restore callback if still mounted. */
+  onOverflow?: (hide: () => (() => void) | undefined) => void;
 }
 
 class OperatorBlockWidget implements CustomUiComponent {
   private overflowReported = false;
+  private hidden = false;
+  private disposed = false;
   constructor(
     private readonly tui: WidgetFactoryTui,
     private readonly block: OperatorBlock,
     private readonly theme?: OperatorThemeLike,
-    private readonly onOverflow?: () => void,
+    private readonly onOverflow?: SetOperatorWidgetOptions["onOverflow"],
+    private readonly setPresented?: (presented: boolean) => void,
   ) {
     // Presentation asks for a normal differential paint. A forced full redraw
     // here clears and repaints the whole frame for every operator block, which
@@ -63,6 +67,7 @@ class OperatorBlockWidget implements CustomUiComponent {
   }
 
   render(width: number): string[] {
+    if (this.hidden || this.disposed) return [];
     const rows = this.tui.terminal?.rows ?? 24;
     const budget = Math.max(1, Math.min(rows - 6, 48));
     if (!this.onOverflow) return renderOperatorBlock(this.block, width, this.theme, { maxLines: budget });
@@ -80,7 +85,21 @@ class OperatorBlockWidget implements CustomUiComponent {
   private reportOverflow(): void {
     if (this.overflowReported || !this.onOverflow) return;
     this.overflowReported = true;
-    queueMicrotask(this.onOverflow);
+    queueMicrotask(() => this.onOverflow?.(() => this.hide()));
+  }
+
+  private hide(): (() => void) | undefined {
+    if (this.disposed || this.hidden) return undefined;
+    this.hidden = true;
+    this.setPresented?.(false);
+    this.tui.requestRender();
+    return () => {
+      // Pi disposes this component whenever the key is replaced or cleared.
+      if (this.disposed || !this.hidden) return;
+      this.hidden = false;
+      this.setPresented?.(true);
+      this.tui.requestRender();
+    };
   }
 
   invalidate(): void {
@@ -88,6 +107,7 @@ class OperatorBlockWidget implements CustomUiComponent {
   }
 
   dispose(): void {
+    this.disposed = true;
     // Full redraw clears cells outside a replacement/shrunk frame. A normal
     // differential render can preserve stale glyphs in terminal scrollback.
     this.tui.requestRender(true);
@@ -109,6 +129,7 @@ export function setOperatorWidget(
 
   const placement = { placement: options.placement ?? operatorBlockPlacement(block) };
   if (ctx.mode === "tui") {
+    const setPresented = (presented: boolean) => setDismissibleView(ctx, key, presented && block.type === "VIEW");
     ctx.ui.setWidget(
       key,
       (tui, theme) =>
@@ -117,10 +138,11 @@ export function setOperatorWidget(
           block,
           operatorTheme(theme) ?? ctx.ui.theme,
           options.onOverflow,
+          setPresented,
         ),
       placement,
     );
-    setDismissibleView(ctx, key, block.type === "VIEW");
+    setPresented(true);
     return;
   }
 
@@ -131,7 +153,6 @@ export function setOperatorWidget(
     }),
     placement,
   );
-  setDismissibleView(ctx, key, false);
 }
 
 function operatorTheme(value: unknown): OperatorThemeLike | undefined {

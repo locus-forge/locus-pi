@@ -1,6 +1,5 @@
 import { homedir } from "node:os";
 import { getSessionId, type ExtensionAPI, type ExtensionCommandContext } from "../../../_shared/host/pi-api.js";
-import { clearTransientUiKey } from "../../../_shared/operator/command-ui.js";
 import { requestInlineOperatorInteraction } from "../../../_shared/operator/operator-interaction.js";
 import { renderOperatorBlockPlain, type OperatorBlock } from "../../../_shared/operator/operator-ui.js";
 import { HOST_STRING_ARRAY_WIDGET_LINES, setOperatorWidget } from "../../../_shared/operator/widget-render.js";
@@ -178,19 +177,20 @@ async function showFullText(
 
 function showResult(ctx: ExtensionCommandContext, block: OperatorBlock, isCurrent: () => boolean): void {
   const full = renderOperatorBlockPlain(block, 10_000).join("\n");
-  const onOverflow = async () => {
-    if (!isCurrent()) return;
-    // Pi lays out the passive widget and the inline viewer in the same pane.
-    clearTransientUiKey(ctx, WIDGET);
-    try {
-      await showFullText(ctx, block.subject, full, isCurrent);
-      if (isCurrent()) setOperatorWidget(ctx, WIDGET, block);
-    } catch {
-      if (isCurrent()) ctx.ui.notify(full, "info");
-    }
-  };
   try {
-    setOperatorWidget(ctx, WIDGET, block, { onOverflow });
+    setOperatorWidget(ctx, WIDGET, block, {
+      onOverflow: async (hide) => {
+        if (!isCurrent()) return;
+        try {
+          const restore = hide();
+          if (!restore) return;
+          await showFullText(ctx, block.subject, full, isCurrent);
+          if (isCurrent()) restore();
+        } catch {
+          if (isCurrent()) ctx.ui.notify(full, "info");
+        }
+      },
+    });
   } catch {
     if (isCurrent()) ctx.ui.notify(full, "info");
     return;

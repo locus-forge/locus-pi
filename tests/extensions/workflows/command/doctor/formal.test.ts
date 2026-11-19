@@ -405,12 +405,13 @@ it.each(["clean", "mixed"])("keeps full next commands reachable in the %s 60×16
   const ui = f.harness.ctx.ui;
   const terminal = { columns: 60, rows: 16 };
   const tui = { terminal, requestRender() {} };
-  let passiveRows = 0;
+  let widget: CustomUiComponent | undefined;
   const frames: string[] = [];
   ui.setWidget = (key, content) => {
     if (key !== "workflows") return;
-    const widget = typeof content === "function" ? (content(tui, {}) as CustomUiComponent) : undefined;
-    passiveRows = widget?.render(terminal.columns).length ?? 0;
+    widget?.dispose?.();
+    widget = typeof content === "function" ? (content(tui, {}) as CustomUiComponent) : undefined;
+    widget?.render(terminal.columns);
   };
   ui.custom = async <T>(factory: CustomUiFactory<T>): Promise<T> => {
     let result!: T;
@@ -419,6 +420,7 @@ it.each(["clean", "mixed"])("keeps full next commands reachable in the %s 60×16
     });
     const capture = () => {
       // The inline viewer and passive widget share the pane above Pi's footer.
+      const passiveRows = widget?.render(terminal.columns).length ?? 0;
       const visible = Math.max(0, terminal.rows - 3 - passiveRows);
       frames.push(component.render(terminal.columns).slice(0, visible).join(" ").replace(/\s+/gu, " "));
     };
