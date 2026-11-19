@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import workflows from "../../../../extensions/workflows/index.js";
 import * as runner from "../../../../extensions/workflows/runtime/workflow-runner.js";
 import { agentLiveStore } from "../../../../extensions/_shared/agent-runtime/agent-live-store.js";
+import * as commandUi from "../../../../extensions/_shared/operator/command-ui.js";
 import {
   clearCommandWidgetPresentation,
   currentCommandWidgetPresentation,
@@ -15,6 +16,7 @@ import {
 } from "../../../../extensions/_shared/operator/command-ui.js";
 import { setOperatorStatus } from "../../../../extensions/_shared/operator/operator-status.js";
 import { setOperatorWidget } from "../../../../extensions/_shared/operator/widget-render.js";
+import * as workflowSurface from "../../../../extensions/workflows/operator/operator-surface.js";
 import { setWorkflowLaunchStatus } from "../../../../extensions/workflows/operator/operator-surface.js";
 import {
   WORKFLOW_LIVE_WIDGET_KEY,
@@ -304,6 +306,64 @@ describe("workflow cleanup effects", () => {
       }
     },
   );
+
+  it("attempts cleanup only for the latest identities after repeated direct launches without turn_end", async () => {
+    const h = createHarness();
+    h.ctx.hasUI = true;
+    workflows(h.pi);
+    const clearWidget = vi.spyOn(commandUi, "clearCommandWidgetPresentation");
+    const statusClears: Array<ReturnType<typeof vi.fn<() => void>>> = [];
+    const publishLaunchStatus = workflowSurface.setWorkflowLaunchStatus;
+    const launchStatus = vi.spyOn(workflowSurface, "setWorkflowLaunchStatus").mockImplementation((...args) => {
+      const clearStatus = vi.fn(publishLaunchStatus(...args));
+      statusClears.push(clearStatus);
+      return clearStatus;
+    });
+    let launches = 0;
+    const runScript = vi.spyOn(runner, "runWorkflowScript").mockImplementation(async (request) => {
+      const runId = `direct-${++launches}`;
+      request.onRunStart?.({ runId, runDir: `/tmp/${runId}` });
+      return {
+        runId,
+        runDir: `/tmp/${runId}`,
+        ok: true,
+        result: {},
+        journal: [],
+        resultPersistence: { ok: true, path: `/tmp/${runId}/result.json` },
+      };
+    });
+
+    try {
+      for (let completed = 1; completed <= 4; completed++) {
+        await h.commands.get("workflows")!.handler("run live-smoke", h.ctx);
+        await waitUntil(
+          () =>
+            h.sentMessages.filter(
+              ({ message }) => (message.details as { eventKind?: string } | undefined)?.eventKind === "workflow_end",
+            ).length === completed,
+        );
+      }
+      const latest = currentCommandWidgetPresentation(h.ctx, WORKFLOW_LIVE_WIDGET_KEY);
+      expect(latest).toBeDefined();
+      expect(statusClears).toHaveLength(4);
+      expect(h.statuses.get("locus")).toContain("WF launch");
+      clearWidget.mockClear();
+
+      await emit(h, "turn_end");
+      await emit(h, "turn_end");
+
+      expect.soft(clearWidget.mock.calls.map(([, widget]) => widget)).toEqual([latest]);
+      expect.soft(statusClears.map((clear) => clear.mock.calls.length)).toEqual([0, 0, 0, 1]);
+      expect(clearWidget.mock.calls.at(-1)?.[1]).toBe(latest);
+      expect(h.widgetPayloads.get(WORKFLOW_LIVE_WIDGET_KEY)).toBeUndefined();
+      expect(h.statuses.get("locus")).toBeUndefined();
+    } finally {
+      await emit(h, "session_shutdown");
+      clearWidget.mockRestore();
+      launchStatus.mockRestore();
+      runScript.mockRestore();
+    }
+  });
 
   it("keeps launch observer entry from clearing progress published after admission", async () => {
     const harness = createHarness();

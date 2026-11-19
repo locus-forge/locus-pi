@@ -64,11 +64,12 @@ interface WorkflowCommandSurface {
 export default function workflows(pi: ExtensionAPI): void {
   registerWorkflowTranscriptRenderers(pi);
   const completedRunIds = new Set<string>();
-  const completedWidgets = new Set<CommandWidgetPresentation>();
-  const completedStatuses = new Set<() => void>();
+  let pendingWidget: CommandWidgetPresentation | undefined;
+  let pendingStatusClear: (() => void) | undefined;
   const scheduleCompletedSurface = ({ widget, clearStatus }: WorkflowCommandSurface): void => {
-    if (widget !== undefined) completedWidgets.add(widget);
-    completedStatuses.add(clearStatus);
+    // A pre-start rejection can finish without taking over the previous panel.
+    pendingWidget = widget ?? pendingWidget;
+    pendingStatusClear = clearStatus;
   };
   /**
    * Runs THIS Pi session launched — command, tool, and continuations alike.
@@ -245,16 +246,17 @@ export default function workflows(pi: ExtensionAPI): void {
   };
   const cleanupCompletedSurface = (ctx: ExtensionContext): void => {
     if (commandLauncher.hasActiveRun()) return;
-    const widgets = [...completedWidgets];
-    const statuses = [...completedStatuses];
+    const widget = pendingWidget;
+    const clearStatus = pendingStatusClear;
     cleanupCompletedRuns([...completedRunIds]);
-    for (const widget of widgets) {
-      if (commandLauncher.hasActiveRun()) return;
-      if (completedWidgets.delete(widget)) clearCommandWidgetPresentation(ctx, widget);
+    if (commandLauncher.hasActiveRun()) return;
+    if (widget !== undefined && pendingWidget === widget) {
+      pendingWidget = undefined;
+      clearCommandWidgetPresentation(ctx, widget);
     }
-    for (const clearStatus of statuses) {
-      if (commandLauncher.hasActiveRun()) return;
-      if (completedStatuses.delete(clearStatus)) clearStatus();
+    if (clearStatus !== undefined && pendingStatusClear === clearStatus && !commandLauncher.hasActiveRun()) {
+      pendingStatusClear = undefined;
+      clearStatus();
     }
   };
   const prepareTransientSurface = (ctx: ExtensionContext): (() => void) | undefined => {
@@ -315,8 +317,8 @@ export default function workflows(pi: ExtensionAPI): void {
     disposeSessionPanels();
     sessionRunIds.clear();
     completedRunIds.clear();
-    completedWidgets.clear();
-    completedStatuses.clear();
+    pendingWidget = undefined;
+    pendingStatusClear = undefined;
     catalogLaunches.clear();
     submittedCatalogLaunches.clear();
     rememberCompletionContext(ctx);
