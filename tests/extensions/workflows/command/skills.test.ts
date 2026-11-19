@@ -1,5 +1,10 @@
 import {
   lstatSync,
+  existsSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  unlinkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -10,10 +15,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   operateWorkflowSkillHosts,
-  parseWorkflowSkillHostCommand,
   WORKFLOW_SKILL_NAMES,
   WORKFLOW_SKILL_STATE_FILE,
 } from "../../../../extensions/workflows/command/skills.js";
@@ -27,7 +31,7 @@ afterEach(() => {
 });
 
 function fixture(): { root: string; packageRoot: string; projectRoot: string; userHome: string } {
-  const root = mkdtempSync(path.join(tmpdir(), "workflow-skill-hosts-"));
+  const root = realpathSync(mkdtempSync(path.join(tmpdir(), "workflow-skill-hosts-")));
   roots.push(root);
   const packageRoot = path.join(root, "node_modules", ...packageName.split("/"));
   const projectRoot = path.join(root, "project");
@@ -43,21 +47,6 @@ function fixture(): { root: string; packageRoot: string; projectRoot: string; us
 }
 
 describe("workflow skill host command", () => {
-  it("parses action defaults and explicit host/scope options", () => {
-    expect(parseWorkflowSkillHostCommand("skills status")).toEqual({
-      ok: true,
-      command: { action: "status", host: "all", scope: "user" },
-    });
-    expect(parseWorkflowSkillHostCommand("skills sync --scope project --host codex")).toEqual({
-      ok: true,
-      command: { action: "sync", host: "codex", scope: "project" },
-    });
-    expect(parseWorkflowSkillHostCommand("skills sync --host foreign")).toEqual({
-      ok: false,
-      message: "Unsupported skills host: foreign.",
-    });
-  });
-
   it("syncs canonical links for both user hosts and remains idempotent", () => {
     const f = fixture();
     const first = operateWorkflowSkillHosts({
@@ -79,6 +68,9 @@ describe("workflow skill host command", () => {
       }
     }
 
+    const marker = path.join(f.userHome, ".agents", "skills", WORKFLOW_SKILL_STATE_FILE);
+    const originalMarker = readFileSync(marker, "utf8");
+    const originalInode = lstatSync(marker).ino;
     const second = operateWorkflowSkillHosts({
       action: "sync",
       host: "all",
@@ -88,92 +80,49 @@ describe("workflow skill host command", () => {
       userHome: f.userHome,
     });
     expect(second.rows.every((row) => row.changed === "none")).toBe(true);
+    expect(readFileSync(marker, "utf8")).toBe(originalMarker);
+    expect(lstatSync(marker).ino).toBe(originalInode);
   });
 
-  it("atomically replaces stale managed links and removes retired names", () => {
+  it("repairs a package move and removes only identity-proven retired links", () => {
     const f = fixture();
+    const options = { ...f, host: "codex" as const, scope: "project" as const };
+    operateWorkflowSkillHosts({ ...options, action: "sync" });
     const hostRoot = path.join(f.projectRoot, ".agents", "skills");
-    mkdirSync(hostRoot, { recursive: true });
-    const skill = WORKFLOW_SKILL_NAMES[0];
-    const staleRoot = path.join(f.root, "node_modules", "@kroffske", "locus-pi", "skills");
-    symlinkSync(path.join(staleRoot, skill), path.join(hostRoot, skill), "dir");
-    symlinkSync(path.join(staleRoot, "locus-pi-workflows"), path.join(hostRoot, "locus-pi-workflows"), "dir");
-    writeFileSync(
-      path.join(hostRoot, WORKFLOW_SKILL_STATE_FILE),
-      `${JSON.stringify({
-        schema: "locus-pi.workflow-skills.v1",
-        owner: "@kroffske/locus-pi",
-        links: [skill, "locus-pi-workflows"],
-      })}\n`,
-      "utf8",
-    );
-
-    const status = operateWorkflowSkillHosts({
-      action: "status",
-      host: "codex",
-      scope: "project",
-      projectRoot: f.projectRoot,
-      packageRoot: f.packageRoot,
-      userHome: f.userHome,
-    });
-    expect(status.rows).toContainEqual(expect.objectContaining({ skill, state: "stale", changed: "none" }));
-
-    const result = operateWorkflowSkillHosts({
-      action: "sync",
-      host: "codex",
-      scope: "project",
-      projectRoot: f.projectRoot,
-      packageRoot: f.packageRoot,
-      userHome: f.userHome,
-    });
-
-    expect(result.rows).toContainEqual(expect.objectContaining({ skill, changed: "replaced" }));
-    expect(result.rows).toContainEqual(
-      expect.objectContaining({ skill: "locus-pi-workflows", changed: "removed", legacy: true }),
-    );
-    expect(path.resolve(hostRoot, readlinkSync(path.join(hostRoot, skill)))).toBe(
-      path.join(f.packageRoot, "skills", skill),
-    );
-    expect(packageName).toBe("@locus-forge/locus-pi");
-    expect(JSON.parse(readFileSync(path.join(hostRoot, WORKFLOW_SKILL_STATE_FILE), "utf8")).owner).toBe(
-      "@kroffske/locus-pi",
-    );
-    expect(lstatSync(path.join(hostRoot, "locus-pi-workflows"), { throwIfNoEntry: false })).toBeUndefined();
-  });
-
-  it("adds detailed authoring to a three-skill installation without replacing existing links", () => {
-    const f = fixture();
-    const hostRoot = path.join(f.userHome, ".agents", "skills");
-    mkdirSync(hostRoot, { recursive: true });
-    const previous = ["locus-pi-workflow-create", "locus-pi-workflow-run", "external-locus-pi"];
-    for (const name of previous)
-      symlinkSync(path.join(f.packageRoot, "skills", name), path.join(hostRoot, name), "dir");
-    mkdirSync(path.join(hostRoot, "user-owned-skill"));
-    writeFileSync(
-      path.join(hostRoot, WORKFLOW_SKILL_STATE_FILE),
-      JSON.stringify({ schema: "locus-pi.workflow-skills.v1", owner: "@kroffske/locus-pi", links: previous }),
-    );
-
-    const result = operateWorkflowSkillHosts({
-      action: "sync",
-      host: "codex",
-      scope: "user",
-      projectRoot: f.projectRoot,
-      packageRoot: f.packageRoot,
-      userHome: f.userHome,
-    });
-    expect(result.rows.filter((row) => row.changed !== "none")).toEqual([
-      expect.objectContaining({ skill: "locus-pi-workflow-create-detailed", changed: "created" }),
-    ]);
-    for (const name of previous)
-      expect(readlinkSync(path.join(hostRoot, name))).toBe(path.join(f.packageRoot, "skills", name));
-    expect(lstatSync(path.join(hostRoot, "user-owned-skill")).isDirectory()).toBe(true);
-    expect(JSON.parse(readFileSync(path.join(hostRoot, WORKFLOW_SKILL_STATE_FILE), "utf8")).links).toEqual([
-      "external-locus-pi",
-      "locus-pi-workflow-create",
-      "locus-pi-workflow-create-detailed",
-      "locus-pi-workflow-run",
-    ]);
+    const marker = path.join(hostRoot, WORKFLOW_SKILL_STATE_FILE);
+    const previous = JSON.parse(readFileSync(marker, "utf8"));
+    for (const name of [
+      "locus-pi-workflows",
+      "locus-pi-run-workflow",
+      "locus-task-workflow",
+      "locus-pi-workflow-implement-task",
+    ]) {
+      const target = path.join(f.root, "old-package", "skills", name);
+      const link = path.join(hostRoot, name);
+      symlinkSync(target, link, "dir");
+      const st = lstatSync(link, { bigint: true });
+      previous.links.push({
+        name,
+        target,
+        identity: {
+          device: String(st.dev),
+          inode: String(st.ino),
+          born: String(st.birthtimeNs),
+          changed: String(st.ctimeNs),
+        },
+      });
+    }
+    writeFileSync(marker, JSON.stringify(previous));
+    const nextPackage = path.join(f.root, "moved-install");
+    renameSync(f.packageRoot, nextPackage);
+    const result = operateWorkflowSkillHosts({ ...options, packageRoot: nextPackage, action: "sync" });
+    expect(result.rows.filter((row) => row.changed === "replaced")).toHaveLength(4);
+    expect(result.rows.filter((row) => row.changed === "removed")).toHaveLength(4);
+    expect(JSON.parse(readFileSync(marker, "utf8")).owner).toBe("@kroffske/locus-pi");
+    for (const row of result.rows) {
+      if (row.legacy) expect(lstatSync(row.path, { throwIfNoEntry: false })).toBeUndefined();
+      else expect(readlinkSync(row.path)).toBe(path.join(nextPackage, "skills", row.skill));
+    }
   });
 
   it("preflights every target and refuses host-owned paths without partial writes", () => {
@@ -190,35 +139,10 @@ describe("workflow skill host command", () => {
         packageRoot: f.packageRoot,
         userHome: f.userHome,
       }),
-    ).toThrow("Refusing to change unmanaged skill path");
+    ).toThrow("Ownership conflict");
     expect(
       lstatSync(path.join(f.userHome, ".agents", "skills", WORKFLOW_SKILL_NAMES[0]), { throwIfNoEntry: false }),
     ).toBeUndefined();
-  });
-
-  it("rolls back provenance and earlier links after a later filesystem failure", () => {
-    const f = fixture();
-    let mutations = 0;
-    expect(() =>
-      operateWorkflowSkillHosts({
-        action: "sync",
-        host: "all",
-        scope: "user",
-        projectRoot: f.projectRoot,
-        packageRoot: f.packageRoot,
-        userHome: f.userHome,
-        _testAfterMutation: () => {
-          mutations += 1;
-          if (mutations === 4) throw new Error("injected late failure");
-        },
-      }),
-    ).toThrow("injected late failure");
-    for (const hostRoot of [path.join(f.userHome, ".agents", "skills"), path.join(f.userHome, ".claude", "skills")]) {
-      for (const skill of WORKFLOW_SKILL_NAMES) {
-        expect(lstatSync(path.join(hostRoot, skill), { throwIfNoEntry: false })).toBeUndefined();
-      }
-      expect(lstatSync(path.join(hostRoot, WORKFLOW_SKILL_STATE_FILE), { throwIfNoEntry: false })).toBeUndefined();
-    }
   });
 
   it("does not infer ownership from a foreign symlink target that looks like locus-pi", () => {
@@ -240,7 +164,7 @@ describe("workflow skill host command", () => {
         packageRoot: f.packageRoot,
         userHome: f.userHome,
       }),
-    ).toThrow("Refusing to change unmanaged skill path");
+    ).toThrow("Ownership conflict");
     expect(lstatSync(path.join(hostRoot, skill)).isSymbolicLink()).toBe(true);
   });
 
@@ -261,5 +185,313 @@ describe("workflow skill host command", () => {
         throwIfNoEntry: false,
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("doctor filesystem regressions", () => {
+  it.each(["user", "project"] as const)("refuses an alias from the other scope into %s", (scope) => {
+    const f = fixture();
+    const selected = scope === "user" ? f.userHome : f.projectRoot;
+    const other = scope === "user" ? f.projectRoot : f.userHome;
+    const options = { ...f, scope, host: "codex" as const };
+    operateWorkflowSkillHosts({ ...options, action: "sync" });
+    const skills = path.join(selected, ".agents", "skills");
+    const marker = path.join(skills, WORKFLOW_SKILL_STATE_FILE);
+    const kept = path.join(skills, WORKFLOW_SKILL_NAMES[0]);
+    symlinkSync(path.join(selected, ".agents"), path.join(other, ".agents"), "dir");
+    const before = readFileSync(marker, "utf8");
+    for (const action of ["sync", "remove"] as const) {
+      expect(() => operateWorkflowSkillHosts({ ...options, action })).toThrow(/shared|redirect/i);
+      expect(readFileSync(marker, "utf8")).toBe(before);
+      expect(lstatSync(kept).isSymbolicLink()).toBe(true);
+    }
+  });
+
+  it.each(["marker", "link"] as const)("preserves a foreign %s staging name on EEXIST", (kind) => {
+    const f = fixture();
+    const root = path.join(f.userHome, ".agents", "skills");
+    mkdirSync(root, { recursive: true });
+    const now = vi.spyOn(Date, "now").mockReturnValue(1234);
+    try {
+      const temp = path.join(
+        root,
+        kind === "marker"
+          ? WORKFLOW_SKILL_STATE_FILE + "." + process.pid + "-1234"
+          : WORKFLOW_SKILL_NAMES[0] + ".locus-pi-" + process.pid + "-1234",
+      );
+      writeFileSync(temp, "foreign", { flag: "wx" });
+      const inode = lstatSync(temp).ino;
+      expect(() => operateWorkflowSkillHosts({ ...f, action: "sync", host: "codex", scope: "user" })).toThrow(/EEXIST/);
+      expect(lstatSync(temp).ino).toBe(inode);
+      expect(readFileSync(temp, "utf8")).toBe("foreign");
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it.each([false, true])("restores missing directory chains with a pre-existing parent: %s", (preexisting) => {
+    const f = fixture();
+    const existing = path.join(f.userHome, ".agents");
+    if (preexisting) {
+      mkdirSync(existing);
+      writeFileSync(path.join(existing, "sentinel"), "unchanged");
+    }
+    let mutations = 0;
+    expect(() =>
+      operateWorkflowSkillHosts({
+        ...f,
+        action: "sync",
+        host: "all",
+        scope: "user",
+        _testAfterMutation: () => {
+          if (++mutations === 4) throw new Error("injected failure");
+        },
+      }),
+    ).toThrow(/injected failure/);
+    expect(readdirSync(f.userHome)).toEqual(preexisting ? [".agents"] : []);
+    if (preexisting) {
+      expect(readdirSync(existing)).toEqual(["sentinel"]);
+      expect(readFileSync(path.join(existing, "sentinel"), "utf8")).toBe("unchanged");
+    }
+  });
+
+  it("leaves an occupied directory created during the failed install", () => {
+    const f = fixture();
+    const root = path.join(f.userHome, ".agents", "skills");
+    const sentinel = path.join(root, "foreign");
+    expect(() =>
+      operateWorkflowSkillHosts({
+        ...f,
+        action: "sync",
+        host: "codex",
+        scope: "user",
+        _testAfterMutation: () => {
+          writeFileSync(sentinel, "keep");
+          throw new Error("injected failure");
+        },
+      }),
+    ).toThrow(/incomplete rollback/i);
+    expect(readFileSync(sentinel, "utf8")).toBe("keep");
+  });
+
+  it("preserves a written entry and marker that were subsequently replaced", () => {
+    const f = fixture();
+    const root = path.join(f.userHome, ".agents", "skills");
+    const skill = path.join(root, WORKFLOW_SKILL_NAMES[0]);
+    const marker = path.join(root, WORKFLOW_SKILL_STATE_FILE);
+    expect(() =>
+      operateWorkflowSkillHosts({
+        ...f,
+        action: "sync",
+        host: "codex",
+        scope: "user",
+        _testAfterMutation: () => {
+          if (!existsSync(skill) || !existsSync(marker)) return;
+          const separateLink = path.join(root, "substitute");
+          symlinkSync(readlinkSync(skill), separateLink, "dir");
+          renameSync(separateLink, skill);
+          const separateMarker = path.join(root, "substitute-marker");
+          writeFileSync(separateMarker, "foreign");
+          renameSync(separateMarker, marker);
+          throw new Error("injected failure");
+        },
+      }),
+    ).toThrow(/incomplete rollback/i);
+    expect(lstatSync(skill).isSymbolicLink()).toBe(true);
+    expect(readFileSync(marker, "utf8")).toBe("foreign");
+  });
+
+  it("leaves a same-target replacement untouched through failed remove and write retries", () => {
+    const f = fixture();
+    const options = { ...f, host: "codex" as const, scope: "user" as const };
+    operateWorkflowSkillHosts({ ...options, action: "sync" });
+    const root = path.join(f.userHome, ".agents", "skills");
+    const skill = path.join(root, WORKFLOW_SKILL_NAMES[0]);
+    const marker = path.join(root, WORKFLOW_SKILL_STATE_FILE);
+    const before = readFileSync(marker, "utf8");
+    const substitute = path.join(root, "substitute");
+    symlinkSync(readlinkSync(skill), substitute, "dir");
+    const substituteInode = lstatSync(substitute).ino;
+    expect(() =>
+      operateWorkflowSkillHosts({
+        ...options,
+        action: "remove",
+        _testAfterMutation: (name) => {
+          if (name !== skill) return;
+          renameSync(substitute, skill);
+          throw new Error("injected failure");
+        },
+      }),
+    ).toThrow(/incomplete rollback/i);
+    for (const action of ["sync", "remove"] as const) {
+      expect(() => operateWorkflowSkillHosts({ ...options, action })).toThrow(/conflict/i);
+      expect(lstatSync(skill).ino).toBe(substituteInode);
+      expect(readFileSync(marker, "utf8")).toBe(before);
+    }
+  });
+
+  it("preserves name-only ownership and refuses to adopt a current-looking v1 link", () => {
+    const f = fixture();
+    const root = path.join(f.projectRoot, ".agents", "skills");
+    const name = WORKFLOW_SKILL_NAMES[0];
+    const skill = path.join(root, name);
+    const marker = path.join(root, WORKFLOW_SKILL_STATE_FILE);
+    mkdirSync(root, { recursive: true });
+    symlinkSync(path.join(f.packageRoot, "skills", name), skill, "dir");
+    const before = JSON.stringify({
+      schema: "locus-pi.workflow-skills.v1",
+      owner: "@kroffske/locus-pi",
+      links: [name],
+    });
+    writeFileSync(marker, before);
+    for (const action of ["sync", "remove"] as const) {
+      expect(() => operateWorkflowSkillHosts({ ...f, action, host: "codex", scope: "project" })).toThrow(
+        /v1|ownership/i,
+      );
+      expect(lstatSync(skill).isSymbolicLink()).toBe(true);
+      expect(readFileSync(marker, "utf8")).toBe(before);
+    }
+  });
+
+  it("refuses both writes when the explicit Claude override aliases the default skills dir", () => {
+    const f = fixture();
+    const options = { ...f, host: "claude" as const, scope: "user" as const };
+    operateWorkflowSkillHosts({ ...options, action: "sync" });
+    const root = path.join(f.userHome, ".claude", "skills");
+    const alternate = path.join(f.root, "alternate");
+    mkdirSync(alternate);
+    const redirect = path.join(alternate, "skills");
+    symlinkSync(root, redirect, "dir");
+    const missing = path.join(root, WORKFLOW_SKILL_NAMES[1]);
+    unlinkSync(missing);
+    const marker = path.join(root, WORKFLOW_SKILL_STATE_FILE);
+    const before = readFileSync(marker, "utf8");
+    vi.stubEnv("CLAUDE_CONFIG_DIR", alternate);
+    try {
+      for (const action of ["sync", "remove"] as const) {
+        expect(() => operateWorkflowSkillHosts({ ...options, action })).toThrow(/shared/i);
+        expect(lstatSync(path.join(redirect, WORKFLOW_SKILL_NAMES[0])).isSymbolicLink()).toBe(true);
+        expect(existsSync(missing)).toBe(false);
+        expect(readFileSync(marker, "utf8")).toBe(before);
+        expect(readlinkSync(redirect)).toBe(root);
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe("doctor mutation boundaries", () => {
+  it.each([
+    ["before-guard", /Entry changed/],
+    ["after-guard", /EEXIST/],
+  ] as const)("preserves a foreign marker inserted at %s", (insertAt, error) => {
+    const f = fixture();
+    const root = path.join(f.userHome, ".agents", "skills");
+    const marker = path.join(root, WORKFLOW_SKILL_STATE_FILE);
+    expect(() =>
+      operateWorkflowSkillHosts({
+        ...f,
+        action: "sync",
+        host: "codex",
+        scope: "user",
+        _testAtBoundary: (boundary, file) => {
+          if (boundary === insertAt && file === marker) writeFileSync(marker, "foreign", { flag: "wx" });
+        },
+      }),
+    ).toThrow(error);
+    expect(readFileSync(marker, "utf8")).toBe("foreign");
+    expect(readdirSync(root)).toEqual([WORKFLOW_SKILL_STATE_FILE]);
+  });
+
+  it("compares the symlink published at first readback to its staged inode", () => {
+    const f = fixture();
+    const first = path.join(f.userHome, ".agents", "skills", WORKFLOW_SKILL_NAMES[0]);
+    let savedInode: number | undefined;
+    expect(() =>
+      operateWorkflowSkillHosts({
+        ...f,
+        action: "sync",
+        host: "codex",
+        scope: "user",
+        _testAtBoundary: (boundary, file) => {
+          if (boundary !== "before-readback" || file !== first) return;
+          const foreign = path.join(path.dirname(file), "replacement");
+          symlinkSync(readlinkSync(file), foreign, "dir");
+          savedInode = lstatSync(foreign).ino;
+          renameSync(foreign, file);
+        },
+      }),
+    ).toThrow(/incomplete rollback/i);
+    expect(savedInode).toBeDefined();
+    expect(lstatSync(first).ino).toBe(savedInode);
+  });
+
+  it("preserves a same-value marker replaced before first readback", () => {
+    const f = fixture();
+    const root = path.join(f.userHome, ".agents", "skills");
+    const marker = path.join(root, WORKFLOW_SKILL_STATE_FILE);
+    let savedInode: number | undefined;
+    expect(() =>
+      operateWorkflowSkillHosts({
+        ...f,
+        action: "sync",
+        host: "codex",
+        scope: "user",
+        _testAtBoundary: (boundary, file) => {
+          if (boundary !== "before-readback" || file !== marker) return;
+          const foreign = path.join(root, "replacement");
+          writeFileSync(foreign, readFileSync(marker));
+          savedInode = lstatSync(foreign).ino;
+          renameSync(foreign, marker);
+        },
+      }),
+    ).toThrow(/incomplete rollback/i);
+    expect(savedInode).toBeDefined();
+    expect(lstatSync(marker).ino).toBe(savedInode);
+    expect(readdirSync(root)).toEqual([WORKFLOW_SKILL_STATE_FILE]);
+  });
+
+  it("does not claim a link as its own removal when unlink sees it disappear after the guard", () => {
+    const f = fixture();
+    const options = { ...f, host: "codex" as const, scope: "user" as const };
+    operateWorkflowSkillHosts({ ...options, action: "sync" });
+    const root = path.join(f.userHome, ".agents", "skills");
+    const first = path.join(root, WORKFLOW_SKILL_NAMES[0]);
+    expect(() =>
+      operateWorkflowSkillHosts({
+        ...options,
+        action: "remove",
+        _testAtBoundary: (boundary, file) => {
+          if (boundary === "after-guard" && file === first) unlinkSync(first);
+        },
+      }),
+    ).toThrow(/ENOENT/);
+    expect(existsSync(first)).toBe(false);
+    expect(lstatSync(path.join(root, WORKFLOW_SKILL_NAMES[1])).isSymbolicLink()).toBe(true);
+  });
+
+  it("restores proof for a recreated link after a late removal failure", () => {
+    const f = fixture();
+    const options = { ...f, host: "codex" as const, scope: "user" as const };
+    operateWorkflowSkillHosts({ ...options, action: "sync" });
+    const root = path.join(f.userHome, ".agents", "skills");
+    const marker = path.join(root, WORKFLOW_SKILL_STATE_FILE);
+    mkdirSync(path.join(root, "foreign-directory"));
+    expect(() =>
+      operateWorkflowSkillHosts({
+        ...options,
+        action: "remove",
+        _testAfterMutation: (file) => {
+          if (file === marker) throw new Error("late failure");
+        },
+      }),
+    ).toThrow(/^late failure$/);
+    const before = lstatSync(marker).ino;
+    expect(operateWorkflowSkillHosts({ ...options, action: "sync" }).rows.every((row) => row.changed === "none")).toBe(
+      true,
+    );
+    expect(lstatSync(marker).ino).toBe(before);
+    expect(lstatSync(path.join(root, "foreign-directory")).isDirectory()).toBe(true);
   });
 });

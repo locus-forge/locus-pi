@@ -28,6 +28,20 @@ const workflowLaunchDefaults =
   "Workflow launch defaults are mode-scoped: every run defaults to `concurrency = 4`; headless Pi `print`/`json` root launches additionally default to `totalAgents = 10_000`, shared across fresh physical child attempts made by the root, saved children and Fusion; `totalAgents` is unbounded in TUI/RPC. Every other undeclared workflow budget axis is unbounded.";
 
 describe("installed workflow documentation ownership", () => {
+  it("publishes doctor as the external skill entry in all installed manuals", () => {
+    for (const file of [
+      "extensions/workflows/README.md",
+      "docs/workflows/running.md",
+      "skills/README.md",
+      "extensions/workflows/manifest.json",
+    ]) {
+      const text = read(file);
+      expect(text).toContain("/workflows doctor");
+      expect(text).toContain("/workflows doctor recovery");
+      expect(text).not.toContain("/workflows skills ");
+    }
+  });
+
   it("advertises bounded checked schema results without widening the standard tool or host contract", () => {
     const manifest = JSON.parse(read("extensions/workflows/manifest.json")) as { runtimeRequirements: string[] };
     const contract = manifest.runtimeRequirements.find((requirement) =>

@@ -15,6 +15,14 @@ afterEach(async () => {
 });
 
 describe("extension layer checker negative rules", () => {
+  it.each(["skills-fs", "skills-destinations"])("keeps %s internal to the workflows feature", async (module) => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, CROSS_FEATURE_READER),
+      `\nimport "../workflows/command/skill-doctor/${module}.js";\n`,
+    );
+    await expectRule(root, "rule 6 (feature-internal facade)");
+  });
   it("keeps Command Center row and repository projection behind the agents facade", async () => {
     const root = await extensionFixture();
     await appendFile(

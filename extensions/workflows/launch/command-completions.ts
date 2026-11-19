@@ -37,11 +37,11 @@ export function workflowArgumentCompletions(
     { value: "run ", label: "run", description: "Start a workflow" },
     { value: "continue ", label: "continue", description: "Answer a workflow handoff" },
     { value: "stop ", label: "stop", description: "Stop a workflow explicitly" },
-    { value: "skills ", label: "skills", description: "Manage workflow skills for external agents" },
+    { value: "doctor ", label: "doctor", description: "Check external workflow skill installations" },
   ];
   if (!prefix.includes(" ")) return matchingCompletions(rootCommands, prefix);
   if (prefix.startsWith("list ")) return null;
-  if (prefix.startsWith("skills ")) return workflowSkillCompletions(prefix);
+  if (prefix.startsWith("doctor ")) return workflowDoctorCompletions(prefix);
 
   const runIds = (): string[] => listWorkflowRunIds(projectRoot).slice(0, 20);
   const rootRunIds = (): string[] => listWorkflowRootRunIds(projectRoot).slice(0, 20);
@@ -106,40 +106,29 @@ export function workflowArgumentCompletions(
   return workflowRunOptionCompletions(targetToken, parsedTarget.rest === "" ? " " : ` ${parsedTarget.rest}`, runIds());
 }
 
-function workflowSkillCompletions(prefix: string): CommandArgumentCompletion[] | null {
-  const actions = ["sync", "status", "remove"] as const;
+function workflowDoctorCompletions(prefix: string): CommandArgumentCompletion[] | null {
   const tokens = prefix.trimEnd().split(/\s+/u);
   const endsWithSpace = /\s$/u.test(prefix);
-  if (tokens.length === 2 && !endsWithSpace) {
+  const [, verb = ""] = tokens;
+  const actions = ["check", "install", "remove", "recovery"];
+  if (tokens.length === 1 || (tokens.length === 2 && !endsWithSpace && !verb.startsWith("--"))) {
     return matchingCompletions(
-      actions.map((action) => ({ value: `skills ${action} `, label: action })),
+      actions.map((action) => ({ value: `doctor ${action}${action === "recovery" ? "" : " "}`, label: action })),
       prefix,
     );
   }
-  if (tokens.length === 1) {
-    return actions.map((action) => ({ value: `skills ${action} `, label: action }));
-  }
-  const action = tokens[1];
-  if (!actions.includes(action as (typeof actions)[number])) return null;
-  if (tokens.at(-1) === "--host") {
-    return ["codex", "claude", "all"].map((host) => ({
-      value: `${prefix}${host} `,
-      label: host,
-    }));
-  }
-  if (tokens.at(-1) === "--scope") {
-    return ["user", "project"].map((scope) => ({
-      value: `${prefix}${scope} `,
-      label: scope,
-    }));
+  if (verb === "recovery" || (!actions.includes(verb) && !verb.startsWith("--"))) return null;
+
+  const last = tokens.at(-1);
+  if (last === "--host" || last === "--scope") {
+    if (!endsWithSpace) return null;
+    const values = last === "--host" ? ["codex", "claude", "all"] : ["user", "project"];
+    return values.map((value) => ({ value: `${prefix}${value} `, label: value }));
   }
   if (!endsWithSpace) return null;
-  const usedHost = tokens.includes("--host");
-  const usedScope = tokens.includes("--scope");
-  return [
-    ...(usedHost ? [] : [{ value: `${prefix}--host `, label: "--host" }]),
-    ...(usedScope ? [] : [{ value: `${prefix}--scope `, label: "--scope" }]),
-  ];
+  return ["--host", "--scope"]
+    .filter((option) => !tokens.includes(option))
+    .map((option) => ({ value: `${prefix}${option} `, label: option }));
 }
 
 function workflowRunOptionCompletions(

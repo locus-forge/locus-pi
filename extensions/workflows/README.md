@@ -59,22 +59,20 @@ expose the location of a slow launch; they do not diagnose or repair its cause.
 /workflows run <name|path> [--run-name <name> | --workspace-dir <path>] [--resume <runId>] [--force] [--no-operator|--operator] [--] [input] | --input-json <JSON tail>
 /workflows continue <runId>
 /workflows stop [runId|last]
-/workflows skills <sync|status|remove> [--host codex|claude|all] [--scope user|project]
+/workflows doctor [check|install|remove] [--host codex|claude|all] [--scope user|project]
+/workflows doctor recovery
 ```
 
 Tools: `workflow`, read-only `workflow_check_source`, and opt-in `fusion`. Compatibility command: `/workflow-stop`.
 
 At normal interactive heights, `/workflows list` keeps the Project, User, Package, and History tabs directly below the catalog heading and opens on Project whenever it contains a selectable workflow. The existing compact projection may omit the heading or put the selected row first when only a few lines fit. Wherever tabs are shown, the active tab uses the shared high-contrast purple selection background. The source view uses the same treatment for its left-to-right Start, Back, Edit, Review, and copy actions, with Start focused first for a ready current workflow. Start restores a direct command for untyped workflows and a complete native-run request for static `meta.inputSchema`; neither form submits editor text itself. After the user submits the typed request, the agent prepares canonical `inputValue` and calls the native `workflow` tool, whose extension-owned interactive confirmation is the review boundary; the route does not require package skills and unavailable capability never falls back to a shell or slash command. A parent description starts one column to the right of its child's `└` branch, so the description remains attached to the parent instead of reading like a heading for the child. See the cross-extension [TUI visual language](../../docs/tui-design.md).
 
-`/workflows skills` exposes the package's action-named workflow skills to
-external agents. Pi already discovers the packaged skills. The command manages
-all four entries, including the ordinary and detailed authoring lessons; the
-[create guide](../../docs/workflows/create.md#choose-an-authoring-route) owns selection and explicit invocations. It manages
-fail-closed symlinks in Codex `.agents/skills` and Claude Code `.claude/skills`;
-the adjacent `.locus-pi-workflow-skills.v1.json` file records ownership, so it
-never infers ownership from a path or replaces a real directory or foreign
-symlink. See
-[`skills/README.md`](../../skills/README.md).
+`/workflows doctor` checks the package's four external-agent skill links and
+shows each absolute destination and next command. A scoped `install` creates
+or repairs owned links, and `remove` uninstalls them. Pi already discovers
+the packaged skills. See the [skills installation guide](../../skills/README.md#install-for-codex-and-claude-code)
+for paths, legacy recovery and the single-writer boundary. Use
+`/workflows doctor recovery` for incomplete rollback details.
 
 Explicit [typed input](../../docs/workflows/dsl.md#typed-workflow-input) uses `meta.inputSchema` and tool `inputValue` or terminal command `--input-json`. The run skill can prepare canonical JSON and an editable command without launching; interactive programmatic tool launches detach the complete request, resolve and hash the source, and show its safe locator, SHA-256, effective workspace, and bounded typed value in the extension-owned confirmation and current-call tool card, while slash launches keep JSON visible in the editor and bypass both. Catalog Start retains the selected target and entry-byte digest behind a one-use `catalogSelectionId`, so unrelated calls cannot consume it; a newer Start supersedes the prior unsubmitted editor handoff, steering or follow-up input carrying the ID marks it submitted, later streaming input preserves it until its tool call, and the next idle user input retires an ID it does not carry. Missing or mismatched IDs fail while the submitted catalog request remains outstanding, and explicit reuse, shadowing, or byte drift still fails closed. Admission enforces the confirmed digest and displayed workspace selection, including its project root, before import or workspace creation. Confirmation follows the parent abort signal, settles locally after five minutes even for an inert adapter, and reports cancellation as a tool error. The runtime validates and freezes JSON before entry; inline/saved children validate their own explicit schemas. Typed continuation keeps the JSON and receives its separate operator answer through optional root context. Legacy text remains exact.
 

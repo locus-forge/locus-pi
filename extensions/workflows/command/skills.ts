@@ -1,29 +1,25 @@
-/**
- * Install packaged workflow skills into external agent hosts.
- *
- * Package skill directories remain canonical. Host entries are managed
- * symlinks, so a package update changes the source without creating a second
- * copy that can drift. Every mutation is preflighted: real directories and
- * foreign symlinks are never overwritten or removed.
- */
-
-import {
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  readlinkSync,
-  renameSync,
-  symlinkSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+/** Manage the package's four canonical skill links in external host directories. */
+import { accessSync, constants, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
-import type { ExtensionCommandContext } from "../../_shared/host/pi-api.js";
-import type { OperatorBlock } from "../../_shared/operator/operator-ui.js";
-import { setOperatorWidget } from "../../_shared/operator/widget-render.js";
-import { errorMessage, workflowWarningBlock } from "../operator/operator-ui.js";
+import { errorMessage } from "../operator/operator-ui.js";
+import {
+  claudeOverride,
+  resolveSkillDirectories,
+  WORKFLOW_SKILL_HOSTS,
+  workflowSkillDestination,
+} from "./skill-doctor/skills-destinations.js";
+import {
+  readSkillEntry,
+  sameIdentity,
+  SkillTreeTransaction,
+  type FileIdentity,
+  type SkillEntry,
+  type SkillMutationBoundary,
+  type SkillUndoIssue,
+} from "./skill-doctor/skills-fs.js";
 
 export const WORKFLOW_SKILL_NAMES = [
   "locus-pi-workflow-create",
@@ -32,22 +28,25 @@ export const WORKFLOW_SKILL_NAMES = [
   "external-locus-pi",
 ] as const;
 
-const LEGACY_WORKFLOW_SKILL_NAMES = [
+const RETIRED = [
   "locus-pi-workflows",
   "locus-pi-run-workflow",
   "locus-task-workflow",
   "locus-pi-workflow-implement-task",
 ] as const;
+const KNOWN_NAMES = new Set<string>([...WORKFLOW_SKILL_NAMES, ...RETIRED]);
+
 export const WORKFLOW_SKILL_STATE_FILE = ".locus-pi-workflow-skills.v1.json";
-// Stable v1 provenance marker; existing installations retain it across npm package renames.
-const WORKFLOW_SKILL_STATE_OWNER = "@kroffske/locus-pi";
-const WORKFLOW_SKILL_STATE_SCHEMA = "locus-pi.workflow-skills.v1";
+// Keep the filename and owner so a v1-only installer rejects the new schema.
+const OWNER = "@kroffske/locus-pi";
+const SCHEMA_V1 = "locus-pi.workflow-skills.v1";
+const SCHEMA_V2 = "locus-pi.workflow-skills.v2";
+const DEFAULT_PACKAGE_ROOT = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 
 export type WorkflowSkillHost = "codex" | "claude";
 export type WorkflowSkillHostSelector = WorkflowSkillHost | "all";
 export type WorkflowSkillScope = "user" | "project";
 export type WorkflowSkillHostAction = "sync" | "status" | "remove";
-type WorkflowSkillLinkState = "absent" | "current" | "stale" | "conflict";
 
 export interface WorkflowSkillHostCommand {
   action: WorkflowSkillHostAction;
@@ -55,441 +54,349 @@ export interface WorkflowSkillHostCommand {
   scope: WorkflowSkillScope;
 }
 
+interface WorkflowSkillHostOptions extends WorkflowSkillHostCommand {
+  projectRoot: string;
+  packageRoot?: string;
+  userHome?: string;
+  /** Deterministic filesystem boundary probes. */
+  _testAtBoundary?: (boundary: SkillMutationBoundary, file: string) => void;
+  _testAfterMutation?: (file: string) => void;
+}
+
 export interface WorkflowSkillHostResultRow {
   host: WorkflowSkillHost;
   scope: WorkflowSkillScope;
   skill: string;
   path: string;
-  state: WorkflowSkillLinkState;
+  state: "absent" | "current" | "stale" | "conflict" | "source-unavailable";
   changed: "created" | "replaced" | "removed" | "none";
   legacy?: true;
+  reason?: string;
+}
+
+export interface WorkflowSkillHostResultGroup {
+  host: WorkflowSkillHost;
+  scope: WorkflowSkillScope;
+  path: string;
+  defaultClaudeFolder: boolean;
+  rows: WorkflowSkillHostResultRow[];
+  blocked?: string;
 }
 
 export interface WorkflowSkillHostResult {
-  action: WorkflowSkillHostAction;
   rows: WorkflowSkillHostResultRow[];
+  groups: WorkflowSkillHostResultGroup[];
+  source: string;
 }
 
-interface WorkflowSkillHostOperationOptions extends WorkflowSkillHostCommand {
-  projectRoot: string;
-  packageRoot?: string;
-  userHome?: string;
-  /** Deterministic failure injection for transaction tests. */
-  _testAfterMutation?: (path: string) => void;
+type Proof = { target: string; identity: FileIdentity };
+type Marker = {
+  entry?: SkillEntry;
+  proofs: Map<string, Proof>;
+  legacyNames: Set<string>;
+};
+
+interface Candidate {
+  row: WorkflowSkillHostResultRow;
+  entry: SkillEntry | undefined;
+  source: string | undefined;
+  change: "write" | "remove" | undefined;
 }
 
-interface LinkCandidate {
-  host: WorkflowSkillHost;
-  scope: WorkflowSkillScope;
-  skill: string;
-  linkPath: string;
-  sourceDir?: string;
-  legacy: boolean;
-  state: WorkflowSkillLinkState;
+interface Work {
+  group: WorkflowSkillHostResultGroup;
+  tx: SkillTreeTransaction;
+  markerPath: string;
+  initialMarker: Marker;
+  currentMarker: SkillEntry | undefined;
+  candidates: Candidate[];
+  written: Map<Candidate, SkillEntry | undefined>;
 }
 
-interface HostGroup {
-  hostRoot: string;
-  managedNames: Set<string>;
-  stateText?: string;
-  candidates: LinkCandidate[];
-}
-
-const DEFAULT_PACKAGE_ROOT = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
-
-export function presentWorkflowSkillHostCommand(text: string, ctx: ExtensionCommandContext, projectRoot: string): void {
-  const parsed = parseWorkflowSkillHostCommand(text);
-  if (!parsed.ok) {
-    setOperatorWidget(
-      ctx,
-      "workflows",
-      workflowWarningBlock(
-        parsed.message,
-        "Usage: /workflows skills <sync|status|remove> [--host codex|claude|all] [--scope user|project]",
-      ),
-    );
-    return;
-  }
-  try {
-    setOperatorWidget(
-      ctx,
-      "workflows",
-      workflowSkillHostResultBlock(operateWorkflowSkillHosts({ ...parsed.command, projectRoot })),
-    );
-  } catch (error) {
-    setOperatorWidget(
-      ctx,
-      "workflows",
-      workflowWarningBlock(
-        `Workflow skills command failed and its managed-link transaction was rolled back: ${errorMessage(error)}.`,
-        "Inspect conflicts: /workflows skills status --host all --scope user",
-      ),
-    );
+export class WorkflowSkillWriteError extends Error {
+  constructor(
+    cause: string,
+    readonly outcome: "refused" | "rolled-back" | "incomplete",
+    readonly destinations: string[],
+    readonly issues: SkillUndoIssue[] = [],
+  ) {
+    super(outcome === "incomplete" ? `Incomplete rollback: ${cause}` : cause);
   }
 }
 
-export function parseWorkflowSkillHostCommand(
-  text: string,
-): { ok: true; command: WorkflowSkillHostCommand } | { ok: false; message: string } {
-  const tokens = text.trim().split(/\s+/u).filter(Boolean);
-  if (tokens[0] !== "skills") return { ok: false, message: "Expected the skills subcommand." };
-  const action = tokens[1];
-  if (action !== "sync" && action !== "status" && action !== "remove") {
-    return { ok: false, message: "Expected skills sync, skills status, or skills remove." };
-  }
-
-  let host: WorkflowSkillHostSelector = "all";
-  let scope: WorkflowSkillScope = "user";
-  const seen = new Set<string>();
-  for (let index = 2; index < tokens.length; index += 2) {
-    const option = tokens[index];
-    const value = tokens[index + 1];
-    if (value === undefined) return { ok: false, message: `Missing value for ${option}.` };
-    if (option !== "--host" && option !== "--scope") {
-      return { ok: false, message: `Unknown skills option: ${option}.` };
-    }
-    if (seen.has(option)) return { ok: false, message: `Duplicate skills option: ${option}.` };
-    seen.add(option);
-    if (option === "--host") {
-      if (value !== "codex" && value !== "claude" && value !== "all") {
-        return { ok: false, message: `Unsupported skills host: ${value}.` };
-      }
-      host = value;
-    } else {
-      if (value !== "user" && value !== "project") {
-        return { ok: false, message: `Unsupported skills scope: ${value}.` };
-      }
-      scope = value;
-    }
-  }
-  return { ok: true, command: { action, host, scope } };
-}
-
-export function operateWorkflowSkillHosts(options: WorkflowSkillHostOperationOptions): WorkflowSkillHostResult {
-  const packageRoot = path.resolve(options.packageRoot ?? DEFAULT_PACKAGE_ROOT);
-  const userHome = path.resolve(options.userHome ?? homedir());
-  const hosts: WorkflowSkillHost[] = options.host === "all" ? ["codex", "claude"] : [options.host];
-  const groups = hosts.map((host): HostGroup => {
-    const hostRoot = workflowSkillHostRoot(host, options.scope, options.projectRoot, userHome);
-    const managedState = readManagedState(hostRoot);
-    return {
-      hostRoot,
-      managedNames: managedState.names,
-      ...(managedState.text === undefined ? {} : { stateText: managedState.text }),
-      candidates: buildCandidates(host, options.scope, hostRoot, packageRoot, managedState.names),
+export function operateWorkflowSkillHosts(options: WorkflowSkillHostOptions): WorkflowSkillHostResult {
+  const source = path.join(path.resolve(options.packageRoot ?? DEFAULT_PACKAGE_ROOT), "skills");
+  const scope = options.scope;
+  const home = path.resolve(options.userHome ?? homedir());
+  const project = path.resolve(options.projectRoot);
+  const hosts = options.host === "all" ? WORKFLOW_SKILL_HOSTS : [options.host];
+  const groups: WorkflowSkillHostResultGroup[] = [];
+  const prepared: Work[] = [];
+  for (const host of hosts) {
+    const group: WorkflowSkillHostResultGroup = {
+      host,
+      scope,
+      path: workflowSkillDestination(host, scope === "user" ? home : project),
+      defaultClaudeFolder: host === "claude" && scope === "user" && claudeOverride(home) !== undefined,
+      rows: [],
     };
-  });
-  const candidates = groups.flatMap((group) => group.candidates);
-
-  if (options.action === "status") {
-    return { action: options.action, rows: candidates.map((candidate) => resultRow(candidate, "none")) };
+    groups.push(group);
+    try {
+      const directories = resolveSkillDirectories(host, scope, home, project);
+      group.path = [...directories.keys()].at(-1)!;
+      const markerPath = path.join(group.path, WORKFLOW_SKILL_STATE_FILE);
+      const initialMarker = readMarker(markerPath);
+      const candidates = [...KNOWN_NAMES].map((name) =>
+        inspectCandidate(group, source, name, initialMarker, options.action),
+      );
+      group.rows = candidates.map(({ row }) => row);
+      const conflicts = group.rows.filter((row) => row.state === "conflict").map((row) => row.reason);
+      const unavailable = group.rows.filter((row) => row.state === "source-unavailable").map((row) => row.reason);
+      const blockers = options.action === "remove" ? conflicts : [...conflicts, ...unavailable];
+      if (blockers.length) group.blocked = blockers.join("\n");
+      prepared.push({
+        group,
+        tx: new SkillTreeTransaction(directories, options),
+        markerPath,
+        initialMarker,
+        currentMarker: initialMarker.entry,
+        candidates,
+        written: new Map(),
+      });
+    } catch (error) {
+      group.blocked = errorMessage(error);
+    }
   }
 
-  const conflicts = candidates.filter((candidate) => candidate.state === "conflict");
-  if (conflicts.length > 0) {
-    throw new Error(
-      `Refusing to change unmanaged skill path(s): ${conflicts.map((candidate) => candidate.linkPath).join(", ")}`,
-    );
-  }
-  if (options.action === "sync") {
-    const missingSources = candidates.filter(
-      (candidate) =>
-        !candidate.legacy &&
-        (candidate.sourceDir === undefined ||
-          lstatSync(candidate.sourceDir, { throwIfNoEntry: false })?.isDirectory() !== true),
-    );
-    if (missingSources.length > 0) {
-      throw new Error(
-        `Packaged workflow skill source(s) missing: ${missingSources
-          .map((candidate) => candidate.sourceDir ?? candidate.skill)
-          .join(", ")}`,
+  const destinations = groups.map((group) => group.path);
+  if (options.action !== "status") {
+    const blockers = groups.flatMap((group) => (group.blocked ? [group.blocked] : []));
+    if (blockers.length) throw new WorkflowSkillWriteError(blockers.join("\n"), "refused", destinations);
+    const started: Work[] = [];
+    try {
+      for (const work of prepared) {
+        const { initialMarker, candidates, tx } = work;
+        const effects = candidates.some((candidate) => candidate.change);
+        const retained = candidates.filter((candidate) => candidate.entry?.kind === "link" && !candidate.change).length;
+        const claimed = initialMarker.proofs.size;
+        // An unchanged marker is part of idempotence, including its inode.
+        const oldClaim = initialMarker.legacyNames.size > 0 || (initialMarker.entry && !claimed);
+        if (!effects && !oldClaim && retained === claimed) continue;
+        started.push(work);
+        tx.prepare();
+        applySkillWrite(work, options.action);
+      }
+    } catch (error) {
+      const changed = started.some(
+        (work) => work.tx.createdDirectory || work.written.size > 0 || work.currentMarker !== work.initialMarker.entry,
+      );
+      for (const work of started.reverse()) rollback(work);
+      const issues = started.flatMap((work) => work.tx.issues);
+      throw new WorkflowSkillWriteError(
+        errorMessage(error),
+        issues.length ? "incomplete" : changed ? "rolled-back" : "refused",
+        destinations,
+        issues,
       );
     }
   }
+  return { groups, rows: groups.flatMap((group) => group.rows), source };
+}
 
-  const rows: WorkflowSkillHostResultRow[] = [];
-  const snapshots = candidates.map((candidate) => ({
-    path: candidate.linkPath,
-    target: candidate.state === "absent" ? undefined : readlinkSync(candidate.linkPath),
-  }));
-  const mutatedPaths = new Set<string>();
-  const recordMutation = (mutatedPath: string): void => {
-    mutatedPaths.add(mutatedPath);
-    options._testAfterMutation?.(mutatedPath);
+function inspectCandidate(
+  group: WorkflowSkillHostResultGroup,
+  sourceRoot: string,
+  skill: string,
+  marker: Marker,
+  action: WorkflowSkillHostAction,
+): Candidate {
+  const legacy = !(WORKFLOW_SKILL_NAMES as readonly string[]).includes(skill);
+  const destination = path.join(group.path, skill);
+  const source = legacy ? undefined : path.join(sourceRoot, skill);
+  const entry = readSkillEntry(destination, false);
+  const current = entry?.kind === "link" && source !== undefined && path.resolve(group.path, entry.value) === source;
+  const proof = marker.proofs.get(skill);
+  const owned =
+    entry?.kind === "link" &&
+    proof !== undefined &&
+    sameIdentity(entry.identity, proof.identity) &&
+    entry.value === proof.target;
+  const row: WorkflowSkillHostResultRow = {
+    host: group.host,
+    scope: group.scope,
+    skill,
+    path: destination,
+    state: entry ? (current ? "current" : "stale") : "absent",
+    changed: "none",
+    ...(legacy ? { legacy: true } : {}),
   };
+  if (entry && !owned) {
+    row.state = "conflict";
+    const legacyLink = entry.kind === "link" && marker.legacyNames.has(skill);
+    const diagnosis = legacyLink
+      ? `v1 ownership unverified at ${destination} (${current ? "points to current package" : "other target"}).`
+      : `Ownership conflict at ${destination}.`;
+    const manual =
+      entry.kind === "link" && (legacyLink || proof)
+        ? " Inspect and move only disputed links you choose to clear to a backup outside this skills folder, then check again."
+        : "";
+    row.reason = `${diagnosis} Marker: ${path.join(group.path, WORKFLOW_SKILL_STATE_FILE)}.${manual}`;
+  } else if (action !== "remove" && source && !readableSkill(source)) {
+    row.state = "source-unavailable";
+    row.reason = `Package skill source unavailable: ${path.join(source, "SKILL.md")}. Restore the package and check again.`;
+  }
+  const blocked = row.state === "conflict" || row.state === "source-unavailable";
+  const change =
+    !blocked &&
+    (action === "sync"
+      ? legacy
+        ? owned
+          ? "remove"
+          : undefined
+        : !current
+          ? "write"
+          : undefined
+      : action === "remove" && owned
+        ? "remove"
+        : undefined);
+  return { row, entry, source, change: change || undefined };
+}
+
+function readableSkill(source: string): boolean {
+  const manifest = path.join(source, "SKILL.md");
   try {
-    if (options.action === "sync") {
-      for (const group of groups) {
-        writeManagedNames(group.hostRoot, new Set([...group.managedNames, ...WORKFLOW_SKILL_NAMES]));
-        recordMutation(path.join(group.hostRoot, WORKFLOW_SKILL_STATE_FILE));
-      }
+    if (!statSync(manifest).isFile()) return false;
+    accessSync(manifest, constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readMarker(file: string): Marker {
+  const entry = readSkillEntry(file);
+  if (!entry) return { proofs: new Map(), legacyNames: new Set() };
+  const invalid = () => new Error(`Invalid or foreign workflow skill marker: ${file}`);
+  if (entry.kind !== "file") throw invalid();
+
+  let record: { owner?: unknown; schema?: unknown; links?: unknown };
+  try {
+    record = JSON.parse(entry.value);
+  } catch {
+    throw invalid();
+  }
+  if (record?.owner !== OWNER || !Array.isArray(record.links)) throw invalid();
+  if (record.schema === SCHEMA_V1 && record.links.every((name) => typeof name === "string" && KNOWN_NAMES.has(name))) {
+    return { entry, proofs: new Map(), legacyNames: new Set(record.links as string[]) };
+  }
+  if (record.schema !== SCHEMA_V2) throw invalid();
+  const proofs = new Map<string, Proof>();
+  for (const link of record.links) {
+    if (
+      !link ||
+      typeof link.name !== "string" ||
+      !KNOWN_NAMES.has(link.name) ||
+      proofs.has(link.name) ||
+      typeof link.target !== "string" ||
+      !validIdentity(link.identity)
+    ) {
+      throw invalid();
     }
+    proofs.set(link.name, { target: link.target, identity: link.identity });
+  }
+  return { entry, proofs, legacyNames: new Set() };
+}
+
+function validIdentity(value: unknown): value is FileIdentity {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    ["device", "inode", "born", "changed"].every(
+      (key) => typeof entry[key] === "string" && /^-?\d+$/u.test(entry[key]),
+    ) && entry.inode !== "0"
+  );
+}
+
+function markerContents(proofs: Map<string, Proof>): string | undefined {
+  if (!proofs.size) return undefined;
+  const links = [...proofs].map(([name, proof]) => ({ name, ...proof }));
+  return `${JSON.stringify({ schema: SCHEMA_V2, owner: OWNER, links }, null, 2)}\n`;
+}
+
+function applySkillWrite(work: Work, action: "sync" | "remove"): void {
+  const { tx, candidates, markerPath } = work;
+  const requireMarker = () => tx.requireEntry(markerPath, work.currentMarker);
+  for (const candidate of candidates) {
+    const { change, row, entry, source } = candidate;
+    if (!change) continue;
+    if (change === "write") {
+      work.written.set(candidate, tx.write(row.path, entry, "link", source!, requireMarker));
+      row.changed = entry ? "replaced" : "created";
+      row.state = "current";
+    } else {
+      tx.remove(row.path, entry!, requireMarker);
+      work.written.set(candidate, undefined);
+      row.changed = "removed";
+      row.state = "absent";
+    }
+    tx.afterMutation(row.path);
+    if (tx.issues.length) throw new Error(`Could not clean staging entries for ${row.path}`);
+  }
+
+  const proofs = new Map<string, Proof>();
+  for (const candidate of candidates) {
+    const current = work.written.has(candidate) ? work.written.get(candidate) : candidate.entry;
+    if (action === "sync" && current?.kind === "link") {
+      proofs.set(candidate.row.skill, { identity: current.identity, target: current.value });
+    }
+  }
+  const authorize = () => {
+    for (const [candidate, written] of work.written) tx.requireEntry(candidate.row.path, written);
     for (const candidate of candidates) {
-      if (options.action === "sync") {
-        if (candidate.legacy) {
-          if (candidate.state === "stale") {
-            unlinkSync(candidate.linkPath);
-            recordMutation(candidate.linkPath);
-            rows.push(resultRow(candidate, "removed"));
-          } else {
-            rows.push(resultRow(candidate, "none"));
-          }
-          continue;
-        }
-        if (candidate.state === "current") {
-          rows.push(resultRow(candidate, "none"));
-          continue;
-        }
-        const sourceDir = candidate.sourceDir;
-        if (sourceDir === undefined) throw new Error(`Packaged workflow skill is missing: ${candidate.skill}`);
-        mkdirSync(path.dirname(candidate.linkPath), { recursive: true });
-        replaceWithSymlink(candidate.linkPath, sourceDir);
-        recordMutation(candidate.linkPath);
-        rows.push(resultRow(candidate, candidate.state === "stale" ? "replaced" : "created"));
-        continue;
-      }
-
-      if (candidate.state === "current" || candidate.state === "stale") {
-        unlinkSync(candidate.linkPath);
-        recordMutation(candidate.linkPath);
-        rows.push(resultRow(candidate, "removed"));
-      } else {
-        rows.push(resultRow(candidate, "none"));
-      }
+      if (!work.written.has(candidate)) tx.requireEntry(candidate.row.path, candidate.entry);
     }
-    for (const group of groups) {
-      const finalNames = new Set(group.managedNames);
-      if (options.action === "sync") {
-        for (const skill of LEGACY_WORKFLOW_SKILL_NAMES) finalNames.delete(skill);
-        for (const skill of WORKFLOW_SKILL_NAMES) finalNames.add(skill);
-      } else {
-        for (const skill of [...WORKFLOW_SKILL_NAMES, ...LEGACY_WORKFLOW_SKILL_NAMES]) finalNames.delete(skill);
-      }
-      writeManagedNames(group.hostRoot, finalNames);
-      recordMutation(path.join(group.hostRoot, WORKFLOW_SKILL_STATE_FILE));
-    }
-  } catch (error) {
-    const rollbackErrors: string[] = [];
-    for (const snapshot of [...snapshots].reverse()) {
-      if (!mutatedPaths.has(snapshot.path)) continue;
-      try {
-        restoreLink(snapshot.path, snapshot.target);
-      } catch (rollbackError) {
-        rollbackErrors.push(`${snapshot.path}: ${errorMessage(rollbackError)}`);
-      }
-    }
-    for (const group of groups) {
-      const statePath = path.join(group.hostRoot, WORKFLOW_SKILL_STATE_FILE);
-      if (!mutatedPaths.has(statePath)) continue;
-      try {
-        restoreManagedState(group.hostRoot, group.stateText);
-      } catch (rollbackError) {
-        rollbackErrors.push(`${statePath}: ${errorMessage(rollbackError)}`);
-      }
-    }
-    if (rollbackErrors.length > 0) {
-      throw new Error(`${errorMessage(error)}; rollback failed: ${rollbackErrors.join("; ")}`);
-    }
-    throw error;
-  }
-  return { action: options.action, rows };
-}
-
-export function workflowSkillHostResultBlock(result: WorkflowSkillHostResult): OperatorBlock {
-  const changed = result.rows.filter((row) => row.changed !== "none");
-  const active = result.rows.filter((row) => !row.legacy);
-  const primary =
-    result.action === "status"
-      ? `Inspected ${active.length} workflow skill link(s).`
-      : `${result.action === "sync" ? "Synchronized" : "Removed"} ${changed.length} workflow skill link(s).`;
-  return {
-    type: "VIEW",
-    subject: "Workflow skills",
-    primary,
-    body: result.rows.map(
-      (row) =>
-        `${row.host}/${row.scope} ${row.skill}: ${row.changed === "none" ? row.state : row.changed}${row.legacy ? " (legacy)" : ""}`,
-    ),
-    metadata: [
-      `Packaged skill directories remain canonical; managed host entries are symlinks recorded by ${WORKFLOW_SKILL_STATE_FILE}.`,
-    ],
-    controls: ["Inspect: /workflows skills status --host all --scope user"],
   };
-}
-
-function buildCandidates(
-  host: WorkflowSkillHost,
-  scope: WorkflowSkillScope,
-  hostRoot: string,
-  packageRoot: string,
-  managedNames: Set<string>,
-): LinkCandidate[] {
-  const current = WORKFLOW_SKILL_NAMES.map((skill) => {
-    const linkPath = path.join(hostRoot, skill);
-    const sourceDir = path.join(packageRoot, "skills", skill);
-    return {
-      host,
-      scope,
-      skill,
-      linkPath,
-      sourceDir,
-      legacy: false,
-      state: inspectLink(linkPath, sourceDir, managedNames.has(skill)),
-    } satisfies LinkCandidate;
-  });
-  const legacy = LEGACY_WORKFLOW_SKILL_NAMES.map((skill) => {
-    const linkPath = path.join(hostRoot, skill);
-    return {
-      host,
-      scope,
-      skill,
-      linkPath,
-      legacy: true,
-      state: inspectLegacyLink(linkPath, managedNames.has(skill)),
-    } satisfies LinkCandidate;
-  });
-  return [...current, ...legacy];
-}
-
-function workflowSkillHostRoot(
-  host: WorkflowSkillHost,
-  scope: WorkflowSkillScope,
-  projectRoot: string,
-  userHome: string,
-): string {
-  const base = scope === "user" ? userHome : path.resolve(projectRoot);
-  return path.join(base, host === "codex" ? ".agents" : ".claude", "skills");
-}
-
-function inspectLink(linkPath: string, sourceDir: string, managed: boolean): WorkflowSkillLinkState {
-  const stat = lstatSync(linkPath, { throwIfNoEntry: false });
-  if (stat === undefined) return "absent";
-  if (!stat.isSymbolicLink() || !managed) return "conflict";
-  return resolveLinkTarget(linkPath) === path.resolve(sourceDir) ? "current" : "stale";
-}
-
-function inspectLegacyLink(linkPath: string, managed: boolean): WorkflowSkillLinkState {
-  const stat = lstatSync(linkPath, { throwIfNoEntry: false });
-  if (stat === undefined) return "absent";
-  return stat.isSymbolicLink() && managed ? "stale" : "conflict";
-}
-
-function resolveLinkTarget(linkPath: string): string {
-  const rawTarget = readlinkSync(linkPath);
-  return path.resolve(path.dirname(linkPath), rawTarget);
-}
-
-function readManagedState(hostRoot: string): { names: Set<string>; text?: string } {
-  const statePath = path.join(hostRoot, WORKFLOW_SKILL_STATE_FILE);
-  const stat = lstatSync(statePath, { throwIfNoEntry: false });
-  if (stat === undefined) return { names: new Set() };
-  if (!stat.isFile() || stat.isSymbolicLink())
-    throw new Error(`Managed skill state is not a regular file: ${statePath}`);
-  const text = readFileSync(statePath, "utf8");
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`Managed skill state is invalid JSON: ${statePath}: ${errorMessage(error)}`);
-  }
-  const record = value as { schema?: unknown; owner?: unknown; links?: unknown };
-  const allowed = new Set<string>([...WORKFLOW_SKILL_NAMES, ...LEGACY_WORKFLOW_SKILL_NAMES]);
+  const contents = markerContents(proofs);
   if (
-    record?.schema !== WORKFLOW_SKILL_STATE_SCHEMA ||
-    record.owner !== WORKFLOW_SKILL_STATE_OWNER ||
-    !Array.isArray(record.links) ||
-    record.links.some((name) => typeof name !== "string" || !allowed.has(name))
+    work.initialMarker.legacyNames.size ||
+    !isDeepStrictEqual(work.initialMarker.proofs, proofs) ||
+    (!contents && work.currentMarker)
   ) {
-    throw new Error(`Managed skill state has an unsupported shape: ${statePath}`);
-  }
-  return { names: new Set(record.links), text };
-}
-
-function writeManagedNames(hostRoot: string, names: Set<string>): void {
-  const statePath = path.join(hostRoot, WORKFLOW_SKILL_STATE_FILE);
-  if (names.size === 0) {
-    if (lstatSync(statePath, { throwIfNoEntry: false }) !== undefined) unlinkSync(statePath);
-    return;
-  }
-  mkdirSync(hostRoot, { recursive: true });
-  const text = `${JSON.stringify(
-    { schema: WORKFLOW_SKILL_STATE_SCHEMA, owner: WORKFLOW_SKILL_STATE_OWNER, links: [...names].sort() },
-    null,
-    2,
-  )}\n`;
-  writeManagedStateText(hostRoot, text);
-}
-
-function restoreLink(linkPath: string, target: string | undefined): void {
-  const stat = lstatSync(linkPath, { throwIfNoEntry: false });
-  if (target === undefined) {
-    if (stat === undefined) return;
-    if (!stat.isSymbolicLink()) throw new Error("refusing to remove a concurrently replaced non-symlink");
-    unlinkSync(linkPath);
-    return;
-  }
-  if (stat !== undefined && !stat.isSymbolicLink()) {
-    throw new Error("refusing to replace a concurrently created non-symlink");
-  }
-  mkdirSync(path.dirname(linkPath), { recursive: true });
-  replaceWithSymlink(linkPath, target);
-}
-
-function restoreManagedState(hostRoot: string, text: string | undefined): void {
-  const statePath = path.join(hostRoot, WORKFLOW_SKILL_STATE_FILE);
-  if (text !== undefined) {
-    writeManagedStateText(hostRoot, text);
-    return;
-  }
-  const stat = lstatSync(statePath, { throwIfNoEntry: false });
-  if (stat === undefined) return;
-  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("refusing to remove changed provenance state");
-  unlinkSync(statePath);
-}
-
-function writeManagedStateText(hostRoot: string, text: string): void {
-  const statePath = path.join(hostRoot, WORKFLOW_SKILL_STATE_FILE);
-  mkdirSync(hostRoot, { recursive: true });
-  const temporary = `${statePath}.${process.pid}-${Date.now()}`;
-  try {
-    writeFileSync(temporary, text, { encoding: "utf8", mode: 0o600, flag: "wx" });
-    renameSync(temporary, statePath);
-  } catch (error) {
-    try {
-      unlinkSync(temporary);
-    } catch {
-      // The temporary state file may not have been created.
+    if (contents) work.currentMarker = tx.write(markerPath, work.currentMarker, "file", contents, authorize);
+    else if (work.currentMarker) {
+      tx.remove(markerPath, work.currentMarker, authorize);
+      work.currentMarker = undefined;
     }
-    throw error;
+    tx.afterMutation(markerPath);
+    if (tx.issues.length) throw new Error(`Could not clean staging entries for ${markerPath}`);
   }
 }
 
-function replaceWithSymlink(linkPath: string, sourceDir: string): void {
-  const temporary = `${linkPath}.locus-pi-${process.pid}-${Date.now()}`;
-  try {
-    symlinkSync(sourceDir, temporary, "dir");
-    renameSync(temporary, linkPath);
-  } catch (error) {
-    try {
-      unlinkSync(temporary);
-    } catch {
-      // The temporary link may not have been created.
-    }
-    throw error;
+function rollback(work: Work): void {
+  const { tx, markerPath, initialMarker } = work;
+  const proofs = new Map(initialMarker.proofs);
+  let refreshedProofs = false;
+  const noAdditionalGuard = () => undefined;
+  for (const [candidate, written] of [...work.written].reverse()) {
+    const { row, entry } = candidate;
+    tx.attempt(row.path, () => {
+      if (entry?.kind === "link") {
+        const restored = tx.write(row.path, written, "link", entry.value, noAdditionalGuard, true);
+        if (proofs.has(row.skill)) {
+          proofs.set(row.skill, { identity: restored.identity, target: entry.value });
+          refreshedProofs = true;
+        }
+      } else if (written) tx.remove(row.path, written, noAdditionalGuard, true);
+    });
   }
-}
 
-function resultRow(
-  candidate: LinkCandidate,
-  changed: WorkflowSkillHostResultRow["changed"],
-): WorkflowSkillHostResultRow {
-  return {
-    host: candidate.host,
-    scope: candidate.scope,
-    skill: candidate.skill,
-    path: candidate.linkPath,
-    state: candidate.state,
-    changed,
-    ...(candidate.legacy ? { legacy: true as const } : {}),
-  };
+  if (work.currentMarker !== initialMarker.entry || refreshedProofs) {
+    tx.attempt(markerPath, () => {
+      const initial = initialMarker.entry;
+      const text = refreshedProofs ? markerContents(proofs) : initial?.kind === "file" ? initial.value : undefined;
+      if (text !== undefined) tx.write(markerPath, work.currentMarker, "file", text, noAdditionalGuard, true);
+      else if (work.currentMarker) tx.remove(markerPath, work.currentMarker, noAdditionalGuard, true);
+    });
+  }
+  tx.cleanupDirectories();
 }

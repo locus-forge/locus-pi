@@ -44,12 +44,13 @@ export function workflowHelpBlock(): OperatorBlock {
       `Run: ${workflowRunUsage()}`,
       "Continue: /workflows continue <runId> [--answer <text>]",
       "Stop: /workflows stop [runId|last]",
-      "External agent skills: /workflows skills <sync|status|remove> [--host codex|claude|all] [--scope user|project]",
+      "External agent skills: /workflows doctor [check|install|remove] [--host codex|claude|all] [--scope user|project]",
     ],
     metadata: [
       "Emergency compatibility alias: /workflow-stop. Use /workflows <subcommand> for every other operation.",
       "A command starts execution only when the Pi session is provably idle.",
     ],
+    controls: ["Read the last incomplete rollback: /workflows doctor recovery"],
   };
 }
 
@@ -60,7 +61,7 @@ export function workflowUnknownCommandBlock(text: string, available: string[]): 
     primary: `Unknown workflow command: ${text}`,
     body: available.length === 0 ? [] : [`Available curated Package workflows: ${available.join(", ")}`],
     controls: [
-      `Usage: /workflows | list [query] | dashboard | info [name] | status [runId] | result [runId|last] | ${workflowRunUsage("<name|path>", "run")} | continue <runId> [--answer <text>] | stop [runId|last] | skills <sync|status|remove> [--host codex|claude|all] [--scope user|project]`,
+      `Usage: /workflows | list [query] | dashboard | info [name] | status [runId] | result [runId|last] | ${workflowRunUsage("<name|path>", "run")} | continue <runId> [--answer <text>] | stop [runId|last] | doctor [check|install|remove] [--host codex|claude|all] [--scope user|project] | doctor recovery`,
     ],
   };
 }

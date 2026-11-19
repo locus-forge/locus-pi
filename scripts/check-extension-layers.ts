@@ -130,6 +130,12 @@ interface FeatureInternalEntry {
 }
 
 const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
+  ...["skills-fs", "skills-destinations"].map((module) => ({
+    module: `extensions/workflows/command/skill-doctor/${module}.ts`,
+    owner: "extensions/workflows",
+    facade: "extensions/workflows/command/skills.ts",
+    reason: "The workflow skill installer owns physical destinations, staged writes and rollback.",
+  })),
   {
     module: "extensions/agents/fleet/command-center/model.ts",
     owner: "extensions/agents",
@@ -148,24 +154,22 @@ const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
     facade: "extensions/workflows/runtime/workflow-runtime.ts",
     reason: "Input admission and serialized JSON identity belong to workflows; other features consume the DSL facade.",
   },
-  {
-    module: "extensions/workflows/source/workflow-source-structured.ts",
+  ...(
+    [
+      ["structured", "static schema decoding and shape facts are internal source proofs, not an evaluation API."],
+      ["structured-rules", "bounded structured value uses belong to the source-check diagnostic boundary."],
+      ["provenance-query", "binding-model queries are internal facts consumed by source diagnostics."],
+      [
+        "agent-options",
+        "static agent-option policy is internal; consumers use the diagnostic-producing source-check facade.",
+      ],
+    ] as const
+  ).map(([module, reason]) => ({
+    module: `extensions/workflows/source/workflow-source-${module}.ts`,
     owner: "extensions/workflows",
     facade: "extensions/workflows/tool/workflow-source-shape.ts",
-    reason: "static schema decoding and shape facts are internal source proofs, not an evaluation API.",
-  },
-  {
-    module: "extensions/workflows/source/workflow-source-structured-rules.ts",
-    owner: "extensions/workflows",
-    facade: "extensions/workflows/tool/workflow-source-shape.ts",
-    reason: "bounded structured value uses belong to the source-check diagnostic boundary.",
-  },
-  {
-    module: "extensions/workflows/source/workflow-source-provenance-query.ts",
-    owner: "extensions/workflows",
-    facade: "extensions/workflows/tool/workflow-source-shape.ts",
-    reason: "binding-model queries are internal facts consumed by source diagnostics.",
-  },
+    reason,
+  })),
   {
     module: "extensions/workflows/runtime/structured-results/types.ts",
     owner: "extensions/workflows",
@@ -191,12 +195,6 @@ const FEATURE_INTERNAL_MODULES: readonly FeatureInternalEntry[] = [
     owner: "extensions/workflows",
     facade: "extensions/workflows/runtime/workflow-script-identity.ts",
     reason: "v4 closure coverage is an internal AST policy; callers use the script identity assessment.",
-  },
-  {
-    module: "extensions/workflows/source/workflow-source-agent-options.ts",
-    owner: "extensions/workflows",
-    facade: "extensions/workflows/tool/workflow-source-shape.ts",
-    reason: "static agent-option policy is internal; consumers use the diagnostic-producing source-check facade.",
   },
   {
     module: "extensions/workflows/runtime/workflow-workspace-state.ts",
