@@ -212,9 +212,8 @@ export class SkillTreeTransaction {
       if (!restoring) this.hooks._testAtBoundary?.("before-readback", file);
       this.verifyEntry(file, undefined);
     } catch (error) {
-      if (!restoring && (unlinked || (error as NodeJS.ErrnoException).code === "ENOENT")) {
-        this.recordIssue(file, error);
-      }
+      if (!unlinked) this.attempt(file, () => this.verifyEntry(file, previous));
+      else if (!restoring) this.recordIssue(file, error);
       throw error;
     }
   }

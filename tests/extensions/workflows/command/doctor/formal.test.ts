@@ -265,3 +265,105 @@ it("keeps Info and Doctor discoverable in bounded RPC help", async () => {
     "/workflows doctor [check|install|remove] [--host codex|claude|all] [--scope user|project]",
   );
 });
+
+it.each([".agentſ", ".ａｇｅｎｔｓ"])(
+  "refuses missing Unicode alias %s when case rules cannot be established",
+  async (name) => {
+    const f = setup();
+    const alternate = path.join(f.home, name);
+    const selected = path.join(f.home, ".agents");
+    vi.stubEnv("CLAUDE_CONFIG_DIR", alternate);
+
+    const check = await f.fresh("doctor check --host codex");
+    const refused = await f.fresh("doctor install --host codex");
+    expect(refused).toContain("Write refused");
+    expect(check).not.toContain("/workflows doctor install");
+    expect(check).toContain("Cannot determine whether");
+    expect(refused.replace(/\n/gu, "")).toContain(path.join(alternate, "skills"));
+    expect(existsSync(selected)).toBe(false);
+    expect(existsSync(alternate)).toBe(false);
+  },
+);
+
+it("repairs links to an old skill directory even when it shares the new manifest", async () => {
+  const f = setup();
+  const oldPackage = path.join(f.root, "old-package");
+  const newPackage = path.join(f.root, "new-package");
+  for (const [root, guide] of [
+    [oldPackage, "previous"],
+    [newPackage, "current"],
+  ] as const) {
+    for (const name of WORKFLOW_SKILL_NAMES) {
+      const skill = path.join(root, "skills", name);
+      mkdirSync(path.join(skill, "references"), { recursive: true });
+      writeFileSync(path.join(skill, "SKILL.md"), guide);
+      writeFileSync(path.join(skill, "references", "guide.md"), guide);
+    }
+  }
+  fixtureState.packageRoot = oldPackage;
+  await f.run("doctor install --host codex");
+  const link = path.join(f.home, ".agents", "skills", first);
+  const oldManifest = path.join(oldPackage, "skills", first, "SKILL.md");
+  unlinkSync(oldManifest);
+  symlinkSync(path.join(newPackage, "skills", first, "SKILL.md"), oldManifest);
+  fixtureState.packageRoot = newPackage;
+
+  expect(readFileSync(path.join(link, "SKILL.md"), "utf8")).toBe("current");
+  expect(readFileSync(path.join(link, "references", "guide.md"), "utf8")).toBe("previous");
+  expect(await f.fresh("doctor check --host codex")).toContain(`${first}: stale`);
+  expect(await f.fresh("doctor install --host codex")).toContain(`${first}: replaced`);
+  expect(readlinkSync(link)).toBe(path.join(newPackage, "skills", first));
+  expect(readFileSync(path.join(link, "references", "guide.md"), "utf8")).toBe("current");
+  expect(readFileSync(path.join(path.dirname(oldManifest), "references", "guide.md"), "utf8")).toBe("previous");
+  unlinkSync(path.join(newPackage, "skills", first, "SKILL.md"));
+  expect(await f.fresh("doctor check --host codex")).toContain("Package skill source unavailable");
+});
+
+it("reports rejected unlink after a foreign directory replaces an owned link", async () => {
+  const f = setup();
+  const skills = path.join(f.project, ".agents", "skills");
+  const replaced = path.join(skills, first);
+  const laterLink = path.join(skills, second);
+  const marker = path.join(skills, WORKFLOW_SKILL_STATE_FILE);
+  const sentinel = path.join(replaced, "foreign");
+  await f.run("doctor install --host codex --scope project");
+  const before = readFileSync(marker);
+  const laterProof = proof(laterLink);
+  fixtureState.fault = (file, boundary) => {
+    if (file !== replaced || boundary !== "after-guard") return;
+    unlinkSync(replaced);
+    mkdirSync(replaced);
+    writeFileSync(sentinel, "preserve");
+  };
+
+  const outcome = await f.fresh("doctor remove --host codex --scope project");
+  const report = await f.fresh("doctor recovery");
+  expect(readFileSync(sentinel, "utf8")).toBe("preserve");
+  expect(readFileSync(marker)).toEqual(before);
+  expect(proof(laterLink)).toEqual(laterProof);
+  expect(outcome).toContain("Incomplete rollback");
+  expect(report).toMatch(/EPERM|EISDIR|EACCES/u);
+  expect(report).toContain(`Skipped or failed: ${replaced}`);
+  expect(report).toContain("/workflows doctor check --host codex --scope project");
+});
+
+it("keeps a rejected unlink with matching readback a refusal with no recovery record", async () => {
+  const f = setup();
+  await f.run("doctor install --host codex");
+  const link = path.join(f.home, ".agents", "skills", first);
+  const before = proof(link);
+  const unlink = fs.unlinkSync;
+  const spy = vi.spyOn(fs, "unlinkSync").mockImplementation((file) => {
+    if (file === link) throw Object.assign(new Error("Permission denied"), { code: "EACCES" });
+    unlink(file);
+  });
+  syncBuiltinESMExports();
+  try {
+    expect(await f.fresh("doctor remove --host codex")).toContain("Write refused");
+  } finally {
+    spy.mockRestore();
+    syncBuiltinESMExports();
+  }
+  expect(proof(link)).toEqual(before);
+  expect(await f.fresh("doctor recovery")).toContain("No incomplete rollback");
+});

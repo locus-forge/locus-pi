@@ -213,7 +213,7 @@ function inspectCandidate(
   const destination = path.join(group.path, skill);
   const source = legacy ? undefined : path.join(sourceRoot, skill);
   const entry = readSkillEntry(destination, false);
-  const current = entry?.kind === "link" && source !== undefined && sameManifest(destination, source);
+  const current = entry?.kind === "link" && source !== undefined && sameSkillDirectory(destination, source);
   const proof = marker.proofs.get(skill);
   const owned =
     entry?.kind === "link" &&
@@ -261,9 +261,9 @@ function inspectCandidate(
   return { row, entry, source, change: change || undefined };
 }
 
-function sameManifest(link: string, source: string): boolean {
+function sameSkillDirectory(link: string, source: string): boolean {
   try {
-    return realpathSync.native(path.join(link, "SKILL.md")) === realpathSync.native(path.join(source, "SKILL.md"));
+    return realpathSync.native(link) === realpathSync.native(source);
   } catch {
     return false;
   }

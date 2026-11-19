@@ -60,10 +60,10 @@ function resolveLocation(destination: string, links = 0): ResolvedLocation | und
 }
 
 function caseSensitive(directory: string): boolean | undefined {
-  // Observe an existing name without writing a probe into a skills tree.
+  // Observe ASCII case behavior without writing a probe into a skills tree.
   const entries = readdirSync(directory);
   for (const name of entries) {
-    const variant = name.replace(/[a-z]/iu, (letter) =>
+    const variant = name.replace(/[A-Za-z]/u, (letter) =>
       letter === letter.toLowerCase() ? letter.toUpperCase() : letter.toLowerCase(),
     );
     if (variant === name) continue;
@@ -71,6 +71,11 @@ function caseSensitive(directory: string): boolean | undefined {
     return lstatSync(appendPath(directory, variant), { throwIfNoEntry: false }) === undefined;
   }
   return undefined;
+}
+
+function foldMissingName(name: string): string {
+  // Treat compatibility and case-fold matches as possible aliases.
+  return name.normalize("NFKC").toUpperCase().toLowerCase().normalize("NFKC");
 }
 
 function compareLocation(a: ResolvedLocation, b: ResolvedLocation): "shared" | "distinct" | "uncertain" {
@@ -82,11 +87,14 @@ function compareLocation(a: ResolvedLocation, b: ResolvedLocation): "shared" | "
   )
     return "distinct";
   if (a.suffix.every((name, index) => name === b.suffix[index])) return "shared";
-  if (a.suffix.some((name, index) => name.normalize().toLowerCase() !== b.suffix[index]!.normalize().toLowerCase())) {
+  if (a.suffix.some((name, index) => foldMissingName(name) !== foldMissingName(b.suffix[index]!))) {
     return "distinct";
   }
-  const sensitive = caseSensitive(a.ancestor);
-  return sensitive === undefined ? "uncertain" : sensitive ? "distinct" : "shared";
+  // A case-sensitive volume can still match canonically equivalent Unicode spellings.
+  const canonicallyDistinct = a.suffix.some(
+    (name, index) => name.normalize("NFD") !== b.suffix[index]!.normalize("NFD"),
+  );
+  return canonicallyDistinct && caseSensitive(a.ancestor) === true ? "distinct" : "uncertain";
 }
 
 export function resolveSkillDirectories(
@@ -148,7 +156,7 @@ export function resolveSkillDirectories(
       if (relation === "uncertain") {
         return {
           directories,
-          peerBlock: `Cannot determine whether ${selected} and ${peer} are shared: case rules for the missing path are unknown.`,
+          peerBlock: `Cannot determine whether ${selected} and ${peer} are shared. Missing names may be equivalent under filesystem naming rules. Writes are refused until the destinations can be distinguished.`,
         };
       }
     } catch (error) {

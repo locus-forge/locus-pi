@@ -163,7 +163,7 @@ describe("/workflows doctor", () => {
     ]) {
       f.harness.notifications.length = 0;
       await f.run(`doctor ${action}`);
-      expect(f.text()).toContain("Shared destination");
+      expect(f.text()).toContain("Cannot determine whether");
       if (action.startsWith("check")) expect(f.text()).not.toContain("/workflows doctor install");
       else expect(f.text()).toContain("Write refused");
       expect(existsSync(alternate)).toBe(false);
