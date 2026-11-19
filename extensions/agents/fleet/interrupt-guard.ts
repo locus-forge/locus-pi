@@ -1,5 +1,10 @@
 import { agentLiveStore } from "../../_shared/agent-runtime/agent-live-store.js";
-import { hasDismissibleCommandView } from "../../_shared/operator/command-ui.js";
+import {
+  bindWarningEscapeToGuard,
+  hasDismissibleCommandView,
+  observeWarningEscape,
+} from "../../_shared/operator/command-ui.js";
+import { isEscapePress } from "../../_shared/operator/operator-keys.js";
 import { fleetMenuState } from "../../_shared/agent-runtime/fleet-menu.js";
 import { getProjectRoot, getSessionId, type ExtensionContext } from "../../_shared/host/pi-api.js";
 import { workflowBackgroundRunRegistry } from "../../workflows/run/background-run-registry.js";
@@ -21,7 +26,9 @@ export function installAgentInterruptGuard(ctx: ExtensionContext): void {
 
   let confirmationOpen = false;
   const unsubscribe = ctx.ui.onTerminalInput((data) => {
-    if (!isEscapeInput(data) || confirmationOpen) return undefined;
+    if (!isEscapePress(data)) return undefined;
+    observeWarningEscape(ctx);
+    if (confirmationOpen) return undefined;
     const activeRows = activeAgentRows();
     const hasActiveWorkflow = workflowBackgroundRunRegistry().hasActiveSession(getProjectRoot(ctx), getSessionId(ctx));
     if (ctx.isIdle() || (activeRows.length === 0 && !hasActiveWorkflow)) return undefined;
@@ -55,13 +62,13 @@ export function installAgentInterruptGuard(ctx: ExtensionContext): void {
       });
     return { consume: true };
   });
-  guardByUi.set(ctx.ui, unsubscribe);
+  const unbindWarning = bindWarningEscapeToGuard(ctx);
+  guardByUi.set(ctx.ui, () => {
+    unsubscribe();
+    unbindWarning();
+  });
 }
 
 function activeAgentRows() {
   return [...agentLiveStore.rows.values()].filter((row) => row.status === "working" || row.status === "queued");
-}
-
-function isEscapeInput(data: string): boolean {
-  return data === "escape" || data === "\u001b";
 }

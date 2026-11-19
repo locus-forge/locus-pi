@@ -35,12 +35,15 @@ export function setOperatorStatus(
   ctx: ExtensionContext,
   contribution: OperatorStatusContribution,
   terminalWidth = process.stdout.columns ?? 80,
-): void {
+): () => void {
+  const ui = ctx.ui;
   const registry = getOperatorStatusRegistry();
-  const contributions = registry.byUi.get(ctx.ui) ?? new Map<string, OperatorStatusContribution>();
-  contributions.set(contribution.id, { ...contribution });
-  registry.byUi.set(ctx.ui, contributions);
+  const contributions = registry.byUi.get(ui) ?? new Map<string, OperatorStatusContribution>();
+  const published = { ...contribution };
+  contributions.set(published.id, published);
+  registry.byUi.set(ui, contributions);
   publishOperatorStatus(ctx, contributions, terminalWidth);
+  return clearSelectedOperatorStatus(ctx, ui, published);
 }
 
 export function clearOperatorStatus(
@@ -59,6 +62,26 @@ export function clearOperatorStatus(
   }
 
   publishOperatorStatus(ctx, contributions, terminalWidth);
+}
+
+/** Capture this contribution so a later publication under the same ID stays visible. */
+export function prepareOperatorStatusClear(ctx: ExtensionContext, id: string): (() => void) | undefined {
+  const ui = ctx.ui;
+  const selected = getOperatorStatusRegistry().byUi.get(ui)?.get(id);
+  if (selected === undefined) return undefined;
+  return clearSelectedOperatorStatus(ctx, ui, selected);
+}
+
+function clearSelectedOperatorStatus(
+  ctx: ExtensionContext,
+  ui: ExtensionContext["ui"],
+  selected: OperatorStatusContribution,
+): () => void {
+  return () => {
+    if (ctx.ui === ui && getOperatorStatusRegistry().byUi.get(ui)?.get(selected.id) === selected) {
+      clearOperatorStatus(ctx, selected.id);
+    }
+  };
 }
 
 export function clearAllOperatorStatuses(ctx: ExtensionContext): void {

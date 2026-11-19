@@ -1,5 +1,5 @@
 import type { CustomUiComponent, ExtensionContext, WidgetFactoryTui } from "../host/pi-api.js";
-import { setDismissibleView } from "./command-ui.js";
+import { setCommandWidget, setCommandWidgetPresented, type CommandWidgetPresentation } from "./command-ui.js";
 import {
   renderOperatorBlock,
   renderOperatorBlockPlain,
@@ -56,7 +56,7 @@ class OperatorBlockWidget implements CustomUiComponent {
     private readonly block: OperatorBlock,
     private readonly theme?: OperatorThemeLike,
     private readonly onOverflow?: SetOperatorWidgetOptions["onOverflow"],
-    private readonly setPresented?: (presented: boolean) => void,
+    private readonly setPresented?: (presented: boolean) => boolean,
   ) {
     // Presentation asks for a normal differential paint. A forced full redraw
     // here clears and repaints the whole frame for every operator block, which
@@ -89,15 +89,13 @@ class OperatorBlockWidget implements CustomUiComponent {
   }
 
   private hide(): (() => void) | undefined {
-    if (this.disposed || this.hidden) return undefined;
+    if (this.disposed || this.hidden || this.setPresented?.(false) === false) return undefined;
     this.hidden = true;
-    this.setPresented?.(false);
     this.tui.requestRender();
     return () => {
       // Pi disposes this component whenever the key is replaced or cleared.
-      if (this.disposed || !this.hidden) return;
+      if (this.disposed || !this.hidden || this.setPresented?.(true) === false) return;
       this.hidden = false;
-      this.setPresented?.(true);
       this.tui.requestRender();
     };
   }
@@ -129,8 +127,9 @@ export function setOperatorWidget(
 
   const placement = { placement: options.placement ?? operatorBlockPlacement(block) };
   if (ctx.mode === "tui") {
-    const setPresented = (presented: boolean) => setDismissibleView(ctx, key, presented && block.type === "VIEW");
-    ctx.ui.setWidget(
+    let presentation: CommandWidgetPresentation | undefined;
+    setCommandWidget(
+      ctx,
       key,
       (tui, theme) =>
         new OperatorBlockWidget(
@@ -138,20 +137,25 @@ export function setOperatorWidget(
           block,
           operatorTheme(theme) ?? ctx.ui.theme,
           options.onOverflow,
-          setPresented,
+          (presented) => presentation !== undefined && setCommandWidgetPresented(ctx, presentation, presented),
         ),
       placement,
+      block.type,
+      (published) => {
+        presentation = published;
+      },
     );
-    setPresented(true);
     return;
   }
 
-  ctx.ui.setWidget(
+  setCommandWidget(
+    ctx,
     key,
     renderOperatorBlockPlain(block, options.fallbackWidth ?? 80, {
       maxLines: HOST_STRING_ARRAY_WIDGET_LINES,
     }),
     placement,
+    block.type,
   );
 }
 

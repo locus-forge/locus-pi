@@ -1,3 +1,5 @@
+import { isKeyRelease, matchesKey } from "@earendil-works/pi-tui";
+
 /**
  * extensions/_shared/operator/operator-keys.ts — The raw terminal key vocabulary shared
  * by every operator-facing TUI component.
@@ -28,6 +30,11 @@ export function isSpace(data: string): boolean {
 
 export function isEscape(data: string): boolean {
   return data === "\x1b";
+}
+
+/** Raw listeners run before Pi filters key releases. */
+export function isEscapePress(data: string): boolean {
+  return !isKeyRelease(data) && (matchesKey(data, "escape") || data === "escape");
 }
 
 export function isCtrlC(data: string): boolean {

@@ -99,11 +99,25 @@ See [replay details](replay.md) and [operator handoffs](recovery-and-continuatio
 
 `/workflows` is the canonical visible workflow command. Bare `/workflows`
 opens its command menu with all nine exact verbs — `list`, `dashboard`, `info`,
-`status`, `result`, `run`, `continue`, `stop`, and `skills` — and a description beside
+`status`, `result`, `run`, `continue`, `stop`, and `doctor` — and a description beside
 each verb when interactive select is available in TUI; RPC, headless hosts, and
 TUI without select receive the same help as a typed command fallback. Direct typed forms such as
 `/workflows run <name>` remain available. `/workflow-stop` remains the one
 emergency compatibility alias; every other operation uses `/workflows`.
+
+Use `/workflows status` after a warning to clear the previous panel and inspect run evidence.
+Live progress stays visible. A built-in command such as `/settings` or a third-party
+command outside the workflow lifecycle leaves a stale workflow warning visible.
+Press Escape to dismiss an unpinned warning. Pi still handles Escape normally, and the
+warning's record and run details remain available.
+
+Pi may wait to run a workflow command you enter while another command is still running.
+If an unpinned workflow error panel appears during that wait, it can disappear when your
+command starts. Your command still runs. For a failed run, `/workflows status <runId>` opens
+the run and its stages. The full error stays in that run's `runtime/result.json`:
+`.locus-pi/runs/<runId>/` for a root run, or `attempts/<runId>/` (a `--resume` attempt) and
+`children/<runId>/` (a saved child) inside the original run's folder. The project error log
+`.locus-pi/logs/errors.jsonl` keeps a shortened message.
 
 #### Start from the catalog
 

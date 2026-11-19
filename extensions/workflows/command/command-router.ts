@@ -21,7 +21,7 @@ import { WorkflowCatalogViewer, WorkflowInfoViewer } from "../catalog/catalog-vi
 import { workflowArgumentCompletions, workflowFlatCommandCompletions } from "../launch/command-completions.js";
 import { formatWorkflowCommandToken, parseContinueCommand, parseWorkflowCommandToken } from "./command-parser.js";
 import type { WorkflowHandoffPumpResult } from "../operator/operator-handoff-controller.js";
-import { clearWorkflowWidget, presentWorkflowHandoffPumpResult } from "../operator/operator-surface.js";
+import { presentWorkflowHandoffPumpResult } from "../operator/operator-surface.js";
 import {
   ambiguousWorkflowRunBlock,
   assertNever,
@@ -115,7 +115,6 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
     // Bare `/workflows` is the interactive command chooser. Noninteractive
     // hosts receive the same grammar as a read-only block instead of a prompt.
     if (text === "") {
-      clearWorkflowWidget(ctx, WORKFLOW_LIVE_WIDGET_KEY);
       if (workflowMenuAvailable(ctx)) {
         await openWorkflowCommandMenu(
           ctx,
@@ -155,7 +154,6 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
       const workingDirectory = getWorkingDirectory(ctx);
       const catalog = buildWorkflowCatalogModel(projectRoot, workingDirectory, query === "" ? undefined : query);
       if (ctx.mode === "tui" && ctx.hasUI !== false && ctx.ui.custom !== undefined) {
-        clearWorkflowWidget(ctx, "workflows");
         let intent: WorkflowBrowserIntent | undefined;
         try {
           intent = await requestInlineOperatorInteraction<WorkflowBrowserIntent | undefined>(
@@ -395,7 +393,7 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
       command: "workflows",
       group: "workflows",
       surfaces: ["transient-widget", "status", "artifact-write", "no-ui"],
-      transientWidgets: ["workflows", WORKFLOW_LIVE_WIDGET_KEY],
+      acceptedCommandWidgets: ["workflows", WORKFLOW_LIVE_WIDGET_KEY],
     },
     {
       // The palette shows this next to every other command, so it says what the
@@ -689,7 +687,7 @@ function registerWorkflowCommandAliases(
         command: commandName,
         group: "workflows",
         surfaces: ["transient-widget", "status", "artifact-write", "no-ui"],
-        transientWidgets: ["workflows", WORKFLOW_LIVE_WIDGET_KEY],
+        acceptedCommandWidgets: ["workflows", WORKFLOW_LIVE_WIDGET_KEY],
       },
       {
         description: flatWorkflowCommandDescription(command),
@@ -753,7 +751,6 @@ async function presentWorkflowRunResultText(
   }
   const title = `workflow result · run ${read.runId}`;
   if (ctx.mode === "tui" && ctx.hasUI !== false && ctx.ui.custom !== undefined) {
-    clearWorkflowWidget(ctx, "workflows");
     try {
       await requestInlineOperatorInteraction<void>(
         ctx,
@@ -792,7 +789,6 @@ async function openWorkflowRunViewer(
   runId?: string,
 ): Promise<boolean> {
   if (ctx.mode !== "tui" || ctx.hasUI === false || ctx.ui.custom === undefined) return false;
-  clearWorkflowWidget(ctx, "workflows");
   try {
     await requestInlineOperatorInteraction<void>(
       ctx,
