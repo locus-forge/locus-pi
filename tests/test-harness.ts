@@ -138,6 +138,7 @@ export function createHarness(
     theme?: ThemeLike;
     mode?: "tui" | "rpc" | "json" | "print";
     isStreaming?: boolean;
+    getFocusedComponent?: () => unknown;
   } = {},
 ): Harness {
   const commands = new Map<string, CommandOptions>();
@@ -280,7 +281,15 @@ export function createHarness(
             widgets.set(key, "");
             return;
           }
-          const component = content({ requestRender: () => {} }, {}) as CustomUiComponent;
+          const component = content(
+            {
+              requestRender: () => {},
+              ...(opts.getFocusedComponent && {
+                getFocusedComponent: opts.getFocusedComponent,
+              }),
+            },
+            {},
+          ) as CustomUiComponent;
           widgets.set(key, typeof component.render === "function" ? component.render(80).join("\n") : "");
           return;
         }

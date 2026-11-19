@@ -11,6 +11,7 @@ import {
 import type { AgentTranscriptToolBlock } from "../../../../extensions/_shared/agent-runtime/agent-live-transcript.js";
 import { statusMeta } from "../../../../extensions/_shared/agent-runtime/agent-live-panel.js";
 import { DEFAULT_RENDER_MIN_INTERVAL_MS } from "../../../../extensions/_shared/host/render-scheduler.js";
+import { observeCommandUiFocus } from "../../../../extensions/_shared/operator/command-ui.js";
 import agents from "../../../../extensions/agents/index.js";
 import {
   AgentSessionViewer,
@@ -1060,21 +1061,20 @@ describe("AgentSessionViewer", () => {
     await emit(h, "session_start");
     const row = agentLiveStore.begin({ id: "guarded-viewer", agentName: "reviewer", label: "Review" });
     const done = vi.fn();
-    const tui = { terminal: { rows: 8, columns: 80 }, requestRender: vi.fn() };
+    const tui = {
+      terminal: { rows: 8, columns: 80 },
+      requestRender: vi.fn(),
+      getFocusedComponent: (): AgentSessionViewer => viewer,
+    };
     const viewer = new AgentSessionViewer(executionFor(row.id), tui, done, capability());
 
-    expect([...h.terminalInputHandlers].map((handler) => handler("down")).every((result) => result === undefined)).toBe(
-      true,
-    );
+    observeCommandUiFocus(h.ctx, tui, viewer);
+    expect([...h.terminalInputHandlers].every((handler) => handler("down") === undefined)).toBe(true);
     tui.requestRender.mockClear();
     viewer.handleInput("down");
     expect(tui.requestRender).not.toHaveBeenCalled();
-
-    expect(
-      [...h.terminalInputHandlers].map((handler) => handler("escape")).every((result) => result === undefined),
-    ).toBe(true);
+    expect([...h.terminalInputHandlers].some((handler) => handler("escape")?.consume)).toBe(true);
     expect(h.confirmCalls).toHaveLength(0);
-    viewer.handleInput("escape");
     expect(done).toHaveBeenCalledTimes(1);
   });
 

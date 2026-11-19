@@ -1,4 +1,5 @@
 import type { CustomUiFactory, ExtensionContext } from "../host/pi-api.js";
+import { observeCommandUiFocus } from "./command-ui.js";
 
 interface InlineInteractionQueue {
   tail: Promise<void>;
@@ -181,7 +182,7 @@ export async function requestInlineOperatorInteraction<T>(
       return await Promise.race([
         custom.call(
           ctx.ui,
-          wrapFactoryDisposal(factory, releaseSlot, takeSlot, () => ownsSlot, abandon, mount),
+          wrapFactoryDisposal(ctx, factory, releaseSlot, takeSlot, () => ownsSlot, abandon, mount),
           INLINE_OPERATOR_INTERACTION_OPTIONS,
         ) as Promise<T>,
         failed,
@@ -298,6 +299,7 @@ function currentGenerationOwner(ctx: ExtensionContext): object {
  * one.
  */
 function wrapFactoryDisposal<T>(
+  ctx: ExtensionContext,
   factory: CustomUiFactory<T>,
   releaseSlot: () => void,
   takeSlot: () => void,
@@ -358,6 +360,7 @@ function wrapFactoryDisposal<T>(
       }
     };
     mounted = component;
+    if (ownsSlot()) observeCommandUiFocus(ctx, tui, component);
     mount.current = component;
     mount.inFlight -= 1;
     takeSlot();

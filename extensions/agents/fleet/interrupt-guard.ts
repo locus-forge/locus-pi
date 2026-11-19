@@ -1,9 +1,7 @@
 import { agentLiveStore } from "../../_shared/agent-runtime/agent-live-store.js";
-import { hasDismissibleCommandView, isEscapePress } from "../../_shared/operator/command-ui.js";
-import { fleetMenuState } from "../../_shared/agent-runtime/fleet-menu.js";
+import { isEscapePress, routeFocusedEscape } from "../../_shared/operator/command-ui.js";
 import { getProjectRoot, getSessionId, type ExtensionContext } from "../../_shared/host/pi-api.js";
 import { workflowBackgroundRunRegistry } from "../../workflows/run/background-run-registry.js";
-import { hasActiveAgentSessionViewer } from "./session-viewer.js";
 
 const guardByUi = new WeakMap<object, () => void>();
 
@@ -20,14 +18,15 @@ export function installAgentInterruptGuard(ctx: ExtensionContext): void {
     return;
 
   let confirmationOpen = false;
+  const sessionId = getSessionId(ctx);
   const unsubscribe = ctx.ui.onTerminalInput((data) => {
-    if (!isEscapePress(data) || confirmationOpen) return undefined;
+    if (guardByUi.get(ctx.ui) !== unsubscribe || getSessionId(ctx) !== sessionId || !isEscapePress(data))
+      return undefined;
     const activeRows = activeAgentRows();
-    const hasActiveWorkflow = workflowBackgroundRunRegistry().hasActiveSession(getProjectRoot(ctx), getSessionId(ctx));
+    const hasActiveWorkflow = workflowBackgroundRunRegistry().hasActiveSession(getProjectRoot(ctx), sessionId);
     if (ctx.isIdle() || (activeRows.length === 0 && !hasActiveWorkflow)) return undefined;
-    // These surfaces own Escape as "close/back". Let their component or the
-    // shared transient-view listener consume it; closing a view never aborts.
-    if (fleetMenuState.focused || hasActiveAgentSessionViewer() || hasDismissibleCommandView(ctx)) return undefined;
+    if (routeFocusedEscape(ctx)) return { consume: true };
+    if (confirmationOpen) return { consume: true };
     // Workflow cancellation is command-only. Consume the host interrupt key so
     // inspecting or returning from a workflow surface cannot abort its turn.
     if (hasActiveWorkflow || activeRows.some((row) => row.workflowRunId !== undefined)) return { consume: true };

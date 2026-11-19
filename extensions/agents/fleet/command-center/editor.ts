@@ -1,5 +1,6 @@
 import { CustomEditor, getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import type { ExtensionContext, EditorFactory } from "../../../_shared/host/pi-api.js";
+import { observeCommandUiFocus } from "../../../_shared/operator/command-ui.js";
 
 /** Editor-local hook: modal/overlay focus and nonempty cursor navigation remain Pi-owned. */
 export function installCommandCenterEditor(ctx: ExtensionContext, open: () => void): () => void {
@@ -13,6 +14,7 @@ export function installCommandCenterEditor(ctx: ExtensionContext, open: () => vo
         keys as ConstructorParameters<typeof CustomEditor>[2],
       )) as CustomEditor;
     guardCommandCenterInput(editor, open);
+    observeCommandUiFocus(ctx, tui, previous === undefined ? editor : undefined, factory);
     return editor;
   };
   ctx.ui.setEditorComponent(factory);

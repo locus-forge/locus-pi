@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import agents from "../../extensions/agents/index.js";
 import model from "../../extensions/model/index.js";
@@ -19,6 +19,10 @@ import {
   presentWorkflowHandoffPumpResult,
   setWorkflowLaunchStatus,
 } from "../../extensions/workflows/operator/operator-surface.js";
+import {
+  WorkflowOperatorHandoffController,
+  type WorkflowHandoffPumpResult,
+} from "../../extensions/workflows/operator/operator-handoff-controller.js";
 import { WORKFLOW_LIVE_WIDGET_KEY } from "../../extensions/workflows/operator/progress-widget.js";
 import { ensureWorkflowRunDir, workflowJournalFile } from "../../extensions/workflows/runtime/workflow-run-layout.js";
 import { workflowResultFile } from "../../extensions/workflows/runtime/workflow-result.js";
@@ -27,7 +31,8 @@ import { createHarness, emit } from "../test-harness.js";
 
 describe("command UI lifecycle", () => {
   it("dismisses the latest passive VIEW with Escape and leaves no raw listener behind", async () => {
-    const h = createHarness();
+    const editor = Object.assign(Object.create(CustomEditor.prototype), { isShowingAutocomplete: () => false });
+    const h = createHarness(process.cwd(), { getFocusedComponent: () => editor });
     delete h.ctx.ui.custom;
     workflows(h.pi);
 
@@ -105,13 +110,15 @@ describe("command UI lifecycle", () => {
     const h = createHarness();
     workflows(h.pi);
     const run = h.commands.get("workflows")!.handler;
+    setOperatorWidget(h.ctx, "workflows", { type: "VIEW", subject: "Old view", primary: "Old evidence" });
+    const oldListener = [...h.terminalInputHandlers][0]!;
     await run("status t162-missing-run", h.ctx);
     expect(h.widgets.get("workflows")).toContain("[WARN]");
     // A handoff failure can render while the input accepted by Pi is still queued.
     presentWorkflowHandoffPumpResult(h.ctx, { status: "invalid", message: "Handoff fixture warning" });
     expect(h.widgets.get("workflows")).toContain("Handoff fixture warning");
     setOperatorWidget(h.ctx, "workflows", { type: "ERROR", subject: "Late failure", primary: "Compaction fixture" });
-    for (const listener of h.terminalInputHandlers) expect(listener("\x1b[27u")?.consume).not.toBe(true);
+    expect(oldListener("\x1b[27u")).toBeUndefined();
     expect(h.widgets.get("workflows")).toContain("[ERROR] Late failure");
 
     await emit(h, "input", { text: "queued text", source: "interactive" });
@@ -120,6 +127,41 @@ describe("command UI lifecycle", () => {
     await run("list", h.ctx);
     expect(h.widgets.get("workflows")).toBe("");
     expect(h.customComponents).toHaveLength(1);
+  });
+
+  it("keeps a rebound VIEW safe from the old listener after an asynchronous handoff warning", async () => {
+    const editor = Object.assign(Object.create(CustomEditor.prototype), { isShowingAutocomplete: () => false });
+    const h = createHarness(process.cwd(), { getFocusedComponent: () => editor });
+    const view = { type: "VIEW", subject: "Workflow view", primary: "Recorded evidence" } as const;
+    let finish!: (result: WorkflowHandoffPumpResult) => void;
+    const result = new Promise<WorkflowHandoffPumpResult>((resolve) => {
+      finish = resolve;
+    });
+    const pump = vi.spyOn(WorkflowOperatorHandoffController.prototype, "pump").mockReturnValueOnce(result);
+    workflows(h.pi);
+    try {
+      await emit(h, "session_start");
+      setOperatorWidget(h.ctx, "workflows", view);
+      const oldListener = [...h.terminalInputHandlers][0]!;
+      await emit(h, "agent_settled");
+      await vi.waitFor(() => expect(pump).toHaveBeenCalledOnce());
+      finish({ status: "invalid", message: "Late handoff warning" });
+      await vi.waitFor(() => expect(h.widgets.get("workflows")).toContain("Late handoff warning"));
+      expect(oldListener("\x1b[27u")).toBeUndefined();
+      expect(h.widgets.get("workflows")).toContain("Late handoff warning");
+
+      await emit(h, "session_shutdown");
+      h.ctx.session!.id = "rebound-session";
+      await emit(h, "session_start");
+      setOperatorWidget(h.ctx, "workflows", view);
+      expect(oldListener("\x1b[27u")).toBeUndefined();
+      expect(h.widgets.get("workflows")).toContain("[VIEW] Workflow view");
+      const listener = [...h.terminalInputHandlers][0]!;
+      expect(listener("\x1b[27;1:3u")).toBeUndefined();
+      expect(listener("\x1b[27u")).toEqual({ consume: true });
+    } finally {
+      pump.mockRestore();
+    }
   });
 
   it("preserves a fresh ERROR rendered during cleanup through the catalog", async () => {

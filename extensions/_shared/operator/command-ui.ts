@@ -1,5 +1,7 @@
-import { isKeyRelease, matchesKey } from "@earendil-works/pi-tui";
+import * as piHost from "@earendil-works/pi-coding-agent";
+import { Editor, isKeyRelease, matchesKey } from "@earendil-works/pi-tui";
 import type { OperatorSurfaceType } from "./operator-ui.js";
+import { getSessionId } from "../host/pi-api.js";
 import type {
   CommandArgs,
   CommandOptions,
@@ -7,6 +9,7 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
+  EditorFactory,
 } from "../host/pi-api.js";
 
 export type CommandUiSurface =
@@ -40,6 +43,19 @@ interface CommandUiRuntimeScope {
   owners: Set<CommandUiOwnerRegistration>;
   widgets: Map<string, CommandWidgetPresentation>;
   terminalInputUnsubscribe: (() => void) | undefined;
+  focus?: CommandUiFocus;
+}
+
+interface FocusTui {
+  getFocusedComponent(): unknown;
+  requestRender(): void;
+}
+
+interface CommandUiFocus {
+  tui: FocusTui;
+  sessionId: string;
+  localTargets: WeakSet<object>;
+  mainEditor?: { component: object; factory: EditorFactory };
 }
 
 export interface CommandWidgetPresentation {
@@ -162,7 +178,16 @@ export function setCommandWidget(
   surface?: OperatorSurfaceType,
   onPublished?: (presentation: CommandWidgetPresentation) => void,
 ): void {
-  ctx.ui.setWidget(key, content, options);
+  ctx.ui.setWidget(
+    key,
+    typeof content === "function"
+      ? (tui, theme) => {
+          observeCommandUiFocus(ctx, tui);
+          return content(tui, theme);
+        }
+      : content,
+    options,
+  );
   const scope = runtimeScope(ctx);
   // The object identity is the version. Replacing even identical content invalidates earlier selections.
   scope.widgets.delete(key);
@@ -309,10 +334,84 @@ function latestDismissibleView(scope: CommandUiRuntimeScope): CommandWidgetPrese
   return latest;
 }
 
-/** True when the existing passive VIEW handler can consume Escape. WARNs do not claim Escape. */
-export function hasDismissibleCommandView(ctx: ExtensionContext): boolean {
-  const scope = commandUiRegistry().byUi.get(ctx.ui);
-  return scope?.terminalInputUnsubscribe !== undefined && latestDismissibleView(scope) !== undefined;
+export function observeCommandUiFocus(
+  ctx: ExtensionContext,
+  tui: unknown,
+  component?: object,
+  factory?: EditorFactory,
+): void {
+  const host = tui as Partial<FocusTui> | undefined;
+  if (typeof host?.getFocusedComponent !== "function" || typeof host.requestRender !== "function") return;
+  const scope = runtimeScope(ctx);
+  const sessionId = getSessionId(ctx);
+  const focus =
+    scope.focus?.sessionId === sessionId
+      ? scope.focus
+      : { tui: host as FocusTui, sessionId, localTargets: new WeakSet<object>() };
+  focus.tui = host as FocusTui;
+  if (component !== undefined) {
+    if (factory !== undefined) focus.mainEditor = { component, factory };
+    else focus.localTargets.add(component);
+  }
+  scope.focus = focus;
+}
+
+const nativeEscapeTargetNames = [
+  "ExtensionSelectorComponent",
+  "ExtensionInputComponent",
+  "ExtensionEditorComponent",
+  "SettingsSelectorComponent",
+  "ModelSelectorComponent",
+  "TreeSelectorComponent",
+  "SessionSelectorComponent",
+  "UserMessageSelectorComponent",
+  "ThemeSelectorComponent",
+  "ThinkingSelectorComponent",
+  "ShowImagesSelectorComponent",
+  "OAuthSelectorComponent",
+  "LoginDialogComponent",
+] as const;
+
+function isPiEditor(component: unknown): component is piHost.CustomEditor {
+  return Object.hasOwn(piHost, "CustomEditor") && component instanceof piHost.CustomEditor;
+}
+
+/** Deliver to the identified local owner now, while that component still has focus. */
+export function routeFocusedEscape(ctx: ExtensionContext): boolean {
+  const focus = currentFocus(ctx);
+  const component = focus?.tui.getFocusedComponent();
+  if (focus === undefined || typeof component !== "object" || component === null) return false;
+  if (isPiEditor(component) && component.isShowingAutocomplete()) {
+    Editor.prototype.handleInput.call(component, "\x1b");
+  } else {
+    if (
+      !focus.localTargets.has(component) &&
+      !nativeEscapeTargetNames.some((name) => {
+        const target = Object.hasOwn(piHost, name) ? piHost[name] : undefined;
+        return typeof target === "function" && component instanceof target;
+      })
+    )
+      return false;
+    const local = component as { handleInput?: (data: string) => void | Promise<void> };
+    if (typeof local.handleInput !== "function") return false;
+    void local.handleInput("\x1b");
+  }
+  focus.tui.requestRender();
+  return true;
+}
+
+function currentFocus(ctx: ExtensionContext): CommandUiFocus | undefined {
+  const focus = commandUiRegistry().byUi.get(ctx.ui)?.focus;
+  return focus?.sessionId === getSessionId(ctx) ? focus : undefined;
+}
+
+function hasIdlePrimaryEditor(ctx: ExtensionContext): boolean {
+  if (!ctx.isIdle() || ctx.ui.getEditorComponent === undefined) return false;
+  const focus = currentFocus(ctx);
+  const component = focus?.tui.getFocusedComponent();
+  const factory = ctx.ui.getEditorComponent();
+  if (factory === undefined) return isPiEditor(component);
+  return focus?.mainEditor?.factory === factory && focus.mainEditor.component === component;
 }
 
 function installTerminalInputListener(ctx: ExtensionContext, scope: CommandUiRuntimeScope): void {
@@ -321,12 +420,17 @@ function installTerminalInputListener(ctx: ExtensionContext, scope: CommandUiRun
 
   // Pi clears raw listeners when an extension session is rebound.
   scope.terminalInputUnsubscribe?.();
-  scope.terminalInputUnsubscribe = onTerminalInput.call(ctx.ui, (data) => {
-    if (!isEscapePress(data)) return undefined;
+  const sessionId = getSessionId(ctx);
+  const unsubscribe = onTerminalInput.call(ctx.ui, (data) => {
+    if (scope.terminalInputUnsubscribe !== unsubscribe || getSessionId(ctx) !== sessionId || !isEscapePress(data))
+      return undefined;
+    if (routeFocusedEscape(ctx)) return { consume: true };
+    if (!hasIdlePrimaryEditor(ctx)) return undefined;
     const presentation = latestDismissibleView(scope);
     if (presentation !== undefined && clearCommandWidgetPresentation(ctx, presentation)) return { consume: true };
     return undefined;
   });
+  scope.terminalInputUnsubscribe = unsubscribe;
 }
 
 function stopTerminalInputListenerWhenIdle(scope: CommandUiRuntimeScope): void {
