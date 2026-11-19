@@ -99,7 +99,7 @@ See [replay details](replay.md) and [operator handoffs](recovery-and-continuatio
 
 `/workflows` is the canonical visible workflow command. Bare `/workflows`
 opens its command menu with all nine exact verbs — `list`, `dashboard`, `info`,
-`status`, `result`, `run`, `continue`, `stop`, and `skills` — and a description beside
+`status`, `result`, `run`, `continue`, `stop`, and `doctor` — and a description beside
 each verb when interactive select is available in TUI; RPC, headless hosts, and
 TUI without select receive the same help as a typed command fallback. Direct typed forms such as
 `/workflows run <name>` remain available. `/workflow-stop` remains the one
