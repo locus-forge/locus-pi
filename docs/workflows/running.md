@@ -111,6 +111,12 @@ command outside the workflow lifecycle leaves a stale workflow warning visible.
 Press Escape to dismiss an unpinned warning. Pi still handles Escape normally, and the
 warning's record and run details remain available.
 
+Pi may wait to run a workflow command you enter while another command is still running.
+If an unpinned workflow error panel appears during that wait, it can disappear when your
+command starts. Your command still runs. For a failed run, `/workflows status <runId>` opens
+the run and its stages. The full error stays in `.locus-pi/runs/<runId>/runtime/result.json`
+and the project error log at `.locus-pi/logs/errors.jsonl`.
+
 #### Start from the catalog
 
 `Start` restores editable text to the main editor; it never submits or starts a
