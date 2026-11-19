@@ -119,16 +119,26 @@ function workflowDoctorCompletions(prefix: string): CommandArgumentCompletion[] 
   }
   if (verb === "recovery" || (!actions.includes(verb) && !verb.startsWith("--"))) return null;
 
-  const last = tokens.at(-1);
-  if (last === "--host" || last === "--scope") {
-    if (!endsWithSpace) return null;
-    const values = last === "--host" ? ["codex", "claude", "all"] : ["user", "project"];
-    return values.map((value) => ({ value: `${prefix}${value} `, label: value }));
+  const options = { "--host": ["codex", "claude", "all"], "--scope": ["user", "project"] };
+  const completed = tokens.slice(verb.startsWith("--") ? 1 : 2);
+  const partial = endsWithSpace ? "" : (completed.pop() ?? "");
+  const before = partial ? prefix.slice(0, -partial.length) : prefix;
+  const seen = new Set<string>();
+  let values: string[] | undefined;
+  for (const [index, token] of completed.entries()) {
+    if (index % 2 === 0) {
+      if (!Object.hasOwn(options, token) || seen.has(token)) return null;
+      seen.add(token);
+      values = options[token as keyof typeof options];
+    } else {
+      if (!values?.includes(token)) return null;
+      values = undefined;
+    }
   }
-  if (!endsWithSpace) return null;
-  return ["--host", "--scope"]
-    .filter((option) => !tokens.includes(option))
-    .map((option) => ({ value: `${prefix}${option} `, label: option }));
+  const matches = (values ?? Object.keys(options).filter((flag) => !seen.has(flag)))
+    .filter((value) => value.startsWith(partial))
+    .map((value) => ({ value: `${before}${value} `, label: value }));
+  return matches.length ? matches : null;
 }
 
 function workflowRunOptionCompletions(

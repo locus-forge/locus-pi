@@ -22,6 +22,7 @@ import {
   WORKFLOW_SKILL_STATE_FILE,
 } from "../../../../extensions/workflows/command/skills.js";
 
+const rows = (result: ReturnType<typeof operateWorkflowSkillHosts>) => result.groups.flatMap((group) => group.rows);
 const roots: string[] = [];
 const packageName = (JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as { name: string })
   .name;
@@ -51,9 +52,8 @@ describe("workflow skill host command", () => {
     const f = fixture();
     const options = { ...f, action: "sync", host: "all", scope: "user" } as const;
     const first = operateWorkflowSkillHosts(options);
-    expect(first.rows.filter((row) => !row.legacy).map((row) => row.changed)).toEqual(
-      Array.from({ length: 8 }, () => "created"),
-    );
+    const active = rows(first).filter((row) => !row.legacy);
+    expect(active.map((row) => row.changed)).toEqual(Array.from({ length: 8 }, () => "created"));
     for (const hostRoot of [path.join(f.userHome, ".agents", "skills"), path.join(f.userHome, ".claude", "skills")]) {
       for (const skill of WORKFLOW_SKILL_NAMES) {
         const link = path.join(hostRoot, skill);
@@ -66,7 +66,7 @@ describe("workflow skill host command", () => {
     const originalMarker = readFileSync(marker, "utf8");
     const originalInode = lstatSync(marker).ino;
     const second = operateWorkflowSkillHosts(options);
-    expect(second.rows.every((row) => row.changed === "none")).toBe(true);
+    expect(rows(second).every((row) => row.changed === "none")).toBe(true);
     expect(readFileSync(marker, "utf8")).toBe(originalMarker);
     expect(lstatSync(marker).ino).toBe(originalInode);
   });
@@ -103,10 +103,10 @@ describe("workflow skill host command", () => {
     const nextPackage = path.join(f.root, "moved-install");
     renameSync(f.packageRoot, nextPackage);
     const result = operateWorkflowSkillHosts({ ...options, packageRoot: nextPackage, action: "sync" });
-    expect(result.rows.filter((row) => row.changed === "replaced")).toHaveLength(4);
-    expect(result.rows.filter((row) => row.changed === "removed")).toHaveLength(4);
+    expect(rows(result).filter((row) => row.changed === "replaced")).toHaveLength(4);
+    expect(rows(result).filter((row) => row.changed === "removed")).toHaveLength(4);
     expect(JSON.parse(readFileSync(marker, "utf8")).owner).toBe("@kroffske/locus-pi");
-    for (const row of result.rows) {
+    for (const row of rows(result)) {
       if (row.legacy) expect(lstatSync(row.path, { throwIfNoEntry: false })).toBeUndefined();
       else expect(readlinkSync(row.path)).toBe(path.join(nextPackage, "skills", row.skill));
     }
@@ -160,7 +160,8 @@ describe("workflow skill host command", () => {
     const options = { ...f, host: "codex", scope: "project" } as const;
     operateWorkflowSkillHosts({ ...options, action: "sync" });
     const removed = operateWorkflowSkillHosts({ ...options, action: "remove" });
-    expect(removed.rows.filter((row) => !row.legacy).every((row) => row.changed === "removed")).toBe(true);
+    const active = rows(removed).filter((row) => !row.legacy);
+    expect(active.every((row) => row.changed === "removed")).toBe(true);
     expect(
       lstatSync(path.join(f.projectRoot, ".agents", "skills", WORKFLOW_SKILL_STATE_FILE), {
         throwIfNoEntry: false,
@@ -487,7 +488,7 @@ describe("doctor mutation boundaries", () => {
       }),
     ).toThrow(/^late failure$/);
     const before = lstatSync(marker).ino;
-    expect(operateWorkflowSkillHosts({ ...options, action: "sync" }).rows.every((row) => row.changed === "none")).toBe(
+    expect(rows(operateWorkflowSkillHosts({ ...options, action: "sync" })).every((row) => row.changed === "none")).toBe(
       true,
     );
     expect(lstatSync(marker).ino).toBe(before);

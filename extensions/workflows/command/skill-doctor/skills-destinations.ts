@@ -1,4 +1,4 @@
-import { lstatSync, readlinkSync, realpathSync } from "node:fs";
+import { lstatSync, readdirSync, readlinkSync, realpathSync } from "node:fs";
 import path from "node:path";
 import type { WorkflowSkillHost, WorkflowSkillScope } from "../skills.js";
 import { readSkillEntry, type FileIdentity } from "./skills-fs.js";
@@ -59,15 +59,34 @@ function resolveLocation(destination: string, links = 0): ResolvedLocation | und
   return entry?.kind === "directory" ? { ancestor, identity: entry.identity, suffix: [] } : undefined;
 }
 
-function sameLocation(a: ResolvedLocation, b: ResolvedLocation): boolean {
-  if (a.identity.inode === "0" || a.identity.inode !== b.identity.inode || a.identity.device !== b.identity.device) {
-    return false;
+function caseSensitive(directory: string): boolean | undefined {
+  // Observe an existing name without writing a probe into a skills tree.
+  const entries = readdirSync(directory);
+  for (const name of entries) {
+    const variant = name.replace(/[a-z]/iu, (letter) =>
+      letter === letter.toLowerCase() ? letter.toUpperCase() : letter.toLowerCase(),
+    );
+    if (variant === name) continue;
+    if (entries.includes(variant)) return true;
+    return lstatSync(appendPath(directory, variant), { throwIfNoEntry: false }) === undefined;
   }
-  // A missing name cannot be probed without a write. Conservatively fold case in the tail.
-  return (
-    a.suffix.length === b.suffix.length &&
-    a.suffix.every((name, index) => name.normalize().toLowerCase() === b.suffix[index]!.normalize().toLowerCase())
-  );
+  return undefined;
+}
+
+function compareLocation(a: ResolvedLocation, b: ResolvedLocation): "shared" | "distinct" | "uncertain" {
+  if (
+    a.identity.inode === "0" ||
+    a.identity.inode !== b.identity.inode ||
+    a.identity.device !== b.identity.device ||
+    a.suffix.length !== b.suffix.length
+  )
+    return "distinct";
+  if (a.suffix.every((name, index) => name === b.suffix[index])) return "shared";
+  if (a.suffix.some((name, index) => name.normalize().toLowerCase() !== b.suffix[index]!.normalize().toLowerCase())) {
+    return "distinct";
+  }
+  const sensitive = caseSensitive(a.ancestor);
+  return sensitive === undefined ? "uncertain" : sensitive ? "distinct" : "shared";
 }
 
 export function resolveSkillDirectories(
@@ -75,7 +94,7 @@ export function resolveSkillDirectories(
   scope: WorkflowSkillScope,
   userHome: string,
   projectRoot: string,
-): Map<string, FileIdentity | undefined> {
+): { directories: Map<string, FileIdentity | undefined>; peerBlock?: string } {
   const selectedBase = scope === "user" ? userHome : projectRoot;
   const baseLocation = resolveLocation(absolutePath(selectedBase));
   if (!baseLocation || baseLocation.suffix.length) throw new Error(`Cannot resolve destination base: ${selectedBase}`);
@@ -96,9 +115,16 @@ export function resolveSkillDirectories(
   const selectedPeer = resolveLocation(selected);
   if (!selectedPeer) throw new Error(`Cannot resolve destination: ${selectedLogical}`);
 
-  const project = resolveLocation(absolutePath(projectRoot));
   // Allow the personal layout when the project is HOME, without exempting any explicit Claude peer.
-  const projectAtHome = scope === "user" && project && sameLocation(project, baseLocation);
+  let projectAtHome = false;
+  if (scope === "user") {
+    try {
+      const project = resolveLocation(absolutePath(projectRoot));
+      projectAtHome = project !== undefined && compareLocation(project, baseLocation) === "shared";
+    } catch {
+      // The peer check below reports the inaccessible project path.
+    }
+  }
   const peers = (
     [
       ["user", userHome],
@@ -112,10 +138,22 @@ export function resolveSkillDirectories(
   const alternate = claudeOverride(userHome);
   if (alternate) peers.push(appendPath(alternate, "skills"));
   for (const peer of peers) {
-    const resolved = resolveLocation(peer);
-    if (resolved && sameLocation(selectedPeer, resolved)) {
-      throw new Error(`Shared destination: ${selectedLogical} and ${peer} resolve to ${selected}`);
+    try {
+      const resolved = resolveLocation(peer);
+      if (!resolved) continue;
+      const relation = compareLocation(selectedPeer, resolved);
+      if (relation === "shared") {
+        return { directories, peerBlock: `Shared destination: ${selectedLogical} and ${peer} resolve to ${selected}` };
+      }
+      if (relation === "uncertain") {
+        return {
+          directories,
+          peerBlock: `Cannot determine whether ${selected} and ${peer} are shared: case rules for the missing path are unknown.`,
+        };
+      }
+    } catch (error) {
+      return { directories, peerBlock: `Cannot rule out a shared destination via ${peer}: ${String(error)}` };
     }
   }
-  return directories;
+  return { directories };
 }

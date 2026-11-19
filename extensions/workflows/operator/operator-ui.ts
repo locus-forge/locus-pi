@@ -37,7 +37,6 @@ export function workflowHelpBlock(): OperatorBlock {
     primary: "The interactive menu is available in a Pi TUI.",
     body: [
       "Dashboard: /workflows dashboard · Catalog: /workflows list [query]",
-      "Info: /workflows info [exact-name]",
       "History: /workflows status [runId]",
       "Result: /workflows result [runId|last]",
       `Run: ${workflowRunUsage()}`,
@@ -45,7 +44,7 @@ export function workflowHelpBlock(): OperatorBlock {
       "Stop: /workflows stop [runId|last]",
     ],
     metadata: [
-      "Emergency compatibility alias: /workflow-stop.",
+      "Info: /workflows info [exact-name] · Emergency alias: /workflow-stop",
       "A command starts execution only when the Pi session is provably idle.",
     ],
     controls: [

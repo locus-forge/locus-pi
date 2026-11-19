@@ -283,6 +283,20 @@ describe("workflow command argument completion", () => {
     expect(complete("unknown tail")).toBeNull();
   });
 
+  it("completes partial Doctor flags and values and stops at repeated flags", () => {
+    const root = project();
+    const complete = (input: string) => workflowArgumentCompletions(input, root, root);
+    expect(complete("doctor --ho")).toEqual([{ value: "doctor --host ", label: "--host" }]);
+    expect(complete("doctor check --scope project --host co")).toEqual([
+      { value: "doctor check --scope project --host codex ", label: "codex" },
+    ]);
+    expect(complete("doctor install --host codex --scope pr")).toEqual([
+      { value: "doctor install --host codex --scope project ", label: "project" },
+    ]);
+    expect(complete("doctor check --host codex --host ")).toBeNull();
+    expect(complete("doctor check --host codex --host all --")).toBeNull();
+  });
+
   it("keeps the exported provider structurally usable without a live Pi context", () => {
     const root = project();
     expect(workflowArgumentCompletions("run a", root, root)).toContainEqual(

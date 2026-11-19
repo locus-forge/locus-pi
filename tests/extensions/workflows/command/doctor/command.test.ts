@@ -3,65 +3,17 @@ import {
   lstatSync,
   unlinkSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
-  realpathSync,
   renameSync,
-  rmSync,
   symlinkSync,
   statSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import workflows from "../../../../../extensions/workflows/index.js";
+import { describe, expect, it, vi } from "vitest";
 import { WORKFLOW_SKILL_NAMES, WORKFLOW_SKILL_STATE_FILE } from "../../../../../extensions/workflows/command/skills.js";
-import { createHarness, emit } from "../../../../test-harness.js";
-
-vi.mock("@earendil-works/pi-coding-agent", async (load) => ({
-  ...(await load<typeof import("@earendil-works/pi-coding-agent")>()),
-  highlightCode: (text: string) => text.split("\n"),
-}));
-
-const fixtureState = vi.hoisted(() => ({ fault: undefined as ((file: string, boundary: string) => void) | undefined }));
-vi.mock(import("../../../../../extensions/workflows/command/skills.js"), async (load) => {
-  const original = await load();
-  return {
-    ...original,
-    operateWorkflowSkillHosts: (options) =>
-      original.operateWorkflowSkillHosts({
-        ...options,
-        _testAtBoundary: (boundary, file) => {
-          fixtureState.fault?.(file, boundary);
-        },
-      }),
-  };
-});
-
-const roots: string[] = [];
-afterEach(() => {
-  fixtureState.fault = undefined;
-  vi.unstubAllEnvs();
-  vi.restoreAllMocks();
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-});
-
-function setup(mode: "tui" | "rpc" = "rpc", projectAtHome = false) {
-  const root = realpathSync(mkdtempSync(path.join(tmpdir(), "workflow-doctor-test-")));
-  roots.push(root);
-  const home = path.join(root, "home");
-  const project = projectAtHome ? home : path.join(root, "project");
-  mkdirSync(home);
-  if (!projectAtHome) mkdirSync(project);
-  vi.stubEnv("HOME", home);
-  vi.stubEnv("CLAUDE_CONFIG_DIR", "");
-  const harness = createHarness(project, { mode });
-  workflows(harness.pi);
-  const run = (input: string) => harness.commands.get("workflows")!.handler(input, harness.ctx);
-  const text = () => [...harness.notifications, harness.widgets.get("workflows") ?? ""].join("\n");
-  return { root, home, project, harness, run, text };
-}
+import { emit } from "../../../../test-harness.js";
+import { testHooks as fixtureState, setup } from "./fixture.js";
 
 describe("/workflows doctor", () => {
   it("shows an actionable Codex group when Claude's marker is invalid and exposes scoped details", async () => {
@@ -346,31 +298,15 @@ describe("/workflows doctor", () => {
       unlinkSync(file);
       symlinkSync("/different-target", file, "dir");
     };
-    const geometry = { columns: 50, rows: 9 };
-    const previous = Object.fromEntries(
-      Object.keys(geometry).map((key) => [key, Object.getOwnPropertyDescriptor(process.stdout, key)]),
-    );
-    for (const [key, value] of Object.entries(geometry)) {
-      Object.defineProperty(process.stdout, key, { configurable: true, value });
+    f.harness.customInputQueue.push("\x1b");
+    await f.run("doctor install --host codex --scope project");
+    const factory = f.harness.widgetPayloads.get("workflows");
+    if (typeof factory === "function") {
+      factory({ requestRender() {}, terminal: { columns: 50, rows: 9 } }, {}).render(50);
     }
-    try {
-      f.harness.customInputQueue.push("\x1b");
-      await f.run("doctor install --host codex --scope project");
-      const factory = f.harness.widgetPayloads.get("workflows");
-      const warning =
-        typeof factory === "function"
-          ? factory({ requestRender() {}, terminal: geometry }, {})
-              .render(50)
-              .join("\n")
-          : f.harness.customRenderFrames.flat().join("\n");
-      expect(warning).toContain("Incomplete rollback");
-      expect(warning).toContain("/workflows doctor recovery");
-    } finally {
-      for (const [key, descriptor] of Object.entries(previous)) {
-        if (descriptor) Object.defineProperty(process.stdout, key, descriptor);
-        else Reflect.deleteProperty(process.stdout, key);
-      }
-    }
+    const warning = () => f.harness.customRenderFrames.flat().join("\n");
+    await expect.poll(warning).toContain("Incomplete rollback");
+    expect(warning()).toContain("/workflows doctor recovery");
   });
 
   it.each(["rpc", "tui"] as const)("retrieves full rollback in %s with session isolation", async (mode) => {

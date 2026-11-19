@@ -1,14 +1,8 @@
 import { homedir } from "node:os";
 import { getSessionId, type ExtensionAPI, type ExtensionCommandContext } from "../../../_shared/host/pi-api.js";
-import {
-  requestInlineOperatorInteraction,
-  isStaleInlineOperatorInteractionError,
-} from "../../../_shared/operator/operator-interaction.js";
-import {
-  renderOperatorBlock,
-  renderOperatorBlockPlain,
-  type OperatorBlock,
-} from "../../../_shared/operator/operator-ui.js";
+import { setDismissibleView } from "../../../_shared/operator/command-ui.js";
+import { requestInlineOperatorInteraction } from "../../../_shared/operator/operator-interaction.js";
+import { renderOperatorBlockPlain, type OperatorBlock } from "../../../_shared/operator/operator-ui.js";
 import { HOST_STRING_ARRAY_WIDGET_LINES, setOperatorWidget } from "../../../_shared/operator/widget-render.js";
 import { errorMessage } from "../../operator/operator-ui.js";
 import { WorkflowResultViewer } from "../../run/run-viewer.js";
@@ -82,11 +76,11 @@ function claudeUserWriteNote(choice: WorkflowSkillHostCommand): string | undefin
   const home = homedir();
   if (!claudeOverride(home)) return undefined;
   const verb = choice.action === "sync" ? "Install to" : "Remove from";
-  return `${verb} Claude Code default folder ${workflowSkillDestination("claude", home)}. ${defaultFolderNote()}`;
+  return `${verb} Claude Code default folder (Logical HOME path) ${workflowSkillDestination("claude", home)}. ${defaultFolderNote()}`;
 }
 
 function summary(group: WorkflowSkillHostResultGroup): string {
-  if (group.blocked) return "Blocked.";
+  if (!group.rows.length) return "Blocked.";
   const active = group.rows.filter((row) => !row.legacy);
   const installed = active.filter((row) => row.state === "current").length;
   const missing = active.filter((row) => row.state === "absent").length;
@@ -96,6 +90,9 @@ function summary(group: WorkflowSkillHostResultGroup): string {
   const stats = [`${installed}/${active.length} links installed on disk`];
   if (missing) stats.push(`${missing} missing`);
   if (repair) stats.push(`${repair} need repair`);
+  const retiring = group.rows.filter((row) => row.legacy && row.state === "stale").length;
+  if (retiring) stats.push(`${retiring} pending removal`);
+  if (group.blocked) stats.push("writes blocked");
   if (changed) stats.push(`${changed} written`);
   if (removed) stats.push(`${removed} removed`);
   return stats.join(" · ");
@@ -127,7 +124,10 @@ function resultBlock(result: WorkflowSkillHostResult, choice: WorkflowSkillHostC
             `Package source: ${result.source}`,
             ...group.rows
               .filter((row) => !row.legacy || row.state !== "absent" || row.changed !== "none")
-              .map((row) => `${row.skill}: ${row.changed === "none" ? row.state : row.changed}`),
+              .map(
+                (row) =>
+                  `${row.skill}: ${row.legacy && row.state === "stale" ? "pending removal" : row.changed === "none" ? row.state : row.changed}`,
+              ),
           ]
         : []),
     ];
@@ -143,34 +143,64 @@ function resultBlock(result: WorkflowSkillHostResult, choice: WorkflowSkillHostC
   };
 }
 
-async function showFullText(ctx: ExtensionCommandContext, title: string, text: string): Promise<void> {
-  if (ctx.hasUI === false) return;
+function destinationNotes(groups: WorkflowSkillHostResultGroup[]): string[] {
+  return groups.flatMap((group) =>
+    group.defaultClaudeFolder
+      ? [
+          `Claude Code default folder ${group.path}. ${defaultFolderNote()}`,
+          `Check default folder: ${command("check", group)}`,
+        ]
+      : [`Destination: ${group.path}`],
+  );
+}
+
+async function showFullText(
+  ctx: ExtensionCommandContext,
+  title: string,
+  text: string,
+  isCurrent: () => boolean,
+): Promise<void> {
+  if (ctx.hasUI === false || !isCurrent()) return;
   if (ctx.mode === "tui" && ctx.ui.custom) {
     try {
       await requestInlineOperatorInteraction<void>(
         ctx,
         (tui, theme, keybindings, done) => new WorkflowResultViewer(tui, theme, keybindings, title, text, done),
+        { isCurrent },
       );
       return;
-    } catch (error) {
-      if (!isStaleInlineOperatorInteractionError(error)) throw error;
+    } catch {
+      // The operation result is already known. A viewer error only changes how we present it.
     }
   }
-  ctx.ui.notify(text, "info");
+  if (isCurrent()) ctx.ui.notify(text, "info");
 }
 
-async function showResult(ctx: ExtensionCommandContext, block: OperatorBlock): Promise<void> {
+function showResult(ctx: ExtensionCommandContext, block: OperatorBlock, isCurrent: () => boolean): void {
   const full = renderOperatorBlockPlain(block, 10_000).join("\n");
-  if (ctx.mode === "tui" && ctx.ui.custom) {
-    const columns = process.stdout.columns ?? 80;
-    const rows = process.stdout.rows ?? 24;
-    if (renderOperatorBlock(block, columns).length > Math.max(1, Math.min(rows - 6, 48))) {
-      return showFullText(ctx, block.subject, full);
+  const onOverflow = async () => {
+    if (!isCurrent()) return;
+    // The focused viewer owns Escape while the passive widget is behind it.
+    setDismissibleView(ctx, WIDGET, false);
+    try {
+      await showFullText(ctx, block.subject, full, isCurrent);
+    } finally {
+      if (isCurrent()) setDismissibleView(ctx, WIDGET, block.type === "VIEW");
     }
-  } else if (renderOperatorBlockPlain(block, 80).length > HOST_STRING_ARRAY_WIDGET_LINES && ctx.hasUI !== false) {
+  };
+  try {
+    setOperatorWidget(ctx, WIDGET, block, { onOverflow });
+  } catch {
+    if (isCurrent()) ctx.ui.notify(full, "info");
+    return;
+  }
+  if (
+    ctx.mode !== "tui" &&
+    renderOperatorBlockPlain(block, 80).length > HOST_STRING_ARRAY_WIDGET_LINES &&
+    ctx.hasUI !== false
+  ) {
     ctx.ui.notify(full, "info");
   }
-  setOperatorWidget(ctx, WIDGET, block);
 }
 
 interface Recovery {
@@ -181,19 +211,25 @@ interface Recovery {
 
 export function createWorkflowDoctor(pi: ExtensionAPI) {
   let recovery: Recovery | undefined;
+  let presentation = 0;
   pi.on("session_start", () => {
     recovery = undefined;
+    presentation++;
   });
   pi.on("session_shutdown", () => {
     recovery = undefined;
+    presentation++;
   });
 
   return async (text: string, ctx: ExtensionCommandContext, projectRoot: string): Promise<void> => {
     const base = projectRoot;
     const session = getSessionId(ctx);
+    const sequence = ++presentation;
+    const isCurrent = () => sequence === presentation && getSessionId(ctx) === session;
+    const present = (block: OperatorBlock) => showResult(ctx, block, isCurrent);
     if (recovery && (recovery.session !== session || recovery.project !== base)) recovery = undefined;
     if (/^doctor\s+recovery$/u.test(text)) {
-      if (recovery) await showFullText(ctx, "Incomplete rollback", recovery.report);
+      if (recovery) await showFullText(ctx, "Incomplete rollback", recovery.report, isCurrent);
       else
         setOperatorWidget(
           ctx,
@@ -208,23 +244,20 @@ export function createWorkflowDoctor(pi: ExtensionAPI) {
     if (legacy) {
       const next = typeof parsed === "string" ? "/workflows doctor" : command(PUBLIC_ACTIONS[parsed.action], parsed);
       const note = typeof parsed === "string" ? USAGE : claudeUserWriteNote(parsed);
-      await showResult(
-        ctx,
-        warning("This workflow skills command has moved. Run the replacement below.", next, note ? [note] : []),
-      );
+      present(warning("This workflow skills command has moved. Run the replacement below.", next, note ? [note] : []));
       return;
     }
     if (typeof parsed === "string") {
-      await showResult(ctx, warning(parsed, USAGE));
+      present(warning(parsed, USAGE));
       return;
     }
 
     const check = command("check", parsed);
     try {
-      await showResult(ctx, resultBlock(operateWorkflowSkillHosts({ ...parsed, projectRoot: base }), parsed));
+      present(resultBlock(operateWorkflowSkillHosts({ ...parsed, projectRoot: base }), parsed));
     } catch (error) {
       if (!(error instanceof WorkflowSkillWriteError)) throw error;
-      const note = claudeUserWriteNote(parsed);
+      const notes = destinationNotes(error.groups);
       if (error.outcome === "incomplete") {
         recovery = {
           session,
@@ -232,24 +265,16 @@ export function createWorkflowDoctor(pi: ExtensionAPI) {
           report: [
             "Incomplete rollback",
             command(PUBLIC_ACTIONS[parsed.action], parsed),
-            ...(note ? [note] : []),
-            ...error.destinations.map((destination) => `Destination: ${destination}`),
+            ...notes,
             error.message,
             ...error.issues.map((issue) => `Skipped or failed: ${issue.path}\n${issue.reason}`),
             `Check current state: ${check}`,
           ].join("\n"),
         };
-        await showResult(ctx, warning("Incomplete rollback.", RECOVERY));
+        present(warning("Incomplete rollback.", RECOVERY));
       } else {
         const outcome = error.outcome === "refused" ? "Write refused" : "Write failed and changes were rolled back";
-        const target = note ? "Check default folder" : "Check";
-        await showResult(
-          ctx,
-          warning(`${outcome}: ${errorMessage(error)}`, `${target}: ${check}`, [
-            ...error.destinations,
-            ...(note ? [note] : []),
-          ]),
-        );
+        present(warning(`${outcome}: ${errorMessage(error)}`, `Check: ${check}`, notes));
       }
     }
   };

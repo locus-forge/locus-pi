@@ -1,5 +1,5 @@
 /** Manage the package's four canonical skill links in external host directories. */
-import { accessSync, constants, statSync } from "node:fs";
+import { accessSync, constants, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -84,7 +84,6 @@ export interface WorkflowSkillHostResultGroup {
 }
 
 export interface WorkflowSkillHostResult {
-  rows: WorkflowSkillHostResultRow[];
   groups: WorkflowSkillHostResultGroup[];
   source: string;
 }
@@ -117,7 +116,7 @@ export class WorkflowSkillWriteError extends Error {
   constructor(
     cause: string,
     readonly outcome: "refused" | "rolled-back" | "incomplete",
-    readonly destinations: string[],
+    readonly groups: WorkflowSkillHostResultGroup[],
     readonly issues: SkillUndoIssue[] = [],
   ) {
     super(outcome === "incomplete" ? `Incomplete rollback: ${cause}` : cause);
@@ -142,7 +141,7 @@ export function operateWorkflowSkillHosts(options: WorkflowSkillHostOptions): Wo
     };
     groups.push(group);
     try {
-      const directories = resolveSkillDirectories(host, scope, home, project);
+      const { directories, peerBlock } = resolveSkillDirectories(host, scope, home, project);
       group.path = [...directories.keys()].at(-1)!;
       const markerPath = path.join(group.path, WORKFLOW_SKILL_STATE_FILE);
       const initialMarker = readMarker(markerPath);
@@ -153,6 +152,7 @@ export function operateWorkflowSkillHosts(options: WorkflowSkillHostOptions): Wo
       const conflicts = group.rows.filter((row) => row.state === "conflict").map((row) => row.reason);
       const unavailable = group.rows.filter((row) => row.state === "source-unavailable").map((row) => row.reason);
       const blockers = options.action === "remove" ? conflicts : [...conflicts, ...unavailable];
+      if (peerBlock) blockers.unshift(peerBlock);
       if (blockers.length) group.blocked = blockers.join("\n");
       prepared.push({
         group,
@@ -168,10 +168,9 @@ export function operateWorkflowSkillHosts(options: WorkflowSkillHostOptions): Wo
     }
   }
 
-  const destinations = groups.map((group) => group.path);
   if (options.action !== "status") {
     const blockers = groups.flatMap((group) => (group.blocked ? [group.blocked] : []));
-    if (blockers.length) throw new WorkflowSkillWriteError(blockers.join("\n"), "refused", destinations);
+    if (blockers.length) throw new WorkflowSkillWriteError(blockers.join("\n"), "refused", groups);
     const started: Work[] = [];
     try {
       for (const work of prepared) {
@@ -195,12 +194,12 @@ export function operateWorkflowSkillHosts(options: WorkflowSkillHostOptions): Wo
       throw new WorkflowSkillWriteError(
         errorMessage(error),
         issues.length ? "incomplete" : changed ? "rolled-back" : "refused",
-        destinations,
+        groups,
         issues,
       );
     }
   }
-  return { groups, rows: groups.flatMap((group) => group.rows), source };
+  return { groups, source };
 }
 
 function inspectCandidate(
@@ -214,7 +213,7 @@ function inspectCandidate(
   const destination = path.join(group.path, skill);
   const source = legacy ? undefined : path.join(sourceRoot, skill);
   const entry = readSkillEntry(destination, false);
-  const current = entry?.kind === "link" && source !== undefined && path.resolve(group.path, entry.value) === source;
+  const current = entry?.kind === "link" && source !== undefined && sameManifest(destination, source);
   const proof = marker.proofs.get(skill);
   const owned =
     entry?.kind === "link" &&
@@ -262,6 +261,14 @@ function inspectCandidate(
   return { row, entry, source, change: change || undefined };
 }
 
+function sameManifest(link: string, source: string): boolean {
+  try {
+    return realpathSync.native(path.join(link, "SKILL.md")) === realpathSync.native(path.join(source, "SKILL.md"));
+  } catch {
+    return false;
+  }
+}
+
 function readableSkill(source: string): boolean {
   const manifest = path.join(source, "SKILL.md");
   try {
@@ -274,9 +281,14 @@ function readableSkill(source: string): boolean {
 }
 
 function readMarker(file: string): Marker {
-  const entry = readSkillEntry(file);
-  if (!entry) return { proofs: new Map(), legacyNames: new Set() };
   const invalid = () => new Error(`Invalid or foreign workflow skill marker: ${file}`);
+  let entry: SkillEntry | undefined;
+  try {
+    entry = readSkillEntry(file);
+  } catch (error) {
+    throw new Error(`Cannot read workflow skill marker ${file}: ${errorMessage(error)}`);
+  }
+  if (!entry) return { proofs: new Map(), legacyNames: new Set() };
   if (entry.kind !== "file") throw invalid();
 
   let record: { owner?: unknown; schema?: unknown; links?: unknown };
@@ -298,6 +310,8 @@ function readMarker(file: string): Marker {
       !KNOWN_NAMES.has(link.name) ||
       proofs.has(link.name) ||
       typeof link.target !== "string" ||
+      link.target.length === 0 ||
+      link.target.includes("\0") ||
       !validIdentity(link.identity)
     ) {
       throw invalid();
@@ -312,8 +326,10 @@ function validIdentity(value: unknown): value is FileIdentity {
   const entry = value as Record<string, unknown>;
   return (
     ["device", "inode", "born", "changed"].every(
-      (key) => typeof entry[key] === "string" && /^-?\d+$/u.test(entry[key]),
-    ) && entry.inode !== "0"
+      (key) => typeof entry[key] === "string" && /^(?:0|-?[1-9]\d*)$/u.test(entry[key]),
+    ) &&
+    typeof entry.inode === "string" &&
+    /^[1-9]\d*$/u.test(entry.inode)
   );
 }
 

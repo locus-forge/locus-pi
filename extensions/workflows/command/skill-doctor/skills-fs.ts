@@ -102,12 +102,20 @@ export class SkillTreeTransaction {
 
   prepare(): void {
     for (const [dir, expected] of this.directories) {
-      this.requireDirectories(path.dirname(dir));
-      if (expected !== undefined) {
-        this.requireDirectory(dir, expected);
-        continue;
+      try {
+        this.requireDirectories(path.dirname(dir));
+        if (expected !== undefined) this.requireDirectory(dir, expected);
+      } catch (error) {
+        this.recordIssue(dir, error);
+        throw error;
       }
-      mkdirSync(dir);
+      if (expected !== undefined) continue;
+      try {
+        mkdirSync(dir);
+      } catch (error) {
+        this.attempt(dir, () => this.verifyEntry(dir, undefined));
+        throw error;
+      }
       try {
         const created = readSkillEntry(dir, false);
         if (created?.kind !== "directory" || created.identity.inode === "0") {
@@ -170,14 +178,18 @@ export class SkillTreeTransaction {
       this.guard(file, previous, authorize, restoring);
       this.requireEntry(temporary, staged);
       if (!restoring) this.hooks._testAtBoundary?.("after-guard", file);
-      if (kind === "file" && !previous) {
-        linkSync(temporary, file);
-        published = true;
+      const exclusive = kind === "file" && !previous;
+      try {
+        if (exclusive) linkSync(temporary, file);
+        else renameSync(temporary, file);
+      } catch (error) {
+        this.attempt(file, () => this.verifyEntry(file, previous));
+        throw error;
+      }
+      published = true;
+      if (exclusive) {
         this.cleanStage(temporary, staged, true);
         created = false;
-      } else {
-        renameSync(temporary, file);
-        published = true;
       }
       if (!restoring) this.hooks._testAtBoundary?.("before-readback", file);
       const after = this.verifyEntry(file, staged, { published: true });

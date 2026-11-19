@@ -43,13 +43,16 @@ export function operatorBlockPlacement(block: Pick<OperatorBlock, "type">): "abo
 export interface SetOperatorWidgetOptions {
   placement?: "aboveEditor" | "belowEditor";
   fallbackWidth?: number;
+  onOverflow?: () => void;
 }
 
 class OperatorBlockWidget implements CustomUiComponent {
+  private overflowReported = false;
   constructor(
     private readonly tui: WidgetFactoryTui,
     private readonly block: OperatorBlock,
     private readonly theme?: OperatorThemeLike,
+    private readonly onOverflow?: () => void,
   ) {
     // Presentation asks for a normal differential paint. A forced full redraw
     // here clears and repaints the whole frame for every operator block, which
@@ -62,7 +65,22 @@ class OperatorBlockWidget implements CustomUiComponent {
   render(width: number): string[] {
     const rows = this.tui.terminal?.rows ?? 24;
     const budget = Math.max(1, Math.min(rows - 6, 48));
-    return renderOperatorBlock(this.block, width, this.theme, { maxLines: budget });
+    if (!this.onOverflow) return renderOperatorBlock(this.block, width, this.theme, { maxLines: budget });
+    try {
+      const lines = renderOperatorBlock(this.block, width, this.theme);
+      if (lines.length <= budget) return lines;
+      this.reportOverflow();
+      return renderOperatorBlock(this.block, width, this.theme, { maxLines: budget });
+    } catch {
+      this.reportOverflow();
+      return [];
+    }
+  }
+
+  private reportOverflow(): void {
+    if (this.overflowReported || !this.onOverflow) return;
+    this.overflowReported = true;
+    queueMicrotask(this.onOverflow);
   }
 
   invalidate(): void {
@@ -93,7 +111,13 @@ export function setOperatorWidget(
   if (ctx.mode === "tui") {
     ctx.ui.setWidget(
       key,
-      (tui, theme) => new OperatorBlockWidget(tui as WidgetFactoryTui, block, operatorTheme(theme) ?? ctx.ui.theme),
+      (tui, theme) =>
+        new OperatorBlockWidget(
+          tui as WidgetFactoryTui,
+          block,
+          operatorTheme(theme) ?? ctx.ui.theme,
+          options.onOverflow,
+        ),
       placement,
     );
     setDismissibleView(ctx, key, block.type === "VIEW");
