@@ -106,8 +106,10 @@ TUI without select receive the same help as a typed command fallback. Direct typ
 emergency compatibility alias; every other operation uses `/workflows`.
 
 Use `/workflows status` after a warning to clear the previous panel and inspect run evidence.
-Live progress stays visible. Plain text and commands routed outside the workflow lifecycle
-can leave the previous warning in place.
+Live progress stays visible. A built-in command such as `/settings` or a third-party
+command outside the workflow lifecycle leaves a stale workflow warning visible.
+Press Escape to dismiss an unpinned warning. Pi still handles Escape normally, and the
+warning's record and run details remain available.
 
 #### Start from the catalog
 

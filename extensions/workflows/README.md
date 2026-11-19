@@ -66,9 +66,11 @@ expose the location of a slow launch; they do not diagnose or repair its cause.
 Tools: `workflow`, read-only `workflow_check_source`, and opt-in `fusion`. Compatibility command: `/workflow-stop`.
 
 An accepted workflow command clears the preceding temporary panel and keeps pinned progress visible.
-Use `/workflows status` to continue after a warning. Plain input and commands handled separately by Pi
-may leave the warning visible. Run journals, results, and error logs remain available.
-Escape closes passive command views on both legacy and Kitty terminals.
+Use `/workflows status` to inspect run evidence. A built-in command such as `/settings` or a
+third-party command outside the workflow lifecycle leaves a stale workflow warning visible.
+Press Escape to dismiss an unpinned warning while Pi handles the key normally. The warning's
+record, run details, journals, results, and error logs remain available. Escape also closes
+passive command views on both legacy and Kitty terminals.
 
 At normal interactive heights, `/workflows list` keeps the Project, User, Package, and History tabs directly below the catalog heading and opens on Project whenever it contains a selectable workflow. The existing compact projection may omit the heading or put the selected row first when only a few lines fit. Wherever tabs are shown, the active tab uses the shared high-contrast purple selection background. The source view uses the same treatment for its left-to-right Start, Back, Edit, Review, and copy actions, with Start focused first for a ready current workflow. Start restores a direct command for untyped workflows and a complete native-run request for static `meta.inputSchema`; neither form submits editor text itself. After the user submits the typed request, the agent prepares canonical `inputValue` and calls the native `workflow` tool, whose extension-owned interactive confirmation is the review boundary; the route does not require package skills and unavailable capability never falls back to a shell or slash command. A parent description starts one column to the right of its child's `└` branch, so the description remains attached to the parent instead of reading like a heading for the child. See the cross-extension [TUI visual language](../../docs/tui-design.md).
 
