@@ -114,8 +114,10 @@ warning's record and run details remain available.
 Pi may wait to run a workflow command you enter while another command is still running.
 If an unpinned workflow error panel appears during that wait, it can disappear when your
 command starts. Your command still runs. For a failed run, `/workflows status <runId>` opens
-the run and its stages. The full error stays in `.locus-pi/runs/<runId>/runtime/result.json`
-and the project error log at `.locus-pi/logs/errors.jsonl`.
+the run and its stages. The full error stays in that run's `runtime/result.json`:
+`.locus-pi/runs/<runId>/` for a root run, or `attempts/<runId>/` (a `--resume` attempt) and
+`children/<runId>/` (a saved child) inside the original run's folder. The project error log
+`.locus-pi/logs/errors.jsonl` keeps a shortened message.
 
 #### Start from the catalog
 
