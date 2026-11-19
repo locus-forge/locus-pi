@@ -1,5 +1,6 @@
-import * as piHost from "@earendil-works/pi-coding-agent";
-import { Editor, isKeyRelease, matchesKey } from "@earendil-works/pi-tui";
+import { isKeyRelease, matchesKey } from "@earendil-works/pi-tui";
+import { decideEscape } from "./operator-keys.js";
+import { captureFocus, observeCustomMounts, observeFocus, type CommandUiFocus } from "./operator-input.js";
 import type { OperatorSurfaceType } from "./operator-ui.js";
 import { getSessionId } from "../host/pi-api.js";
 import type {
@@ -35,27 +36,26 @@ export interface CommandUiLifecycleSpec {
 interface CommandUiOwnerRegistration {
   specs: Map<string, CommandUiLifecycleSpec>;
   inputCleanupInstalled: boolean;
-  pinnedKeys: Set<string>;
+  pinnedKeys: Map<string, number>;
   cleanupByKey: Map<string, Set<(ctx: ExtensionContext) => void>>;
 }
 
 interface CommandUiRuntimeScope {
+  sessionId: string;
   owners: Set<CommandUiOwnerRegistration>;
   widgets: Map<string, CommandWidgetPresentation>;
   terminalInputUnsubscribe: (() => void) | undefined;
-  focus?: CommandUiFocus;
+  focus: CommandUiFocus | undefined;
+  customMounts?: {
+    original: NonNullable<ExtensionContext["ui"]["custom"]>;
+    observed: NonNullable<ExtensionContext["ui"]["custom"]>;
+  };
+  work: Map<"agents" | "workflows", () => EscapeWork>;
 }
 
-interface FocusTui {
-  getFocusedComponent(): unknown;
-  requestRender(): void;
-}
-
-interface CommandUiFocus {
-  tui: FocusTui;
-  sessionId: string;
-  localTargets: WeakSet<object>;
-  mainEditor?: { component: object; factory: EditorFactory };
+interface EscapeWork {
+  busy: boolean;
+  confirmInterrupt?: () => void;
 }
 
 export interface CommandWidgetPresentation {
@@ -65,12 +65,12 @@ export interface CommandWidgetPresentation {
 }
 
 interface CommandUiRegistry {
-  version: 3;
+  version: 4;
   pendingByPi: WeakMap<ExtensionAPI, CommandUiOwnerRegistration>;
   byUi: WeakMap<object, CommandUiRuntimeScope>;
 }
 
-const COMMAND_UI_REGISTRY_SYMBOL = Symbol.for("locus-pi.command-ui-lifecycle.v3");
+const COMMAND_UI_REGISTRY_SYMBOL = Symbol.for("locus-pi.command-ui-lifecycle.v4");
 // Transient widget/status keys that are "pinned" while a live run owns them.
 // clearTransientCommandUi skips pinned keys so a chat message or unrelated slash
 // command does not dispose a still-running task/spawn_agent progress widget.
@@ -79,12 +79,16 @@ const COMMAND_UI_REGISTRY_SYMBOL = Symbol.for("locus-pi.command-ui-lifecycle.v3"
  *  Used while a task/spawn_agent run is live so typing in chat cannot vanish its
  *  progress widget mid-flight. ALWAYS pair with unpinTransientUiKey in a finally. */
 export function pinTransientUiKey(pi: ExtensionAPI, key: string): void {
-  ownerRegistration(pi).pinnedKeys.add(key);
+  const pins = ownerRegistration(pi).pinnedKeys;
+  pins.set(key, (pins.get(key) ?? 0) + 1);
 }
 
 /** Release a previously pinned transient UI key so normal lifecycle clearing resumes. */
 export function unpinTransientUiKey(pi: ExtensionAPI, key: string): void {
-  ownerRegistration(pi).pinnedKeys.delete(key);
+  const pins = ownerRegistration(pi).pinnedKeys;
+  const owners = pins.get(key) ?? 0;
+  if (owners > 1) pins.set(key, owners - 1);
+  else pins.delete(key);
 }
 
 /**
@@ -194,15 +198,14 @@ export function setCommandWidget(
   const presentation = { key, surface };
   scope.widgets.set(key, presentation);
   onPublished?.(presentation);
-  if (surface === "VIEW" && ctx.mode === "tui" && ctx.hasUI !== false) installTerminalInputListener(ctx, scope);
-  else stopTerminalInputListenerWhenIdle(scope);
+  syncEscapeListener(ctx, scope);
 }
 
 export function currentCommandWidgetPresentation(
   ctx: ExtensionContext,
   key: string,
 ): CommandWidgetPresentation | undefined {
-  return commandUiRegistry().byUi.get(ctx.ui)?.widgets.get(key);
+  return currentScope(ctx)?.widgets.get(key);
 }
 
 /** Hide or restore only the component still installed in this slot. */
@@ -221,12 +224,12 @@ export function clearCommandWidgetPresentation(
   presentation: CommandWidgetPresentation,
   deferredCleanup?: Set<(ctx: ExtensionContext) => void>,
 ): boolean {
-  const scope = commandUiRegistry().byUi.get(ctx.ui);
+  const scope = currentScope(ctx);
   const { key } = presentation;
   if (scope === undefined || scope.widgets.get(key) !== presentation || isTransientKeyPinned(scope, key)) return false;
   if (!clearWidget(ctx, key) || scope.widgets.get(key) !== presentation) return false;
   scope.widgets.delete(key);
-  stopTerminalInputListenerWhenIdle(scope);
+  syncEscapeListener(ctx, scope);
   const callbacks = deferredCleanup ?? new Set<(ctx: ExtensionContext) => void>();
   collectTransientCleanup(scope, key, callbacks);
   if (deferredCleanup === undefined) runTransientCleanup(ctx, callbacks);
@@ -325,118 +328,79 @@ function clearWidget(ctx: ExtensionContext, key: string): boolean {
   }
 }
 
-function latestDismissibleView(scope: CommandUiRuntimeScope): CommandWidgetPresentation | undefined {
-  let latest: CommandWidgetPresentation | undefined;
-  for (const presentation of scope.widgets.values()) {
-    if (presentation.surface === "VIEW" && !presentation.hidden && !isTransientKeyPinned(scope, presentation.key))
-      latest = presentation;
-  }
-  return latest;
-}
-
 export function observeCommandUiFocus(
   ctx: ExtensionContext,
   tui: unknown,
   component?: object,
   factory?: EditorFactory,
 ): void {
-  const host = tui as Partial<FocusTui> | undefined;
-  if (typeof host?.getFocusedComponent !== "function" || typeof host.requestRender !== "function") return;
   const scope = runtimeScope(ctx);
-  const sessionId = getSessionId(ctx);
-  const focus =
-    scope.focus?.sessionId === sessionId
-      ? scope.focus
-      : { tui: host as FocusTui, sessionId, localTargets: new WeakSet<object>() };
-  focus.tui = host as FocusTui;
-  if (component !== undefined) {
-    if (factory !== undefined) focus.mainEditor = { component, factory };
-    else focus.localTargets.add(component);
+  scope.focus = observeFocus(scope.focus, tui, component, factory);
+}
+
+export function registerEscapeWork(ctx: ExtensionContext, owner: "agents" | "workflows", read: () => EscapeWork): void {
+  const scope = runtimeScope(ctx);
+  scope.work.set(owner, read);
+  syncEscapeListener(ctx, scope);
+}
+
+function syncEscapeListener(ctx: ExtensionContext, scope: CommandUiRuntimeScope): void {
+  if (ctx.mode !== "tui" || ctx.hasUI === false || ctx.ui.onTerminalInput === undefined) return;
+  if (scope.widgets.size === 0 && scope.work.size === 0) {
+    scope.terminalInputUnsubscribe?.();
+    scope.terminalInputUnsubscribe = undefined;
+    return;
   }
-  scope.focus = focus;
-}
-
-const nativeEscapeTargetNames = [
-  "ExtensionSelectorComponent",
-  "ExtensionInputComponent",
-  "ExtensionEditorComponent",
-  "SettingsSelectorComponent",
-  "ModelSelectorComponent",
-  "TreeSelectorComponent",
-  "SessionSelectorComponent",
-  "UserMessageSelectorComponent",
-  "ThemeSelectorComponent",
-  "ThinkingSelectorComponent",
-  "ShowImagesSelectorComponent",
-  "OAuthSelectorComponent",
-  "LoginDialogComponent",
-] as const;
-
-function isPiEditor(component: unknown): component is piHost.CustomEditor {
-  return Object.hasOwn(piHost, "CustomEditor") && component instanceof piHost.CustomEditor;
-}
-
-/** Deliver to the identified local owner now, while that component still has focus. */
-export function routeFocusedEscape(ctx: ExtensionContext): boolean {
-  const focus = currentFocus(ctx);
-  const component = focus?.tui.getFocusedComponent();
-  if (focus === undefined || typeof component !== "object" || component === null) return false;
-  if (isPiEditor(component) && component.isShowingAutocomplete()) {
-    Editor.prototype.handleInput.call(component, "\x1b");
-  } else {
-    if (
-      !focus.localTargets.has(component) &&
-      !nativeEscapeTargetNames.some((name) => {
-        const target = Object.hasOwn(piHost, name) ? piHost[name] : undefined;
-        return typeof target === "function" && component instanceof target;
-      })
-    )
-      return false;
-    const local = component as { handleInput?: (data: string) => void | Promise<void> };
-    if (typeof local.handleInput !== "function") return false;
-    void local.handleInput("\x1b");
+  const custom = ctx.ui.custom;
+  if (custom !== undefined && custom !== scope.customMounts?.observed) {
+    const observed = observeCustomMounts(ctx, custom, (tui, component, sessionId) => {
+      const active = currentScope(ctx);
+      if (active?.sessionId === sessionId) active.focus = observeFocus(active.focus, tui, component);
+    });
+    scope.customMounts = { original: custom, observed };
+    ctx.ui.custom = observed;
   }
-  focus.tui.requestRender();
-  return true;
-}
+  if (scope.terminalInputUnsubscribe !== undefined) return;
 
-function currentFocus(ctx: ExtensionContext): CommandUiFocus | undefined {
-  const focus = commandUiRegistry().byUi.get(ctx.ui)?.focus;
-  return focus?.sessionId === getSessionId(ctx) ? focus : undefined;
-}
-
-function hasIdlePrimaryEditor(ctx: ExtensionContext): boolean {
-  if (!ctx.isIdle() || ctx.ui.getEditorComponent === undefined) return false;
-  const focus = currentFocus(ctx);
-  const component = focus?.tui.getFocusedComponent();
-  const factory = ctx.ui.getEditorComponent();
-  if (factory === undefined) return isPiEditor(component);
-  return focus?.mainEditor?.factory === factory && focus.mainEditor.component === component;
-}
-
-function installTerminalInputListener(ctx: ExtensionContext, scope: CommandUiRuntimeScope): void {
-  const onTerminalInput = ctx.ui.onTerminalInput;
-  if (typeof onTerminalInput !== "function") return;
-
-  // Pi clears raw listeners when an extension session is rebound.
-  scope.terminalInputUnsubscribe?.();
-  const sessionId = getSessionId(ctx);
-  const unsubscribe = onTerminalInput.call(ctx.ui, (data) => {
-    if (scope.terminalInputUnsubscribe !== unsubscribe || getSessionId(ctx) !== sessionId || !isEscapePress(data))
+  // The view and interrupt owners share one subscription, so no later peer can
+  // change the presentation between our decision to protect and its consumption.
+  const unsubscribe = ctx.ui.onTerminalInput((data) => {
+    if (currentScope(ctx) !== scope || scope.terminalInputUnsubscribe !== unsubscribe || !isEscapePress(data))
       return undefined;
-    if (routeFocusedEscape(ctx)) return { consume: true };
-    if (!hasIdlePrimaryEditor(ctx)) return undefined;
-    const presentation = latestDismissibleView(scope);
-    if (presentation !== undefined && clearCommandWidgetPresentation(ctx, presentation)) return { consume: true };
-    return undefined;
+    const focus = captureFocus(ctx, scope.focus);
+    const presentation = [...scope.widgets.values()].at(-1);
+    const agents = scope.work.get("agents")?.();
+    const workflow = scope.work.get("workflows")?.();
+    const responseActive = !ctx.isIdle();
+    const snapshot = {
+      focus: focus.kind,
+      ...(presentation === undefined
+        ? {}
+        : {
+            presentation: {
+              identity: presentation,
+              surface: presentation.surface,
+              pinned: isTransientKeyPinned(scope, presentation.key),
+            },
+          }),
+      busyWork: agents?.busy === true || workflow?.busy === true,
+      responseActive,
+    };
+    const decision = decideEscape(snapshot);
+    if (decision === "pass") return undefined;
+    if (decision === "deliver" && focus.kind === "local") focus.deliver();
+    if (decision === "close-view" && snapshot.presentation !== undefined)
+      clearCommandWidgetPresentation(ctx, snapshot.presentation.identity);
+    if (
+      decision === "protect" &&
+      (presentation === undefined || presentation.surface === "LIVE") &&
+      responseActive &&
+      !workflow?.busy
+    )
+      agents?.confirmInterrupt?.();
+    return { consume: true };
   });
   scope.terminalInputUnsubscribe = unsubscribe;
-}
-
-function stopTerminalInputListenerWhenIdle(scope: CommandUiRuntimeScope): void {
-  for (const presentation of scope.widgets.values()) if (presentation.surface === "VIEW") return;
-  scope.terminalInputUnsubscribe?.();
-  scope.terminalInputUnsubscribe = undefined;
 }
 
 export function isEscapePress(data: string): boolean {
@@ -452,14 +416,26 @@ function bindOwnerToUi(pi: ExtensionAPI, ctx: ExtensionContext): CommandUiRuntim
   return scope;
 }
 
+function currentScope(ctx: ExtensionContext): CommandUiRuntimeScope | undefined {
+  const scope = commandUiRegistry().byUi.get(ctx.ui);
+  return scope?.sessionId === getSessionId(ctx) ? scope : undefined;
+}
+
 function runtimeScope(ctx: ExtensionContext): CommandUiRuntimeScope {
   const registry = commandUiRegistry();
   const existing = registry.byUi.get(ctx.ui);
-  if (existing !== undefined) return existing;
+  const sessionId = getSessionId(ctx);
+  if (existing?.sessionId === sessionId) return existing;
+  existing?.terminalInputUnsubscribe?.();
+  if (existing?.customMounts?.observed === ctx.ui.custom && existing?.customMounts !== undefined)
+    ctx.ui.custom = existing.customMounts.original;
   const created: CommandUiRuntimeScope = {
+    sessionId,
     owners: new Set<CommandUiOwnerRegistration>(),
     widgets: new Map(),
     terminalInputUnsubscribe: undefined,
+    focus: undefined,
+    work: new Map(),
   };
   registry.byUi.set(ctx.ui, created);
   return created;
@@ -473,7 +449,7 @@ function ownerRegistration(pi: ExtensionAPI): CommandUiOwnerRegistration {
   const created: CommandUiOwnerRegistration = {
     specs: new Map<string, CommandUiLifecycleSpec>(),
     inputCleanupInstalled: false,
-    pinnedKeys: new Set<string>(),
+    pinnedKeys: new Map<string, number>(),
     cleanupByKey: new Map<string, Set<(ctx: ExtensionContext) => void>>(),
   };
   registry.pendingByPi.set(pi, created);
@@ -485,7 +461,7 @@ function commandUiRegistry(): CommandUiRegistry {
   const existing = globalRecord[COMMAND_UI_REGISTRY_SYMBOL];
   if (existing === undefined) {
     const created: CommandUiRegistry = {
-      version: 3,
+      version: 4,
       pendingByPi: new WeakMap<ExtensionAPI, CommandUiOwnerRegistration>(),
       byUi: new WeakMap<object, CommandUiRuntimeScope>(),
     };
@@ -494,7 +470,7 @@ function commandUiRegistry(): CommandUiRegistry {
   }
 
   if (!isCommandUiRegistry(existing)) {
-    throw new Error("Incompatible global command UI registry at locus-pi.command-ui-lifecycle.v3");
+    throw new Error("Incompatible global command UI registry at locus-pi.command-ui-lifecycle.v4");
   }
   return existing;
 }
@@ -502,5 +478,5 @@ function commandUiRegistry(): CommandUiRegistry {
 function isCommandUiRegistry(value: unknown): value is CommandUiRegistry {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Partial<CommandUiRegistry>;
-  return candidate.version === 3 && candidate.pendingByPi instanceof WeakMap && candidate.byUi instanceof WeakMap;
+  return candidate.version === 4 && candidate.pendingByPi instanceof WeakMap && candidate.byUi instanceof WeakMap;
 }

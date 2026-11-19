@@ -1,3 +1,5 @@
+import type { OperatorSurfaceType } from "./operator-ui.js";
+
 /**
  * extensions/_shared/operator/operator-keys.ts — The raw terminal key vocabulary shared
  * by every operator-facing TUI component.
@@ -64,4 +66,21 @@ export function isPageUp(data: string): boolean {
 
 export function isPageDown(data: string): boolean {
   return data === "\x1b[6~";
+}
+
+export type EscapeFocusKind = "local" | "primary" | "unknown";
+export interface EscapeSnapshot {
+  focus: EscapeFocusKind;
+  presentation?: { identity: object; surface: OperatorSurfaceType | undefined; pinned: boolean };
+  busyWork: boolean;
+  responseActive: boolean;
+}
+export type EscapeDecision = "deliver" | "close-view" | "protect" | "pass";
+
+export function decideEscape(snapshot: EscapeSnapshot): EscapeDecision {
+  if (snapshot.focus === "local") return "deliver";
+  const panel = snapshot.presentation;
+  if (snapshot.focus === "primary" && panel?.surface === "VIEW" && !panel.pinned) return "close-view";
+  if (snapshot.busyWork || (snapshot.responseActive && panel !== undefined)) return "protect";
+  return "pass";
 }

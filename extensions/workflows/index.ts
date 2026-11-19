@@ -10,9 +10,10 @@ import { snapshotWorkflowInput } from "./runtime/workflow-input.js";
  */
 
 import type { ExtensionAPI, ExtensionContext } from "../_shared/host/pi-api.js";
-import { getProjectRoot, getWorkingDirectory } from "../_shared/host/pi-api.js";
+import { getProjectRoot, getSessionId, getWorkingDirectory } from "../_shared/host/pi-api.js";
 import {
   pinTransientUiKey,
+  registerEscapeWork,
   registerTransientUiCleanup,
   setCommandWidget,
   unpinTransientUiKey,
@@ -43,6 +44,7 @@ import {
   renderAgentLiveRowsText,
   type WorkflowProgressComponent,
 } from "./operator/progress-widget.js";
+import { workflowBackgroundRunRegistry } from "./run/background-run-registry.js";
 import { createWorkflowCommandLauncher } from "./launch/workflow-command-launcher.js";
 import { registerWorkflowTool } from "./tool/workflow-tool.js";
 import { workflowCatalogLaunchSelection } from "./catalog/workflow-action-prompt.js";
@@ -280,6 +282,11 @@ export default function workflows(pi: ExtensionAPI): void {
     submittedCatalogLaunches.clear();
     rememberCompletionContext(ctx);
     commandLauncher.startSession(ctx);
+    if (ctx.mode === "tui" && ctx.hasUI !== false) {
+      registerEscapeWork(ctx, "workflows", () => ({
+        busy: workflowBackgroundRunRegistry().hasActiveSession(getProjectRoot(ctx), getSessionId(ctx)),
+      }));
+    }
   });
   pi.on("session_shutdown", async (_event, _ctx) => {
     resetWorkflowLiveExecutions();

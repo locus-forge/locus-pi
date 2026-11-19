@@ -162,7 +162,7 @@ describe("typed operator widget adapter", () => {
     expect(harness.widgetOptions.get(`operator-${type}`)).toEqual({
       placement: type === "VIEW" ? "belowEditor" : "aboveEditor",
     });
-    expect(harness.terminalInputHandlers.size).toBe(type === "VIEW" ? 1 : 0);
+    expect(harness.terminalInputHandlers.size).toBe(1);
   });
 
   it("uses a rerenderable component factory in TUI mode with explicit placement", () => {

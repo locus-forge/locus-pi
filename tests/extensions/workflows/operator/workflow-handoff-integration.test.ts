@@ -265,13 +265,14 @@ describe("workflow actionable handoff integration", () => {
     const requests: runner.RunWorkflowScriptOptions[] = [];
     mockRuns(requests, [sourceRunId]);
     let mounted = 0;
-    harness.ctx.ui.custom = vi.fn(
+    const custom = vi.fn(
       async <T>(factory: CustomUiFactory<T>) =>
         await new Promise<T>(async () => {
           await factory({ requestRender() {} }, {}, {}, () => {});
           mounted += 1;
         }),
     ) as NonNullable<typeof harness.ctx.ui.custom>;
+    harness.ctx.ui.custom = custom;
     workflows(harness.pi);
 
     await emit(harness, "session_start");
@@ -281,7 +282,7 @@ describe("workflow actionable handoff integration", () => {
     await emit(harness, "agent_settled");
 
     expect(mounted).toBe(1);
-    expect(harness.ctx.ui.custom).toHaveBeenCalledTimes(1);
+    expect(custom).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces a rejected question pump as a warning without rejecting the lifecycle handler", async () => {
