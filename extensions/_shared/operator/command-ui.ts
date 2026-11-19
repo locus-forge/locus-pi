@@ -1,6 +1,4 @@
-import { isKeyRelease, matchesKey } from "@earendil-works/pi-tui";
-import { decideEscape } from "./operator-keys.js";
-import { captureFocus, observeCustomMounts, observeFocus, type CommandUiFocus } from "./operator-input.js";
+import { isEscapePress } from "./operator-keys.js";
 import type { OperatorSurfaceType } from "./operator-ui.js";
 import { getSessionId } from "../host/pi-api.js";
 import type {
@@ -10,7 +8,6 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
-  EditorFactory,
 } from "../host/pi-api.js";
 
 export type CommandUiSurface =
@@ -33,29 +30,21 @@ export interface CommandUiLifecycleSpec {
   persistentStatuses?: string[];
 }
 
+type PrepareCleanup = (ctx: ExtensionContext) => (() => void) | undefined;
+
 interface CommandUiOwnerRegistration {
   specs: Map<string, CommandUiLifecycleSpec>;
   inputCleanupInstalled: boolean;
   pinnedKeys: Map<string, number>;
-  cleanupByKey: Map<string, Set<(ctx: ExtensionContext) => void>>;
+  cleanupByKey: Map<string, Set<PrepareCleanup>>;
 }
 
 interface CommandUiRuntimeScope {
   sessionId: string;
   owners: Set<CommandUiOwnerRegistration>;
   widgets: Map<string, CommandWidgetPresentation>;
-  terminalInputUnsubscribe: (() => void) | undefined;
-  focus: CommandUiFocus | undefined;
-  customMounts?: {
-    original: NonNullable<ExtensionContext["ui"]["custom"]>;
-    observed: NonNullable<ExtensionContext["ui"]["custom"]>;
-  };
-  work: Map<"agents" | "workflows", () => EscapeWork>;
-}
-
-interface EscapeWork {
-  busy: boolean;
-  confirmInterrupt?: () => void;
+  viewUnsubscribe: (() => void) | undefined;
+  widgetWrites: Map<string, { next?: WidgetWrite }>;
 }
 
 export interface CommandWidgetPresentation {
@@ -65,12 +54,12 @@ export interface CommandWidgetPresentation {
 }
 
 interface CommandUiRegistry {
-  version: 4;
+  version: 5;
   pendingByPi: WeakMap<ExtensionAPI, CommandUiOwnerRegistration>;
   byUi: WeakMap<object, CommandUiRuntimeScope>;
 }
 
-const COMMAND_UI_REGISTRY_SYMBOL = Symbol.for("locus-pi.command-ui-lifecycle.v4");
+const COMMAND_UI_REGISTRY_SYMBOL = Symbol.for("locus-pi.command-ui-lifecycle.v5");
 // Transient widget/status keys that are "pinned" while a live run owns them.
 // clearTransientCommandUi skips pinned keys so a chat message or unrelated slash
 // command does not dispose a still-running task/spawn_agent progress widget.
@@ -93,16 +82,12 @@ export function unpinTransientUiKey(pi: ExtensionAPI, key: string): void {
 
 /**
  * Register owner cleanup that must run when a transient UI key is actually
- * cleared. This keeps non-visual state (for example live-store rows) aligned
- * with the widget lifecycle without teaching this generic module domain rules.
+ * cleared. Capture the owner's cleanup before any host UI writes. The returned
+ * callback applies only to the state that was selected at that point.
  */
-export function registerTransientUiCleanup(
-  pi: ExtensionAPI,
-  key: string,
-  cleanup: (ctx: ExtensionContext) => void,
-): void {
+export function registerTransientUiCleanup(pi: ExtensionAPI, key: string, cleanup: PrepareCleanup): void {
   const registration = ownerRegistration(pi);
-  const callbacks = registration.cleanupByKey.get(key) ?? new Set<(ctx: ExtensionContext) => void>();
+  const callbacks = registration.cleanupByKey.get(key) ?? new Set<PrepareCleanup>();
   callbacks.add(cleanup);
   registration.cleanupByKey.set(key, callbacks);
 }
@@ -151,54 +136,96 @@ function clearTransientCommandUi(
     }
   }
 
-  // Capture the old presentations before invoking any host callback that could render again.
+  // Select the old widgets and owner state before a host write can publish replacements.
   const selected = new Map(scope.widgets);
-  const callbacks = new Set<(ctx: ExtensionContext) => void>();
+  const candidates = new Set<PrepareCleanup>();
+  const statusOnly = new Set<PrepareCleanup>();
+  for (const key of new Set([...transientStatuses, ...transientWidgets])) {
+    const absent = acceptedCommandWidgets.has(key) && !selected.has(key) && !isTransientKeyPinned(scope, key);
+    collectTransientCleanup(scope, key, absent ? statusOnly : candidates);
+  }
+  for (const candidate of candidates) statusOnly.delete(candidate);
+  const prepared = prepareTransientCleanup(ctx, new Set([...candidates, ...statusOnly]));
+  const cleared = statusOnly;
   for (const key of transientStatuses) {
     if (isTransientKeyPinned(scope, key)) continue;
     clearStatus(ctx, key);
-    collectTransientCleanup(scope, key, callbacks);
+    collectTransientCleanup(scope, key, cleared);
   }
   for (const key of transientWidgets) {
     const presentation = selected.get(key);
     if (presentation !== undefined) {
-      clearCommandWidgetPresentation(ctx, presentation, callbacks);
+      if (clearCommandWidgetPresentation(ctx, presentation)) collectTransientCleanup(scope, key, cleared);
     } else if (!acceptedCommandWidgets.has(key) && !scope.widgets.has(key) && !isTransientKeyPinned(scope, key)) {
       // Older publishers of unrelated widgets still use the host's key-only API.
-      clearWidget(ctx, key);
-      collectTransientCleanup(scope, key, callbacks);
+      if (clearWidget(ctx, key)) collectTransientCleanup(scope, key, cleared);
     }
   }
-  runTransientCleanup(ctx, callbacks);
+  runTransientCleanup(prepared, cleared);
 }
 
 type HostWidgetArgs = Parameters<ExtensionContext["ui"]["setWidget"]>;
+interface WidgetWrite {
+  content: HostWidgetArgs[1];
+  options: HostWidgetArgs[2];
+  surface: OperatorSurfaceType | undefined;
+  onPublished?: ((presentation: CommandWidgetPresentation) => void) | undefined;
+}
 
 export function setCommandWidget(
   ctx: ExtensionContext,
   key: string,
-  content: Exclude<HostWidgetArgs[1], undefined>,
+  content: HostWidgetArgs[1],
   options?: HostWidgetArgs[2],
   surface?: OperatorSurfaceType,
   onPublished?: (presentation: CommandWidgetPresentation) => void,
 ): void {
-  ctx.ui.setWidget(
-    key,
-    typeof content === "function"
-      ? (tui, theme) => {
-          observeCommandUiFocus(ctx, tui);
-          return content(tui, theme);
+  writeCommandWidget(ctx, runtimeScope(ctx), key, { content, options, surface, onPublished });
+}
+
+function writeCommandWidget(
+  ctx: ExtensionContext,
+  scope: CommandUiRuntimeScope,
+  key: string,
+  first: WidgetWrite,
+): boolean {
+  const active = scope.widgetWrites.get(key);
+  if (active !== undefined) {
+    // Pi can call dispose before deleting/replacing the key. Publish the newest
+    // nested write after the outer host mutation finishes.
+    active.next = first;
+    return false;
+  }
+
+  scope.widgetWrites.set(key, {});
+  let superseded = false;
+  let refreshView = false;
+  try {
+    let write: WidgetWrite | undefined = first;
+    while (write !== undefined) {
+      try {
+        ctx.ui.setWidget(key, write.content, write.options);
+        scope.widgets.delete(key);
+        if (write.content !== undefined) {
+          const presentation = { key, surface: write.surface };
+          scope.widgets.set(key, presentation);
+          write.onPublished?.(presentation);
         }
-      : content,
-    options,
-  );
-  const scope = runtimeScope(ctx);
-  // The object identity is the version. Replacing even identical content invalidates earlier selections.
-  scope.widgets.delete(key);
-  const presentation = { key, surface };
-  scope.widgets.set(key, presentation);
-  onPublished?.(presentation);
-  syncEscapeListener(ctx, scope);
+        refreshView = write.content !== undefined && write.surface === "VIEW";
+      } catch (error) {
+        if (scope.widgetWrites.get(key)?.next === undefined) throw error;
+      }
+      write = scope.widgetWrites.get(key)?.next;
+      if (write !== undefined) {
+        superseded = true;
+        scope.widgetWrites.set(key, {});
+      }
+    }
+  } finally {
+    scope.widgetWrites.delete(key);
+    synchronizeViewListener(ctx, scope, refreshView);
+  }
+  return !superseded;
 }
 
 export function currentCommandWidgetPresentation(
@@ -219,21 +246,21 @@ export function setCommandWidgetPresented(
   return true;
 }
 
+/** Clear only this version. Completion and command admission own their separate cleanup effects. */
 export function clearCommandWidgetPresentation(
   ctx: ExtensionContext,
   presentation: CommandWidgetPresentation,
-  deferredCleanup?: Set<(ctx: ExtensionContext) => void>,
 ): boolean {
   const scope = currentScope(ctx);
   const { key } = presentation;
   if (scope === undefined || scope.widgets.get(key) !== presentation || isTransientKeyPinned(scope, key)) return false;
-  if (!clearWidget(ctx, key) || scope.widgets.get(key) !== presentation) return false;
-  scope.widgets.delete(key);
-  syncEscapeListener(ctx, scope);
-  const callbacks = deferredCleanup ?? new Set<(ctx: ExtensionContext) => void>();
-  collectTransientCleanup(scope, key, callbacks);
-  if (deferredCleanup === undefined) runTransientCleanup(ctx, callbacks);
-  return true;
+  if (scope.widgetWrites.has(key)) return false;
+  try {
+    return writeCommandWidget(ctx, scope, key, { content: undefined, options: undefined, surface: undefined });
+  } catch {
+    // A host can throw after applying part of the clear. Do not report success.
+    return false;
+  }
 }
 
 function rememberCommandUiSpec(pi: ExtensionAPI, spec: CommandUiLifecycleSpec): void {
@@ -244,6 +271,13 @@ function installInputCleanup(pi: ExtensionAPI): void {
   const registration = ownerRegistration(pi);
   if (registration.inputCleanupInstalled) return;
   registration.inputCleanupInstalled = true;
+  pi.on("session_shutdown", (_event, ctx) => {
+    const registry = commandUiRegistry();
+    const scope = currentScope(ctx);
+    if (scope === undefined) return;
+    registry.byUi.delete(ctx.ui);
+    scope.viewUnsubscribe?.();
+  });
   pi.on("input", (event, ctx) => {
     const text = inputText(event).trim();
     if (text === "") return;
@@ -268,20 +302,29 @@ function isTextInputObject(input: unknown): input is { text: string } {
   return typeof input === "object" && input !== null && typeof (input as { text?: unknown }).text === "string";
 }
 
-function collectTransientCleanup(
-  scope: CommandUiRuntimeScope,
-  key: string,
-  callbacks: Set<(ctx: ExtensionContext) => void>,
-): void {
+function collectTransientCleanup(scope: CommandUiRuntimeScope, key: string, callbacks: Set<PrepareCleanup>): void {
   for (const owner of scope.owners) {
     for (const cleanup of owner.cleanupByKey.get(key) ?? []) callbacks.add(cleanup);
   }
 }
 
-function runTransientCleanup(ctx: ExtensionContext, callbacks: Set<(ctx: ExtensionContext) => void>): void {
-  for (const cleanup of callbacks) {
+function prepareTransientCleanup(ctx: ExtensionContext, callbacks: Set<PrepareCleanup>) {
+  const prepared = new Map<PrepareCleanup, () => void>();
+  for (const prepare of callbacks) {
     try {
-      cleanup(ctx);
+      const cleanup = prepare(ctx);
+      if (cleanup !== undefined) prepared.set(prepare, cleanup);
+    } catch {
+      // UI cleanup stays best-effort; an owner callback cannot break input.
+    }
+  }
+  return prepared;
+}
+
+function runTransientCleanup(prepared: Map<PrepareCleanup, () => void>, cleared: Set<PrepareCleanup>): void {
+  for (const prepare of cleared) {
+    try {
+      prepared.get(prepare)?.();
     } catch {
       // UI cleanup stays best-effort; an owner callback cannot break input.
     }
@@ -328,83 +371,40 @@ function clearWidget(ctx: ExtensionContext, key: string): boolean {
   }
 }
 
-export function observeCommandUiFocus(
-  ctx: ExtensionContext,
-  tui: unknown,
-  component?: object,
-  factory?: EditorFactory,
-): void {
-  const scope = runtimeScope(ctx);
-  scope.focus = observeFocus(scope.focus, tui, component, factory);
+function newestView(scope: CommandUiRuntimeScope): CommandWidgetPresentation | undefined {
+  return [...scope.widgets.values()]
+    .reverse()
+    .find(
+      ({ key, surface, hidden }) => surface === "VIEW" && !hidden && !isTransientKeyPinned(scope, key) && !scope.widgetWrites.has(key),
+    );
 }
 
-export function registerEscapeWork(ctx: ExtensionContext, owner: "agents" | "workflows", read: () => EscapeWork): void {
-  const scope = runtimeScope(ctx);
-  scope.work.set(owner, read);
-  syncEscapeListener(ctx, scope);
+/** The agents guard defers only to a VIEW that this subscription can close. */
+export function hasDismissibleCommandView(ctx: ExtensionContext): boolean {
+  const scope = currentScope(ctx);
+  return scope?.viewUnsubscribe !== undefined && newestView(scope) !== undefined;
 }
 
-function syncEscapeListener(ctx: ExtensionContext, scope: CommandUiRuntimeScope): void {
-  if (ctx.mode !== "tui" || ctx.hasUI === false || ctx.ui.onTerminalInput === undefined) return;
-  if (scope.widgets.size === 0 && scope.work.size === 0) {
-    scope.terminalInputUnsubscribe?.();
-    scope.terminalInputUnsubscribe = undefined;
-    return;
+function synchronizeViewListener(ctx: ExtensionContext, scope: CommandUiRuntimeScope, refresh: boolean): void {
+  if (currentScope(ctx) !== scope) return;
+  if (refresh || ![...scope.widgets.values()].some(({ surface }) => surface === "VIEW")) {
+    scope.viewUnsubscribe?.();
+    scope.viewUnsubscribe = undefined;
   }
-  const custom = ctx.ui.custom;
-  if (custom !== undefined && custom !== scope.customMounts?.observed) {
-    const observed = observeCustomMounts(ctx, custom, (tui, component, sessionId) => {
-      const active = currentScope(ctx);
-      if (active?.sessionId === sessionId) active.focus = observeFocus(active.focus, tui, component);
-    });
-    scope.customMounts = { original: custom, observed };
-    ctx.ui.custom = observed;
-  }
-  if (scope.terminalInputUnsubscribe !== undefined) return;
-
-  // The view and interrupt owners share one subscription, so no later peer can
-  // change the presentation between our decision to protect and its consumption.
+  if (!refresh || ctx.mode !== "tui" || ctx.hasUI === false || ctx.ui.onTerminalInput === undefined) return;
+  // Pi resets raw listeners when the host rebinds. Refresh on each VIEW publication.
   const unsubscribe = ctx.ui.onTerminalInput((data) => {
-    if (currentScope(ctx) !== scope || scope.terminalInputUnsubscribe !== unsubscribe || !isEscapePress(data))
-      return undefined;
-    const focus = captureFocus(ctx, scope.focus);
-    const presentation = [...scope.widgets.values()].at(-1);
-    const agents = scope.work.get("agents")?.();
-    const workflow = scope.work.get("workflows")?.();
-    const responseActive = !ctx.isIdle();
-    const snapshot = {
-      focus: focus.kind,
-      ...(presentation === undefined
-        ? {}
-        : {
-            presentation: {
-              identity: presentation,
-              surface: presentation.surface,
-              pinned: isTransientKeyPinned(scope, presentation.key),
-            },
-          }),
-      busyWork: agents?.busy === true || workflow?.busy === true,
-      responseActive,
-    };
-    const decision = decideEscape(snapshot);
-    if (decision === "pass") return undefined;
-    if (decision === "deliver" && focus.kind === "local") focus.deliver();
-    if (decision === "close-view" && snapshot.presentation !== undefined)
-      clearCommandWidgetPresentation(ctx, snapshot.presentation.identity);
-    if (
-      decision === "protect" &&
-      (presentation === undefined || presentation.surface === "LIVE") &&
-      responseActive &&
-      !workflow?.busy
-    )
-      agents?.confirmInterrupt?.();
+    if (!isEscapePress(data) || currentScope(ctx) !== scope || scope.viewUnsubscribe !== unsubscribe) return undefined;
+    const presentation = newestView(scope);
+    if (presentation === undefined) return undefined;
+    const callbacks = new Set<PrepareCleanup>();
+    collectTransientCleanup(scope, presentation.key, callbacks);
+    const prepared = prepareTransientCleanup(ctx, callbacks);
+    if (clearCommandWidgetPresentation(ctx, presentation)) runTransientCleanup(prepared, callbacks);
+    // This VIEW owned the press, even if the host failed to clear it.
     return { consume: true };
   });
-  scope.terminalInputUnsubscribe = unsubscribe;
-}
-
-export function isEscapePress(data: string): boolean {
-  return !isKeyRelease(data) && (matchesKey(data, "escape") || data === "escape");
+  scope.viewUnsubscribe = unsubscribe;
 }
 
 function bindOwnerToUi(pi: ExtensionAPI, ctx: ExtensionContext): CommandUiRuntimeScope {
@@ -426,16 +426,13 @@ function runtimeScope(ctx: ExtensionContext): CommandUiRuntimeScope {
   const existing = registry.byUi.get(ctx.ui);
   const sessionId = getSessionId(ctx);
   if (existing?.sessionId === sessionId) return existing;
-  existing?.terminalInputUnsubscribe?.();
-  if (existing?.customMounts?.observed === ctx.ui.custom && existing?.customMounts !== undefined)
-    ctx.ui.custom = existing.customMounts.original;
+  existing?.viewUnsubscribe?.();
   const created: CommandUiRuntimeScope = {
     sessionId,
     owners: new Set<CommandUiOwnerRegistration>(),
     widgets: new Map(),
-    terminalInputUnsubscribe: undefined,
-    focus: undefined,
-    work: new Map(),
+    viewUnsubscribe: undefined,
+    widgetWrites: new Map(),
   };
   registry.byUi.set(ctx.ui, created);
   return created;
@@ -450,7 +447,7 @@ function ownerRegistration(pi: ExtensionAPI): CommandUiOwnerRegistration {
     specs: new Map<string, CommandUiLifecycleSpec>(),
     inputCleanupInstalled: false,
     pinnedKeys: new Map<string, number>(),
-    cleanupByKey: new Map<string, Set<(ctx: ExtensionContext) => void>>(),
+    cleanupByKey: new Map<string, Set<PrepareCleanup>>(),
   };
   registry.pendingByPi.set(pi, created);
   return created;
@@ -461,7 +458,7 @@ function commandUiRegistry(): CommandUiRegistry {
   const existing = globalRecord[COMMAND_UI_REGISTRY_SYMBOL];
   if (existing === undefined) {
     const created: CommandUiRegistry = {
-      version: 4,
+      version: 5,
       pendingByPi: new WeakMap<ExtensionAPI, CommandUiOwnerRegistration>(),
       byUi: new WeakMap<object, CommandUiRuntimeScope>(),
     };
@@ -470,7 +467,7 @@ function commandUiRegistry(): CommandUiRegistry {
   }
 
   if (!isCommandUiRegistry(existing)) {
-    throw new Error("Incompatible global command UI registry at locus-pi.command-ui-lifecycle.v4");
+    throw new Error("Incompatible global command UI registry at locus-pi.command-ui-lifecycle.v5");
   }
   return existing;
 }
@@ -478,5 +475,5 @@ function commandUiRegistry(): CommandUiRegistry {
 function isCommandUiRegistry(value: unknown): value is CommandUiRegistry {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Partial<CommandUiRegistry>;
-  return candidate.version === 4 && candidate.pendingByPi instanceof WeakMap && candidate.byUi instanceof WeakMap;
+  return candidate.version === 5 && candidate.pendingByPi instanceof WeakMap && candidate.byUi instanceof WeakMap;
 }

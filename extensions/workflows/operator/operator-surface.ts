@@ -9,8 +9,7 @@
  */
 
 import type { ExtensionContext } from "../../_shared/host/pi-api.js";
-import { clearCommandWidgetPresentation, currentCommandWidgetPresentation } from "../../_shared/operator/command-ui.js";
-import { clearOperatorStatus, setOperatorStatus } from "../../_shared/operator/operator-status.js";
+import { prepareOperatorStatusClear, setOperatorStatus } from "../../_shared/operator/operator-status.js";
 import type { WorkflowJournalLine } from "../runtime/workflow-runtime.js";
 import { setOperatorWidget } from "../../_shared/operator/widget-render.js";
 import type { WorkflowHandoffPumpResult } from "./operator-handoff-controller.js";
@@ -19,13 +18,8 @@ import { renderMainWorkflowStatus } from "../transcript/workflow-transcript.js";
 
 const WORKFLOW_STATUS_ID = "workflow.run";
 
-export function clearWorkflowWidget(ctx: ExtensionContext, key: string): void {
-  const presentation = currentCommandWidgetPresentation(ctx, key);
-  if (presentation !== undefined) clearCommandWidgetPresentation(ctx, presentation);
-}
-
-export function clearWorkflowRunStatus(ctx: ExtensionContext): void {
-  clearOperatorStatus(ctx, WORKFLOW_STATUS_ID);
+export function prepareWorkflowRunStatusClear(ctx: ExtensionContext): (() => void) | undefined {
+  return prepareOperatorStatusClear(ctx, WORKFLOW_STATUS_ID);
 }
 
 export function setWorkflowLaunchStatus(ctx: ExtensionContext, kind: string, ref: string): void {

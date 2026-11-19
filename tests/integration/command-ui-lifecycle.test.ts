@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { CustomEditor, discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
+import { discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import agents from "../../extensions/agents/index.js";
 import model from "../../extensions/model/index.js";
@@ -31,8 +31,7 @@ import { createHarness, emit } from "../test-harness.js";
 
 describe("command UI lifecycle", () => {
   it("dismisses the latest passive VIEW with Escape and leaves no raw listener behind", async () => {
-    const editor = Object.assign(Object.create(CustomEditor.prototype), { isShowingAutocomplete: () => false });
-    const h = createHarness(process.cwd(), { getFocusedComponent: () => editor });
+    const h = createHarness();
     delete h.ctx.ui.custom;
     workflows(h.pi);
 
@@ -100,11 +99,21 @@ describe("command UI lifecycle", () => {
       h.customInputQueue.push("\x1b");
       await run("list", h.ctx);
       expect(h.statuses.get("locus")).toBeUndefined();
-      setWorkflowLaunchStatus(h.ctx, "fixture", "settled again");
-      await emit(h, "turn_end");
-      expect(h.statuses.get("locus")).toBeUndefined();
     },
   );
+
+  it("does not clear a warning when a peer handles input before the lifecycle", async () => {
+    const h = createHarness();
+    h.pi.on("input", () => ({ action: "handled" }));
+    workflows(h.pi);
+    await h.commands.get("workflows")!.handler("status missing", h.ctx);
+    const old = h.widgetPayloads.get("workflows");
+    for (const listener of h.handlers.get("input") ?? []) {
+      const result = await listener({ type: "input", text: "peer text", source: "interactive" }, h.ctx);
+      if (typeof result === "object" && result !== null && "action" in result && result.action === "handled") break;
+    }
+    expect(h.widgetPayloads.get("workflows")).toBe(old);
+  });
 
   it("keeps a later ERROR through deferred input and the pending Escape route", async () => {
     const h = createHarness();
@@ -130,8 +139,7 @@ describe("command UI lifecycle", () => {
   });
 
   it("keeps a rebound VIEW safe from the old listener after an asynchronous handoff warning", async () => {
-    const editor = Object.assign(Object.create(CustomEditor.prototype), { isShowingAutocomplete: () => false });
-    const h = createHarness(process.cwd(), { getFocusedComponent: () => editor });
+    const h = createHarness();
     const view = { type: "VIEW", subject: "Workflow view", primary: "Recorded evidence" } as const;
     let finish!: (result: WorkflowHandoffPumpResult) => void;
     const result = new Promise<WorkflowHandoffPumpResult>((resolve) => {
@@ -164,33 +172,19 @@ describe("command UI lifecycle", () => {
     }
   });
 
-  it("preserves a fresh ERROR rendered during cleanup through the catalog", async () => {
+  it("refreshes the VIEW listener when Pi clears subscriptions on a same-UI rebind", async () => {
     const h = createHarness();
-    registerCommandWithUiLifecycle(
-      h.pi,
-      {
-        command: "peer-status",
-        surfaces: ["status"],
-        transientStatuses: ["test-status"],
-      },
-      { handler() {} },
-    );
     workflows(h.pi);
-    const run = h.commands.get("workflows")!.handler;
-    await run("status t162-missing-run", h.ctx);
-    h.ctx.ui.setStatus("test-status", "stale peer status");
-    const setStatus = h.ctx.ui.setStatus.bind(h.ctx.ui);
-    vi.spyOn(h.ctx.ui, "setStatus").mockImplementation((key, text) => {
-      setStatus(key, text);
-      if (key === "test-status" && text === undefined) {
-        setOperatorWidget(h.ctx, "workflows", { type: "ERROR", subject: "Concurrent failure", primary: "New output" });
-      }
-    });
-    h.customInputQueue.push("\x1b");
-
-    await run("list", h.ctx);
-    expect(h.customComponents).toHaveLength(1);
-    expect(h.widgets.get("workflows")).toContain("[ERROR] Concurrent failure");
+    const view = { type: "VIEW", subject: "Rebound view", primary: "Current" } as const;
+    setOperatorWidget(h.ctx, "workflows", view);
+    const old = [...h.terminalInputHandlers][0]!;
+    h.terminalInputHandlers.clear();
+    setOperatorWidget(h.ctx, "workflows", view);
+    const current = [...h.terminalInputHandlers][0];
+    expect(current).toBeDefined();
+    expect(old("\x1b[27u")).toBeUndefined();
+    expect(current?.("\x1b[27u")).toEqual({ consume: true });
+    expect(h.widgets.get("workflows")).toBe("");
   });
 
   it("leaves the pinned progress widget in place when the root menu opens", async () => {

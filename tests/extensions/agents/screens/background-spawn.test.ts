@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { createHarness, runTool } from "../../../test-harness.js";
+import { createHarness, emit, runTool } from "../../../test-harness.js";
 import { agentLiveStore } from "../../../../extensions/_shared/agent-runtime/agent-live-store.js";
+import agents from "../../../../extensions/agents/index.js";
+import workflows from "../../../../extensions/workflows/index.js";
+import { registerAgentCommands } from "../../../../extensions/agents/command/command-router.js";
+import {
+  currentCommandWidgetPresentation,
+  pinTransientUiKey,
+  setCommandWidget,
+} from "../../../../extensions/_shared/operator/command-ui.js";
+import { setWorkflowLaunchStatus } from "../../../../extensions/workflows/operator/operator-surface.js";
+import { WORKFLOW_LIVE_WIDGET_KEY } from "../../../../extensions/workflows/operator/progress-widget.js";
+import { workflowBackgroundRunRegistry } from "../../../../extensions/workflows/run/background-run-registry.js";
 const execution = vi.hoisted(() => ({ run: vi.fn() }));
 vi.mock("../../../../extensions/agents/run/run-launcher.js", async (original) => ({
   ...(await original<typeof import("../../../../extensions/agents/run/run-launcher.js")>()),
@@ -143,4 +154,118 @@ it("a wait crossing session_start cannot return old-session result", async () =>
   const result = await pending;
   expect(result.isError).toBe(true);
   expect(JSON.stringify(result)).not.toContain("Checked result");
+});
+
+it("preserves actual spawn_agent pins until the last child settles through registered workflow cleanup", async () => {
+  const h = createHarness(undefined, { isStreaming: true, sessionId: "tool-pin-proof" });
+  h.ctx.hasUI = true;
+  agents(h.pi);
+  workflows(h.pi);
+  await emit(h, "session_start");
+  await h.commands.get("agent")!.handler("owner binding", h.ctx);
+  vi.spyOn(h.ctx.ui, "select").mockResolvedValue(undefined);
+  const registry = workflowBackgroundRunRegistry();
+  const lease = registry.startSession(h.ctx.session!.projectRoot!, h.ctx.session!.id);
+  const parent = new AbortController();
+  let finishWorkflow!: () => void;
+  const workflow = registry.attach(
+    lease,
+    parent.signal,
+    () =>
+      new Promise<void>((resolve) => {
+        finishWorkflow = resolve;
+      }),
+  );
+  if (!workflow.ok) throw new Error("Fixture workflow did not attach");
+  await Promise.resolve();
+  pinTransientUiKey(h.pi, WORKFLOW_LIVE_WIDGET_KEY);
+  const progress = ["Pinned workflow fixture progress"];
+  setCommandWidget(h.ctx, WORKFLOW_LIVE_WIDGET_KEY, progress);
+  setWorkflowLaunchStatus(h.ctx, "fixture", "live status");
+  const status = h.statuses.get("locus");
+
+  const releases: Array<() => void> = [];
+  const cancel = vi.fn();
+  execution.run.mockImplementation(async ({ rowId, label, signal }) => {
+    const row = agentLiveStore.begin({ id: rowId, label, workflowRunId: "held" });
+    agentLiveStore.patch(row.id, { status: "working" });
+    agentLiveStore.registerCancel(row.id, cancel);
+    signal.addEventListener("abort", cancel);
+    await new Promise<void>((resolve) => {
+      releases.push(resolve);
+    });
+    agentLiveStore.patch(row.id, { status: "done" });
+    return success;
+  });
+  const children = [
+    runTool(h, "spawn_agent", { task: "First child", background: false }),
+    runTool(h, "spawn_agent", { task: "Second child", background: false }),
+  ];
+  try {
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    const payload = h.widgetPayloads.get("agents");
+    const presentation = currentCommandWidgetPresentation(h.ctx, "agents");
+    const rows = [...agentLiveStore.rows.keys()];
+    expect(typeof payload).toBe("function");
+    expect(presentation).toBeDefined();
+    expect(rows).toHaveLength(2);
+
+    const heldEscape = [...h.terminalInputHandlers].some((listener) => listener("\x1b[27u")?.consume);
+    if (!heldEscape) {
+      h.ctx.abort?.();
+      parent.abort();
+    }
+    const run = h.commands.get("workflows")!.handler;
+    await run("", h.ctx);
+    expect(h.widgetPayloads.get("agents")).toBe(payload);
+    expect(currentCommandWidgetPresentation(h.ctx, "agents")).toBe(presentation);
+    expect(h.widgetPayloads.get(WORKFLOW_LIVE_WIDGET_KEY)).toBe(progress);
+    expect(h.statuses.get("locus")).toBe(status);
+    expect([...agentLiveStore.rows.keys()]).toEqual(rows);
+    expect(rows.map((id) => agentLiveStore.rows.get(id)?.status)).toEqual(["working", "working"]);
+    expect(registry.unsettled(lease)[0]).toMatchObject({ state: "running", stopRequested: false });
+    expect(h.abortCalls).toBe(0);
+    expect(h.confirmCalls).toHaveLength(0);
+    expect(cancel).not.toHaveBeenCalled();
+
+    releases[0]?.();
+    await children[0];
+    await emit(h, "input", { text: "ordinary input", source: "interactive" });
+    expect(h.widgetPayloads.get("agents")).toBe(payload);
+    expect(currentCommandWidgetPresentation(h.ctx, "agents")).toBe(presentation);
+
+    releases[1]?.();
+    await children[1];
+    await run("status unresolved", h.ctx);
+    expect(h.widgetPayloads.get("agents")).toBeUndefined();
+    expect(currentCommandWidgetPresentation(h.ctx, "agents")).toBeUndefined();
+  } finally {
+    for (const release of releases) release();
+    finishWorkflow();
+    await Promise.allSettled(children);
+    await workflow.run.terminal;
+    registry.shutdown(lease);
+  }
+});
+
+it.each(["ps", "agent"] as const)("keeps the registry aligned with the existing physical %s clear", async (command) => {
+  const h = createHarness();
+  h.ctx.hasUI = true;
+  registerAgentCommands(h.pi, {
+    openFleetMenu: async () => {},
+    openAgentScreen: async () => {},
+    agentSessionAuthority: { capture: () => 1, isCurrent: () => true },
+  });
+  registerAgentSpawnTools(h.pi);
+  const child = runTool(h, "spawn_agent", { task: "Held dialog", background: false });
+  try {
+    await vi.waitFor(() => expect(execution.run).toHaveBeenCalledOnce());
+    expect(currentCommandWidgetPresentation(h.ctx, "agents")).toBeDefined();
+    await h.commands.get(command)!.handler(command === "agent" ? "drill fixture" : "", h.ctx);
+    expect(h.widgetPayloads.get("agents")).toBeUndefined();
+    expect(currentCommandWidgetPresentation(h.ctx, "agents")).toBeUndefined();
+  } finally {
+    finish(success);
+    await child;
+  }
 });

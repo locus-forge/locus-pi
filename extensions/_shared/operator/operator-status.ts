@@ -61,6 +61,17 @@ export function clearOperatorStatus(
   publishOperatorStatus(ctx, contributions, terminalWidth);
 }
 
+/** Capture this contribution so a later publication under the same ID stays visible. */
+export function prepareOperatorStatusClear(ctx: ExtensionContext, id: string): (() => void) | undefined {
+  const ui = ctx.ui;
+  const registry = getOperatorStatusRegistry();
+  const selected = registry.byUi.get(ui)?.get(id);
+  if (selected === undefined) return undefined;
+  return () => {
+    if (ctx.ui === ui && registry.byUi.get(ui)?.get(id) === selected) clearOperatorStatus(ctx, id);
+  };
+}
+
 export function clearAllOperatorStatuses(ctx: ExtensionContext): void {
   getOperatorStatusRegistry().byUi.delete(ctx.ui);
   ctx.ui.setStatus(OPERATOR_STATUS_KEY, undefined);

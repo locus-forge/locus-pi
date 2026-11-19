@@ -8,6 +8,11 @@ import * as runner from "../../../../extensions/workflows/runtime/workflow-runne
 import { ensureWorkflowRunDir } from "../../../../extensions/workflows/runtime/workflow-run-layout.js";
 import { workflowResultFile } from "../../../../extensions/workflows/runtime/workflow-result.js";
 import workflows from "../../../../extensions/workflows/index.js";
+import {
+  WorkflowOperatorHandoffController,
+  type WorkflowHandoffPumpResult,
+} from "../../../../extensions/workflows/operator/operator-handoff-controller.js";
+import { setOperatorWidget } from "../../../../extensions/_shared/operator/widget-render.js";
 import { writeNativeHandoffRun } from "../../../fixtures/workflow-persisted-run.js";
 import { createHarness, emit } from "../../../test-harness.js";
 
@@ -304,6 +309,60 @@ describe("workflow actionable handoff integration", () => {
 
     expect(harness.widgets.get("workflows")).toContain("question mount exploded");
     expect(harness.widgets.get("workflows")).toContain("No workflow execution was started.");
+  });
+
+  it.each([
+    ["agent_settled", "invalid"],
+    ["agent_settled", "reject"],
+    ["terminal", "invalid"],
+    ["terminal", "reject"],
+  ] as const)("ignores a revoked %s pump that settles as %s after same-UI rebind", async (origin, outcome) => {
+    const runId = "20260725-120000-source";
+    const root = projectWithHandoff(runId);
+    const resultPath = workflowResultFile(ensureWorkflowRunDir(root, runId));
+    const durable = readFileSync(resultPath, "utf8");
+    const harness = createHarness(root);
+    workflows(harness.pi);
+    await emit(harness, "session_start");
+
+    let release!: () => void;
+    const pending = new Promise<WorkflowHandoffPumpResult>((resolve, reject) => {
+      release = () => {
+        if (outcome === "invalid") resolve({ status: "invalid", message: "Late old warning" });
+        else reject(new Error("Late old pump rejection"));
+      };
+    });
+    const method = origin === "terminal" ? "pumpAfterActive" : "pump";
+    const pump = vi.spyOn(WorkflowOperatorHandoffController.prototype, method).mockReturnValueOnce(pending);
+    const ui = harness.ctx.ui;
+    const getStaleUi = vi.fn(() => ui);
+    const initiatingCtx = {
+      ...harness.ctx,
+      get ui() {
+        return getStaleUi();
+      },
+    };
+    if (origin === "terminal") {
+      mockRuns([], [runId]);
+      await harness.commands.get("workflows")!.handler("run alpha", initiatingCtx);
+    } else {
+      for (const listener of harness.handlers.get("agent_settled") ?? []) {
+        await listener({ type: "agent_settled" }, initiatingCtx);
+      }
+    }
+    await vi.waitFor(() => expect(pump).toHaveBeenCalledOnce());
+
+    await emit(harness, "session_shutdown");
+    harness.ctx.session!.id = "new-handoff-session";
+    await emit(harness, "session_start");
+    setOperatorWidget(harness.ctx, "workflows", { type: "ERROR", subject: "New session error", primary: "Keep" });
+    getStaleUi.mockClear();
+    release();
+    await flushBackground();
+
+    expect(getStaleUi).not.toHaveBeenCalled();
+    expect(harness.widgets.get("workflows")).toContain("[ERROR] New session error");
+    expect(readFileSync(resultPath, "utf8")).toBe(durable);
   });
 
   it("pumps the next handoff when a continuation is itself a run that ends awaiting an operator", async () => {
