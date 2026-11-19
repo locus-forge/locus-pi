@@ -9,6 +9,7 @@
  */
 
 import type { ExtensionContext } from "../../_shared/host/pi-api.js";
+import { clearCommandWidgetPresentation, currentCommandWidgetPresentation } from "../../_shared/operator/command-ui.js";
 import { clearOperatorStatus, setOperatorStatus } from "../../_shared/operator/operator-status.js";
 import type { WorkflowJournalLine } from "../runtime/workflow-runtime.js";
 import { setOperatorWidget } from "../../_shared/operator/widget-render.js";
@@ -19,11 +20,8 @@ import { renderMainWorkflowStatus } from "../transcript/workflow-transcript.js";
 const WORKFLOW_STATUS_ID = "workflow.run";
 
 export function clearWorkflowWidget(ctx: ExtensionContext, key: string): void {
-  try {
-    ctx.ui.setWidget(key, undefined);
-  } catch {
-    // Best-effort cleanup; the usage hint still goes through notify.
-  }
+  const presentation = currentCommandWidgetPresentation(ctx, key);
+  if (presentation !== undefined) clearCommandWidgetPresentation(ctx, presentation);
 }
 
 export function clearWorkflowRunStatus(ctx: ExtensionContext): void {

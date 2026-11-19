@@ -10,8 +10,13 @@ import { snapshotWorkflowInput } from "./runtime/workflow-input.js";
  */
 
 import type { ExtensionAPI, ExtensionContext } from "../_shared/host/pi-api.js";
-import { getProjectRoot, getWorkingDirectory, setTextWidget } from "../_shared/host/pi-api.js";
-import { pinTransientUiKey, registerTransientUiCleanup, unpinTransientUiKey } from "../_shared/operator/command-ui.js";
+import { getProjectRoot, getWorkingDirectory } from "../_shared/host/pi-api.js";
+import {
+  pinTransientUiKey,
+  registerTransientUiCleanup,
+  setCommandWidget,
+  unpinTransientUiKey,
+} from "../_shared/operator/command-ui.js";
 import {
   applyWorkflowJournalLineToAgentLiveStore,
   pruneCompletedWorkflowRunLiveRows,
@@ -133,7 +138,7 @@ export default function workflows(pi: ExtensionAPI): void {
         onEvent(line) {
           applyWorkflowJournalLineToAgentLiveStore(line, getProjectRoot(request.ctx));
           if (preparation.hasUI) panel?.push(line);
-          else setTextWidget(request.ctx, "workflows", renderAgentLiveRowsText());
+          else setCommandWidget(request.ctx, "workflows", renderAgentLiveRowsText().split(/\r?\n/));
           transcript.event(line);
           setWorkflowEventStatus(request.ctx, line);
         },

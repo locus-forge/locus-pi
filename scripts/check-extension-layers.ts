@@ -381,7 +381,7 @@ const REGISTRIES: readonly RegistryEntry[] = [
   { symbol: "locus-pi.workflow-live-executions.v1", owner: "extensions/workflows/runtime/workflow-live.ts" },
   { symbol: "locus-pi.fleet-menu-state.v3", owner: "extensions/_shared/agent-runtime/fleet-menu.ts" },
   { symbol: "locus-pi.fleet-viewed-row.v1", owner: "extensions/_shared/agent-runtime/fleet-menu.ts" },
-  { symbol: "locus-pi.command-ui-lifecycle.v2", owner: "extensions/_shared/operator/command-ui.ts" },
+  { symbol: "locus-pi.command-ui-lifecycle.v3", owner: "extensions/_shared/operator/command-ui.ts" },
   { symbol: "locus-pi.operator-status.v1", owner: "extensions/_shared/operator/operator-status.ts" },
   { symbol: "locus-pi.workflow-background-runs.v1", owner: "extensions/workflows/run/background-run-registry.ts" },
   { symbol: "locus-pi.active-agent-session-viewers.v1", owner: "extensions/agents/fleet/session-viewer.ts" },

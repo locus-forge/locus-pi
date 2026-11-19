@@ -1,13 +1,28 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import agents from "../../extensions/agents/index.js";
 import model from "../../extensions/model/index.js";
 import workflows from "../../extensions/workflows/index.js";
 import type { ExtensionCommandContext } from "../../extensions/_shared/host/pi-api.js";
-import { pinTransientUiKey, unpinTransientUiKey } from "../../extensions/_shared/operator/command-ui.js";
+import {
+  clearCommandWidgetPresentation,
+  currentCommandWidgetPresentation,
+  pinTransientUiKey,
+  registerCommandWithUiLifecycle,
+  unpinTransientUiKey,
+} from "../../extensions/_shared/operator/command-ui.js";
+import { setOperatorWidget } from "../../extensions/_shared/operator/widget-render.js";
+import {
+  presentWorkflowHandoffPumpResult,
+  setWorkflowLaunchStatus,
+} from "../../extensions/workflows/operator/operator-surface.js";
+import { WORKFLOW_LIVE_WIDGET_KEY } from "../../extensions/workflows/operator/progress-widget.js";
+import { ensureWorkflowRunDir, workflowJournalFile } from "../../extensions/workflows/runtime/workflow-run-layout.js";
+import { workflowResultFile } from "../../extensions/workflows/runtime/workflow-result.js";
+import { appendProjectError } from "../../extensions/_shared/host/error-journal.js";
 import { createHarness, emit } from "../test-harness.js";
 
 describe("command UI lifecycle", () => {
@@ -45,6 +60,176 @@ describe("command UI lifecycle", () => {
     expect(h.widgets.get("workflows")).toContain("evidence is shown instead.");
     expect(h.widgets.get("workflows")).not.toContain("Recovery: /workflows status");
     expect(h.terminalInputHandlers.size).toBe(1);
+  });
+
+  it.each(["before", "after"] as const)(
+    "preserves a workflow ERROR and settled status with a peer %s input cleanup",
+    async (order) => {
+      const h = createHarness();
+      const failure = () => {
+        setOperatorWidget(h.ctx, "workflows", {
+          type: "ERROR",
+          subject: "New failure",
+          primary: "Original diagnostics",
+        });
+        return { action: "continue" } as const;
+      };
+      if (order === "before") h.pi.on("input", failure);
+      workflows(h.pi);
+      if (order === "after") h.pi.on("input", failure);
+      const run = h.commands.get("workflows")!.handler;
+      await run("status t162-missing-run", h.ctx);
+      expect(h.widgets.get("workflows")).toContain("[WARN]");
+      setWorkflowLaunchStatus(h.ctx, "fixture", "settled");
+      const status = h.statuses.get("locus");
+      expect(status).toContain("WF launch");
+      const setStatus = vi.spyOn(h.ctx.ui, "setStatus");
+      const setWidget = vi.spyOn(h.ctx.ui, "setWidget");
+
+      await emit(h, "input", { text: "ordinary input", source: "interactive" });
+      expect(h.widgets.get("workflows")).toContain("[ERROR] New failure");
+      expect(h.statuses.get("locus")).toBe(status);
+      expect(setStatus).not.toHaveBeenCalled();
+      expect(setWidget).not.toHaveBeenCalledWith(WORKFLOW_LIVE_WIDGET_KEY, undefined);
+
+      h.customInputQueue.push("\x1b");
+      await run("list", h.ctx);
+      expect(h.statuses.get("locus")).toBeUndefined();
+      setWorkflowLaunchStatus(h.ctx, "fixture", "settled again");
+      await emit(h, "turn_end");
+      expect(h.statuses.get("locus")).toBeUndefined();
+    },
+  );
+
+  it("keeps a later ERROR through deferred input and the pending Escape route", async () => {
+    const h = createHarness();
+    workflows(h.pi);
+    const run = h.commands.get("workflows")!.handler;
+    await run("status t162-missing-run", h.ctx);
+    expect(h.widgets.get("workflows")).toContain("[WARN]");
+    // A handoff failure can render while the input accepted by Pi is still queued.
+    presentWorkflowHandoffPumpResult(h.ctx, { status: "invalid", message: "Handoff fixture warning" });
+    expect(h.widgets.get("workflows")).toContain("Handoff fixture warning");
+    setOperatorWidget(h.ctx, "workflows", { type: "ERROR", subject: "Late failure", primary: "Compaction fixture" });
+    for (const listener of h.terminalInputHandlers) expect(listener("\x1b[27u")?.consume).not.toBe(true);
+    expect(h.widgets.get("workflows")).toContain("[ERROR] Late failure");
+
+    await emit(h, "input", { text: "queued text", source: "interactive" });
+    expect(h.widgets.get("workflows")).toContain("[ERROR] Late failure");
+    h.customInputQueue.push("\x1b");
+    await run("list", h.ctx);
+    expect(h.widgets.get("workflows")).toBe("");
+    expect(h.customComponents).toHaveLength(1);
+  });
+
+  it("preserves a fresh ERROR rendered during cleanup through the catalog", async () => {
+    const h = createHarness();
+    registerCommandWithUiLifecycle(
+      h.pi,
+      {
+        command: "peer-status",
+        surfaces: ["status"],
+        transientStatuses: ["test-status"],
+      },
+      { handler() {} },
+    );
+    workflows(h.pi);
+    const run = h.commands.get("workflows")!.handler;
+    await run("status t162-missing-run", h.ctx);
+    h.ctx.ui.setStatus("test-status", "stale peer status");
+    const setStatus = h.ctx.ui.setStatus.bind(h.ctx.ui);
+    vi.spyOn(h.ctx.ui, "setStatus").mockImplementation((key, text) => {
+      setStatus(key, text);
+      if (key === "test-status" && text === undefined) {
+        setOperatorWidget(h.ctx, "workflows", { type: "ERROR", subject: "Concurrent failure", primary: "New output" });
+      }
+    });
+    h.customInputQueue.push("\x1b");
+
+    await run("list", h.ctx);
+    expect(h.customComponents).toHaveLength(1);
+    expect(h.widgets.get("workflows")).toContain("[ERROR] Concurrent failure");
+  });
+
+  it("leaves the pinned progress widget in place when the root menu opens", async () => {
+    const h = createHarness();
+    workflows(h.pi);
+    const run = h.commands.get("workflows")!.handler;
+    await run("status t162-missing-run", h.ctx);
+    const progress = ["Live workflow progress"];
+    h.ctx.ui.setWidget(WORKFLOW_LIVE_WIDGET_KEY, progress);
+    pinTransientUiKey(h.pi, WORKFLOW_LIVE_WIDGET_KEY);
+    const select = vi.spyOn(h.ctx.ui, "select").mockResolvedValue(undefined);
+    await run("", h.ctx);
+    expect(h.widgets.get("workflows")).toBe("");
+    expect(h.widgetPayloads.get(WORKFLOW_LIVE_WIDGET_KEY)).toBe(progress);
+    expect(select).toHaveBeenCalledOnce();
+  });
+
+  it("clears only the selected presentation, once, within its UI and while unpinned", async () => {
+    const h = createHarness();
+    workflows(h.pi);
+    await h.commands.get("workflows")!.handler("status t162-missing-run", h.ctx);
+    const warn = { type: "WARN", subject: "Workflow run", primary: "Same content" } as const;
+    setOperatorWidget(h.ctx, "workflows", warn);
+    const stale = currentCommandWidgetPresentation(h.ctx, "workflows")!;
+    setOperatorWidget(h.ctx, "workflows", warn);
+    const selected = currentCommandWidgetPresentation(h.ctx, "workflows")!;
+    expect(selected.surface).toBe("WARN");
+    expect(clearCommandWidgetPresentation(h.ctx, stale)).toBe(false);
+    expect(clearCommandWidgetPresentation(createHarness().ctx, selected)).toBe(false);
+    pinTransientUiKey(h.pi, "workflows");
+    expect(clearCommandWidgetPresentation(h.ctx, selected)).toBe(false);
+    expect(h.widgets.get("workflows")).toContain("Same content");
+    unpinTransientUiKey(h.pi, "workflows");
+    expect(clearCommandWidgetPresentation(h.ctx, selected)).toBe(true);
+    expect(clearCommandWidgetPresentation(h.ctx, selected)).toBe(false);
+    expect(h.widgets.get("workflows")).toBe("");
+  });
+
+  it("reopens persisted run evidence after a warning clears", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "workflow-transient-evidence-"));
+    try {
+      const runId = "20261119-000001-proof";
+      const runDir = ensureWorkflowRunDir(root, runId);
+      const journalPath = workflowJournalFile(runDir);
+      const failure = appendProjectError(root, {
+        ts: "2026-11-19T00:00:00.000Z",
+        source: "workflow",
+        event: "error",
+        message: "Original failure",
+        runId,
+        journalPath,
+      });
+      expect(failure.id).toBeDefined();
+      const journal = [
+        {
+          ts: "2026-11-19T00:00:00.000Z",
+          runId,
+          kind: "error",
+          message: "Original failure",
+          errorLogPath: failure.path,
+        },
+      ];
+      const result = { runId, ok: false, result: "Original stored result", journal };
+      writeFileSync(journalPath, JSON.stringify(journal[0]) + "\n");
+      writeFileSync(workflowResultFile(runDir), JSON.stringify(result));
+
+      const h = createHarness(root);
+      delete h.ctx.ui.custom;
+      workflows(h.pi);
+      const run = h.commands.get("workflows")!.handler;
+      await run("status t162-missing-run", h.ctx);
+      await run(`status ${runId}`, h.ctx);
+      expect(h.widgets.get("workflows")).toContain("Original failure");
+      await run(`result ${runId}`, h.ctx);
+      expect(h.widgets.get("workflows")).toContain("Original stored result");
+      expect(JSON.parse(readFileSync(journalPath, "utf8"))).toEqual(journal[0]);
+      expect(JSON.parse(readFileSync(workflowResultFile(runDir), "utf8"))).toEqual(result);
+      expect(JSON.parse(readFileSync(failure.path, "utf8"))).toMatchObject({ id: failure.id, runId, journalPath });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("clears transient widgets and statuses when an unrelated slash command is entered", async () => {

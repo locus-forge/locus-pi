@@ -105,6 +105,10 @@ TUI without select receive the same help as a typed command fallback. Direct typ
 `/workflows run <name>` remain available. `/workflow-stop` remains the one
 emergency compatibility alias; every other operation uses `/workflows`.
 
+Use `/workflows status` after a warning to clear the previous panel and inspect run evidence.
+Live progress stays visible. Plain text and commands routed outside the workflow lifecycle
+can leave the previous warning in place.
+
 #### Start from the catalog
 
 `Start` restores editable text to the main editor; it never submits or starts a

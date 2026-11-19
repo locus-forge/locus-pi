@@ -410,7 +410,7 @@ describe("workflow progress terminal and headless projection", () => {
     }
   });
 
-  it("pins an active run, then retires its widget while retaining terminal rows on next input", async () => {
+  it("pins an active run and retires its settled widget on the next accepted command", async () => {
     const root = mkdtempSync(path.join(tmpdir(), "wf-live-input-"));
     try {
       const exactResult = `${"Complete implementation plan line. ".repeat(200)}\nUNTRUNCATED_COMMAND_RESULT`;
@@ -487,7 +487,7 @@ describe("workflow progress terminal and headless projection", () => {
       agentLiveStore.patch("agent-live-unlabelled", { status: "done", currentTools: ["bash"] });
       agentLiveStore.patch("agent-live-grandchild", { status: "done", currentTools: ["read"] });
 
-      await emit(harness, "input", { text: "new prompt after workflow completed" });
+      await handler("status unknown-fixture-run", harness.ctx);
 
       expect(harness.widgetPayloads.has(WORKFLOW_LIVE_WIDGET_KEY)).toBe(true);
       expect(harness.widgetPayloads.get(WORKFLOW_LIVE_WIDGET_KEY)).toBeUndefined();
