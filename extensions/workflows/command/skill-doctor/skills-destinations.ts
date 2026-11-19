@@ -1,56 +1,73 @@
 import { lstatSync, readlinkSync, realpathSync } from "node:fs";
 import path from "node:path";
 import type { WorkflowSkillHost, WorkflowSkillScope } from "../skills.js";
-import { readSkillEntry, sameObject, type FileIdentity } from "./skills-fs.js";
+import { readSkillEntry, type FileIdentity } from "./skills-fs.js";
 
 const HOST_DIRECTORIES = { codex: ".agents", claude: ".claude" } as const;
 export const WORKFLOW_SKILL_HOSTS: readonly WorkflowSkillHost[] = ["codex", "claude"];
 
+function appendPath(base: string, tail: string): string {
+  return `${base}${base.endsWith(path.sep) ? "" : path.sep}${tail}`;
+}
+
+function absolutePath(file: string, base = process.cwd()): string {
+  return path.isAbsolute(file) ? file : appendPath(base, file);
+}
+
 export function workflowSkillDestination(host: WorkflowSkillHost, base: string): string {
-  return path.join(base, HOST_DIRECTORIES[host], "skills");
+  return appendPath(absolutePath(base), path.join(HOST_DIRECTORIES[host], "skills"));
 }
 
 export function claudeOverride(userHome: string): string | undefined {
   const configured = process.env.CLAUDE_CONFIG_DIR;
-  return configured && path.resolve(configured) !== path.join(userHome, ".claude")
-    ? path.resolve(configured)
-    : undefined;
+  if (!configured) return undefined;
+  const alternate = absolutePath(configured);
+  return alternate === appendPath(absolutePath(userHome), ".claude") ? undefined : alternate;
 }
 
-interface ResolvedPeer {
+interface ResolvedLocation {
   ancestor: string;
+  identity: FileIdentity;
   suffix: string[];
 }
 
-// Keep the existing ancestor so equivalent spellings can match even before the skills directory exists.
-function resolvePeer(destination: string, depth = 0): ResolvedPeer | undefined {
-  if (depth >= 40) return undefined;
+function resolveLocation(destination: string, links = 0): ResolvedLocation | undefined {
+  if (links >= 40) throw new Error(`Too many symlink redirects: ${destination}`);
+  let ancestor: string;
   try {
-    return { ancestor: realpathSync(destination), suffix: [] };
+    // Resolve existing prefixes using filesystem traversal, including ".." after a link.
+    ancestor = realpathSync.native(destination);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ELOOP" || code === "ENOTDIR") return undefined;
     if (code !== "ENOENT") throw error;
     const parent = path.dirname(destination);
     if (parent === destination) return undefined;
-    const physicalParent = resolvePeer(parent, depth + 1);
-    if (!physicalParent) return undefined;
+    const resolved = resolveLocation(parent, links);
+    if (!resolved) return undefined;
     const entry = lstatSync(destination, { throwIfNoEntry: false });
     if (entry?.isSymbolicLink()) {
-      return resolvePeer(
-        path.resolve(physicalParent.ancestor, ...physicalParent.suffix, readlinkSync(destination)),
-        depth + 1,
-      );
+      return resolveLocation(absolutePath(readlinkSync(destination), resolved.ancestor), links + 1);
     }
-    return { ...physicalParent, suffix: [...physicalParent.suffix, path.basename(destination)] };
+    const name = path.basename(destination);
+    if (name === ".." || name === ".") {
+      throw new Error(`Cannot resolve ${destination} through a missing path component`);
+    }
+    return { ...resolved, suffix: [...resolved.suffix, name] };
   }
+  const entry = readSkillEntry(ancestor, false);
+  return entry?.kind === "directory" ? { ancestor, identity: entry.identity, suffix: [] } : undefined;
 }
 
-function sameDirectory(first: string, second: string): boolean {
-  if (first === second) return true;
-  const a = readSkillEntry(first, false);
-  const b = readSkillEntry(second, false);
-  return a?.kind === "directory" && b?.kind === "directory" && sameObject(a.identity, b.identity);
+function sameLocation(a: ResolvedLocation, b: ResolvedLocation): boolean {
+  if (a.identity.inode === "0" || a.identity.inode !== b.identity.inode || a.identity.device !== b.identity.device) {
+    return false;
+  }
+  // A missing name cannot be probed without a write. Conservatively fold case in the tail.
+  return (
+    a.suffix.length === b.suffix.length &&
+    a.suffix.every((name, index) => name.normalize().toLowerCase() === b.suffix[index]!.normalize().toLowerCase())
+  );
 }
 
 export function resolveSkillDirectories(
@@ -60,27 +77,28 @@ export function resolveSkillDirectories(
   projectRoot: string,
 ): Map<string, FileIdentity | undefined> {
   const selectedBase = scope === "user" ? userHome : projectRoot;
-  const base = realpathSync(selectedBase);
+  const baseLocation = resolveLocation(absolutePath(selectedBase));
+  if (!baseLocation || baseLocation.suffix.length) throw new Error(`Cannot resolve destination base: ${selectedBase}`);
+  const base = baseLocation.ancestor;
   const selected = workflowSkillDestination(host, base);
   const selectedLogical = workflowSkillDestination(host, selectedBase);
   const directories = new Map<string, FileIdentity | undefined>();
   for (const directory of [base, path.dirname(selected), selected]) {
     const entry = readSkillEntry(directory, false);
     if (entry?.kind === "link") {
-      const peer = resolvePeer(directory);
+      const peer = resolveLocation(directory);
       const target = peer ? path.join(peer.ancestor, ...peer.suffix) : entry.value;
       throw new Error(`Destination redirected: ${directory} → ${target}`);
     }
     if (entry && entry.kind !== "directory") throw new Error(`Destination is not a directory: ${directory}`);
     directories.set(directory, entry?.identity);
   }
-  const selectedPeer = resolvePeer(selected);
+  const selectedPeer = resolveLocation(selected);
   if (!selectedPeer) throw new Error(`Cannot resolve destination: ${selectedLogical}`);
 
-  const project = resolvePeer(projectRoot);
+  const project = resolveLocation(absolutePath(projectRoot));
   // Allow the personal layout when the project is HOME, without exempting any explicit Claude peer.
-  const projectAtHome =
-    scope === "user" && project && project.suffix.length === 0 && sameDirectory(project.ancestor, base);
+  const projectAtHome = scope === "user" && project && sameLocation(project, baseLocation);
   const peers = (
     [
       ["user", userHome],
@@ -92,14 +110,10 @@ export function resolveSkillDirectories(
     ).map((peerHost) => workflowSkillDestination(peerHost, root)),
   );
   const alternate = claudeOverride(userHome);
-  if (alternate) peers.push(path.join(alternate, "skills"));
+  if (alternate) peers.push(appendPath(alternate, "skills"));
   for (const peer of peers) {
-    const resolved = resolvePeer(peer);
-    if (
-      resolved &&
-      path.join(...resolved.suffix) === path.join(...selectedPeer.suffix) &&
-      sameDirectory(selectedPeer.ancestor, resolved.ancestor)
-    ) {
+    const resolved = resolveLocation(peer);
+    if (resolved && sameLocation(selectedPeer, resolved)) {
       throw new Error(`Shared destination: ${selectedLogical} and ${peer} resolve to ${selected}`);
     }
   }

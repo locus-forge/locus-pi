@@ -127,8 +127,8 @@ export class WorkflowSkillWriteError extends Error {
 export function operateWorkflowSkillHosts(options: WorkflowSkillHostOptions): WorkflowSkillHostResult {
   const source = path.join(path.resolve(options.packageRoot ?? DEFAULT_PACKAGE_ROOT), "skills");
   const scope = options.scope;
-  const home = path.resolve(options.userHome ?? homedir());
-  const project = path.resolve(options.projectRoot);
+  const home = options.userHome ?? homedir();
+  const project = options.projectRoot;
   const hosts = options.host === "all" ? WORKFLOW_SKILL_HOSTS : [options.host];
   const groups: WorkflowSkillHostResultGroup[] = [];
   const prepared: Work[] = [];

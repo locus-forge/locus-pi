@@ -36,8 +36,7 @@ export function workflowHelpBlock(): OperatorBlock {
     subject: "Workflow commands",
     primary: "The interactive menu is available in a Pi TUI.",
     body: [
-      "Dashboard: /workflows dashboard",
-      "Catalog: /workflows list [query]",
+      "Dashboard: /workflows dashboard · Catalog: /workflows list [query]",
       "Info: /workflows info [exact-name]",
       "History: /workflows status [runId]",
       "Result: /workflows result [runId|last]",

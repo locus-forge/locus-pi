@@ -9,6 +9,7 @@ import {
   renameSync,
   rmSync,
   symlinkSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -110,6 +111,7 @@ describe("/workflows doctor", () => {
     expect(existsSync(path.join(f.home, ".agents"))).toBe(false);
     await f.run("");
     const help = f.harness.widgets.get("workflows")!;
+    expect(help).toContain("Catalog: /workflows list [query]");
     expect(help).toContain("/workflows doctor check");
     expect(help).toContain("/workflows doctor recovery");
     expect(help.replace(/\s+/gu, " ")).toContain(
@@ -194,6 +196,94 @@ describe("/workflows doctor", () => {
     }
   });
 
+  it("refuses a case-variant Claude override when both destination components are absent", async ({ skip }) => {
+    const f = setup();
+    const probe = path.join(f.home, "Case-Probe");
+    mkdirSync(probe);
+    if (!existsSync(path.join(f.home, "case-probe"))) skip("Fixture volume is case-sensitive.");
+    const alternate = path.join(f.home, ".CLAUDE");
+    vi.stubEnv("CLAUDE_CONFIG_DIR", alternate);
+    for (const action of [
+      "check --host claude",
+      "install --host claude",
+      "remove --host claude",
+      "install --host all",
+    ]) {
+      f.harness.notifications.length = 0;
+      await f.run(`doctor ${action}`);
+      expect(f.text()).toContain("Shared destination");
+      if (action.startsWith("check")) expect(f.text()).not.toContain("/workflows doctor install");
+      else expect(f.text()).toContain("Write refused");
+      expect(existsSync(alternate)).toBe(false);
+      expect(existsSync(path.join(f.home, ".agents"))).toBe(false);
+    }
+  });
+
+  it("uses the physical HOME for install and remove when a nested link precedes ..", async () => {
+    const f = setup();
+    const team = path.join(f.root, "team");
+    const physicalHome = path.join(team, "home");
+    const child = path.join(team, "child");
+    const homeAlias = path.join(f.root, "home-link");
+    mkdirSync(child, { recursive: true });
+    mkdirSync(physicalHome);
+    symlinkSync(child, path.join(f.root, "jump"), "dir");
+    symlinkSync("jump/../home", homeAlias, "dir");
+    expect(statSync(homeAlias).ino).toBe(statSync(physicalHome).ino);
+    vi.stubEnv("HOME", homeAlias);
+    const skills = path.join(physicalHome, ".agents", "skills");
+    const shadow = path.join(f.home, ".agents");
+    const marker = path.join(skills, WORKFLOW_SKILL_STATE_FILE);
+    await f.run("doctor check --host codex");
+    expect(f.text().replace(/\n/gu, "")).toContain(skills);
+    await f.run("doctor install --host codex");
+    expect(lstatSync(path.join(skills, WORKFLOW_SKILL_NAMES[0])).isSymbolicLink()).toBe(true);
+    expect(existsSync(shadow)).toBe(false);
+    await f.run("doctor remove --host codex");
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(path.join(skills, WORKFLOW_SKILL_NAMES[0]))).toBe(false);
+    expect(existsSync(shadow)).toBe(false);
+  });
+
+  it("keeps traversal order through nested links in a missing Claude peer", async () => {
+    const f = setup();
+    const child = path.join(f.home, "child");
+    const alternate = path.join(f.root, "alternate");
+    mkdirSync(child);
+    symlinkSync(child, path.join(f.root, "jump"), "dir");
+    symlinkSync("jump/../.claude", alternate, "dir");
+    vi.stubEnv("CLAUDE_CONFIG_DIR", alternate);
+    for (const verb of ["check", "install", "remove"]) {
+      f.harness.notifications.length = 0;
+      await f.run(`doctor ${verb} --host claude`);
+      expect(f.text()).toContain("Shared destination");
+      expect(existsSync(path.join(f.home, ".claude"))).toBe(false);
+    }
+  });
+
+  it("preserves an edited stage when the destination guard also fails", async () => {
+    const f = setup();
+    const skills = path.join(f.project, ".agents", "skills");
+    const marker = path.join(skills, WORKFLOW_SKILL_STATE_FILE);
+    const stage = `${marker}.${process.pid}-1234`;
+    vi.spyOn(Date, "now").mockReturnValue(1234);
+    let modifiedInode = 0;
+    fixtureState.fault = (file, boundary) => {
+      if (boundary !== "before-guard" || file !== marker) return;
+      modifiedInode = lstatSync(stage).ino;
+      writeFileSync(stage, "foreign stage");
+      writeFileSync(marker, "foreign marker", { flag: "wx" });
+    };
+    await f.run("doctor install --host codex --scope project");
+    expect(readFileSync(marker, "utf8")).toBe("foreign marker");
+    expect(readFileSync(stage, "utf8")).toBe("foreign stage");
+    expect(lstatSync(stage).ino).toBe(modifiedInode);
+    expect(existsSync(path.join(skills, WORKFLOW_SKILL_NAMES[0]))).toBe(false);
+    await f.run("doctor recovery");
+    expect(f.harness.notifications.at(-1)).toContain(`Skipped or failed: ${stage}`);
+    expect(f.harness.notifications.at(-1)).toContain(`Skipped or failed: ${marker}`);
+  });
+
   it.each(["link", "marker", "marker contents"] as const)(
     "preserves a foreign %s stage before publication",
     async (stage) => {
@@ -223,27 +313,30 @@ describe("/workflows doctor", () => {
     },
   );
 
-  it("reports an externally lost unlink target after restoring an earlier removal", async () => {
-    const f = setup();
-    const skills = path.join(f.project, ".agents", "skills");
-    const first = path.join(skills, WORKFLOW_SKILL_NAMES[0]);
-    const lost = path.join(skills, WORKFLOW_SKILL_NAMES[1]);
-    const marker = path.join(skills, WORKFLOW_SKILL_STATE_FILE);
-    await f.run("doctor install --host codex --scope project");
-    const claim = () => JSON.parse(readFileSync(marker, "utf8")).links[1];
-    const originalClaim = claim();
-    fixtureState.fault = (file, boundary) => {
-      if (boundary === "after-guard" && file === lost) unlinkSync(lost);
-    };
-    await f.run("doctor remove --host codex --scope project");
-    expect(lstatSync(first).isSymbolicLink()).toBe(true);
-    expect(existsSync(lost)).toBe(false);
-    expect(claim()).toEqual(originalClaim);
-    expect(f.harness.widgets.get("workflows")).toContain("Incomplete rollback");
-    await f.run("doctor recovery");
-    expect(f.harness.notifications.at(-1)).toContain(`Skipped or failed: ${lost}`);
-    expect(f.harness.notifications.at(-1)).toContain("/workflows doctor check --host codex --scope project");
-  });
+  it.each(["before-guard", "after-guard"])(
+    "reports a lost unlink target at %s after restoring an earlier removal",
+    async (seam) => {
+      const f = setup();
+      const skills = path.join(f.project, ".agents", "skills");
+      const first = path.join(skills, WORKFLOW_SKILL_NAMES[0]);
+      const lost = path.join(skills, WORKFLOW_SKILL_NAMES[1]);
+      const marker = path.join(skills, WORKFLOW_SKILL_STATE_FILE);
+      await f.run("doctor install --host codex --scope project");
+      const claim = () => JSON.parse(readFileSync(marker, "utf8")).links[1];
+      const originalClaim = claim();
+      fixtureState.fault = (file, boundary) => {
+        if (boundary === seam && file === lost) unlinkSync(lost);
+      };
+      await f.run("doctor remove --host codex --scope project");
+      expect(lstatSync(first).isSymbolicLink()).toBe(true);
+      expect(existsSync(lost)).toBe(false);
+      expect(claim()).toEqual(originalClaim);
+      expect(f.harness.widgets.get("workflows")).toContain("Incomplete rollback");
+      await f.run("doctor recovery");
+      expect(f.harness.notifications.at(-1)).toContain(`Skipped or failed: ${lost}`);
+      expect(f.harness.notifications.at(-1)).toContain("/workflows doctor check --host codex --scope project");
+    },
+  );
 
   it("makes recovery discoverable from a 50-column, nine-row TUI", async () => {
     const f = setup("tui");

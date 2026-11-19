@@ -1,5 +1,4 @@
 import { homedir } from "node:os";
-import path from "node:path";
 import { getSessionId, type ExtensionAPI, type ExtensionCommandContext } from "../../../_shared/host/pi-api.js";
 import {
   requestInlineOperatorInteraction,
@@ -190,7 +189,7 @@ export function createWorkflowDoctor(pi: ExtensionAPI) {
   });
 
   return async (text: string, ctx: ExtensionCommandContext, projectRoot: string): Promise<void> => {
-    const base = path.resolve(projectRoot);
+    const base = projectRoot;
     const session = getSessionId(ctx);
     if (recovery && (recovery.session !== session || recovery.project !== base)) recovery = undefined;
     if (/^doctor\s+recovery$/u.test(text)) {
