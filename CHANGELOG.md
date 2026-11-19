@@ -23,6 +23,12 @@ User-visible changes to the public package.
 - Skill installation and removal no longer change entries the package did not
   create. A foreign file at a temporary name, a replaced link, or a folder shared
   through an alias between hosts or scopes is preserved and reported.
+- A stale workflow warning no longer stays on screen until the next workflow
+  command. Escape dismisses it while Pi still handles the key as usual, and
+  running work, newer errors, and pinned panels stay visible. Workflow commands
+  clear only the settled panels they replace.
+- Escape from terminals that use the Kitty keyboard protocol now behaves like
+  legacy Escape for workflow panels and the agents interrupt guard.
 
 ## [0.15.0] - 2026-11-18
 
