@@ -213,12 +213,12 @@ describe("workflow interrupt guard", () => {
     expect(h.ctx.ui.custom).toBe(custom);
   });
 
-  it("closes a skills VIEW during streaming even after a newer progress widget", async () => {
+  it("closes a Doctor VIEW during streaming even after a newer progress widget", async () => {
     const h = createHarness(undefined, { isStreaming: true });
     h.ctx.hasUI = true;
     workflows(h.pi);
     installAgentInterruptGuard(h.ctx);
-    await h.commands.get("workflows")!.handler("skills status", h.ctx);
+    await h.commands.get("workflows")!.handler("doctor check --host codex --scope project", h.ctx);
     expect(h.widgets.get("workflows")).toContain("[VIEW]");
     const progress = installWorkflowProgress(h.ctx, "agents", "Later progress", "offline");
     try {

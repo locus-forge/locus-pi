@@ -214,8 +214,11 @@ export function setCommandWidgetPresented(
   presentation: CommandWidgetPresentation,
   presented: boolean,
 ): boolean {
-  if (currentCommandWidgetPresentation(ctx, presentation.key) !== presentation) return false;
+  const scope = currentScope(ctx);
+  if (scope?.widgets.get(presentation.key) !== presentation) return false;
   presentation.hidden = !presented;
+  synchronizeViewListener(ctx, scope, presented && presentation.surface === "VIEW");
+  synchronizeWarningListener(ctx, scope);
   return true;
 }
 
@@ -326,7 +329,7 @@ function currentWarning(scope: CommandUiRuntimeScope): CommandWidgetPresentation
   const key = scope.warningKey;
   if (key === undefined || isTransientKeyPinned(scope, key) || scope.widgetWrites.has(key)) return undefined;
   const warning = scope.widgets.get(key);
-  return warning?.surface === "WARN" ? warning : undefined;
+  return warning?.surface === "WARN" && !warning.hidden ? warning : undefined;
 }
 
 /** Observe a matched press without changing the guard or Pi's dispatch. */
@@ -348,7 +351,8 @@ export function observeWarningEscape(ctx: ExtensionContext): void {
 function synchronizeWarningListener(ctx: ExtensionContext, scope: CommandUiRuntimeScope): void {
   if (currentScope(ctx) !== scope) return;
   const key = scope.warningKey;
-  if (key === undefined || scope.widgets.get(key)?.surface !== "WARN") {
+  const warning = key === undefined ? undefined : scope.widgets.get(key);
+  if (warning?.surface !== "WARN" || warning.hidden) {
     scope.warningUnsubscribe?.();
     scope.warningUnsubscribe = undefined;
     return;
@@ -365,7 +369,7 @@ function synchronizeWarningListener(ctx: ExtensionContext, scope: CommandUiRunti
 
 function synchronizeViewListener(ctx: ExtensionContext, scope: CommandUiRuntimeScope, refresh: boolean): void {
   if (currentScope(ctx) !== scope) return;
-  if (refresh || ![...scope.widgets.values()].some((entry) => entry?.surface === "VIEW")) {
+  if (refresh || ![...scope.widgets.values()].some((entry) => entry?.surface === "VIEW" && !entry.hidden)) {
     scope.viewUnsubscribe?.();
     scope.viewUnsubscribe = undefined;
   }

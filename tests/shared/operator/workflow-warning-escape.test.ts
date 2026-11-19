@@ -5,6 +5,7 @@ import {
   installWarningEscapeDismissal,
   pinTransientUiKey,
   registerCommandWithUiLifecycle,
+  setCommandWidgetPresented,
 } from "../../../extensions/_shared/operator/command-ui.js";
 import { setOperatorWidget } from "../../../extensions/_shared/operator/widget-render.js";
 import { installAgentInterruptGuard } from "../../../extensions/agents/fleet/interrupt-guard.js";
@@ -47,6 +48,20 @@ describe("workflow WARN Escape observation", () => {
     await Promise.resolve();
     expect(h.widgets.get("workflows")).toBe("");
     expect(h.widgets.get("peer")).toContain("Stale warning");
+  });
+
+  it("keeps a hidden WARN out of Escape handling until it becomes visible again", async () => {
+    const h = harness();
+    setOperatorWidget(h.ctx, "workflows", warning);
+    const presentation = currentCommandWidgetPresentation(h.ctx, "workflows")!;
+    expect(setCommandWidgetPresented(h.ctx, presentation, false)).toBe(true);
+    expect(dispatch(h, presses[1])).toEqual({ consumed: false, data: presses[1] });
+    await Promise.resolve();
+    expect(currentCommandWidgetPresentation(h.ctx, "workflows")).toBe(presentation);
+    expect(setCommandWidgetPresented(h.ctx, presentation, true)).toBe(true);
+    expect(dispatch(h, presses[1])).toEqual({ consumed: false, data: presses[1] });
+    await Promise.resolve();
+    expect(currentCommandWidgetPresentation(h.ctx, "workflows")).toBeUndefined();
   });
 
   it.each(["guard-first", "warning-first"] as const)(
