@@ -16,25 +16,52 @@ symlinks; they do not receive copied skill text that can drift from the package.
 Choose the ordinary or detailed lesson using the [public selection guide](../docs/workflows/create.md#choose-an-authoring-route).
 Both are actual packaged entries; the run and external-session skills keep their existing responsibilities.
 
-Run these commands inside Pi after installing the locus-pi package:
+Run `/workflows doctor` inside Pi to check both apps. Doctor shows the absolute
+destination, the state of the four skill links on disk, and a command for the
+selected app. For example:
 
 ```text
-/workflows skills status --host all --scope user
-/workflows skills sync --host codex --scope user
-/workflows skills sync --host claude --scope user
+/workflows doctor check --host codex --scope user
+/workflows doctor install --host codex --scope user
+/workflows doctor check --host codex --scope user
 ```
 
-`--host all` manages both hosts. `--scope project` writes under the current
-project instead of the user home. Codex entries live in `.agents/skills`;
-Claude Code entries live in `.claude/skills`.
+Use `--host claude` for Claude Code. The default user destinations are
+`~/.agents/skills` for Codex and `~/.claude/skills` for Claude Code. With
+`--scope project`, the same subdirectories are under the active Pi project
+root. With `--host all`, writes preflight both destinations before changing
+either. Use `remove` with the same explicit host and scope to uninstall owned
+links. If `CLAUDE_CONFIG_DIR` names a different configuration, Claude user
+commands still show the default folder and qualify skill discovery as
+unverified. Doctor refuses writes to shared or redirected destinations.
+Doctor checks on-disk state. Host startup and skill discovery are separate.
 
-`sync` creates or refreshes only locus-pi-managed symlinks. It removes managed
-links under the retired names, including `locus-pi-workflow-implement-task`. A real directory or foreign symlink is a
-conflict and is never overwritten. Ownership comes only from the adjacent
-`.locus-pi-workflow-skills.v1.json` provenance file, never from a suggestive
-symlink target. `remove` has the same ownership check. The command snapshots
-managed links and provenance before mutation and rolls the whole selected host
-set back after an unexpected filesystem error.
+Install creates missing symlinks and refreshes proven links after a package
+move. The adjacent `.locus-pi-workflow-skills.v1.json` retains its filename.
+New v2 records track a symlink's filesystem identity and raw target. Doctor
+uses both to verify ownership before a write. Real files, directories and
+foreign or disputed links block a write. Install and remove retire only
+proven links on the allowlist `locus-pi-workflows`,
+`locus-pi-run-workflow`, `locus-task-workflow` and
+`locus-pi-workflow-implement-task`.
+
+Old commands display the new equivalent with the same host and scope. Old
+v1 records contain names only. If Doctor reports a v1 or identity conflict,
+run the displayed scoped `doctor check` to see the exact paths. Inspect the
+disputed links. If you choose to clear them, move them intact to a backup
+outside the skills folder, then repeat the check. Keep a link in place if it
+must remain available. Doctor leaves that destination blocked. Once the
+destination is clear, the scoped `doctor install` touches the four managed
+slots and the adjacent marker. The scoped `doctor remove` touches proven
+entries and the marker. The backup remains available.
+
+Run one writing command at a time and keep other writers away from the
+selected trees until it returns. Doctor can undo verified writes on a later
+failure and reports skipped or failed restoration. Node's path-based rename
+and unlink cannot guarantee preservation against an undetected concurrent
+pathname change after the final check. Process crashes are outside the
+rollback guarantee. Run `/workflows doctor recovery` in the same Pi session
+and project for the full incomplete-rollback report and its scoped recheck.
 
 ## Find the installed workflow documentation
 
@@ -57,7 +84,7 @@ expose a managed directory symlink as the skill's location. Resolve the physical
 `SKILL.md` **before** following any package-relative link; then resolve
 `../../docs/workflows/index.md` from its parent directory. Do not use the caller's
 working directory or assume a global npm prefix. A copied skill folder without
-its package is not the supported installation; use the managed sync above.
+its package is not the supported installation; use the managed install above.
 
 Given the actual skill location reported by the host:
 

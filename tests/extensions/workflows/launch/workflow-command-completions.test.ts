@@ -82,7 +82,7 @@ describe("workflow command argument completion", () => {
       (completion) => completion.label ?? completion.value,
     );
 
-    expect(labels).toEqual(["list", "dashboard", "info", "status", "result", "run", "continue", "stop", "skills"]);
+    expect(labels).toEqual(["list", "dashboard", "info", "status", "result", "run", "continue", "stop", "doctor"]);
   });
 
   it("returns full argument strings for grammar-owned tokens and yields free text and paths", async () => {
@@ -268,19 +268,33 @@ describe("workflow command argument completion", () => {
     expect(complete("run alpha -- ")).toBeNull();
     expect(complete("run ./local.workflow.mjs")).toBeNull();
     expect(complete("list auth")).toBeNull();
-    expect(complete("skills ")).toEqual([
-      expect.objectContaining({ value: "skills sync ", label: "sync" }),
-      expect.objectContaining({ value: "skills status ", label: "status" }),
-      expect.objectContaining({ value: "skills remove ", label: "remove" }),
-    ]);
-    expect(complete("skills sync ")).toEqual([
-      expect.objectContaining({ value: "skills sync --host ", label: "--host" }),
-      expect.objectContaining({ value: "skills sync --scope ", label: "--scope" }),
-    ]);
-    expect(complete("skills sync --host ")).toContainEqual(
-      expect.objectContaining({ value: "skills sync --host all ", label: "all" }),
+    expect(complete("skills ")).toBeNull();
+    expect(complete("doctor ")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: "doctor check ", label: "check" }),
+        expect.objectContaining({ value: "doctor install ", label: "install" }),
+        expect.objectContaining({ value: "doctor remove ", label: "remove" }),
+        expect.objectContaining({ value: "doctor recovery", label: "recovery" }),
+      ]),
+    );
+    expect(complete("doctor install --host ")).toContainEqual(
+      expect.objectContaining({ value: "doctor install --host all ", label: "all" }),
     );
     expect(complete("unknown tail")).toBeNull();
+  });
+
+  it("completes partial Doctor flags and values and stops at repeated flags", () => {
+    const root = project();
+    const complete = (input: string) => workflowArgumentCompletions(input, root, root);
+    expect(complete("doctor --ho")).toEqual([{ value: "doctor --host ", label: "--host" }]);
+    expect(complete("doctor check --scope project --host co")).toEqual([
+      { value: "doctor check --scope project --host codex ", label: "codex" },
+    ]);
+    expect(complete("doctor install --host codex --scope pr")).toEqual([
+      { value: "doctor install --host codex --scope project ", label: "project" },
+    ]);
+    expect(complete("doctor check --host codex --host ")).toBeNull();
+    expect(complete("doctor check --host codex --host all --")).toBeNull();
   });
 
   it("keeps the exported provider structurally usable without a live Pi context", () => {

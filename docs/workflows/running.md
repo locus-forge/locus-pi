@@ -157,7 +157,8 @@ strips unknown properties, or converts legacy text into JSON.
 /workflows run live-smoke -- --resume literal request  pass option-looking input unchanged
 /workflows continue <runId>       answer and continue an actionable handoff
 /workflows stop [runId|last]      request cancellation; terminal state follows settlement
-/workflows skills status         inspect external-agent skill links
+/workflows doctor                check external skill links and show scoped actions
+/workflows doctor recovery       read the last incomplete Doctor rollback
 /workflows run live-smoke --resume <runId>  replay that run's recorded agent calls (see "Resume and replay")
 /workflows run live-smoke --force          reclaim a leaked lease only when terminal evidence proves the prior run settled
 /workflows run plan --no-operator <input>   unattended launch: any operator-input request fails closed

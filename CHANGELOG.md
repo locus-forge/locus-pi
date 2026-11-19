@@ -7,6 +7,22 @@ User-visible changes to the public package.
 ### Added
 
 - `/clean` starts an empty Pi session with the current model and thinking level.
+- `/workflows doctor` checks, installs, repairs, and removes the packaged
+  workflow skills for Codex and Claude Code. It shows each host's real skill
+  folder, the state of every link, and the exact next command for the selected
+  host and scope. `/workflows doctor recovery` reopens the full report of an
+  incomplete rollback.
+
+### Changed
+
+- `/workflows skills` and its `status`, `sync`, and `remove` forms are retired.
+  They now print the matching `/workflows doctor` command and write nothing.
+
+### Fixed
+
+- Skill installation and removal no longer change entries the package did not
+  create. A foreign file at a temporary name, a replaced link, or a folder shared
+  through an alias between hosts or scopes is preserved and reported.
 
 ## [0.15.0] - 2026-11-18
 

@@ -339,7 +339,7 @@ describe("npm public package boundary", () => {
       "schemas/extension-manifest.schema.json",
       "skills/",
     ]);
-    expect(dryRun.files).toHaveLength(296);
+    expect(dryRun.files).toHaveLength(299);
     for (const filename of [
       ...["center", "editor", "model"].map((name) => `extensions/agents/fleet/command-center/${name}.ts`),
       "extensions/_shared/agent-runtime/session/startup.ts",
