@@ -2,10 +2,10 @@
 title: Launch and operate a workflow
 type: guide
 status: active
-updated: "2026-10-06T17:57:00Z"
-source_commit: "94268a7fa802"
-update_event: "review_refresh"
-context: "changes=XL task=T-148"
+updated: "2026-11-19T23:00:57Z"
+source_commit: "7dc0e52d82f6"
+update_event: "user_request"
+context: "changes=clean files=0"
 description: "Consolidate workflow contracts at their owning pages and repair outdated guidance."
 ---
 
@@ -58,14 +58,9 @@ added by the writer when needed. A missing readable copy falls back to the envel
 a conflicting copy reports an invalid result. Without a readable envelope, an
 orphan Markdown copy is not accepted. Readback never repairs or rewrites either file.
 
-A run that ends badly and produced **no** prose result — a script returning a
-structured `{ ok: false }` is the common case — gets the same treatment against a
-different command. Its verdict line carries the failure summary and is clipped
-like any other, so the digest and the panel add
-`read the full reason: /workflows status <runId>`, which prints the structured
-result the reason actually lives in. `/workflows result` is deliberately not
-offered there: it refuses a non-prose result, so pointing at it would send the
-operator to a dead end.
+If a failed run has no prose result, use `/workflows status <runId>` to browse
+its stages and evidence in the interactive terminal. Read the full failure in the
+run's `runtime/result.json`. `/workflows result` requires a prose result.
 
 `/workflows result` and `/workflows status` accept the short run suffix every
 surface prints (`run #98cc` → `/workflows result 98cc`), `last` for the newest run,
