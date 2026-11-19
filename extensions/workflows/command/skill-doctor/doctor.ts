@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { getSessionId, type ExtensionAPI, type ExtensionCommandContext } from "../../../_shared/host/pi-api.js";
-import { setDismissibleView } from "../../../_shared/operator/command-ui.js";
+import { clearTransientUiKey } from "../../../_shared/operator/command-ui.js";
 import { requestInlineOperatorInteraction } from "../../../_shared/operator/operator-interaction.js";
 import { renderOperatorBlockPlain, type OperatorBlock } from "../../../_shared/operator/operator-ui.js";
 import { HOST_STRING_ARRAY_WIDGET_LINES, setOperatorWidget } from "../../../_shared/operator/widget-render.js";
@@ -82,7 +82,7 @@ function claudeUserWriteNote(choice: WorkflowSkillHostCommand): string | undefin
 function summary(group: WorkflowSkillHostResultGroup): string {
   if (!group.rows.length) return "Blocked.";
   const active = group.rows.filter((row) => !row.legacy);
-  const installed = active.filter((row) => row.state === "current").length;
+  const installed = active.filter((row) => row.installedOnDisk).length;
   const missing = active.filter((row) => row.state === "absent").length;
   const repair = active.filter((row) => row.state === "stale").length;
   const removed = group.rows.filter((row) => row.changed === "removed").length;
@@ -180,12 +180,13 @@ function showResult(ctx: ExtensionCommandContext, block: OperatorBlock, isCurren
   const full = renderOperatorBlockPlain(block, 10_000).join("\n");
   const onOverflow = async () => {
     if (!isCurrent()) return;
-    // The focused viewer owns Escape while the passive widget is behind it.
-    setDismissibleView(ctx, WIDGET, false);
+    // Pi lays out the passive widget and the inline viewer in the same pane.
+    clearTransientUiKey(ctx, WIDGET);
     try {
       await showFullText(ctx, block.subject, full, isCurrent);
-    } finally {
-      if (isCurrent()) setDismissibleView(ctx, WIDGET, block.type === "VIEW");
+      if (isCurrent()) setOperatorWidget(ctx, WIDGET, block);
+    } catch {
+      if (isCurrent()) ctx.ui.notify(full, "info");
     }
   };
   try {

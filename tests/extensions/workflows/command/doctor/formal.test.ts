@@ -14,6 +14,7 @@ import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
+import type { CustomUiComponent, CustomUiFactory } from "../../../../../extensions/_shared/host/pi-api.js";
 import {
   operateWorkflowSkillHosts,
   WORKFLOW_SKILL_NAMES,
@@ -366,4 +367,79 @@ it("keeps a rejected unlink with matching readback a refusal with no recovery re
   }
   expect(proof(link)).toEqual(before);
   expect(await f.fresh("doctor recovery")).toContain("No incomplete rollback");
+});
+
+it("counts all four readable v1 links separately from their unverified ownership", async () => {
+  const f = setup();
+  const selector = "--host codex --scope project";
+  const skills = path.join(f.project, ".agents", "skills");
+  const marker = path.join(skills, WORKFLOW_SKILL_STATE_FILE);
+  await f.run(`doctor install ${selector}`);
+  writeFileSync(marker, JSON.stringify({ owner, schema: "locus-pi.workflow-skills.v1", links: WORKFLOW_SKILL_NAMES }));
+  const markerBefore = readFileSync(marker, "utf8");
+  const inode = lstatSync(marker).ino;
+  const paths = WORKFLOW_SKILL_NAMES.map((name) => path.join(skills, name));
+  const linksBefore = paths.map(proof);
+
+  const summary = await f.fresh("doctor --scope project");
+  expect(summary).toContain("4/4 links installed on disk · writes blocked");
+  const detail = (await f.fresh(`doctor check ${selector}`)).replace(/\s+/gu, " ");
+  expect(detail).toContain("v1 ownership unverified");
+  expect(detail).toContain("move only disputed links you choose to clear to a backup");
+  expect(detail).toContain(`/workflows doctor check ${selector}`);
+  for (const action of ["install", "remove"]) {
+    expect(await f.fresh(`doctor ${action} ${selector}`)).toContain("Write refused");
+    expect(paths.map(proof)).toEqual(linksBefore);
+    expect(lstatSync(marker).ino).toBe(inode);
+    expect(readFileSync(marker, "utf8")).toBe(markerBefore);
+  }
+});
+
+it.each(["clean", "mixed"])("keeps full next commands reachable in the %s 60×16 overview", async (state) => {
+  const f = setup("tui");
+  if (state === "mixed") {
+    const claude = path.join(f.home, ".claude", "skills");
+    mkdirSync(claude, { recursive: true });
+    writeFileSync(path.join(claude, WORKFLOW_SKILL_STATE_FILE), "corrupt");
+  }
+  const ui = f.harness.ctx.ui;
+  const terminal = { columns: 60, rows: 16 };
+  const tui = { terminal, requestRender() {} };
+  let passiveRows = 0;
+  const frames: string[] = [];
+  ui.setWidget = (key, content) => {
+    if (key !== "workflows") return;
+    const widget = typeof content === "function" ? (content(tui, {}) as CustomUiComponent) : undefined;
+    passiveRows = widget?.render(terminal.columns).length ?? 0;
+  };
+  ui.custom = async <T>(factory: CustomUiFactory<T>): Promise<T> => {
+    let result!: T;
+    const component = await factory(tui, {}, {}, (value) => {
+      result = value;
+    });
+    const capture = () => {
+      // The inline viewer and passive widget share the pane above Pi's footer.
+      const visible = Math.max(0, terminal.rows - 3 - passiveRows);
+      frames.push(component.render(terminal.columns).slice(0, visible).join(" ").replace(/\s+/gu, " "));
+    };
+    capture();
+    for (let page = 0; page < 2; page++) {
+      for (let n = 0; n < 9; n++) await component.handleInput?.("\x1b[B");
+      capture();
+    }
+    await component.handleInput?.("\x1b[F");
+    capture();
+    await component.handleInput?.("\x1b");
+    return result;
+  };
+
+  await f.run("doctor");
+  await expect.poll(() => frames.length).toBe(4);
+  const end = frames[3]!;
+  const codexCommand = "/workflows doctor install --host codex --scope user";
+  const claudeCommand = `/workflows doctor ${state === "clean" ? "install" : "check"} --host claude --scope user`;
+  if (state === "mixed") expect(frames.some((frame) => frame.includes(codexCommand))).toBe(true);
+  expect(end).toContain(claudeCommand);
+  expect(end).toContain("↑/↓ scroll");
+  expect(frames.some((frame) => frame.includes(codexCommand))).toBe(true);
 });

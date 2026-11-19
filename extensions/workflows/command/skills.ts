@@ -68,6 +68,7 @@ export interface WorkflowSkillHostResultRow {
   scope: WorkflowSkillScope;
   skill: string;
   path: string;
+  installedOnDisk: boolean;
   state: "absent" | "current" | "stale" | "conflict" | "source-unavailable";
   changed: "created" | "replaced" | "removed" | "none";
   legacy?: true;
@@ -214,6 +215,7 @@ function inspectCandidate(
   const source = legacy ? undefined : path.join(sourceRoot, skill);
   const entry = readSkillEntry(destination, false);
   const current = entry?.kind === "link" && source !== undefined && sameSkillDirectory(destination, source);
+  const sourceReadable = source !== undefined && readableSkill(source);
   const proof = marker.proofs.get(skill);
   const owned =
     entry?.kind === "link" &&
@@ -225,6 +227,7 @@ function inspectCandidate(
     scope: group.scope,
     skill,
     path: destination,
+    installedOnDisk: current && sourceReadable,
     state: entry ? (current ? "current" : "stale") : "absent",
     changed: "none",
     ...(legacy ? { legacy: true } : {}),
@@ -240,7 +243,7 @@ function inspectCandidate(
         ? " Inspect and move only disputed links you choose to clear to a backup outside this skills folder, then check again."
         : "";
     row.reason = `${diagnosis} Marker: ${path.join(group.path, WORKFLOW_SKILL_STATE_FILE)}.${manual}`;
-  } else if (action !== "remove" && source && !readableSkill(source)) {
+  } else if (action !== "remove" && source && !sourceReadable) {
     row.state = "source-unavailable";
     row.reason = `Package skill source unavailable: ${path.join(source, "SKILL.md")}. Restore the package and check again.`;
   }
@@ -347,11 +350,13 @@ function applySkillWrite(work: Work, action: "sync" | "remove"): void {
     if (!change) continue;
     if (change === "write") {
       work.written.set(candidate, tx.write(row.path, entry, "link", source!, requireMarker));
+      row.installedOnDisk = true;
       row.changed = entry ? "replaced" : "created";
       row.state = "current";
     } else {
       tx.remove(row.path, entry!, requireMarker);
       work.written.set(candidate, undefined);
+      row.installedOnDisk = false;
       row.changed = "removed";
       row.state = "absent";
     }
