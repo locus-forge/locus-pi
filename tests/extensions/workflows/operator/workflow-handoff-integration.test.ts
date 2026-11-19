@@ -12,6 +12,7 @@ import {
   WorkflowOperatorHandoffController,
   type WorkflowHandoffPumpResult,
 } from "../../../../extensions/workflows/operator/operator-handoff-controller.js";
+import { WORKFLOW_LIVE_WIDGET_KEY } from "../../../../extensions/workflows/operator/progress-widget.js";
 import { setOperatorWidget } from "../../../../extensions/_shared/operator/widget-render.js";
 import { writeNativeHandoffRun } from "../../../fixtures/workflow-persisted-run.js";
 import { createHarness, emit } from "../../../test-harness.js";
@@ -137,6 +138,46 @@ describe("workflow actionable handoff integration", () => {
     // The question never reaches the model as a steered turn.
     expect(harness.waitForIdleCalls).toBeGreaterThan(0);
     expect(harness.sentUserMessages).toEqual([]);
+  });
+
+  it("clears the settled source panel after its automatic continuation rejects before start", async () => {
+    const sourceRunId = "20260725-120000-rejected-follow-up";
+    const harness = createHarness(projectWithHandoff(sourceRunId));
+    harness.ctx.hasUI = true;
+    harness.customInputQueue.push("\r");
+    let sourcePanel: unknown;
+    const runScript = vi.spyOn(runner, "runWorkflowScript").mockImplementation(async (request) => {
+      if (request.continuation !== undefined) {
+        sourcePanel = harness.widgetPayloads.get(WORKFLOW_LIVE_WIDGET_KEY);
+        throw new Error("Continuation start refused");
+      }
+      request.onRunStart?.({ runId: sourceRunId, runDir: `/tmp/${sourceRunId}` });
+      return completedResult(sourceRunId);
+    });
+    workflows(harness.pi);
+    await emit(harness, "session_start");
+    await runAlphaInSession(harness);
+
+    const rejection = expect.objectContaining({ eventKind: "workflow_rejected", code: "runner_prestart_failed" });
+    await vi.waitFor(() => expect(harness.sentMessages.at(-1)?.message.details).toEqual(rejection));
+    expect(runScript).toHaveBeenCalledTimes(2);
+    expect(runScript.mock.calls[1]?.[0].continuation?.originRunId).toBe(sourceRunId);
+    expect(sourcePanel).toBeTypeOf("function");
+    expect(harness.widgetPayloads.get(WORKFLOW_LIVE_WIDGET_KEY)).toBe(sourcePanel);
+    expect(harness.statuses.get("locus")).toContain("WF launch");
+    expect(harness.widgets.get("workflows")).toContain("Continuation start refused");
+    const writeWidget = vi.spyOn(harness.ctx.ui, "setWidget");
+
+    await emit(harness, "turn_end");
+    await emit(harness, "turn_end");
+
+    expect(harness.widgetPayloads.get(WORKFLOW_LIVE_WIDGET_KEY)).toBeUndefined();
+    expect(
+      writeWidget.mock.calls.filter(([key, content]) => key === WORKFLOW_LIVE_WIDGET_KEY && content === undefined),
+    ).toHaveLength(1);
+    expect(harness.statuses.get("locus")).toBeUndefined();
+    expect(harness.widgets.get("workflows")).toContain("Continuation start refused");
+    expect(harness.sentMessages.at(-1)?.message.details).toEqual(rejection);
   });
 
   it("starts a session without picking up an unanswered question from an earlier run", async () => {

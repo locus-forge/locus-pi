@@ -64,7 +64,12 @@ interface WorkflowCommandSurface {
 export default function workflows(pi: ExtensionAPI): void {
   registerWorkflowTranscriptRenderers(pi);
   const completedRunIds = new Set<string>();
-  let completedSurface: WorkflowCommandSurface | undefined;
+  const completedWidgets = new Set<CommandWidgetPresentation>();
+  const completedStatuses = new Set<() => void>();
+  const scheduleCompletedSurface = ({ widget, clearStatus }: WorkflowCommandSurface): void => {
+    if (widget !== undefined) completedWidgets.add(widget);
+    completedStatuses.add(clearStatus);
+  };
   /**
    * Runs THIS Pi session launched — command, tool, and continuations alike.
    *
@@ -176,12 +181,12 @@ export default function workflows(pi: ExtensionAPI): void {
           } else {
             setOperatorWidget(request.ctx, "workflows", buildWorkflowResultBlock(result, request.ctx.mode !== "tui"));
           }
-          completedSurface = surface;
+          scheduleCompletedSurface(surface);
           const published = await persistCommandWorkflowTranscript(pi, request.ctx, transcriptCompletion, isCurrent);
           if (!published && isCurrent()) throw new Error("Workflow terminal receipt was not published.");
         },
         async onError(error, isCurrent) {
-          completedSurface = surface;
+          scheduleCompletedSurface(surface);
           cleanupPanel();
           setOperatorWidget(request.ctx, "workflows", workflowBackgroundFailureBlock(error));
           if (startedRun === undefined) {
@@ -240,11 +245,17 @@ export default function workflows(pi: ExtensionAPI): void {
   };
   const cleanupCompletedSurface = (ctx: ExtensionContext): void => {
     if (commandLauncher.hasActiveRun()) return;
-    const surface = completedSurface;
-    completedSurface = undefined;
+    const widgets = [...completedWidgets];
+    const statuses = [...completedStatuses];
     cleanupCompletedRuns([...completedRunIds]);
-    if (surface?.widget !== undefined) clearCommandWidgetPresentation(ctx, surface.widget);
-    if (!commandLauncher.hasActiveRun()) surface?.clearStatus();
+    for (const widget of widgets) {
+      if (commandLauncher.hasActiveRun()) return;
+      if (completedWidgets.delete(widget)) clearCommandWidgetPresentation(ctx, widget);
+    }
+    for (const clearStatus of statuses) {
+      if (commandLauncher.hasActiveRun()) return;
+      if (completedStatuses.delete(clearStatus)) clearStatus();
+    }
   };
   const prepareTransientSurface = (ctx: ExtensionContext): (() => void) | undefined => {
     if (commandLauncher.hasActiveRun()) return undefined;
@@ -304,7 +315,8 @@ export default function workflows(pi: ExtensionAPI): void {
     disposeSessionPanels();
     sessionRunIds.clear();
     completedRunIds.clear();
-    completedSurface = undefined;
+    completedWidgets.clear();
+    completedStatuses.clear();
     catalogLaunches.clear();
     submittedCatalogLaunches.clear();
     rememberCompletionContext(ctx);
