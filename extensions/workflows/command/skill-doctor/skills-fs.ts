@@ -150,6 +150,7 @@ export class SkillTreeTransaction {
         try {
           staged = requireIdentity(identity(fstatSync(descriptor, { bigint: true })), temporary);
           writeFileSync(descriptor, value, "utf8");
+          staged = identity(fstatSync(descriptor, { bigint: true }));
         } finally {
           closeSync(descriptor);
         }
@@ -163,6 +164,18 @@ export class SkillTreeTransaction {
       }
 
       this.guard(file, previous, authorize, restoring);
+      try {
+        const current = readSkillEntry(temporary);
+        if (current?.kind !== kind || !sameIdentity(staged, current.identity) || current.value !== value) {
+          throw new Error(`Staging entry changed before publication: ${temporary}`);
+        }
+      } catch (error) {
+        // A changed stage is uncertain even when the inode still matches.
+        created = false;
+        this.issues.push({ path: temporary, reason: errorMessage(error) });
+        throw error;
+      }
+      if (!restoring) this.hooks._testAtBoundary?.("after-guard", file);
       if (kind === "file" && !previous) {
         linkSync(temporary, file);
         published = true;
@@ -189,12 +202,17 @@ export class SkillTreeTransaction {
 
   remove(file: string, previous: SkillEntry, authorize: () => void, restoring = false): void {
     this.guard(file, previous, authorize, restoring);
-    unlinkSync(file);
+    if (!restoring) this.hooks._testAtBoundary?.("after-guard", file);
+    let unlinked = false;
     try {
+      unlinkSync(file);
+      unlinked = true;
       if (!restoring) this.hooks._testAtBoundary?.("before-readback", file);
       this.requireEntry(file, undefined);
     } catch (error) {
-      this.issues.push({ path: file, reason: errorMessage(error) });
+      if (!restoring && (unlinked || (error as NodeJS.ErrnoException).code === "ENOENT")) {
+        this.issues.push({ path: file, reason: errorMessage(error) });
+      }
       throw error;
     }
   }
@@ -226,7 +244,6 @@ export class SkillTreeTransaction {
     if (!restoring) this.hooks._testAtBoundary?.("before-guard", file);
     authorize();
     this.requireEntry(file, previous);
-    if (!restoring) this.hooks._testAtBoundary?.("after-guard", file);
   }
 
   private requireDirectories(parent: string): void {

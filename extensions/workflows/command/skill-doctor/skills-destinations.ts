@@ -17,11 +17,16 @@ export function claudeOverride(userHome: string): string | undefined {
     : undefined;
 }
 
-// realpath cannot describe absent tails, including a dangling directory symlink.
-function resolvePeer(destination: string, depth = 0): string | undefined {
+interface ResolvedPeer {
+  ancestor: string;
+  suffix: string[];
+}
+
+// Keep the existing ancestor so equivalent spellings can match even before the skills directory exists.
+function resolvePeer(destination: string, depth = 0): ResolvedPeer | undefined {
   if (depth >= 40) return undefined;
   try {
-    return realpathSync(destination);
+    return { ancestor: realpathSync(destination), suffix: [] };
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ELOOP" || code === "ENOTDIR") return undefined;
@@ -32,10 +37,20 @@ function resolvePeer(destination: string, depth = 0): string | undefined {
     if (!physicalParent) return undefined;
     const entry = lstatSync(destination, { throwIfNoEntry: false });
     if (entry?.isSymbolicLink()) {
-      return resolvePeer(path.resolve(physicalParent, readlinkSync(destination)), depth + 1);
+      return resolvePeer(
+        path.resolve(physicalParent.ancestor, ...physicalParent.suffix, readlinkSync(destination)),
+        depth + 1,
+      );
     }
-    return path.join(physicalParent, path.basename(destination));
+    return { ...physicalParent, suffix: [...physicalParent.suffix, path.basename(destination)] };
   }
+}
+
+function sameDirectory(first: string, second: string): boolean {
+  if (first === second) return true;
+  const a = readSkillEntry(first, false);
+  const b = readSkillEntry(second, false);
+  return a?.kind === "directory" && b?.kind === "directory" && sameObject(a.identity, b.identity);
 }
 
 export function resolveSkillDirectories(
@@ -52,38 +67,39 @@ export function resolveSkillDirectories(
   for (const directory of [base, path.dirname(selected), selected]) {
     const entry = readSkillEntry(directory, false);
     if (entry?.kind === "link") {
-      throw new Error(`Destination redirected: ${directory} → ${resolvePeer(directory) ?? entry.value}`);
+      const peer = resolvePeer(directory);
+      const target = peer ? path.join(peer.ancestor, ...peer.suffix) : entry.value;
+      throw new Error(`Destination redirected: ${directory} → ${target}`);
     }
     if (entry && entry.kind !== "directory") throw new Error(`Destination is not a directory: ${directory}`);
     directories.set(directory, entry?.identity);
   }
-  const peers = [userHome, projectRoot].flatMap((root) =>
-    WORKFLOW_SKILL_HOSTS.map((peerHost) => workflowSkillDestination(peerHost, root)),
+  const selectedPeer = resolvePeer(selected);
+  if (!selectedPeer) throw new Error(`Cannot resolve destination: ${selectedLogical}`);
+
+  const project = resolvePeer(projectRoot);
+  // Allow the personal layout when the project is HOME, without exempting any explicit Claude peer.
+  const projectAtHome =
+    scope === "user" && project && project.suffix.length === 0 && sameDirectory(project.ancestor, base);
+  const peers = (
+    [
+      ["user", userHome],
+      ["project", projectRoot],
+    ] as const
+  ).flatMap(([peerScope, root]) =>
+    WORKFLOW_SKILL_HOSTS.filter(
+      (peerHost) => peerHost !== host || (peerScope !== scope && !(peerScope === "project" && projectAtHome)),
+    ).map((peerHost) => workflowSkillDestination(peerHost, root)),
   );
   const alternate = claudeOverride(userHome);
   if (alternate) peers.push(path.join(alternate, "skills"));
-  // User writes to the personal folder remain available when the project is HOME itself.
-  const skip = scope === "user" && userHome === projectRoot ? peers.filter((peer) => peer !== selectedLogical) : peers;
-  let skippedSelected = false;
-  for (const peer of skip) {
-    if (!skippedSelected && peer === selectedLogical) {
-      skippedSelected = true;
-      continue;
-    }
-    const physicalPeer = resolvePeer(peer);
-    if (!physicalPeer) continue;
-    const peerEntry = readSkillEntry(physicalPeer, false);
-    const selectedIdentity = directories.get(selected);
+  for (const peer of peers) {
+    const resolved = resolvePeer(peer);
     if (
-      selected === physicalPeer ||
-      (selectedIdentity && peerEntry?.kind === "directory" && sameObject(selectedIdentity, peerEntry.identity))
+      resolved &&
+      path.join(...resolved.suffix) === path.join(...selectedPeer.suffix) &&
+      sameDirectory(selectedPeer.ancestor, resolved.ancestor)
     ) {
-      if (
-        scope === "user" &&
-        peer === workflowSkillDestination(host, projectRoot) &&
-        realpathSync(projectRoot) === base
-      )
-        continue;
       throw new Error(`Shared destination: ${selectedLogical} and ${peer} resolve to ${selected}`);
     }
   }

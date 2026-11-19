@@ -240,7 +240,7 @@ export function createWorkflowDoctor(pi: ExtensionAPI) {
             `Check current state: ${check}`,
           ].join("\n"),
         };
-        setOperatorWidget(ctx, WIDGET, warning("Incomplete rollback.", RECOVERY));
+        await showResult(ctx, warning("Incomplete rollback.", RECOVERY));
       } else {
         const outcome = error.outcome === "refused" ? "Write refused" : "Write failed and changes were rolled back";
         const target = note ? "Check default folder" : "Check";

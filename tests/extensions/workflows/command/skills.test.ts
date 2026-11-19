@@ -49,14 +49,8 @@ function fixture(): { root: string; packageRoot: string; projectRoot: string; us
 describe("workflow skill host command", () => {
   it("syncs canonical links for both user hosts and remains idempotent", () => {
     const f = fixture();
-    const first = operateWorkflowSkillHosts({
-      action: "sync",
-      host: "all",
-      scope: "user",
-      projectRoot: f.projectRoot,
-      packageRoot: f.packageRoot,
-      userHome: f.userHome,
-    });
+    const options = { ...f, action: "sync", host: "all", scope: "user" } as const;
+    const first = operateWorkflowSkillHosts(options);
     expect(first.rows.filter((row) => !row.legacy).map((row) => row.changed)).toEqual(
       Array.from({ length: 8 }, () => "created"),
     );
@@ -71,14 +65,7 @@ describe("workflow skill host command", () => {
     const marker = path.join(f.userHome, ".agents", "skills", WORKFLOW_SKILL_STATE_FILE);
     const originalMarker = readFileSync(marker, "utf8");
     const originalInode = lstatSync(marker).ino;
-    const second = operateWorkflowSkillHosts({
-      action: "sync",
-      host: "all",
-      scope: "user",
-      projectRoot: f.projectRoot,
-      packageRoot: f.packageRoot,
-      userHome: f.userHome,
-    });
+    const second = operateWorkflowSkillHosts(options);
     expect(second.rows.every((row) => row.changed === "none")).toBe(true);
     expect(readFileSync(marker, "utf8")).toBe(originalMarker);
     expect(lstatSync(marker).ino).toBe(originalInode);
@@ -170,13 +157,7 @@ describe("workflow skill host command", () => {
 
   it("removes only managed links", () => {
     const f = fixture();
-    const options = {
-      host: "codex" as const,
-      scope: "project" as const,
-      projectRoot: f.projectRoot,
-      packageRoot: f.packageRoot,
-      userHome: f.userHome,
-    };
+    const options = { ...f, host: "codex", scope: "project" } as const;
     operateWorkflowSkillHosts({ ...options, action: "sync" });
     const removed = operateWorkflowSkillHosts({ ...options, action: "remove" });
     expect(removed.rows.filter((row) => !row.legacy).every((row) => row.changed === "removed")).toBe(true);
@@ -193,17 +174,32 @@ describe("doctor filesystem regressions", () => {
     const f = fixture();
     const selected = scope === "user" ? f.userHome : f.projectRoot;
     const other = scope === "user" ? f.projectRoot : f.userHome;
-    const options = { ...f, scope, host: "codex" as const };
+    const options = { ...f, scope, host: "all" as const };
     operateWorkflowSkillHosts({ ...options, action: "sync" });
-    const skills = path.join(selected, ".agents", "skills");
-    const marker = path.join(skills, WORKFLOW_SKILL_STATE_FILE);
-    const kept = path.join(skills, WORKFLOW_SKILL_NAMES[0]);
-    symlinkSync(path.join(selected, ".agents"), path.join(other, ".agents"), "dir");
-    const before = readFileSync(marker, "utf8");
-    for (const action of ["sync", "remove"] as const) {
-      expect(() => operateWorkflowSkillHosts({ ...options, action })).toThrow(/shared|redirect/i);
-      expect(readFileSync(marker, "utf8")).toBe(before);
-      expect(lstatSync(kept).isSymbolicLink()).toBe(true);
+    const roots = [path.join(selected, ".agents"), path.join(selected, ".claude")];
+    for (const root of roots) unlinkSync(path.join(root, "skills", WORKFLOW_SKILL_NAMES[1]));
+    const alias = path.join(other, ".agents");
+    symlinkSync(roots[0]!, alias, "dir");
+    const snapshot = () =>
+      [...roots, alias].map((root) => {
+        const skills = path.join(root, "skills");
+        const marker = path.join(skills, WORKFLOW_SKILL_STATE_FILE);
+        const kept = path.join(skills, WORKFLOW_SKILL_NAMES[0]);
+        return [
+          readFileSync(marker, "utf8"),
+          lstatSync(marker).ino,
+          lstatSync(kept).ino,
+          readlinkSync(kept),
+          existsSync(path.join(skills, WORKFLOW_SKILL_NAMES[1])),
+        ];
+      });
+    const before = snapshot();
+    expect(before.every((entry) => entry.at(-1) === false)).toBe(true);
+    for (const host of ["codex", "all"] as const) {
+      for (const action of ["sync", "remove"] as const) {
+        expect(() => operateWorkflowSkillHosts({ ...options, host, action })).toThrow(/shared|redirect/i);
+        expect(snapshot()).toEqual(before);
+      }
     }
   });
 
@@ -236,15 +232,18 @@ describe("doctor filesystem regressions", () => {
       mkdirSync(existing);
       writeFileSync(path.join(existing, "sentinel"), "unchanged");
     }
-    let mutations = 0;
+    const claudeMarker = path.join(f.userHome, ".claude", "skills", WORKFLOW_SKILL_STATE_FILE);
     expect(() =>
       operateWorkflowSkillHosts({
         ...f,
         action: "sync",
         host: "all",
         scope: "user",
-        _testAfterMutation: () => {
-          if (++mutations === 4) throw new Error("injected failure");
+        _testAfterMutation: (file) => {
+          if (file !== claudeMarker) return;
+          expect(existsSync(path.join(existing, "skills", WORKFLOW_SKILL_STATE_FILE))).toBe(true);
+          expect(existsSync(claudeMarker)).toBe(true);
+          throw new Error("injected failure after both hosts were written");
         },
       }),
     ).toThrow(/injected failure/);

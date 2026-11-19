@@ -29,6 +29,10 @@ const workflowLaunchDefaults =
 
 describe("installed workflow documentation ownership", () => {
   it("publishes doctor as the external skill entry in all installed manuals", () => {
+    const manifest = JSON.parse(read("extensions/workflows/manifest.json")) as { runtimeRequirements: string[] };
+    const menu = manifest.runtimeRequirements.find((line) => line.startsWith("bare /workflows"));
+    expect(menu).toContain("stop, and doctor;");
+    expect(menu).not.toContain("stop, and skills;");
     for (const file of [
       "extensions/workflows/README.md",
       "docs/workflows/running.md",

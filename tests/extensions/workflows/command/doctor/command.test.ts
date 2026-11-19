@@ -1,5 +1,7 @@
 import {
   existsSync,
+  lstatSync,
+  unlinkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -21,7 +23,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (load) => ({
   highlightCode: (text: string) => text.split("\n"),
 }));
 
-const fixtureState = vi.hoisted(() => ({ fault: undefined as ((file: string) => void) | undefined }));
+const fixtureState = vi.hoisted(() => ({ fault: undefined as ((file: string, boundary: string) => void) | undefined }));
 vi.mock(import("../../../../../extensions/workflows/command/skills.js"), async (load) => {
   const original = await load();
   return {
@@ -30,7 +32,7 @@ vi.mock(import("../../../../../extensions/workflows/command/skills.js"), async (
       original.operateWorkflowSkillHosts({
         ...options,
         _testAtBoundary: (boundary, file) => {
-          if (boundary === "before-readback") fixtureState.fault?.(file);
+          fixtureState.fault?.(file, boundary);
         },
       }),
   };
@@ -44,13 +46,13 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function setup(mode: "tui" | "rpc" = "rpc") {
+function setup(mode: "tui" | "rpc" = "rpc", projectAtHome = false) {
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), "workflow-doctor-test-")));
   roots.push(root);
   const home = path.join(root, "home");
-  const project = path.join(root, "project");
+  const project = projectAtHome ? home : path.join(root, "project");
   mkdirSync(home);
-  mkdirSync(project);
+  if (!projectAtHome) mkdirSync(project);
   vi.stubEnv("HOME", home);
   vi.stubEnv("CLAUDE_CONFIG_DIR", "");
   const harness = createHarness(project, { mode });
@@ -108,7 +110,11 @@ describe("/workflows doctor", () => {
     expect(existsSync(path.join(f.home, ".agents"))).toBe(false);
     await f.run("");
     const help = f.harness.widgets.get("workflows")!;
+    expect(help).toContain("/workflows doctor check");
     expect(help).toContain("/workflows doctor recovery");
+    expect(help.replace(/\s+/gu, " ")).toContain(
+      "/workflows doctor [check|install|remove] [--host codex|claude|all] [--scope user|project]",
+    );
     expect(help).not.toContain("/workflows skills");
   });
 
@@ -147,12 +153,139 @@ describe("/workflows doctor", () => {
     expect(existsSync(path.join(f.root, "alternate"))).toBe(false);
   });
 
+  it("preserves both hosts when explicit Claude config uses Codex skills and project is HOME", async () => {
+    const f = setup("rpc", true);
+    await f.run("doctor install --host codex");
+    const base = path.join(f.home, ".agents");
+    const skills = path.join(base, "skills");
+    const kept = path.join(skills, WORKFLOW_SKILL_NAMES[0]);
+    const missing = path.join(skills, WORKFLOW_SKILL_NAMES[1]);
+    const marker = path.join(skills, WORKFLOW_SKILL_STATE_FILE);
+    unlinkSync(missing);
+    const markerBefore = readFileSync(marker, "utf8");
+    const ids = [lstatSync(kept).ino, lstatSync(marker).ino];
+    vi.stubEnv("CLAUDE_CONFIG_DIR", base);
+    f.harness.notifications.length = 0;
+    await f.run("doctor check --host codex");
+    expect(f.text()).toContain("Shared destination");
+    for (const host of ["codex", "all"]) {
+      for (const action of ["install", "remove"]) {
+        await f.run(`doctor ${action} --host ${host}`);
+        expect(f.text()).toContain("Write refused");
+        expect([lstatSync(kept).ino, lstatSync(marker).ino]).toEqual(ids);
+        expect(readFileSync(marker, "utf8")).toBe(markerBefore);
+        expect(existsSync(missing)).toBe(false);
+        expect(existsSync(path.join(f.home, ".claude"))).toBe(false);
+      }
+    }
+  });
+
+  it("recognizes equivalent parent spellings while the Claude skills directory is absent", async ({ skip }) => {
+    const f = setup();
+    const parent = path.join(f.home, ".claude");
+    const alternate = path.join(f.home, ".CLAUDE");
+    mkdirSync(parent);
+    if (!existsSync(alternate)) skip();
+    vi.stubEnv("CLAUDE_CONFIG_DIR", alternate);
+    for (const action of ["check", "install", "remove"]) {
+      await f.run(`doctor ${action} --host claude`);
+      expect(f.text()).toContain("Shared destination");
+      expect(existsSync(path.join(alternate, "skills"))).toBe(false);
+    }
+  });
+
+  it.each(["link", "marker", "marker contents"] as const)(
+    "preserves a foreign %s stage before publication",
+    async (stage) => {
+      const f = setup();
+      const skills = path.join(f.project, ".agents", "skills");
+      const destination = path.join(skills, stage === "link" ? WORKFLOW_SKILL_NAMES[0] : WORKFLOW_SKILL_STATE_FILE);
+      let temporary = "";
+      let foreignInode = 0;
+      vi.spyOn(Date, "now").mockReturnValue(1234);
+      fixtureState.fault = (file, boundary) => {
+        if (boundary !== "before-guard" || file !== destination) return;
+        temporary = stage === "link" ? `${file}.locus-pi-${process.pid}-1234` : `${file}.${process.pid}-1234`;
+        if (stage === "marker contents") writeFileSync(temporary, "foreign stage");
+        else {
+          const replacement = path.join(skills, "foreign");
+          writeFileSync(replacement, "foreign stage");
+          renameSync(replacement, temporary);
+        }
+        foreignInode = lstatSync(temporary).ino;
+      };
+      await f.run("doctor install --host codex --scope project");
+      expect(existsSync(destination)).toBe(false);
+      expect(readFileSync(temporary, "utf8")).toBe("foreign stage");
+      expect(lstatSync(temporary).ino).toBe(foreignInode);
+      await f.run("doctor recovery");
+      expect(f.harness.notifications.at(-1)).toContain(temporary);
+    },
+  );
+
+  it("reports an externally lost unlink target after restoring an earlier removal", async () => {
+    const f = setup();
+    const skills = path.join(f.project, ".agents", "skills");
+    const first = path.join(skills, WORKFLOW_SKILL_NAMES[0]);
+    const lost = path.join(skills, WORKFLOW_SKILL_NAMES[1]);
+    const marker = path.join(skills, WORKFLOW_SKILL_STATE_FILE);
+    await f.run("doctor install --host codex --scope project");
+    const claim = () => JSON.parse(readFileSync(marker, "utf8")).links[1];
+    const originalClaim = claim();
+    fixtureState.fault = (file, boundary) => {
+      if (boundary === "after-guard" && file === lost) unlinkSync(lost);
+    };
+    await f.run("doctor remove --host codex --scope project");
+    expect(lstatSync(first).isSymbolicLink()).toBe(true);
+    expect(existsSync(lost)).toBe(false);
+    expect(claim()).toEqual(originalClaim);
+    expect(f.harness.widgets.get("workflows")).toContain("Incomplete rollback");
+    await f.run("doctor recovery");
+    expect(f.harness.notifications.at(-1)).toContain(`Skipped or failed: ${lost}`);
+    expect(f.harness.notifications.at(-1)).toContain("/workflows doctor check --host codex --scope project");
+  });
+
+  it("makes recovery discoverable from a 50-column, nine-row TUI", async () => {
+    const f = setup("tui");
+    const installed = path.join(f.project, ".agents", "skills", WORKFLOW_SKILL_NAMES[0]);
+    fixtureState.fault = (file, boundary) => {
+      if (boundary !== "before-readback" || file !== installed) return;
+      unlinkSync(file);
+      symlinkSync("/different-target", file, "dir");
+    };
+    const geometry = { columns: 50, rows: 9 };
+    const previous = Object.fromEntries(
+      Object.keys(geometry).map((key) => [key, Object.getOwnPropertyDescriptor(process.stdout, key)]),
+    );
+    for (const [key, value] of Object.entries(geometry)) {
+      Object.defineProperty(process.stdout, key, { configurable: true, value });
+    }
+    try {
+      f.harness.customInputQueue.push("\x1b");
+      await f.run("doctor install --host codex --scope project");
+      const factory = f.harness.widgetPayloads.get("workflows");
+      const warning =
+        typeof factory === "function"
+          ? factory({ requestRender() {}, terminal: geometry }, {})
+              .render(50)
+              .join("\n")
+          : f.harness.customRenderFrames.flat().join("\n");
+      expect(warning).toContain("Incomplete rollback");
+      expect(warning).toContain("/workflows doctor recovery");
+    } finally {
+      for (const [key, descriptor] of Object.entries(previous)) {
+        if (descriptor) Object.defineProperty(process.stdout, key, descriptor);
+        else Reflect.deleteProperty(process.stdout, key);
+      }
+    }
+  });
+
   it.each(["rpc", "tui"] as const)("retrieves full rollback in %s with session isolation", async (mode) => {
     const f = setup(mode);
     const installed = path.join(f.project, ".agents", "skills", WORKFLOW_SKILL_NAMES[0]);
     const foreign = path.join(path.dirname(installed), "replacement");
-    fixtureState.fault = (file) => {
-      if (file !== installed) return;
+    fixtureState.fault = (file, boundary) => {
+      if (boundary !== "before-readback" || file !== installed) return;
       symlinkSync("/different-target", foreign, "dir");
       renameSync(foreign, file);
     };

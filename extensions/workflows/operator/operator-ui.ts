@@ -34,7 +34,7 @@ export function workflowHelpBlock(): OperatorBlock {
   return {
     type: "VIEW",
     subject: "Workflow commands",
-    primary: "Choose a workflow command directly; the interactive menu is available in a Pi TUI.",
+    primary: "The interactive menu is available in a Pi TUI.",
     body: [
       "Dashboard: /workflows dashboard",
       "Catalog: /workflows list [query]",
@@ -44,13 +44,16 @@ export function workflowHelpBlock(): OperatorBlock {
       `Run: ${workflowRunUsage()}`,
       "Continue: /workflows continue <runId> [--answer <text>]",
       "Stop: /workflows stop [runId|last]",
-      "External agent skills: /workflows doctor [check|install|remove] [--host codex|claude|all] [--scope user|project]",
     ],
     metadata: [
-      "Emergency compatibility alias: /workflow-stop. Use /workflows <subcommand> for every other operation.",
+      "Emergency compatibility alias: /workflow-stop.",
       "A command starts execution only when the Pi session is provably idle.",
     ],
-    controls: ["Read the last incomplete rollback: /workflows doctor recovery"],
+    controls: [
+      "Check external skills: /workflows doctor check",
+      "Read the last incomplete rollback: /workflows doctor recovery",
+      "/workflows doctor [check|install|remove] [--host codex|claude|all] [--scope user|project]",
+    ],
   };
 }
 
