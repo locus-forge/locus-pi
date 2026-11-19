@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as runner from "../../../../extensions/workflows/runtime/workflow-runner.js";
+import { setOperatorStatus } from "../../../../extensions/_shared/operator/operator-status.js";
 import workflows from "../../../../extensions/workflows/index.js";
 import {
   announceCommandWorkflowStart,
@@ -121,6 +122,33 @@ describe("workflow command receipts", () => {
 
     expectLastRejection(h, "runner_prestart_failed", "live-smoke");
   });
+
+  it.each([false, true])(
+    "clears the pre-start launch status on turn_end and keeps the rejection (newer status=%s)",
+    async (newerStatus) => {
+      vi.spyOn(runner, "runWorkflowScript").mockRejectedValue(new Error("Runner stopped before publishing a run ID"));
+      const h = harness({ mode: "print" });
+      await run(h, "run live-smoke");
+      expect(h.statuses.get("locus")).toContain("WF launch");
+      expect(h.widgets.get("workflows")).toContain("[ERROR]");
+      expectLastRejection(h, "runner_prestart_failed", "live-smoke");
+      if (newerStatus)
+        setOperatorStatus(h.ctx, {
+          id: "workflow.run",
+          lane: "activity",
+          priority: 70,
+          wide: "New status",
+          compact: "New status",
+          narrow: "New status",
+        });
+
+      await emit(h, "turn_end");
+
+      expect(h.statuses.get("locus")).toBe(newerStatus ? "New status" : undefined);
+      expect(h.widgets.get("workflows")).toContain("Runner stopped before publishing a run ID");
+      expectLastRejection(h, "runner_prestart_failed", "live-smoke");
+    },
+  );
 
   it.each(["busy", "unreadable"] as const)(
     "does not steer a late pre-identity runner failure when the host is %s",

@@ -14,7 +14,7 @@ import { getProjectRoot, getWorkingDirectory } from "../_shared/host/pi-api.js";
 import {
   pinTransientUiKey,
   clearCommandWidgetPresentation,
-  currentCommandWidgetPresentation,
+  type CommandWidgetPresentation,
   registerTransientUiCleanup,
   setCommandWidget,
   unpinTransientUiKey,
@@ -56,14 +56,15 @@ import {
 } from "./command/receipts.js";
 import { createWorkflowTranscript, registerWorkflowTranscriptRenderers } from "./transcript/workflow-transcript.js";
 
+interface WorkflowCommandSurface {
+  widget?: CommandWidgetPresentation;
+  clearStatus: () => void;
+}
+
 export default function workflows(pi: ExtensionAPI): void {
   registerWorkflowTranscriptRenderers(pi);
   const completedRunIds = new Set<string>();
-  let completedSurface: ReturnType<typeof captureCompletedSurface> | undefined;
-  const captureCompletedSurface = (ctx: ExtensionContext) => ({
-    widget: currentCommandWidgetPresentation(ctx, WORKFLOW_LIVE_WIDGET_KEY),
-    clearStatus: prepareWorkflowRunStatusClear(ctx),
-  });
+  let completedSurface: WorkflowCommandSurface | undefined;
   /**
    * Runs THIS Pi session launched — command, tool, and continuations alike.
    *
@@ -119,7 +120,13 @@ export default function workflows(pi: ExtensionAPI): void {
   const commandLauncher = createWorkflowCommandLauncher({
     pi,
     createObserver(request, preparation) {
-      setWorkflowLaunchStatus(request.ctx, request.target?.kind ?? "script", request.target?.ref ?? request.scriptRef);
+      const surface: WorkflowCommandSurface = {
+        clearStatus: setWorkflowLaunchStatus(
+          request.ctx,
+          request.target?.kind ?? "script",
+          request.target?.ref ?? request.scriptRef,
+        ),
+      };
       if (preparation.hasUI) pinTransientUiKey(pi, WORKFLOW_LIVE_WIDGET_KEY);
       let panel: WorkflowProgressComponent | undefined;
       const cleanupPanel = (): void => {
@@ -141,6 +148,9 @@ export default function workflows(pi: ExtensionAPI): void {
           if (announcement !== undefined) announceCommandWorkflowStart(pi, request.ctx, announcement);
           if (preparation.hasUI && !panel) {
             panel = installWorkflowProgress(request.ctx, WORKFLOW_LIVE_WIDGET_KEY, request.scriptRef, runId, {
+              onPublished: (widget) => {
+                surface.widget = widget;
+              },
               scope: "workflow",
               declaredStages: preparation.declaredStages,
               ...(request.continuation === undefined
@@ -155,7 +165,7 @@ export default function workflows(pi: ExtensionAPI): void {
           if (preparation.hasUI) panel?.push(line);
           else setCommandWidget(request.ctx, "workflows", renderAgentLiveRowsText().split(/\r?\n/));
           transcript.event(line);
-          setWorkflowEventStatus(request.ctx, line);
+          surface.clearStatus = setWorkflowEventStatus(request.ctx, line) ?? surface.clearStatus;
         },
         async onResult(result, isCurrent) {
           completedRunIds.add(result.runId);
@@ -166,11 +176,12 @@ export default function workflows(pi: ExtensionAPI): void {
           } else {
             setOperatorWidget(request.ctx, "workflows", buildWorkflowResultBlock(result, request.ctx.mode !== "tui"));
           }
-          completedSurface = captureCompletedSurface(request.ctx);
+          completedSurface = surface;
           const published = await persistCommandWorkflowTranscript(pi, request.ctx, transcriptCompletion, isCurrent);
           if (!published && isCurrent()) throw new Error("Workflow terminal receipt was not published.");
         },
         async onError(error, isCurrent) {
+          completedSurface = surface;
           cleanupPanel();
           setOperatorWidget(request.ctx, "workflows", workflowBackgroundFailureBlock(error));
           if (startedRun === undefined) {
@@ -188,7 +199,6 @@ export default function workflows(pi: ExtensionAPI): void {
             return;
           }
           completedRunIds.add(startedRun.runId);
-          completedSurface = captureCompletedSurface(request.ctx);
           const published = await persistCommandWorkflowTranscript(
             pi,
             request.ctx,
@@ -234,7 +244,7 @@ export default function workflows(pi: ExtensionAPI): void {
     completedSurface = undefined;
     cleanupCompletedRuns([...completedRunIds]);
     if (surface?.widget !== undefined) clearCommandWidgetPresentation(ctx, surface.widget);
-    if (!commandLauncher.hasActiveRun()) surface?.clearStatus?.();
+    if (!commandLauncher.hasActiveRun()) surface?.clearStatus();
   };
   const prepareTransientSurface = (ctx: ExtensionContext): (() => void) | undefined => {
     if (commandLauncher.hasActiveRun()) return undefined;

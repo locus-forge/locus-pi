@@ -22,8 +22,8 @@ export function prepareWorkflowRunStatusClear(ctx: ExtensionContext): (() => voi
   return prepareOperatorStatusClear(ctx, WORKFLOW_STATUS_ID);
 }
 
-export function setWorkflowLaunchStatus(ctx: ExtensionContext, kind: string, ref: string): void {
-  setOperatorStatus(ctx, {
+export function setWorkflowLaunchStatus(ctx: ExtensionContext, kind: string, ref: string): () => void {
+  return setOperatorStatus(ctx, {
     id: WORKFLOW_STATUS_ID,
     lane: "activity",
     priority: 70,
@@ -33,10 +33,10 @@ export function setWorkflowLaunchStatus(ctx: ExtensionContext, kind: string, ref
   });
 }
 
-export function setWorkflowEventStatus(ctx: ExtensionContext, line: WorkflowJournalLine): void {
+export function setWorkflowEventStatus(ctx: ExtensionContext, line: WorkflowJournalLine): (() => void) | undefined {
   const status = renderMainWorkflowStatus(line);
   if (status === undefined) return;
-  setOperatorStatus(ctx, {
+  return setOperatorStatus(ctx, {
     id: WORKFLOW_STATUS_ID,
     lane: "activity",
     priority: 70,

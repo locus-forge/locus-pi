@@ -20,31 +20,46 @@ import {
   WORKFLOW_LIVE_WIDGET_KEY,
   type WorkflowProgressComponent,
 } from "../../../../extensions/workflows/operator/progress-widget.js";
-import { createHarness, emit, runTool } from "../../../test-harness.js";
+import { createHarness, emit, runTool, type Harness } from "../../../test-harness.js";
 
 async function waitUntil(predicate: () => boolean): Promise<void> {
   await vi.waitFor(() => expect(predicate()).toBe(true));
+}
+
+function bindPiWidgetSetter(h: Harness, renderWidgets: () => void) {
+  initTheme("dark");
+  const host = {
+    extensionWidgetsAbove: new Map<string, { render(width: number): string[] }>(),
+    extensionWidgetsBelow: new Map(),
+    ui: { requestRender() {} },
+    renderWidgets,
+  };
+  const { setExtensionWidget } = InteractiveMode.prototype as unknown as {
+    setExtensionWidget: typeof h.ctx.ui.setWidget;
+  };
+  h.ctx.ui.setWidget = setExtensionWidget.bind(host);
+  return host.extensionWidgetsAbove;
+}
+
+function publishPeerStatus(h: Harness): void {
+  setOperatorStatus(h.ctx, {
+    id: "workflow.run",
+    lane: "activity",
+    priority: 70,
+    wide: "Peer status",
+    compact: "Peer status",
+    narrow: "Peer status",
+  });
 }
 
 describe("workflow cleanup effects", () => {
   it.each([false, true])(
     "keeps a disposal-time replacement in the actual Pi widget map (throw=%s)",
     (throwAfterDelete) => {
-      initTheme("dark");
       const h = createHarness();
-      const extensionWidgetsAbove = new Map<string, { render(width: number): string[] }>();
-      const host = {
-        extensionWidgetsAbove,
-        extensionWidgetsBelow: new Map(),
-        ui: { requestRender() {} },
-        renderWidgets() {
-          if (throwAfterDelete && !extensionWidgetsAbove.has("workflows")) throw new Error("Render after deletion");
-        },
-      };
-      const { setExtensionWidget } = InteractiveMode.prototype as unknown as {
-        setExtensionWidget: typeof h.ctx.ui.setWidget;
-      };
-      h.ctx.ui.setWidget = setExtensionWidget.bind(host);
+      const extensionWidgetsAbove = bindPiWidgetSetter(h, () => {
+        if (throwAfterDelete && !extensionWidgetsAbove.has("workflows")) throw new Error("Render after deletion");
+      });
       let replaced = false;
       setCommandWidget(
         h.ctx,
@@ -68,6 +83,102 @@ describe("workflow cleanup effects", () => {
       expect(currentCommandWidgetPresentation(h.ctx, "workflows")).toMatchObject({ surface: "ERROR" });
       expect(currentCommandWidgetPresentation(h.ctx, "workflows")).not.toBe(old);
       expect(h.terminalInputHandlers.size).toBe(0);
+    },
+  );
+
+  it.each(["deletion", "insertion"] as const)("revokes VIEW clearance after Pi throws following %s", async (effect) => {
+    const h = createHarness();
+    let throwOnRender = false;
+    const widgets = bindPiWidgetSetter(h, () => {
+      if (!throwOnRender) return;
+      throwOnRender = false;
+      throw new Error("Render failed after widget mutation");
+    });
+    registerCommandWithUiLifecycle(
+      h.pi,
+      { command: "peer", surfaces: ["transient-widget"], transientWidgets: ["workflows"] },
+      { handler() {} },
+    );
+    setOperatorWidget(h.ctx, "workflows", { type: "VIEW", subject: "Old VIEW", primary: "Old evidence" });
+    const old = currentCommandWidgetPresentation(h.ctx, "workflows")!;
+    const listener = [...h.terminalInputHandlers][0]!;
+    throwOnRender = true;
+    if (effect === "deletion") {
+      expect(listener("\x1b")).toEqual({ consume: true });
+    } else {
+      expect(() => {
+        setOperatorWidget(h.ctx, "workflows", { type: "ERROR", subject: "Peer ERROR", primary: "Keep this" });
+      }).toThrow("Render failed after widget mutation");
+    }
+    const current = widgets.get("workflows");
+    if (effect === "deletion") expect(current).toBeUndefined();
+    else expect(current?.render(90).join("\n")).toContain("Peer ERROR");
+
+    expect(listener("\x1b")).toBeUndefined();
+    expect(h.terminalInputHandlers.size).toBe(0);
+    expect(clearCommandWidgetPresentation(h.ctx, old)).toBe(false);
+    await h.commands.get("peer")!.handler("", h.ctx);
+    expect(widgets.get("workflows")).toBe(current);
+  });
+
+  it.each(["progress replacement", "status during failure render", "status during launch render"] as const)(
+    "leaves a peer's %s visible after the run fails and turn_end fires",
+    async (peerEffect) => {
+      const h = createHarness();
+      workflows(h.pi);
+      const run = vi.spyOn(runner, "runWorkflowScript").mockImplementation(async (options) => {
+        options.onRunStart?.({ runId: "publication-owner", runDir: "/tmp/publication-owner" });
+        if (peerEffect !== "status during launch render") {
+          options.onEvent?.({
+            runId: "publication-owner",
+            kind: "phase",
+            phase: "Owned phase",
+            ts: "2026-01-01T00:00:00.000Z",
+          });
+        }
+        if (peerEffect === "progress replacement") {
+          setOperatorWidget(h.ctx, WORKFLOW_LIVE_WIDGET_KEY, {
+            type: "ERROR",
+            subject: "Peer live key",
+            primary: "Keep",
+          });
+        }
+        throw new Error("Runner failed after start");
+      });
+      const writeWidget = h.ctx.ui.setWidget.bind(h.ctx.ui);
+      vi.spyOn(h.ctx.ui, "setWidget").mockImplementation((key, content, options) => {
+        writeWidget(key, content, options);
+        if (peerEffect === "status during failure render" && key === "workflows" && content !== undefined) {
+          publishPeerStatus(h);
+        }
+      });
+      const writeStatus = h.ctx.ui.setStatus.bind(h.ctx.ui);
+      vi.spyOn(h.ctx.ui, "setStatus").mockImplementation((key, content) => {
+        writeStatus(key, content);
+        if (peerEffect === "status during launch render" && key === "locus" && content?.includes("WF launch")) {
+          publishPeerStatus(h);
+        }
+      });
+
+      try {
+        await h.commands.get("workflows")!.handler("run live-smoke", h.ctx);
+        await waitUntil(() =>
+          h.sentMessages.some(({ message }) => String(message.content).includes("Runner failed after start")),
+        );
+        await emit(h, "turn_end");
+
+        expect(h.widgets.get("workflows")).toContain("Runner failed after start");
+        if (peerEffect === "progress replacement") {
+          expect(h.widgets.get(WORKFLOW_LIVE_WIDGET_KEY)).toContain("Peer live key");
+          expect(h.statuses.get("locus")).toBeUndefined();
+        } else {
+          expect(h.statuses.get("locus")).toBe("Peer status");
+          expect(h.widgetPayloads.get(WORKFLOW_LIVE_WIDGET_KEY)).toBeUndefined();
+        }
+      } finally {
+        await emit(h, "session_shutdown");
+        vi.restoreAllMocks();
+      }
     },
   );
 

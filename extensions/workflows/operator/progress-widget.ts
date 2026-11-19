@@ -28,7 +28,7 @@ import {
   type WorkflowProjectedStatus,
 } from "../runtime/workflow-outcome.js";
 import type { WorkflowResultPersistence } from "../runtime/workflow-result.js";
-import { setCommandWidget } from "../../_shared/operator/command-ui.js";
+import { setCommandWidget, type CommandWidgetPresentation } from "../../_shared/operator/command-ui.js";
 import { FLEET_MENU_PLACEMENT } from "../../_shared/operator/widget-render.js";
 import { clearViewerExternalRows, setViewerExternalRows } from "../../_shared/operator/viewer-geometry.js";
 import type { WorkflowJournalLine } from "../runtime/workflow-runtime.js";
@@ -79,6 +79,7 @@ const WORKFLOW_VIEWER_RESERVATION_OWNER = "workflow-live";
 const NOOP_TUI: WidgetFactoryTui = { requestRender: () => {} };
 
 export interface WorkflowProgressOptions {
+  onPublished?: (presentation: CommandWidgetPresentation) => void;
   /** Modern TUI owns passive activity in the footer; keep only actionable notices here. */
   compactActivity?: boolean;
   scope?: "fleet" | "workflow";
@@ -716,23 +717,20 @@ export function installWorkflowProgress(
     compactActivity: ctx.mode === "tui" && agentLiveStore.retainSessions,
   });
   if (ctx.hasUI !== true) return component;
+  const publish = (content: Parameters<typeof setCommandWidget>[2]) =>
+    setCommandWidget(ctx, key, content, { placement: FLEET_MENU_PLACEMENT }, undefined, options.onPublished);
   if (ctx.mode !== "tui") {
-    const requestRender = () => setCommandWidget(ctx, key, component.render(80), { placement: FLEET_MENU_PLACEMENT });
+    const requestRender = () => publish(component.render(80));
     component.attachTui({ requestRender });
     requestRender();
     return component;
   }
   try {
-    setCommandWidget(
-      ctx,
-      key,
-      (tui, theme) => {
-        component.attachTui(tui as WidgetFactoryTui);
-        component.theme = coerceTheme(theme);
-        return component;
-      },
-      { placement: FLEET_MENU_PLACEMENT },
-    );
+    publish((tui, theme) => {
+      component.attachTui(tui as WidgetFactoryTui);
+      component.theme = coerceTheme(theme);
+      return component;
+    });
   } catch {
     // Host accepted UI but rejected this widget: keep the live component anyway.
   }

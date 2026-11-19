@@ -42,7 +42,8 @@ interface CommandUiOwnerRegistration {
 interface CommandUiRuntimeScope {
   sessionId: string;
   owners: Set<CommandUiOwnerRegistration>;
-  widgets: Map<string, CommandWidgetPresentation>;
+  // A present key with no identity has an unknown host state after a failed write.
+  widgets: Map<string, CommandWidgetPresentation | undefined>;
   viewUnsubscribe: (() => void) | undefined;
   widgetWrites: Map<string, { next?: WidgetWrite }>;
 }
@@ -54,12 +55,12 @@ export interface CommandWidgetPresentation {
 }
 
 interface CommandUiRegistry {
-  version: 5;
+  version: 6;
   pendingByPi: WeakMap<ExtensionAPI, CommandUiOwnerRegistration>;
   byUi: WeakMap<object, CommandUiRuntimeScope>;
 }
 
-const COMMAND_UI_REGISTRY_SYMBOL = Symbol.for("locus-pi.command-ui-lifecycle.v5");
+const COMMAND_UI_REGISTRY_SYMBOL = Symbol.for("locus-pi.command-ui-lifecycle.v6");
 // Transient widget/status keys that are "pinned" while a live run owns them.
 // clearTransientCommandUi skips pinned keys so a chat message or unrelated slash
 // command does not dispose a still-running task/spawn_agent progress widget.
@@ -203,18 +204,23 @@ function writeCommandWidget(
   try {
     let write: WidgetWrite | undefined = first;
     while (write !== undefined) {
+      let presentation: CommandWidgetPresentation | undefined;
       try {
         ctx.ui.setWidget(key, write.content, write.options);
         scope.widgets.delete(key);
         if (write.content !== undefined) {
-          const presentation = { key, surface: write.surface };
+          presentation = { key, surface: write.surface };
           scope.widgets.set(key, presentation);
-          write.onPublished?.(presentation);
         }
-        refreshView = write.content !== undefined && write.surface === "VIEW";
       } catch (error) {
+        // The host may already have removed or replaced the widget before throwing.
+        // Neither the old identity nor the legacy key-only clear can act on it now.
+        scope.widgets.set(key, undefined);
+        refreshView = false;
         if (scope.widgetWrites.get(key)?.next === undefined) throw error;
       }
+      refreshView = presentation?.surface === "VIEW";
+      if (presentation !== undefined) write.onPublished?.(presentation);
       write = scope.widgetWrites.get(key)?.next;
       if (write !== undefined) {
         superseded = true;
@@ -375,7 +381,11 @@ function newestView(scope: CommandUiRuntimeScope): CommandWidgetPresentation | u
   return [...scope.widgets.values()]
     .reverse()
     .find(
-      ({ key, surface, hidden }) => surface === "VIEW" && !hidden && !isTransientKeyPinned(scope, key) && !scope.widgetWrites.has(key),
+      (entry) =>
+        entry?.surface === "VIEW" &&
+        !entry.hidden &&
+        !isTransientKeyPinned(scope, entry.key) &&
+        !scope.widgetWrites.has(entry.key),
     );
 }
 
@@ -387,7 +397,7 @@ export function hasDismissibleCommandView(ctx: ExtensionContext): boolean {
 
 function synchronizeViewListener(ctx: ExtensionContext, scope: CommandUiRuntimeScope, refresh: boolean): void {
   if (currentScope(ctx) !== scope) return;
-  if (refresh || ![...scope.widgets.values()].some(({ surface }) => surface === "VIEW")) {
+  if (refresh || ![...scope.widgets.values()].some((entry) => entry?.surface === "VIEW")) {
     scope.viewUnsubscribe?.();
     scope.viewUnsubscribe = undefined;
   }
@@ -458,7 +468,7 @@ function commandUiRegistry(): CommandUiRegistry {
   const existing = globalRecord[COMMAND_UI_REGISTRY_SYMBOL];
   if (existing === undefined) {
     const created: CommandUiRegistry = {
-      version: 5,
+      version: 6,
       pendingByPi: new WeakMap<ExtensionAPI, CommandUiOwnerRegistration>(),
       byUi: new WeakMap<object, CommandUiRuntimeScope>(),
     };
@@ -467,7 +477,7 @@ function commandUiRegistry(): CommandUiRegistry {
   }
 
   if (!isCommandUiRegistry(existing)) {
-    throw new Error("Incompatible global command UI registry at locus-pi.command-ui-lifecycle.v5");
+    throw new Error("Incompatible global command UI registry at locus-pi.command-ui-lifecycle.v6");
   }
   return existing;
 }
@@ -475,5 +485,5 @@ function commandUiRegistry(): CommandUiRegistry {
 function isCommandUiRegistry(value: unknown): value is CommandUiRegistry {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Partial<CommandUiRegistry>;
-  return candidate.version === 5 && candidate.pendingByPi instanceof WeakMap && candidate.byUi instanceof WeakMap;
+  return candidate.version === 6 && candidate.pendingByPi instanceof WeakMap && candidate.byUi instanceof WeakMap;
 }
