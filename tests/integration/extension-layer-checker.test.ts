@@ -147,6 +147,15 @@ describe("extension layer checker negative rules", () => {
     await expectRule(root, "rule 2 (layer order)");
   });
 
+  it("keeps command admission independent of feature policy", async () => {
+    const root = await extensionFixture();
+    await appendFile(
+      path.join(root, "extensions/_shared/operator/command-ui/admission.ts"),
+      '\nimport "../../../workflows/index.js";\n',
+    );
+    await expectRule(root, "rule 1 (no upward import)");
+  });
+
   it("rejects an unowned shared module", async () => {
     const root = await extensionFixture();
     await writeFile(path.join(root, "extensions/_shared/host/unowned.ts"), "export const unowned = true;\n", "utf8");

@@ -14,6 +14,7 @@ import { getProjectRoot, getWorkingDirectory } from "../_shared/host/pi-api.js";
 import {
   pinTransientUiKey,
   clearCommandWidgetPresentation,
+  installWarningEscapeDismissal,
   type CommandWidgetPresentation,
   registerTransientUiCleanup,
   setCommandWidget,
@@ -313,6 +314,7 @@ export default function workflows(pi: ExtensionAPI): void {
   // never as a modal the new session starts with, and never on its first settled
   // turn either.
   pi.on("session_start", (_event, ctx) => {
+    installWarningEscapeDismissal(ctx, "workflows");
     resetWorkflowLiveExecutions();
     disposeSessionPanels();
     sessionRunIds.clear();
