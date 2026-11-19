@@ -87,7 +87,8 @@ describe("/workflows doctor", () => {
     writeFileSync(marker, original);
     await f.run("doctor install --host codex --scope project");
     expect(f.text()).toContain("/workflows doctor check --host codex --scope project");
-    expect(f.text()).toContain("backup outside this skills folder");
+    // A short temporary path keeps the refusal inside the 80-column widget, which wraps this sentence.
+    expect(f.text().replace(/\s+/g, " ")).toContain("backup outside this skills folder");
     expect(f.text().replace(/\n/g, "")).toContain(skill);
     expect(readFileSync(marker, "utf8")).toBe(original);
   });
