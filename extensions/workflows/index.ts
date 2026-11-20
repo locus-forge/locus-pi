@@ -34,6 +34,7 @@ import {
 import { createWorkflowOperatorHandoffService } from "./operator/operator-handoff-service.js";
 import {
   prepareWorkflowRunStatusClear,
+  WorkflowFailureNotices,
   presentWorkflowHandoffPumpResult,
   setWorkflowEventStatus,
   setWorkflowLaunchStatus,
@@ -64,6 +65,7 @@ interface WorkflowCommandSurface {
 
 export default function workflows(pi: ExtensionAPI): void {
   registerWorkflowTranscriptRenderers(pi);
+  const failureNotices = new WorkflowFailureNotices();
   const completedRunIds = new Set<string>();
   let pendingWidget: CommandWidgetPresentation | undefined;
   let pendingStatusClear: (() => void) | undefined;
@@ -159,6 +161,7 @@ export default function workflows(pi: ExtensionAPI): void {
                 surface.widget = widget;
               },
               scope: "workflow",
+              separateFailureNotice: request.ctx.mode === "tui",
               declaredStages: preparation.declaredStages,
               ...(request.continuation === undefined
                 ? {}
@@ -177,6 +180,16 @@ export default function workflows(pi: ExtensionAPI): void {
         async onResult(result, isCurrent) {
           completedRunIds.add(result.runId);
           const transcriptCompletion = transcript.finish(result);
+          if (transcriptCompletion.workflowStatus === "failed" && request.ctx.mode === "tui" && preparation.hasUI) {
+            surface.clearStatus();
+            failureNotices.publish(
+              request.ctx,
+              result.runId,
+              result.error ??
+                result.failureDiagnostic?.message ??
+                "See the expanded failure receipt in the conversation.",
+            );
+          }
           if (preparation.hasUI && panel) {
             panel.finish(result);
             cleanupPanel();
@@ -190,7 +203,9 @@ export default function workflows(pi: ExtensionAPI): void {
         async onError(error, isCurrent) {
           scheduleCompletedSurface(surface);
           cleanupPanel();
-          setOperatorWidget(request.ctx, "workflows", workflowBackgroundFailureBlock(error));
+          if (startedRun === undefined || request.ctx.mode !== "tui" || !preparation.hasUI) {
+            setOperatorWidget(request.ctx, "workflows", workflowBackgroundFailureBlock(error));
+          }
           if (startedRun === undefined) {
             const published = await persistCommandWorkflowRejection(
               pi,
@@ -204,6 +219,11 @@ export default function workflows(pi: ExtensionAPI): void {
             );
             if (!published && isCurrent()) throw new Error("Workflow rejection receipt was not published.");
             return;
+          }
+          if (preparation.hasUI && request.ctx.mode === "tui") {
+            surface.clearStatus();
+            panel?.finish({ ok: false, error: errorMessage(error) });
+            failureNotices.publish(request.ctx, startedRun.runId, errorMessage(error));
           }
           completedRunIds.add(startedRun.runId);
           const published = await persistCommandWorkflowTranscript(
@@ -315,6 +335,7 @@ export default function workflows(pi: ExtensionAPI): void {
   // turn either.
   pi.on("session_start", (_event, ctx) => {
     installWarningEscapeDismissal(ctx, "workflows");
+    failureNotices.reset();
     resetWorkflowLiveExecutions();
     disposeSessionPanels();
     sessionRunIds.clear();
@@ -327,6 +348,7 @@ export default function workflows(pi: ExtensionAPI): void {
     commandLauncher.startSession(ctx);
   });
   pi.on("session_shutdown", async (_event, _ctx) => {
+    failureNotices.reset();
     resetWorkflowLiveExecutions();
     disposeSessionPanels();
     catalogLaunches.clear();
@@ -360,6 +382,7 @@ export default function workflows(pi: ExtensionAPI): void {
   registerFusionSurface(pi);
 
   registerWorkflowCommands(pi, {
+    failureNotices,
     commandLauncher,
     pumpCurrentHandoffs,
     rememberCompletionContext,

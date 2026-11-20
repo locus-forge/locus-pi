@@ -1,3 +1,7 @@
+import { requestInlineOperatorInteraction } from "../../_shared/operator/operator-interaction.js";
+import { WorkflowRunViewer } from "../run/run-viewer.js";
+import { buildRunDetailBlock, buildRunsListBlock, RUNS_IN_STATUS_LIST } from "../run/run-evidence.js";
+import type { WorkflowFailureNotices } from "../operator/operator-surface.js";
 import { randomUUID } from "node:crypto";
 import type { ExtensionCommandContext } from "../../_shared/host/pi-api.js";
 import { setOperatorWidget } from "../../_shared/operator/widget-render.js";
@@ -91,4 +95,45 @@ function reportWorkflowEditorHandoffFailure(ctx: ExtensionCommandContext, error:
       "No editor text was changed and no workflow was started.",
     ),
   );
+}
+
+export async function openWorkflowRunViewer(
+  ctx: ExtensionCommandContext,
+  projectRoot: string,
+  runId?: string,
+  notices?: Pick<WorkflowFailureNotices, "reason" | "acknowledge">,
+): Promise<boolean> {
+  if (ctx.mode !== "tui" || ctx.hasUI === false || ctx.ui.custom === undefined) return false;
+  try {
+    const explainRun = await requestInlineOperatorInteraction<string | undefined>(
+      ctx,
+      (tui, theme, keybindings, done) =>
+        new WorkflowRunViewer(
+          tui,
+          theme,
+          keybindings,
+          projectRoot,
+          () => done(undefined),
+          runId,
+          notices,
+          ctx.ui.setEditorText && ctx.ui.getEditorText?.() === "" ? done : undefined,
+        ),
+    );
+    if (explainRun && ctx.ui.getEditorText?.() === "") {
+      fillWorkflowEditor(ctx, `Explain why workflow run ${explainRun} failed and suggest my next step.`);
+    }
+  } catch (error) {
+    const fallback =
+      runId === undefined
+        ? buildRunsListBlock(projectRoot, RUNS_IN_STATUS_LIST)
+        : buildRunDetailBlock(projectRoot, runId);
+    setOperatorWidget(ctx, "workflows", {
+      ...fallback,
+      metadata: [
+        `Interactive evidence viewer failed: ${errorMessage(error)}. Bounded static evidence is shown instead.`,
+        ...(fallback.metadata ?? []),
+      ],
+    });
+  }
+  return true;
 }

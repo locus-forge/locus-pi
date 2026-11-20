@@ -1,3 +1,5 @@
+import { fleetMenuState } from "../../_shared/agent-runtime/fleet-menu.js";
+import { stripVTControlCharacters } from "node:util";
 import { canonicalWorkflowJSON } from "../runtime/structured-results/schema.js";
 import type { WorkflowInputFields } from "../runtime/workflow-input.js";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
@@ -29,6 +31,22 @@ export function workflowResultNavigation(
   };
 }
 
+export function workflowFailurePreview(
+  res: RunWorkflowScriptResult,
+  workflow: string,
+  reason: string,
+  elapsed: string,
+): string {
+  return [
+    `${workflow} · #${shortWorkflowRunId(res.runId)}${elapsed ? ` · ${elapsed}` : ""}`,
+    `Reason: ${compactTranscriptText(reason)}`,
+    ...(res.failureDiagnostic?.stage ? [`Last stage: ${compactTranscriptText(res.failureDiagnostic.stage)}`] : []),
+    ...(res.resultPersistence.ok
+      ? [`Inspect: /workflows status ${res.runId}`]
+      : [`Result not saved: ${res.resultPersistence.code}`, `Inspect session: /workflows status ${res.runId}`]),
+  ].join("\n");
+}
+
 export interface WorkflowCompletionPresentation {
   generatedRunCommand?: string;
   nextAction?: string;
@@ -52,16 +70,36 @@ export function workflowCompletionPresentation(
 /** Replace Pi's raw custom-message fallback with distinct operator cards. */
 export function registerWorkflowTranscriptRenderers(pi: ExtensionAPI): void {
   if (pi.registerMessageRenderer === undefined) return;
-  pi.registerMessageRenderer(WORKFLOW_RUN_CUSTOM_TYPE, (message, { outputPad }, theme) => {
+  pi.registerMessageRenderer(WORKFLOW_RUN_CUSTOM_TYPE, (message, { outputPad, expanded }, theme) => {
     if (typeof message.content !== "string") return undefined;
     if (message.details?.eventKind === "workflow_start" && typeof message.details.displayLabel === "string") {
-      const label = compactTranscriptText(message.details.displayLabel).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+      const label = compactTranscriptText(stripVTControlCharacters(message.details.displayLabel));
+      const runId = detailText(message.details.runId);
+      const agents = fleetMenuState.emptyEditorFocusAvailable ? " · ← Agents (empty editor)" : "";
+      const started = theme.fg("accent", theme.bold("▶ Started"));
       return {
         invalidate() {},
-        render: (width: number) => [truncateToWidth(`● workflow ${label} started`, Math.max(1, width))],
+        render: (width: number) => [
+          truncateToWidth(
+            `${started} · ${label}${runId ? ` · #${shortWorkflowRunId(runId)}` : ""}${agents}`,
+            Math.max(1, width),
+          ),
+        ],
       };
     }
-    const title = workflowRunTitle(message.details?.eventKind);
+    if (!expanded && message.details?.eventKind === "workflow_rejected") {
+      return new Text("Workflow not started · expand for details", outputPad, 0);
+    }
+    const failed = message.details?.eventKind === "workflow_end" && message.details.workflowStatus === "failed";
+    if (failed && !expanded && typeof message.details?.failurePreview === "string") {
+      return workflowTranscriptCard(
+        "Workflow failed",
+        stripVTControlCharacters(message.details.failurePreview),
+        outputPad,
+        theme,
+      );
+    }
+    const title = failed ? "Workflow failed" : workflowRunTitle(message.details?.eventKind);
     // Only the run card gets digest tone: its content is the digest, whose line
     // vocabulary is known. The result card below carries the workflow's own prose,
     // where a leading `✓` is the agent's sentence and not a status marker.
@@ -165,7 +203,13 @@ class WorkflowTranscriptCard implements CustomUiComponent {
         ? ""
         : `\n\n${this.theme.fg("accent", this.theme.bold(this.footer.title))}\n${this.footer.text}`;
     const box = new Box(this.outputPad, 1, (text) => this.theme.bg("customMessageBg", text));
-    box.addChild(new Text(`${this.theme.fg("accent", this.theme.bold(this.title))}\n${content}${footerText}`, 0, 0));
+    box.addChild(
+      new Text(
+        `${this.theme.fg(this.title === "Workflow failed" ? "error" : "accent", this.theme.bold(this.title))}\n${content}${footerText}`,
+        0,
+        0,
+      ),
+    );
     return box.render(safeWidth);
   }
 

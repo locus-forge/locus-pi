@@ -21,7 +21,7 @@ import { WorkflowCatalogViewer, WorkflowInfoViewer } from "../catalog/catalog-vi
 import { workflowArgumentCompletions, workflowFlatCommandCompletions } from "../launch/command-completions.js";
 import { formatWorkflowCommandToken, parseContinueCommand, parseWorkflowCommandToken } from "./command-parser.js";
 import type { WorkflowHandoffPumpResult } from "../operator/operator-handoff-controller.js";
-import { presentWorkflowHandoffPumpResult } from "../operator/operator-surface.js";
+import { presentWorkflowHandoffPumpResult, type WorkflowFailureNotices } from "../operator/operator-surface.js";
 import {
   ambiguousWorkflowRunBlock,
   assertNever,
@@ -35,7 +35,7 @@ import {
 } from "../operator/operator-ui.js";
 import { copyWorkflowNamespace } from "../catalog/workflow-copy.js";
 import { WORKFLOW_LIVE_WIDGET_KEY } from "../operator/progress-widget.js";
-import { WorkflowResultViewer, WorkflowRunViewer } from "../run/run-viewer.js";
+import { WorkflowResultViewer } from "../run/run-viewer.js";
 import {
   buildRunDetailBlock,
   buildRunsListBlock,
@@ -52,7 +52,7 @@ import {
 import type { WorkflowCommandLauncher } from "../launch/workflow-command-launcher.js";
 import { handleWorkflowRunCommand } from "./run.js";
 import { createWorkflowDoctor } from "./skill-doctor/doctor.js";
-import { fillWorkflowEditor, prepareWorkflowEditorHandoff } from "./workflow-editor-handoff.js";
+import { fillWorkflowEditor, openWorkflowRunViewer, prepareWorkflowEditorHandoff } from "./workflow-editor-handoff.js";
 
 /** Canonical ordered root menu data for the `/workflows` command. */
 const WORKFLOW_MENU_DESCRIPTIONS = {
@@ -88,6 +88,7 @@ const FLAT_WORKFLOW_COMMANDS = ["stop"] as const;
 export type FlatWorkflowCommand = (typeof FLAT_WORKFLOW_COMMANDS)[number];
 
 export interface WorkflowCommandRouterDependencies {
+  failureNotices?: Pick<WorkflowFailureNotices, "reason" | "acknowledge">;
   commandLauncher: WorkflowCommandLauncher;
   /** Open, answer, or advance the oldest actionable handoff for this session. */
   pumpCurrentHandoffs: (
@@ -134,7 +135,7 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
     // `/workflows dashboard` — persisted run/stage/evidence browser. RPC and
     // hosts without custom UI retain the same bounded disk-backed list.
     if (text === "dashboard") {
-      if (await openWorkflowRunViewer(ctx, projectRoot)) return;
+      if (await openWorkflowRunViewer(ctx, projectRoot, undefined, deps.failureNotices)) return;
       setOperatorWidget(
         ctx,
         "workflows",
@@ -267,7 +268,7 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
 
     // `/workflows status` — recent runs; `/workflows status <runId>` — one run's progress.
     if (text === "status") {
-      if (await openWorkflowRunViewer(ctx, projectRoot)) return;
+      if (await openWorkflowRunViewer(ctx, projectRoot, undefined, deps.failureNotices)) return;
       const compact = ctx.mode !== "tui";
       setOperatorWidget(
         ctx,
@@ -300,6 +301,11 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
         return;
       }
       if (resolved.status === "not-found") {
+        if (
+          deps.failureNotices?.reason(selector) !== undefined &&
+          (await openWorkflowRunViewer(ctx, projectRoot, selector, deps.failureNotices))
+        )
+          return;
         setOperatorWidget(
           ctx,
           "workflows",
@@ -308,7 +314,7 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
         return;
       }
       const runId = resolved.runId;
-      if (await openWorkflowRunViewer(ctx, projectRoot, runId)) return;
+      if (await openWorkflowRunViewer(ctx, projectRoot, runId, deps.failureNotices)) return;
       setOperatorWidget(ctx, "workflows", buildRunDetailBlock(projectRoot, runId, ctx.mode !== "tui"));
       return;
     }
@@ -781,31 +787,4 @@ async function presentWorkflowRunResultText(
     metadata: [`full text: ${allLines.length} line(s) at ${read.path}`],
     controls: ["Read it all in an interactive Pi TUI, or open the file above"],
   });
-}
-
-async function openWorkflowRunViewer(
-  ctx: ExtensionCommandContext,
-  projectRoot: string,
-  runId?: string,
-): Promise<boolean> {
-  if (ctx.mode !== "tui" || ctx.hasUI === false || ctx.ui.custom === undefined) return false;
-  try {
-    await requestInlineOperatorInteraction<void>(
-      ctx,
-      (tui, theme, keybindings, done) => new WorkflowRunViewer(tui, theme, keybindings, projectRoot, done, runId),
-    );
-  } catch (error) {
-    const fallback =
-      runId === undefined
-        ? buildRunsListBlock(projectRoot, RUNS_IN_STATUS_LIST)
-        : buildRunDetailBlock(projectRoot, runId);
-    setOperatorWidget(ctx, "workflows", {
-      ...fallback,
-      metadata: [
-        `Interactive evidence viewer failed: ${errorMessage(error)}. Bounded static evidence is shown instead.`,
-        ...(fallback.metadata ?? []),
-      ],
-    });
-  }
-  return true;
 }

@@ -15,6 +15,7 @@ import { notifyOperator } from "../../_shared/operator/operator-notify.js";
 import { type WorkflowTranscriptAnnouncement, type WorkflowTranscriptCompletion } from "../command/receipts.js";
 import {
   workflowCompletionPresentation,
+  workflowFailurePreview,
   workflowResultNavigation,
   workflowInputPresentation,
   firstTranscriptLine,
@@ -187,17 +188,7 @@ export function createWorkflowTranscript(
         bodyLines.push(...formatOperatorWaitBlock(res, currentPhase));
       }
       pushLine([...parts, ...(elapsed !== "" ? [elapsed] : [])].join(" · "));
-      // A failed run leaves the transcript with the actionable diagnostic: where
-      // it broke, which evidence proves it, and one copyable repair request. These
-      // lines skip the 160-char compaction — a truncated path or repair request
-      // would be unusable, and the diagnostic is already bounded at its source.
-      // The summary above is capped at 160 characters because this digest enters
-      // model context. A run whose result is prose therefore has to say where the
-      // unabridged text is, and which command shows it — otherwise the operator
-      // is left with a sentence fragment and no way forward. A failed run that
-      // still produced text needs it just as much as a clean one.
-      // Failures remain visible even when the script captured them and returned success.
-      // Keep paths exact; the index carries the complete inventory beyond this display bound.
+      // Keep execution failures in the full receipt even when the script recovered.
       const failures = res.journal.filter(
         (line) =>
           (line.kind === "error" && (line.callId !== undefined || line.message !== res.error)) ||
@@ -256,6 +247,9 @@ export function createWorkflowTranscript(
         resultPath: workflowResultFile(res.runDir),
         resultPersisted: res.resultPersistence.ok,
         digest: [...headerLines, ...bodyLines].join("\n"),
+        ...(disposition.status === "failed"
+          ? { failurePreview: workflowFailurePreview(res, safeTarget, disposition.summary, elapsed) }
+          : {}),
         lineCount: bodyLines.length,
         ...(typeof res.result === "string" && res.result.trim() !== "" ? { resultText: res.result } : {}),
         ...(res.resultTextPath !== undefined ? { resultTextPath: res.resultTextPath } : {}),
@@ -281,6 +275,7 @@ export function createWorkflowTranscript(
         resultPath: workflowResultFile(runDir),
         resultPersisted: false,
         digest: lines.join("\n"),
+        failurePreview: `${safeTarget} · #${shortWorkflowRunId(runId)}\nReason: ${message}\nResult not saved`,
         lineCount: lines.length - 1,
       };
       return completion;

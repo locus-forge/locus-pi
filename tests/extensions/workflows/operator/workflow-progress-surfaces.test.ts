@@ -714,7 +714,8 @@ describe("workflow progress terminal and headless projection", () => {
       const mainStatuses = [...harness.statuses.values()].join("\n");
       expect(mainStatuses).not.toContain("[agent] ->");
       expect(mainStatuses).not.toContain("[agent] <-");
-      expect(mainStatuses).toContain("[error] boom");
+      expect(mainStatuses).not.toContain("WF [");
+      expect(harness.widgets.get("workflows-failure-notice")).toContain("FAILED");
       const persisted = harness.sentMessages.map((entry) => String(entry.message.content));
       expect(persisted).toHaveLength(2);
       // One row per agent: the finished row replaced the started row in place.

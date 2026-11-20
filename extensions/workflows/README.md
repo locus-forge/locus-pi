@@ -72,13 +72,13 @@ Press Escape to dismiss an unpinned warning while Pi handles the key normally. T
 record, run details, journals, results, and error logs remain available. Escape also closes
 passive command views on both legacy and Kitty terminals.
 
-Pi may wait to run a workflow command you enter while another command is still running.
-An unpinned workflow error panel that appears during the wait can disappear when your
-command starts. Your command still runs. Open `/workflows status <runId>` to see the failed
-run and its stages. The full error stays in that run's `runtime/result.json`:
-`.locus-pi/runs/<runId>/` for a root run, or `attempts/<runId>/` (a `--resume` attempt) and
-`children/<runId>/` (a saved child) inside the original run's folder.
-`.locus-pi/logs/errors.jsonl` keeps a shortened message.
+When a command-run workflow fails, the conversation shows the reason once. A
+one-line failure notice survives opening the catalog and identifies the run to
+inspect. Open `/workflows status <runId>` to read its recorded failure. Esc
+acknowledges that run and opens its stages. With an empty editor, E prepares an
+explanation request in chat; Enter sends it. Expand the original receipt for
+diagnostic paths and repair context. The full saved result is in the run's
+`runtime/result.json`.
 
 At normal interactive heights, `/workflows list` keeps the Project, User, Package, and History tabs directly below the catalog heading and opens on Project whenever it contains a selectable workflow. The existing compact projection may omit the heading or put the selected row first when only a few lines fit. Wherever tabs are shown, the active tab uses the shared high-contrast purple selection background. The source view uses the same treatment for its left-to-right Start, Back, Edit, Review, and copy actions, with Start focused first for a ready current workflow. Start restores a direct command for untyped workflows and a complete native-run request for static `meta.inputSchema`; neither form submits editor text itself. After the user submits the typed request, the agent prepares canonical `inputValue` and calls the native `workflow` tool, whose extension-owned interactive confirmation is the review boundary; the route does not require package skills and unavailable capability never falls back to a shell or slash command. A parent description starts one column to the right of its child's `└` branch, so the description remains attached to the parent instead of reading like a heading for the child. See the cross-extension [TUI visual language](../../docs/tui-design.md).
 

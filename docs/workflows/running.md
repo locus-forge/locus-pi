@@ -58,14 +58,10 @@ added by the writer when needed. A missing readable copy falls back to the envel
 a conflicting copy reports an invalid result. Without a readable envelope, an
 orphan Markdown copy is not accepted. Readback never repairs or rewrites either file.
 
-A run that ends badly and produced **no** prose result — a script returning a
-structured `{ ok: false }` is the common case — gets the same treatment against a
-different command. Its verdict line carries the failure summary and is clipped
-like any other, so the digest and the panel add
-`read the full reason: /workflows status <runId>`, which prints the structured
-result the reason actually lives in. `/workflows result` is deliberately not
-offered there: it refuses a non-prose result, so pointing at it would send the
-operator to a dead end.
+For a failed run, open `/workflows status <runId>` in the terminal. Read the
+recorded reason, press Esc for stages and logs, or press E with an empty editor
+to prepare a question about that exact run. Review the question before sending.
+The full saved failure is in the run's `runtime/result.json`.
 
 `/workflows result` and `/workflows status` accept the short run suffix every
 surface prints (`run #98cc` → `/workflows result 98cc`), `last` for the newest run,
@@ -112,12 +108,10 @@ Press Escape to dismiss an unpinned warning. Pi still handles Escape normally, a
 warning's record and run details remain available.
 
 Pi may wait to run a workflow command you enter while another command is still running.
-If an unpinned workflow error panel appears during that wait, it can disappear when your
-command starts. Your command still runs. For a failed run, `/workflows status <runId>` opens
-the run and its stages. The full error stays in that run's `runtime/result.json`:
-`.locus-pi/runs/<runId>/` for a root run, or `attempts/<runId>/` (a `--resume` attempt) and
-`children/<runId>/` (a saved child) inside the original run's folder. The project error log
-`.locus-pi/logs/errors.jsonl` keeps a shortened message.
+A failed command-run workflow leaves a compact notice visible while the queued
+command opens. Inspect the indicated run to acknowledge its failure. Other
+outstanding failures retain their own notices. A new session clears these
+notifications; the conversation receipts and saved results remain available.
 
 #### Start from the catalog
 
