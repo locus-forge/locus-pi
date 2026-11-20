@@ -300,6 +300,7 @@ export interface RunEvidenceModel {
   status: WorkflowRunStatus;
   stages: StageRow[];
   recordedFailure?: { title: string; text: string };
+  legacyFailure?: string;
   runProblem?: string;
   artifactProblem?: string;
   journalProblem?: string;
@@ -393,7 +394,11 @@ export function loadRunEvidence(projectRoot: string, runId: string): RunEvidence
     status: summary.status,
     stages,
     ...(unavailable ? { runProblem: unavailable } : {}),
-    ...(recordedFailure === undefined ? {} : { recordedFailure }),
+    ...(recordedFailure === undefined
+      ? {}
+      : result?.runUnbound === undefined
+        ? { recordedFailure }
+        : { legacyFailure: recordedFailure.text }),
     ...(persistedInvalidity === undefined
       ? {}
       : { runProblem: `Malformed persisted metadata (${persistedInvalidity}).` }),

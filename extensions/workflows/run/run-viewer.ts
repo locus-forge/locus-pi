@@ -91,15 +91,19 @@ export class WorkflowRunViewer implements CustomUiComponent {
     const run = loadRunEvidence(this.projectRoot, runId);
     this.#screen = { kind: "stages", run };
     const observed = this.notices?.reason(runId);
-    const reason =
-      run.recordedFailure?.text ??
-      (observed === undefined ? undefined : `Saved result unavailable. Observed in this session:\n${observed}`);
+    const legacy =
+      run.legacyFailure === undefined ? undefined : `Legacy result (run ID not recorded):\n${run.legacyFailure}`;
+    const fallback =
+      observed === undefined
+        ? legacy
+        : [`Saved result unavailable. Observed in this session:\n${observed}`, legacy].filter(Boolean).join("\n\n");
+    const reason = run.recordedFailure?.text ?? fallback;
     if (reason === undefined) return;
     this.#failureView = new WorkflowResultViewer(
       this.tui,
       this.#theme,
       this.keybindings,
-      `${runId} · failed · ${run.recordedFailure?.title ?? "session observation"}`,
+      `${runId} · failed · ${run.recordedFailure?.title ?? (observed ? "session observation" : "legacy result")}`,
       stripVTControlCharacters(reason),
       () => {
         this.#failureView = undefined;
@@ -109,7 +113,7 @@ export class WorkflowRunViewer implements CustomUiComponent {
       [
         "↑/↓ scroll",
         ...(this.explain ? ["E explain in chat"] : []),
-        ...(run.recordedFailure === undefined ? ["D dismiss notice"] : []),
+        ...(observed !== undefined && run.recordedFailure === undefined ? ["D dismiss notice"] : []),
       ].join(" · "),
     );
   }

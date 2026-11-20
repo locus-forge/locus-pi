@@ -392,3 +392,26 @@ it.each([false, true])(
     expect(h.customRenderFrames[0]?.join("\n")).toContain("Saved result unavailable");
   },
 );
+
+it("keeps unbound historical evidence readable without acknowledging a live failure", async () => {
+  const root = makeRoot(),
+    h = createHarness(root, { mode: "tui" });
+  h.ctx.hasUI = true;
+  writeFileSync(
+    workflowResultFile(ensureWorkflowRunDir(root, first)),
+    JSON.stringify({ ok: false, error: "historical reason" }),
+  );
+  const notices = new WorkflowFailureNotices();
+  notices.publish(h.ctx, first, "live failure");
+  h.customInputQueue.push("\x1b", "\x1b", "\x1b");
+  await openWorkflowRunViewer(h.ctx, root, first, notices);
+  const screen = h.customRenderFrames[0]?.join("\n");
+  expect(screen).toContain("Legacy result (run ID not recorded)");
+  expect(screen).toContain("historical reason");
+  expect(screen).toContain("live failure");
+  expect(notices.reason(first)).toBe("live failure");
+  h.customInputQueue.push("e");
+  await openWorkflowRunViewer(h.ctx, root, first, notices);
+  expect(notices.reason(first)).toBe("live failure");
+  notices.reset();
+});
