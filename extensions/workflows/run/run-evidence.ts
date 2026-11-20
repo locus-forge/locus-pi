@@ -7,6 +7,9 @@
  * because every value it shows comes from disk, never from live state.
  */
 
+import { errorMessage } from "../../_shared/host/error-text.js";
+import { readWorkflowArtifactIndex, type WorkflowArtifactRecord } from "../runtime/workflow-artifacts.js";
+import type { WorkflowJournalDiagnostic, WorkflowRunStatus } from "../runtime/workflow-journal.js";
 import type { OperatorBlock } from "../../_shared/operator/operator-ui.js";
 import { formatWorkflowFailureDiagnosticLines } from "../runtime/workflow-failure.js";
 import {
@@ -290,4 +293,163 @@ function renderJournalLines(journal: readonly WorkflowJournalLine[]): string[] {
     }
   }
   return out;
+}
+
+export interface RunEvidenceModel {
+  runId: string;
+  status: WorkflowRunStatus;
+  stages: StageRow[];
+  recordedFailure?: { title: string; text: string };
+  legacyFailure?: string;
+  runProblem?: string;
+  artifactProblem?: string;
+  journalProblem?: string;
+}
+
+export interface StageRow {
+  key: string;
+  label: string;
+  evidence: EvidenceRow[];
+}
+
+export type EvidenceRow =
+  | { kind: "artifact"; record: WorkflowArtifactRecord }
+  | { kind: "log"; stage: string; lines: WorkflowJournalLine[] }
+  | { kind: "problem"; message: string };
+
+export function loadRunEvidence(projectRoot: string, runId: string): RunEvidenceModel {
+  let runDir: string;
+  try {
+    runDir = resolveWorkflowRunDir(projectRoot, runId);
+  } catch (error) {
+    return {
+      runId,
+      status: "unknown",
+      artifactProblem: `${errorMessage(error)}.`,
+      stages: [
+        {
+          key: "run",
+          label: "run",
+          evidence: [{ kind: "problem", message: "Run id refused before filesystem access." }],
+        },
+      ],
+    };
+  }
+  const { lines: journal, diagnostics: journalDiagnostics } = readWorkflowRunJournalState(projectRoot, runId, runDir);
+  const summary = readWorkflowRunSummary(projectRoot, runId, runDir);
+  const result = readWorkflowRunResult(projectRoot, runId, runDir);
+  const persistedInvalidity = workflowPersistedResultInvalidity(result);
+  const unavailable =
+    result === null && (summary.hasResult || summary.status === "failed")
+      ? "Saved result unavailable. Browse the recorded stages and journal for available evidence."
+      : undefined;
+  const recordedFailure =
+    summary.status === "failed" && result?.ok === false && persistedInvalidity === undefined
+      ? result.error?.trim()
+        ? { title: "reason", text: result.error }
+        : {
+            title: "recorded result",
+            text:
+              result.result === undefined
+                ? "The saved result contains no failure reason."
+                : JSON.stringify(result.result, null, 2),
+          }
+      : undefined;
+  const artifactState = readWorkflowArtifactIndex(projectRoot, runId, runDir);
+  const records = artifactState.status === "ready" ? artifactState.index.artifacts : [];
+  const stageKeys: string[] = [];
+  const addStage = (value: string | undefined): void => {
+    const key = stageKey(value);
+    if (!stageKeys.includes(key)) stageKeys.push(key);
+  };
+  for (const line of journal) addStage(line.phase);
+  for (const record of records) addStage(record.stage);
+  if (stageKeys.length === 0) stageKeys.push("run");
+
+  const artifactProblem = artifactState.status === "ready" ? undefined : artifactState.message;
+  const journalProblem = formatJournalProblem(journalDiagnostics);
+  const stages = stageKeys.map((key, stageIndex): StageRow => {
+    const artifacts = records
+      .filter((record) => stageKey(record.stage) === key)
+      .sort(compareArtifactRecords)
+      .map((record): EvidenceRow => ({ kind: "artifact", record }));
+    const logs = journal.filter((line) => stageKey(line.phase) === key);
+    const evidence: EvidenceRow[] = [...artifacts];
+    if (logs.length > 0) evidence.push({ kind: "log", stage: key, lines: logs });
+    if (persistedInvalidity !== undefined && stageIndex === 0) {
+      evidence.push({ kind: "problem", message: `Malformed persisted metadata (${persistedInvalidity}).` });
+    }
+    if (artifactProblem !== undefined && stageIndex === 0) evidence.push({ kind: "problem", message: artifactProblem });
+    return { key, label: key, evidence };
+  });
+  if (journalProblem !== undefined) {
+    stages.unshift({
+      key: "__journal-corruption__",
+      label: `journal corruption (${journalDiagnostics.length})`,
+      evidence: [{ kind: "problem", message: journalProblem }],
+    });
+  }
+  return {
+    runId,
+    status: summary.status,
+    stages,
+    ...(unavailable ? { runProblem: unavailable } : {}),
+    ...(recordedFailure === undefined
+      ? {}
+      : result?.runUnbound === undefined
+        ? { recordedFailure }
+        : { legacyFailure: recordedFailure.text }),
+    ...(persistedInvalidity === undefined
+      ? {}
+      : { runProblem: `Malformed persisted metadata (${persistedInvalidity}).` }),
+    ...(artifactProblem !== undefined ? { artifactProblem } : {}),
+    ...(journalProblem !== undefined ? { journalProblem } : {}),
+  };
+}
+
+function compareArtifactRecords(left: WorkflowArtifactRecord, right: WorkflowArtifactRecord): number {
+  const leftCall = left.callId ?? "~";
+  const rightCall = right.callId ?? "~";
+  return (
+    leftCall.localeCompare(rightCall) ||
+    artifactKindOrder(left.kind) - artifactKindOrder(right.kind) ||
+    left.artifactId.localeCompare(right.artifactId)
+  );
+}
+
+function artifactKindOrder(kind: WorkflowArtifactRecord["kind"]): number {
+  switch (kind) {
+    case "answer":
+      return 0;
+    case "transcript":
+      return 1;
+    case "result":
+      return 2;
+    case "published":
+      return 3;
+    case "primary":
+      return 4;
+    case "input":
+      return 5;
+    case "operator-ask":
+      return 6;
+  }
+}
+
+function formatJournalProblem(diagnostics: readonly WorkflowJournalDiagnostic[]): string | undefined {
+  if (diagnostics.length === 0) return undefined;
+  const shown = diagnostics.slice(0, 8).map((diagnostic) => {
+    const location = diagnostic.lineNumber === null ? "journal" : `line ${diagnostic.lineNumber}`;
+    return `${location}: ${diagnostic.message}`;
+  });
+  const omitted = diagnostics.length - shown.length;
+  return [
+    `Journal corruption detected: ${diagnostics.length} malformed or unreadable row(s).`,
+    ...shown,
+    ...(omitted > 0 ? [`${omitted} additional diagnostic(s) omitted from this bounded view.`] : []),
+  ].join("\n");
+}
+
+function stageKey(value: string | undefined): string {
+  return value === undefined || value.trim() === "" ? "run" : value;
 }

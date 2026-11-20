@@ -1,3 +1,5 @@
+import { fleetMenuState } from "../../_shared/agent-runtime/fleet-menu.js";
+import { stripVTControlCharacters } from "node:util";
 import { canonicalWorkflowJSON } from "../runtime/structured-results/schema.js";
 import type { WorkflowInputFields } from "../runtime/workflow-input.js";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
@@ -29,6 +31,47 @@ export function workflowResultNavigation(
   };
 }
 
+export function workflowFailureReceiptFields(
+  result: RunWorkflowScriptResult,
+  target: string,
+  disposition: WorkflowDispositionProjection,
+  phase: string | undefined,
+  elapsed: string,
+): { failurePreview?: string; unpersistedFailure?: string } {
+  if (disposition.status !== "failed") return {};
+  const failurePreview = workflowFailurePreview(
+    result.runId,
+    target,
+    disposition.summary,
+    result.failureDiagnostic?.stage ?? phase,
+    elapsed,
+    result.resultPersistence,
+  );
+  if (result.resultPersistence.ok) return { failurePreview };
+  return {
+    failurePreview,
+    unpersistedFailure: result.error ?? JSON.stringify(result.result, null, 2) ?? disposition.summary,
+  };
+}
+
+export function workflowFailurePreview(
+  runId: string,
+  workflow: string,
+  reason: string,
+  stage: string | undefined,
+  elapsed: string,
+  persistence?: WorkflowResultPersistence,
+): string {
+  const summary = compactTranscriptText(stripVTControlCharacters(reason).trimStart()) || "No reason was recorded.";
+  return [
+    `${workflow} · #${shortWorkflowRunId(runId)}${elapsed ? ` · ${elapsed}` : ""}`,
+    `Reason: ${summary}`,
+    ...(stage ? [`Last stage: ${compactTranscriptText(stage)}`] : []),
+    ...(persistence?.ok ? [] : [persistence ? `Result not saved: ${persistence.code}` : "Result not saved"]),
+    `Inspect: /workflows status ${runId}`,
+  ].join("\n");
+}
+
 export interface WorkflowCompletionPresentation {
   generatedRunCommand?: string;
   nextAction?: string;
@@ -52,20 +95,48 @@ export function workflowCompletionPresentation(
 /** Replace Pi's raw custom-message fallback with distinct operator cards. */
 export function registerWorkflowTranscriptRenderers(pi: ExtensionAPI): void {
   if (pi.registerMessageRenderer === undefined) return;
-  pi.registerMessageRenderer(WORKFLOW_RUN_CUSTOM_TYPE, (message, { outputPad }, theme) => {
+  pi.registerMessageRenderer(WORKFLOW_RUN_CUSTOM_TYPE, (message, { outputPad, expanded }, theme) => {
     if (typeof message.content !== "string") return undefined;
     if (message.details?.eventKind === "workflow_start" && typeof message.details.displayLabel === "string") {
-      const label = compactTranscriptText(message.details.displayLabel).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+      const label = compactTranscriptText(stripVTControlCharacters(message.details.displayLabel));
+      const runId = detailText(message.details.runId);
+      const agents = fleetMenuState.emptyEditorFocusAvailable ? " · ← Agents (empty editor)" : "";
+      const started = theme.fg("accent", theme.bold("▶ Started"));
       return {
         invalidate() {},
-        render: (width: number) => [truncateToWidth(`● workflow ${label} started`, Math.max(1, width))],
+        render: (width: number) => [
+          truncateToWidth(
+            `${started} · ${label}${runId ? ` · #${shortWorkflowRunId(runId)}` : ""}${agents}`,
+            Math.max(1, width),
+          ),
+        ],
       };
     }
-    const title = workflowRunTitle(message.details?.eventKind);
+    if (!expanded && message.details?.eventKind === "workflow_rejected") {
+      return new Text("Workflow not started · expand for details", outputPad, 0);
+    }
+    const failed = message.details?.eventKind === "workflow_end" && message.details.workflowStatus === "failed";
+    if (failed && !expanded && typeof message.details?.failurePreview === "string") {
+      return workflowTranscriptCard(
+        "Workflow failed",
+        stripVTControlCharacters(message.details.failurePreview),
+        outputPad,
+        theme,
+      );
+    }
+    const title = failed ? "Workflow failed" : workflowRunTitle(message.details?.eventKind);
     // Only the run card gets digest tone: its content is the digest, whose line
     // vocabulary is known. The result card below carries the workflow's own prose,
     // where a leading `✓` is the agent's sentence and not a status marker.
-    return workflowTranscriptCard(title, message.content, outputPad, theme, undefined, true);
+    const fullReason =
+      failed && typeof message.details?.unpersistedFailure === "string"
+        ? message.details.unpersistedFailure
+        : undefined;
+    const content =
+      fullReason === undefined
+        ? message.content
+        : `${message.content}\nRecorded in this conversation:\n${stripVTControlCharacters(fullReason)}`;
+    return workflowTranscriptCard(title, content, outputPad, theme, undefined, true);
   });
   pi.registerMessageRenderer(WORKFLOW_RESULT_CUSTOM_TYPE, (message, { outputPad }, theme) => {
     if (typeof message.content !== "string") return undefined;
@@ -165,7 +236,13 @@ class WorkflowTranscriptCard implements CustomUiComponent {
         ? ""
         : `\n\n${this.theme.fg("accent", this.theme.bold(this.footer.title))}\n${this.footer.text}`;
     const box = new Box(this.outputPad, 1, (text) => this.theme.bg("customMessageBg", text));
-    box.addChild(new Text(`${this.theme.fg("accent", this.theme.bold(this.title))}\n${content}${footerText}`, 0, 0));
+    box.addChild(
+      new Text(
+        `${this.theme.fg(this.title === "Workflow failed" ? "error" : "accent", this.theme.bold(this.title))}\n${content}${footerText}`,
+        0,
+        0,
+      ),
+    );
     return box.render(safeWidth);
   }
 
