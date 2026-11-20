@@ -103,7 +103,7 @@ export class WorkflowRunViewer implements CustomUiComponent {
       this.tui,
       this.#theme,
       this.keybindings,
-      `${runId} · failed · ${run.recordedFailure?.title ?? (observed ? "session observation" : "legacy result")}`,
+      `${runId} · failed · ${run.recordedFailure?.title ?? (observed !== undefined ? "session observation" : "legacy result")}`,
       stripVTControlCharacters(reason),
       () => {
         this.#failureView = undefined;
@@ -139,7 +139,12 @@ export class WorkflowRunViewer implements CustomUiComponent {
       if (data === "e" && this.explain && this.#screen.kind === "stages") {
         if (this.#screen.run.recordedFailure !== undefined) this.notices?.acknowledge(this.#screen.run.runId);
         this.explain(this.#screen.run.runId);
-      } else if (data === "d" && this.#screen.kind === "stages" && this.#screen.run.recordedFailure === undefined) {
+      } else if (
+        data === "d" &&
+        this.#screen.kind === "stages" &&
+        this.#screen.run.recordedFailure === undefined &&
+        this.notices?.reason(this.#screen.run.runId) !== undefined
+      ) {
         this.notices?.acknowledge(this.#screen.run.runId);
         this.#failureView = undefined;
         this.tui.requestRender();
