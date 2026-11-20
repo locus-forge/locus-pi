@@ -185,7 +185,8 @@ export default function workflows(pi: ExtensionAPI): void {
             failureNotices.publish(
               request.ctx,
               result.runId,
-              result.error ??
+              transcriptCompletion.unpersistedFailure ??
+                result.error ??
                 result.failureDiagnostic?.message ??
                 "See the expanded failure receipt in the conversation.",
             );

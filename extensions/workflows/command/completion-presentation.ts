@@ -31,19 +31,44 @@ export function workflowResultNavigation(
   };
 }
 
+export function workflowFailureReceiptFields(
+  result: RunWorkflowScriptResult,
+  target: string,
+  disposition: WorkflowDispositionProjection,
+  phase: string | undefined,
+  elapsed: string,
+): { failurePreview?: string; unpersistedFailure?: string } {
+  if (disposition.status !== "failed") return {};
+  const failurePreview = workflowFailurePreview(
+    result.runId,
+    target,
+    disposition.summary,
+    result.failureDiagnostic?.stage ?? phase,
+    elapsed,
+    result.resultPersistence,
+  );
+  if (result.resultPersistence.ok) return { failurePreview };
+  return {
+    failurePreview,
+    unpersistedFailure: result.error ?? JSON.stringify(result.result, null, 2) ?? disposition.summary,
+  };
+}
+
 export function workflowFailurePreview(
-  res: RunWorkflowScriptResult,
+  runId: string,
   workflow: string,
   reason: string,
+  stage: string | undefined,
   elapsed: string,
+  persistence?: WorkflowResultPersistence,
 ): string {
+  const summary = compactTranscriptText(stripVTControlCharacters(reason).trimStart()) || "No reason was recorded.";
   return [
-    `${workflow} · #${shortWorkflowRunId(res.runId)}${elapsed ? ` · ${elapsed}` : ""}`,
-    `Reason: ${compactTranscriptText(reason)}`,
-    ...(res.failureDiagnostic?.stage ? [`Last stage: ${compactTranscriptText(res.failureDiagnostic.stage)}`] : []),
-    ...(res.resultPersistence.ok
-      ? [`Inspect: /workflows status ${res.runId}`]
-      : [`Result not saved: ${res.resultPersistence.code}`, `Inspect session: /workflows status ${res.runId}`]),
+    `${workflow} · #${shortWorkflowRunId(runId)}${elapsed ? ` · ${elapsed}` : ""}`,
+    `Reason: ${summary}`,
+    ...(stage ? [`Last stage: ${compactTranscriptText(stage)}`] : []),
+    ...(persistence?.ok ? [] : [persistence ? `Result not saved: ${persistence.code}` : "Result not saved"]),
+    `Inspect: /workflows status ${runId}`,
   ].join("\n");
 }
 
@@ -103,7 +128,15 @@ export function registerWorkflowTranscriptRenderers(pi: ExtensionAPI): void {
     // Only the run card gets digest tone: its content is the digest, whose line
     // vocabulary is known. The result card below carries the workflow's own prose,
     // where a leading `✓` is the agent's sentence and not a status marker.
-    return workflowTranscriptCard(title, message.content, outputPad, theme, undefined, true);
+    const fullReason =
+      failed && typeof message.details?.unpersistedFailure === "string"
+        ? message.details.unpersistedFailure
+        : undefined;
+    const content =
+      fullReason === undefined
+        ? message.content
+        : `${message.content}\nRecorded in this conversation:\n${stripVTControlCharacters(fullReason)}`;
+    return workflowTranscriptCard(title, content, outputPad, theme, undefined, true);
   });
   pi.registerMessageRenderer(WORKFLOW_RESULT_CUSTOM_TYPE, (message, { outputPad }, theme) => {
     if (typeof message.content !== "string") return undefined;

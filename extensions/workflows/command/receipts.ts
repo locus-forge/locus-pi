@@ -51,6 +51,7 @@ export interface WorkflowTranscriptCompletion {
   digest: string;
   /** Compact human projection. The full digest remains in the receipt and expanded history. */
   failurePreview?: string;
+  unpersistedFailure?: string;
   lineCount: number;
   resultText?: string;
   resultTextPath?: string;
@@ -170,6 +171,7 @@ export async function persistCommandWorkflowTranscript(
       resultPath: completion.resultPath,
       resultPersisted: completion.resultPersisted,
       lineCount: completion.lineCount,
+      ...(completion.unpersistedFailure === undefined ? {} : { unpersistedFailure: completion.unpersistedFailure }),
       ...(completion.failurePreview === undefined ? {} : { failurePreview: completion.failurePreview }),
       ...(completion.resultTextPath === undefined ? {} : { resultTextPath: completion.resultTextPath }),
       ...(completion.primaryFilePath === undefined ? {} : { primaryFilePath: completion.primaryFilePath }),

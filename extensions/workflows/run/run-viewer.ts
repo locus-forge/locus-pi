@@ -92,21 +92,25 @@ export class WorkflowRunViewer implements CustomUiComponent {
     this.#screen = { kind: "stages", run };
     const observed = this.notices?.reason(runId);
     const reason =
-      run.recordedFailure ??
+      run.recordedFailure?.text ??
       (observed === undefined ? undefined : `Saved result unavailable. Observed in this session:\n${observed}`);
     if (reason === undefined) return;
     this.#failureView = new WorkflowResultViewer(
       this.tui,
       this.#theme,
       this.keybindings,
-      `${runId} · failed · reason`,
+      `${runId} · failed · ${run.recordedFailure?.title ?? "session observation"}`,
       stripVTControlCharacters(reason),
       () => {
         this.#failureView = undefined;
-        this.notices?.acknowledge(runId);
+        if (run.recordedFailure !== undefined) this.notices?.acknowledge(runId);
         this.tui.requestRender();
       },
-      this.explain ? "↑/↓ scroll · E explain in chat" : "↑/↓ scroll",
+      [
+        "↑/↓ scroll",
+        ...(this.explain ? ["E explain in chat"] : []),
+        ...(run.recordedFailure === undefined ? ["D dismiss notice"] : []),
+      ].join(" · "),
     );
   }
 
@@ -129,8 +133,12 @@ export class WorkflowRunViewer implements CustomUiComponent {
   handleInput(data: string): void {
     if (this.#failureView) {
       if (data === "e" && this.explain && this.#screen.kind === "stages") {
-        this.notices?.acknowledge(this.#screen.run.runId);
+        if (this.#screen.run.recordedFailure !== undefined) this.notices?.acknowledge(this.#screen.run.runId);
         this.explain(this.#screen.run.runId);
+      } else if (data === "d" && this.#screen.kind === "stages" && this.#screen.run.recordedFailure === undefined) {
+        this.notices?.acknowledge(this.#screen.run.runId);
+        this.#failureView = undefined;
+        this.tui.requestRender();
       } else this.#failureView.handleInput(data);
       return;
     }
@@ -270,8 +278,9 @@ export class WorkflowRunViewer implements CustomUiComponent {
       fitLine(`[VIEW] ${screen.run.runId} · ${screen.run.status} · stages`, width),
     );
     if (height === 1) return [header];
-    const footer = listFooter("Enter evidence", height);
-    const bodyHeight = Math.max(0, height - 1 - footer.length);
+    const footer = listFooter("Enter evidence", screen.run.runProblem ? height - 1 : height);
+    const warning = screen.run.runProblem ? [fitLine(screen.run.runProblem, width)] : [];
+    const bodyHeight = Math.max(0, height - 1 - footer.length - warning.length);
     const body =
       screen.run.stages.length === 0
         ? [screen.run.runProblem ?? screen.run.artifactProblem ?? "No persisted stages or evidence."]
@@ -283,7 +292,12 @@ export class WorkflowRunViewer implements CustomUiComponent {
             this.#theme,
             (stage) => `${stage.label} · ${stage.evidence.length} evidence item(s)`,
           );
-    return [header, ...clipLines(body, bodyHeight, width), ...footer.map((line) => fitLine(line, width))];
+    return [
+      header,
+      ...warning.slice(0, height - 1),
+      ...clipLines(body, bodyHeight, width),
+      ...footer.map((line) => fitLine(line, width)),
+    ];
   }
 
   #renderEvidence(screen: Extract<ViewerScreen, { kind: "evidence" }>, width: number): string[] {

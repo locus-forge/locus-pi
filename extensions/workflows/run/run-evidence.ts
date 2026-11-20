@@ -299,7 +299,7 @@ export interface RunEvidenceModel {
   runId: string;
   status: WorkflowRunStatus;
   stages: StageRow[];
-  recordedFailure?: string;
+  recordedFailure?: { title: string; text: string };
   runProblem?: string;
   artifactProblem?: string;
   journalProblem?: string;
@@ -338,9 +338,21 @@ export function loadRunEvidence(projectRoot: string, runId: string): RunEvidence
   const summary = readWorkflowRunSummary(projectRoot, runId, runDir);
   const result = readWorkflowRunResult(projectRoot, runId, runDir);
   const persistedInvalidity = workflowPersistedResultInvalidity(result);
+  const unavailable =
+    result === null && (summary.hasResult || summary.status === "failed")
+      ? "Saved result unavailable. Browse the recorded stages and journal for available evidence."
+      : undefined;
   const recordedFailure =
     summary.status === "failed" && result?.ok === false && persistedInvalidity === undefined
-      ? (result.error ?? JSON.stringify(result.result, null, 2) ?? "The saved result contains no failure reason.")
+      ? result.error?.trim()
+        ? { title: "reason", text: result.error }
+        : {
+            title: "recorded result",
+            text:
+              result.result === undefined
+                ? "The saved result contains no failure reason."
+                : JSON.stringify(result.result, null, 2),
+          }
       : undefined;
   const artifactState = readWorkflowArtifactIndex(projectRoot, runId, runDir);
   const records = artifactState.status === "ready" ? artifactState.index.artifacts : [];
@@ -380,6 +392,7 @@ export function loadRunEvidence(projectRoot: string, runId: string): RunEvidence
     runId,
     status: summary.status,
     stages,
+    ...(unavailable ? { runProblem: unavailable } : {}),
     ...(recordedFailure === undefined ? {} : { recordedFailure }),
     ...(persistedInvalidity === undefined
       ? {}

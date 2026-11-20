@@ -67,3 +67,20 @@ describe("workflow failure surfaces", () => {
     expect(digest).toContain("stage: inventory-changes");
   });
 });
+
+it("identifies the last declared stage when a script returns a structured failure", () => {
+  const transcript = createWorkflowTranscript(createHarness().ctx, "verify", "command");
+  const runId = "20261120-000001-abcd";
+  transcript.start(runId, "/tmp/verify");
+  transcript.event({ kind: "phase", runId, phase: "Check inputs", ts: "2026-11-20T00:00:01Z" });
+  const completion = transcript.finish({
+    runId,
+    runDir: "/tmp/verify",
+    ok: false,
+    result: { ok: false, summary: "Missing input" },
+    journal: [],
+    resultPersistence: { ok: true, path: "/tmp/verify/runtime/result.json" },
+  });
+  expect(completion.failurePreview).toContain("Last stage: Check inputs");
+  expect(completion.failurePreview).toContain("Missing input");
+});

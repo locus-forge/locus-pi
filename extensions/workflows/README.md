@@ -75,7 +75,7 @@ passive command views on both legacy and Kitty terminals.
 When a command-run workflow fails, the conversation shows the reason once. A
 one-line failure notice survives opening the catalog and identifies the run to
 inspect. Open `/workflows status <runId>` to read its recorded failure. Esc
-acknowledges that run and opens its stages. With an empty editor, E prepares an
+acknowledges that recorded failure and opens its stages. If the saved result is unavailable, Esc keeps the notice and D dismisses it. With an empty editor, E prepares an
 explanation request in chat; Enter sends it. Expand the original receipt for
 diagnostic paths and repair context. The full saved result is in the run's
 `runtime/result.json`.

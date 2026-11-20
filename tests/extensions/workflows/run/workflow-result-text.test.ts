@@ -17,6 +17,8 @@ import {
   workflowJournalFile,
   workflowRunDir,
 } from "../../../../extensions/workflows/runtime/workflow-run-layout.js";
+import { WorkflowFailureNotices } from "../../../../extensions/workflows/operator/operator-surface.js";
+import { openWorkflowRunViewer } from "../../../../extensions/workflows/command/workflow-editor-handoff.js";
 import workflows from "../../../../extensions/workflows/index.js";
 import { createHarness } from "../../../test-harness.js";
 
@@ -300,3 +302,93 @@ describe("/workflows result", () => {
     expect(unwrapped).toContain(`full text: ${REVIEW_TEXT.split("\n").length} line(s)`);
   });
 });
+
+const first = "20261120-000001-aaaa";
+const second = "20261120-000002-aaaa";
+it("shows the selected recorded reason and acknowledges only that full ID", async () => {
+  const root = makeRoot();
+  const h = createHarness(root, { mode: "tui" });
+  h.ctx.hasUI = true;
+  const notices = new WorkflowFailureNotices();
+  for (const id of [first, second]) {
+    writeFileSync(
+      workflowResultFile(ensureWorkflowRunDir(root, id)),
+      JSON.stringify({ runId: id, ok: false, error: `line one\nreason for ${id}` }),
+    );
+    notices.publish(h.ctx, id, "earlier live summary");
+  }
+  expect(h.widgets.get("workflows-failure-notice")).toContain("(+1)");
+  expect(h.widgets.get("workflows-failure-notice")).toContain(first);
+  h.customInputQueue.push("e");
+  await openWorkflowRunViewer(h.ctx, root, second, notices);
+  expect(h.customRenderFrames.flat().join("\n")).toContain(`reason for ${second}`);
+  expect(h.ctx.ui.getEditorText?.()).toContain(second);
+  expect(h.sentUserMessages).toHaveLength(0);
+  expect(notices.reason(second)).toBeUndefined();
+  expect(notices.reason(first)).toBe("earlier live summary");
+  notices.reset();
+  expect(notices.reason(first)).toBeUndefined();
+});
+
+it("keeps a draft and identifies a session-only failure when no valid result can be read", async () => {
+  const root = makeRoot();
+  const h = createHarness(root, { mode: "tui" });
+  h.ctx.hasUI = true;
+  const notices = new WorkflowFailureNotices();
+  writeFileSync(
+    workflowResultFile(ensureWorkflowRunDir(root, first)),
+    JSON.stringify({ runId: second, ok: false, error: "wrong run" }),
+  );
+  notices.publish(h.ctx, first, "observed here");
+  h.ctx.ui.setEditorText?.("draft to keep");
+  h.customInputQueue.push("e", "\x1b", "\x1b", "\x1b");
+  await openWorkflowRunViewer(h.ctx, root, first, notices);
+  const screen = h.customRenderFrames.flat().join("\n");
+  expect(screen).toContain("Saved result unavailable");
+  expect(screen).toContain("observed here");
+  expect(screen).not.toContain("wrong run");
+  expect(notices.reason(first)).toBe("observed here");
+  h.customInputQueue.push("d", "\x1b", "\x1b");
+  await openWorkflowRunViewer(h.ctx, root, first, notices);
+  expect(notices.reason(first)).toBeUndefined();
+  expect(h.ctx.ui.getEditorText?.()).toBe("draft to keep");
+  expect(h.sentUserMessages).toHaveLength(0);
+});
+
+it("labels a structured failure as the recorded result, without inventing a technical cause", async () => {
+  const root = makeRoot();
+  const h = createHarness(root, { mode: "tui" });
+  h.ctx.hasUI = true;
+  writeFileSync(
+    workflowResultFile(ensureWorkflowRunDir(root, first)),
+    JSON.stringify({ runId: first, ok: false, result: { ok: false, summary: "Missing input" } }),
+  );
+  h.customInputQueue.push("\x1b", "\x1b", "\x1b");
+  await openWorkflowRunViewer(h.ctx, root, first);
+  expect(h.customRenderFrames[0]?.join("\n")).toContain("failed · recorded result");
+  expect(h.customRenderFrames[0]?.join("\n")).toContain("Missing input");
+});
+
+it.each([false, true])(
+  "shows missing or unreadable results when re-opening a failed run in a new session (file exists: %s)",
+  async (unreadable) => {
+    const root = makeRoot(),
+      h = createHarness(root, { mode: "tui" });
+    h.ctx.hasUI = true;
+    const dir = ensureWorkflowRunDir(root, first);
+    writeFileSync(
+      workflowJournalFile(dir),
+      JSON.stringify({
+        kind: "error",
+        source: "runtime",
+        runId: first,
+        ts: "2026-11-20T00:00:01Z",
+        message: "prior failure",
+      }) + "\n",
+    );
+    if (unreadable) writeFileSync(workflowResultFile(dir), "{");
+    h.customInputQueue.push("\x1b", "\x1b");
+    await openWorkflowRunViewer(h.ctx, root, first);
+    expect(h.customRenderFrames[0]?.join("\n")).toContain("Saved result unavailable");
+  },
+);

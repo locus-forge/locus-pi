@@ -16,6 +16,7 @@ import { type WorkflowTranscriptAnnouncement, type WorkflowTranscriptCompletion 
 import {
   workflowCompletionPresentation,
   workflowFailurePreview,
+  workflowFailureReceiptFields,
   workflowResultNavigation,
   workflowInputPresentation,
   firstTranscriptLine,
@@ -247,9 +248,7 @@ export function createWorkflowTranscript(
         resultPath: workflowResultFile(res.runDir),
         resultPersisted: res.resultPersistence.ok,
         digest: [...headerLines, ...bodyLines].join("\n"),
-        ...(disposition.status === "failed"
-          ? { failurePreview: workflowFailurePreview(res, safeTarget, disposition.summary, elapsed) }
-          : {}),
+        ...workflowFailureReceiptFields(res, safeTarget, disposition, currentPhase, elapsed),
         lineCount: bodyLines.length,
         ...(typeof res.result === "string" && res.result.trim() !== "" ? { resultText: res.result } : {}),
         ...(res.resultTextPath !== undefined ? { resultTextPath: res.resultTextPath } : {}),
@@ -260,7 +259,8 @@ export function createWorkflowTranscript(
     fail(error, runId, runDir) {
       if (completion !== undefined) return completion;
       if (!announced) this.start(runId, runDir);
-      const message = compactTranscriptText(error instanceof Error ? error.message : String(error));
+      const reason = error instanceof Error ? error.message : String(error);
+      const message = compactTranscriptText(reason.trimStart());
       const lines = [
         workflowRunHeader(safeTarget, runId, "failed", Date.now()),
         `✗ workflow ${safeTarget} failed · ${message}`,
@@ -275,7 +275,8 @@ export function createWorkflowTranscript(
         resultPath: workflowResultFile(runDir),
         resultPersisted: false,
         digest: lines.join("\n"),
-        failurePreview: `${safeTarget} · #${shortWorkflowRunId(runId)}\nReason: ${message}\nResult not saved`,
+        failurePreview: workflowFailurePreview(runId, safeTarget, reason, currentPhase, ""),
+        unpersistedFailure: reason,
         lineCount: lines.length - 1,
       };
       return completion;

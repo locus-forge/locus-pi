@@ -8,6 +8,7 @@
  * pump outcome gets. Pure block construction stays in `operator-ui.ts`.
  */
 
+import { setViewerExternalRows } from "../../_shared/operator/viewer-geometry.js";
 import { coerceTheme } from "../../_shared/host/render-profile.js";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { setCommandWidget } from "../../_shared/operator/command-ui.js";
@@ -72,7 +73,9 @@ export class WorkflowFailureNotices {
             }),
         { placement: "belowEditor" },
       );
+      setViewerExternalRows("workflows-failure-notice", runId === undefined ? 0 : 1);
     } catch {
+      setViewerExternalRows("workflows-failure-notice", 0);
       // A host that rejects the optional widget must still receive the durable receipt.
     }
   }

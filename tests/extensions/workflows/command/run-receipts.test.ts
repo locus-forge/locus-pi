@@ -263,12 +263,34 @@ describe("workflow command receipts", () => {
 
   it("marks the canonical result path unpersisted after a post-identity runner escape", () => {
     const transcript = createWorkflowTranscript(createHarness().ctx, "broken", "command");
-    const completion = transcript.fail(new Error("runner escaped"), "run-escaped", "/tmp/run-escaped");
+    const reason = "\nrunner escaped\n" + "diagnostic detail ".repeat(30);
+    const completion = transcript.fail(new Error(reason), "run-escaped", "/tmp/run-escaped");
 
+    expect(completion.unpersistedFailure).toBe(reason);
+    expect(completion.failurePreview).toContain("Reason: runner escaped");
+    expect(completion.failurePreview).toContain("/workflows status run-escaped");
     expect(completion).toMatchObject({
       workflowStatus: "failed",
       resultPath: "/tmp/run-escaped/runtime/result.json",
       resultPersisted: false,
     });
   });
+});
+
+it.each([
+  ["run alpha --input-json {", "--input-json requires"],
+  ["run task --", "group-only"],
+])("keeps one visible reason and a recoverable receipt for %s", async (command, reason) => {
+  const h = harness();
+  await h.commands.get("workflows")!.handler(command, h.ctx);
+  const msg = h.sentMessages.at(-1)!.message;
+  expect(msg.details?.eventKind).toBe("workflow_rejected");
+  expect(msg.details?.runId).toBeUndefined();
+  const render = h.messageRenderers.get(WORKFLOW_RUN_CUSTOM_TYPE)!;
+  const theme = { fg: (_: string, t: string) => t, bg: (_: string, t: string) => t, bold: (t: string) => t };
+  const card = (expanded: boolean) => render(msg, { expanded, outputPad: 0 }, theme)!.render(120).join("\n");
+  expect(card(false)).toContain("Workflow not started");
+  expect(card(false)).not.toContain(reason);
+  expect(h.widgets.get("workflows")).toContain(reason);
+  expect(card(true)).toContain(reason);
 });
