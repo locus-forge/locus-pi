@@ -244,6 +244,7 @@ describe("/workflows result", () => {
     const first = h.customRenderFrames[0]?.join("\n") ?? "";
     expect(first).toContain("workflow result · run 20260726-212752-98cc");
     expect(first).toContain("# Code Review");
+    expect(first).toContain("Esc back");
     const component = h.customComponents[0]!;
     component.handleInput?.("end");
     expect(component.render(80).join("\n")).toContain("Last line of the review");
@@ -305,7 +306,7 @@ describe("/workflows result", () => {
 
 const first = "20261120-000001-aaaa";
 const second = "20261120-000002-aaaa";
-it("shows the selected recorded reason and acknowledges only that full ID", async () => {
+it.each(["e", "E", "\x1b[101;2u"])("prepares an explanation for the selected full ID with %j", async (key) => {
   const root = makeRoot();
   const h = createHarness(root, { mode: "tui" });
   h.ctx.hasUI = true;
@@ -319,7 +320,7 @@ it("shows the selected recorded reason and acknowledges only that full ID", asyn
   }
   expect(h.widgets.get("workflows-failure-notice")).toContain("(+1)");
   expect(h.widgets.get("workflows-failure-notice")).toContain(first);
-  h.customInputQueue.push("e");
+  h.customInputQueue.push(key);
   await openWorkflowRunViewer(h.ctx, root, second, notices);
   expect(h.customRenderFrames.flat().join("\n")).toContain(`reason for ${second}`);
   expect(h.ctx.ui.getEditorText?.()).toContain(second);
@@ -330,7 +331,11 @@ it("shows the selected recorded reason and acknowledges only that full ID", asyn
   expect(notices.reason(first)).toBeUndefined();
 });
 
-it("keeps a draft and identifies a session-only failure when no valid result can be read", async () => {
+it.each([
+  ["e", "d"],
+  ["E", "D"],
+  ["\x1b[101;2u", "\x1b[100;2u"],
+])("protects a draft with %j and dismisses only the selected notice with %j", async (explain, dismiss) => {
   const root = makeRoot();
   const h = createHarness(root, { mode: "tui" });
   h.ctx.hasUI = true;
@@ -340,17 +345,21 @@ it("keeps a draft and identifies a session-only failure when no valid result can
     JSON.stringify({ runId: second, ok: false, error: "wrong run" }),
   );
   notices.publish(h.ctx, first, "observed here");
+  notices.publish(h.ctx, second, "other failure");
   h.ctx.ui.setEditorText?.("draft to keep");
-  h.customInputQueue.push("e", "\x1b", "\x1b", "\x1b");
+  h.customInputQueue.push(explain, "\x1b", "\x1b", "\x1b");
   await openWorkflowRunViewer(h.ctx, root, first, notices);
   const screen = h.customRenderFrames.flat().join("\n");
   expect(screen).toContain("Saved result unavailable");
   expect(screen).toContain("observed here");
+  expect(screen).toContain("D dismiss notice");
+  expect(screen).not.toContain("E explain in chat");
   expect(screen).not.toContain("wrong run");
   expect(notices.reason(first)).toBe("observed here");
-  h.customInputQueue.push("d", "\x1b", "\x1b");
+  h.customInputQueue.push(dismiss, "\x1b", "\x1b");
   await openWorkflowRunViewer(h.ctx, root, first, notices);
   expect(notices.reason(first)).toBeUndefined();
+  expect(notices.reason(second)).toBe("other failure");
   expect(h.ctx.ui.getEditorText?.()).toBe("draft to keep");
   expect(h.sentUserMessages).toHaveLength(0);
 });
@@ -367,6 +376,10 @@ it("labels a structured failure as the recorded result, without inventing a tech
   await openWorkflowRunViewer(h.ctx, root, first);
   expect(h.customRenderFrames[0]?.join("\n")).toContain("failed · recorded result");
   expect(h.customRenderFrames[0]?.join("\n")).toContain("Missing input");
+  expect(h.customRenderFrames[0]?.join("\n")).toContain("Esc stages");
+  expect(h.customRenderFrames[1]?.join("\n")).toContain(`${first} · failed · stages`);
+  expect(h.customRenderFrames[1]?.join("\n")).toContain("Esc back");
+  expect(h.customRenderFrames[2]?.join("\n")).toContain("Workflow runs");
 });
 
 it.each([false, true])(
@@ -414,4 +427,23 @@ it("keeps unbound historical evidence readable without acknowledging a live fail
   await openWorkflowRunViewer(h.ctx, root, first, notices);
   expect(notices.reason(first)).toBe("live failure");
   notices.reset();
+});
+
+it("ignores D and d when only another run has an active notice", async () => {
+  const root = makeRoot();
+  const h = createHarness(root, { mode: "tui" });
+  h.ctx.hasUI = true;
+  writeFileSync(
+    workflowResultFile(ensureWorkflowRunDir(root, first)),
+    JSON.stringify({ ok: false, error: "historical reason" }),
+  );
+  const notices = new WorkflowFailureNotices();
+  notices.publish(h.ctx, second, "other failure");
+  h.customInputQueue.push("D", "d", "\x1b", "\x1b", "\x1b");
+  await openWorkflowRunViewer(h.ctx, root, first, notices);
+  expect(h.customRenderFrames[0]?.join("\n")).not.toContain("D dismiss notice");
+  expect(h.customRenderFrames).toHaveLength(3);
+  expect(h.customRenderFrames[1]?.join("\n")).toContain(`${first} · failed · stages`);
+  expect(h.customInputQueue).toHaveLength(0);
+  expect(notices.reason(second)).toBe("other failure");
 });

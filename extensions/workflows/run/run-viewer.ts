@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
 import { highlightCode } from "@earendil-works/pi-coding-agent";
-import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { matchesKey, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { CustomUiComponent, CustomUiTui } from "../../_shared/host/pi-api.js";
 import { readWorkflowArtifactRecord, type WorkflowArtifactRecord } from "../runtime/workflow-artifacts.js";
 import {
@@ -115,6 +115,7 @@ export class WorkflowRunViewer implements CustomUiComponent {
         ...(this.explain ? ["E explain in chat"] : []),
         ...(observed !== undefined && run.recordedFailure === undefined ? ["D dismiss notice"] : []),
       ].join(" · "),
+      "Esc stages",
     );
   }
 
@@ -136,11 +137,11 @@ export class WorkflowRunViewer implements CustomUiComponent {
 
   handleInput(data: string): void {
     if (this.#failureView) {
-      if (data === "e" && this.explain && this.#screen.kind === "stages") {
+      if ((matchesKey(data, "e") || matchesKey(data, "shift+e")) && this.explain && this.#screen.kind === "stages") {
         if (this.#screen.run.recordedFailure !== undefined) this.notices?.acknowledge(this.#screen.run.runId);
         this.explain(this.#screen.run.runId);
       } else if (
-        data === "d" &&
+        (matchesKey(data, "d") || matchesKey(data, "shift+d")) &&
         this.#screen.kind === "stages" &&
         this.#screen.run.recordedFailure === undefined &&
         this.notices?.reason(this.#screen.run.runId) !== undefined
@@ -384,6 +385,7 @@ export class WorkflowResultViewer implements CustomUiComponent {
     text: string,
     done: () => void,
     private readonly controls = "↑/↓ scroll",
+    private readonly cancelHint = "Esc back",
   ) {
     this.#theme = asTheme(theme);
     this.#done = done;
@@ -395,7 +397,7 @@ export class WorkflowResultViewer implements CustomUiComponent {
     const height = viewerRows(this.tui);
     const header = style(this.#theme, "accent", fitLine(`[VIEW] ${this.title}`, safeWidth));
     if (height === 1) return [header];
-    const footer = listFooter(this.controls, height);
+    const footer = listFooter(this.controls, height, this.cancelHint);
     const bodyHeight = Math.max(0, height - 1 - footer.length);
     const lines = this.#lines.flatMap((line) => wrapTextWithAnsi(line, safeWidth));
     const maxScroll = Math.max(0, lines.length - bodyHeight);
@@ -575,11 +577,11 @@ function selectableWindow<T>(
   });
 }
 
-function listFooter(action: string, height: number): string[] {
+function listFooter(action: string, height: number, cancelHint = "Esc back"): string[] {
   if (height <= 1) return [];
   const lines = action.includes("scroll")
-    ? [`${action} · Esc back`]
-    : [`${action} · Esc back`, "↑/↓ select · persisted files only"];
+    ? [`${action} · ${cancelHint}`]
+    : [`${action} · ${cancelHint}`, "↑/↓ select · persisted files only"];
   return lines.slice(0, Math.min(VIEWER_FOOTER_ROWS, height - 1));
 }
 
