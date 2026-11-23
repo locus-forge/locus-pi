@@ -38,7 +38,7 @@ export const TaskParams = Type.Object({
   background: Type.Optional(
     Type.Boolean({
       description:
-        "Return a queued handle immediately. Defaults true in interactive TUI, false headless. Use agent_status to collect the result; false awaits exact final text.",
+        "Return a queued handle immediately. Defaults true in interactive TUI, false headless. Use agent_status to collect or wait for the full result. Set false to await the child in the original call.",
     }),
   ),
   agent: Type.Optional(Type.String({ description: AGENT_PARAM_BASE_DESCRIPTION })),

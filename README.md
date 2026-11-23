@@ -26,7 +26,7 @@ flowchart LR
 
 _Change models through roles; reuse the same workflow source._
 
-[Documentation](docs/index.md) · [DSL reference](docs/workflows/dsl.md) · [Examples](examples/workflows/README.md)
+[Documentation](docs/index.md) · [Settings](docs/configuration.md) · [DSL reference](docs/workflows/dsl.md) · [Examples](examples/workflows/README.md)
 
 ## What it adds
 

@@ -70,6 +70,7 @@ Local runtime state is intentionally outside the public source surface and ignor
 - `.locus-pi/workspaces/<generated-run-name>/` — native runtime coordination and navigation; agent files use exact caller-assigned prompt destinations;
 - `.locus-pi/plans/<run-name>/` — legacy workflow workspaces; an existing one stays bound in place, and new named workspaces go to `.locus-pi/workspaces/`;
 - `.locus-pi/workflow-state/v1/<hash>/` — active workspace leases and saved-child checkpoints; the directory may be empty after a lease is released;
+- `.locus-pi/config.toml` — [project settings](configuration.md) for standalone agent concurrency.
 - `.locus-pi/fusion/config.json` — project-local Fusion configuration;
 - `.locus/runtime/` — session, artifact, and diagnostic state used by Locus extensions;
 - `.tasks/` — optional local task state and explicit bridges;

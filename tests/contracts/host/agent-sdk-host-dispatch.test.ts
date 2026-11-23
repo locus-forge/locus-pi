@@ -15,9 +15,11 @@ import { hostRequest } from "../../fixtures/agent-runtime/agent-failure-probes.j
  * event was absorbed before dispatch — an `input` handler returned `handled`. The host used to
  * wait for an `agent_end` that never comes; without a child timeout that wait was unbounded.
  */
-async function realChild(options: { absorbInput: boolean }) {
+const rateLimit = '429: {"code":"1302","message":"Rate limit reached for requests"}';
+
+async function realChild(options: { absorbInput: boolean; failedRequests?: number }) {
   const cwd = mkdtempSync(path.join(tmpdir(), "locus-sdk-dispatch-"));
-  const settingsManager = sdk.SettingsManager.inMemory({ retry: { enabled: false } });
+  const settingsManager = sdk.SettingsManager.inMemory({ retry: { baseDelayMs: 1 } });
   const model = getModel("openai", "gpt-4o-mini");
   const modelRuntime = await sdk.ModelRuntime.create({
     authPath: path.join(cwd, "auth.json"),
@@ -53,14 +55,16 @@ async function realChild(options: { absorbInput: boolean }) {
   });
   await session.bindExtensions({});
   const stream = vi.fn(() => {
+    const failed = stream.mock.calls.length <= (options.failedRequests ?? 0);
     const message: AssistantMessage = {
       role: "assistant",
       api: model.api,
       provider: model.provider,
       model: model.id,
       timestamp: Date.now(),
-      content: [{ type: "text", text: "READY" }],
-      stopReason: "stop",
+      content: failed ? [] : [{ type: "text", text: "READY" }],
+      stopReason: failed ? "error" : "stop",
+      ...(failed ? { errorMessage: rateLimit } : {}),
       usage: {
         input: 0,
         output: 0,
@@ -71,7 +75,8 @@ async function realChild(options: { absorbInput: boolean }) {
       },
     };
     const events = createAssistantMessageEventStream();
-    events.push({ type: "done", reason: "stop", message });
+    if (failed) events.push({ type: "error", reason: "error", error: message });
+    else events.push({ type: "done", reason: "stop", message });
     events.end();
     return events;
   });
@@ -103,5 +108,17 @@ describe("child prompt dispatch through the real Pi SDK", () => {
 
     expect(result).toMatchObject({ status: "completed", text: "READY", executedModel: "openai/gpt-4o-mini" });
     expect(stream).toHaveBeenCalledOnce();
+  });
+
+  it.each([3, 4])("waits for Pi's three retries after a provider 429 (%i failed requests)", async (failedRequests) => {
+    const { executor, stream } = await realChild({ absorbInput: false, failedRequests });
+    const result = await executor.run(hostRequest(), new AbortController().signal);
+
+    expect(stream).toHaveBeenCalledTimes(4);
+    if (failedRequests === 3) {
+      expect(result).toMatchObject({ status: "completed", text: "READY" });
+    } else {
+      expect(result).toMatchObject({ status: "failed", reason: rateLimit, failureCause: "provider-error" });
+    }
   });
 });

@@ -267,7 +267,7 @@ const DSL_RETURN_PROVENANCE_PROBES = [
 
 const forbiddenPackedPaths = [
   /^\.agents\/(skills|workflows)\//,
-  /^\.(locus|tasks|planning|pi)\//,
+  /^\.(locus(?:-pi)?|tasks|planning|pi)\//,
   /^(artifacts|benchmarks|catalog|eval|evaluation|evaluations|output|scripts|tests)\//,
   /^docs\/(archive|extension-gallery|reports|system-design)\//,
   /^docs\/source-audit\//,
@@ -339,7 +339,7 @@ describe("npm public package boundary", () => {
       "schemas/extension-manifest.schema.json",
       "skills/",
     ]);
-    expect(dryRun.files).toHaveLength(300);
+    expect(dryRun.files).toHaveLength(302);
     for (const filename of [
       ...["center", "editor", "model"].map((name) => `extensions/agents/fleet/command-center/${name}.ts`),
       "extensions/_shared/agent-runtime/session/startup.ts",

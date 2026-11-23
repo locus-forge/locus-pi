@@ -15,7 +15,7 @@
         "exit",
         "agent settings"
       ],
-      "hooks": ["session_start", "session_shutdown", "before_agent_start", "input"],
+      "hooks": ["session_start", "session_shutdown", "before_agent_start", "input", "agent_settled"],
       "risk": "high"
     },
     { "id": "ask-user-question", "tools": ["ask"], "commands": [], "hooks": [], "risk": "medium" },

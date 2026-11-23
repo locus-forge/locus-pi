@@ -5,6 +5,7 @@ import { defaultExtensionManifests, root } from "../contracts/helpers/package-co
 
 const expectedDocs = [
   "architecture.md",
+  "configuration.md",
   "design-review.md",
   "environment-variables.md",
   "extensions.md",
@@ -54,6 +55,7 @@ describe("public documentation topology", () => {
   it("links the public guides from the short root README", () => {
     const readme = readFileSync(path.join(root, "README.md"), "utf8");
     for (const relativePath of [
+      "docs/configuration.md",
       "docs/getting-started.md",
       "docs/extensions.md",
       "docs/index.md",
