@@ -4,7 +4,14 @@ User-visible changes to the public package.
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-11-23
+
 ### Added
+
+- Projects can set the per-session `spawn_agent` concurrency limit in
+  `.locus-pi/config.toml`. The default is four. Extra assignments queue.
+- The settings reference lists project files, workflow budgets, and the
+  settings managed by Pi.
 
 - `/clean` starts an empty Pi session with the current model and thinking level.
 - `/workflows doctor` checks, installs, repairs, and removes the packaged
@@ -20,6 +27,8 @@ User-visible changes to the public package.
 
 ### Fixed
 
+- Background `spawn_agent` batches deliver one summary of successful and
+  failed assignments to the main conversation after the queue drains.
 - Skill installation and removal no longer change entries the package did not
   create. A foreign file at a temporary name, a replaced link, or a folder shared
   through an alias between hosts or scopes is preserved and reported.

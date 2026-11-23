@@ -36,6 +36,7 @@ export default function agents(pi: ExtensionAPI): void {
   const fallbackFocusRegistered = registerFleetShortcut(pi, (ctx) =>
     agentLiveStore.retainSessions ? screen.open(ctx) : fleetMenu.open(ctx),
   );
+  registerAgentSpawnTools(pi);
   // A fresh/reloaded Pi session used to get a fresh module-local store. Preserve
   // that lifecycle now that the store is process-shared across package entrypoints.
   pi.on("session_start", async (_event, ctx) => {
@@ -114,7 +115,6 @@ export default function agents(pi: ExtensionAPI): void {
       ctx.shutdown?.();
     },
   });
-  registerAgentSpawnTools(pi);
   registerAgentCommands(pi, {
     openFleetMenu: fleetMenu.open,
     agentSessionAuthority,

@@ -29,6 +29,11 @@ A fresh root resolves defaults once; an explicit number replaces its default.
 
 Workflow launch defaults are mode-scoped: every run defaults to `concurrency = 4`; headless Pi `print`/`json` root launches additionally default to `totalAgents = 10_000`, shared across fresh physical child attempts made by the root, saved children and Fusion; `totalAgents` is unbounded in TUI/RPC. Every other undeclared workflow budget axis is unbounded.
 
+Standalone `spawn_agent` admits four assignments per parent session by default
+in both background and awaited mode. Additional calls queue until a slot opens.
+Set [`agents.concurrency`](../configuration.md#standalone-agent-concurrency) to change
+the project limit.
+
 | Control                     | Standard value                               | Scope, explicit setting and effect                                                                                                                                                                                                                                                                       |
 | --------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Standalone task runtime     | `runtimeMs = 3_600_000` (1 hour)             | `spawn_agent` and `/agent run`, including the historical `task` surface: one child wall-clock deadline, passed internally as SDK `childTimeoutMs`. No multiplication by turns; expiry aborts the child. These surfaces expose no budget override. This is also their policy when called from print/json. |
@@ -39,7 +44,7 @@ Workflow launch defaults are mode-scoped: every run defaults to `concurrency = 4
 | Workflow `timeoutMs`        | Unbounded                                    | `budget.timeoutMs` or `agent({ timeoutMs })`: one wall-clock deadline per physical child attempt, including operator waits and output clarification. Expiry aborts the child.                                                                                                                            |
 | Workflow `toolCalls`        | Unbounded                                    | `budget.toolCalls` or `agent({ maxToolCalls })`: tool dispatches per physical child, cumulative across clarification. The first dispatch beyond the cap is refused.                                                                                                                                      |
 | Workflow `turns`            | Unbounded                                    | `budget.turns` or `agent({ maxTurns })`: cumulative SDK model cycles per physical child, including ordinary work and clarification. The next generation beyond the cap is refused.                                                                                                                       |
-| Transport attempts          | 1 attempt                                    | `agent({ attempts })` is a positive safe integer including the first child. Eligible transport retries start fresh children and consume `totalAgents`; provider errors are not automatically retried.                                                                                                    |
+| Transport attempts          | 1 attempt                                    | `agent({ attempts })` is a positive safe integer including the first child. Eligible transport retries start fresh children and consume `totalAgents`. A terminal provider error does not start a fresh child.                                                                                           |
 | Choice-return attempts      | 2 submissions: initial + 1 clarification     | Package-owned and not configurable; `repair` is removed and refused by name. Correction stays in the same child and shares its turns/tools/deadline. The applied allowance is journaled.                                                                                                                 |
 | Output size and item count  | No runtime size ceiling                      | None: text, choice or schema-bound JSON. State a length requirement in the prompt. `maxAnswerChars`, `maxItemChars`, `schemaMaxLength` and `budget.answerChars` are removed and refused by name. Input, parent context and text artifact content have no package size budget.                            |
 | Output shape and minima     | Always validated                             | Nonblank answers and exact choice membership remain. `choice` needs at least 2 options; Fusion at least 2 members. These are contract requirements, not spend budgets.                                                                                                                                   |
@@ -125,6 +130,16 @@ A complete structured invocation can narrow the budget, for example:
 ```
 
 These values are illustrative operator choices, not new defaults. Budgets govern the DSL execution tree and supported saved children, not arbitrary hostile subprocesses or hidden tool-launched orchestration in this trusted host.
+
+## Provider retries
+
+Pi retries transient provider errors such as HTTP 429 within the same child
+session. The Pi default is three retries after the initial failed request,
+with delays of 2, 4, and 8 seconds. Pi settings can override this default.
+Locus waits for the terminal child outcome within the applied time and work
+budgets. The retries continue the session from the failed model request and
+consume no additional child slots. If the last retry fails, the tool returns
+the terminal provider error.
 
 ## Provider timeout propagation
 

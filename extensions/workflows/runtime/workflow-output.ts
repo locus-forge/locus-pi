@@ -1,4 +1,5 @@
 /** Native workspace confinement, fencing, checkpoints and navigation facade. */
+export { workflowRootDir } from "./workflow-run-layout.js";
 export {
   assertWorkflowWorkspaceDirPath,
   assertWorkflowPhysicalWorkspaceIdentity,

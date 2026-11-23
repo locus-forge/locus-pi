@@ -38,6 +38,7 @@ Codex, and Claude Code.
 
 ## Operate and troubleshoot
 
+- [Configure locus-pi](configuration.md) to set the standalone agent limit and find other supported settings.
 - [Find and copy workflows](workflows/catalog.md).
 - [Inspect progress](workflows/inspection.md), [read evidence and artifacts](workflows/evidence.md), and [understand failures](workflows/error-diagnostics.md).
 - [Resume recorded work](workflows/replay.md) or [continue after an operator answer](workflows/recovery-and-continuation.md).

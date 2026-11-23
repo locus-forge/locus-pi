@@ -1,5 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import { safeToolText } from "../../_shared/host/safe-output.js";
+import { createExecutionScheduler } from "../../_shared/runtime/execution-scheduler.js";
 import type { ToolResult } from "../../_shared/host/pi-api.js";
 /**
  * extensions/agents/tool/task-tool.ts — the canonical spawn-a-subagent tool.
@@ -30,19 +31,66 @@ import {
   trackAgentLaunch,
 } from "../run/run-launcher.js";
 import { createUnknownAgentReport } from "../run/unknown-agent-report.js";
+import { loadSpawnConcurrency } from "../run/spawn-settings.js";
 
 type TaskToolCtx = Parameters<ExtensionAPI["registerTool"]>[0]["execute"] extends (...args: infer Args) => unknown
   ? Args[4]
   : never;
 
+interface BackgroundLaunch {
+  owner: string;
+  terminal: Promise<ToolResult>;
+  result?: ToolResult;
+  collected: boolean;
+}
+
 export function registerAgentSpawnTools(pi: ExtensionAPI): void {
-  const launches = new Map<string, { owner: string; terminal: Promise<ToolResult>; result?: ToolResult }>();
+  let scheduler: ReturnType<typeof createExecutionScheduler> | undefined;
+  let resumeParentOnCompletion = true;
+  const launches = new Map<string, BackgroundLaunch>();
   const owner = (ctx: TaskToolCtx) => JSON.stringify([getProjectRoot(ctx), getSessionId(ctx)]);
-  pi.on("session_start", () => launches.clear());
+
+  async function publishBackgroundResults(ctx: TaskToolCtx): Promise<void> {
+    if (ctx.mode !== "tui" || !ctx.isIdle() || pi.sendMessage === undefined) return;
+    const currentOwner = owner(ctx);
+    const pending = [...launches].filter(([, record]) => record.owner === currentOwner && !record.collected);
+    if (pending.length === 0 || pending.some(([, record]) => record.result === undefined)) return;
+
+    // Pi sends custom messages as user messages. Only tool results carry child output.
+    const lines = pending.map(([handle, record]) => {
+      record.collected = true;
+      const result = record.result!;
+      const status = result.details?.status === "cancelled" ? "cancelled" : result.isError ? "failed" : "completed";
+      return `- ${handle} (${status})`;
+    });
+    const content = [
+      "Background agents finished. Use agent_status with each handle to collect its outcome.",
+      ...lines,
+    ].join("\n");
+    try {
+      await pi.sendMessage(
+        { customType: "locus-agent-completions", content, display: true },
+        { triggerTurn: resumeParentOnCompletion },
+      );
+    } catch {
+      ctx.ui.notify("Agent results could not be posted. Use agent_status to collect them.", "warning");
+    }
+  }
+
+  pi.on("session_start", () => {
+    launches.clear();
+    scheduler = undefined;
+    resumeParentOnCompletion = true;
+  });
+  pi.on("session_shutdown", () => launches.clear());
+  pi.on("agent_settled", (event, ctx) => {
+    resumeParentOnCompletion = event.aborted !== true;
+    return publishBackgroundResults(ctx);
+  });
   pi.registerTool({
     name: "agent_status",
     description:
-      "Read a background spawn handle. wait defaults false; true explicitly waits for that assignment. Never resumes or restarts an agent.",
+      "Read a background spawn handle. wait defaults false; true waits for that assignment. A finished handle returns the child outcome, including any provider error.",
     parameters: Type.Object({ handle: Type.String({ minLength: 1 }), wait: Type.Optional(Type.Boolean()) }),
     approval: "read",
     execute: async (_id, params, signal, _update, ctx) => {
@@ -73,13 +121,15 @@ export function registerAgentSpawnTools(pi: ExtensionAPI): void {
       }
       if (launches.get(valid.value.handle) !== record || record.owner !== owner(ctx))
         return errorResult("Agent handle expired while waiting; session changed.");
-      if (record.result !== undefined)
+      if (record.result !== undefined) {
+        record.collected = true;
         return {
           ...record.result,
           content: record.result.content.map((part) =>
             part.type === "text" ? { ...part, text: safeToolText(part.text).text } : part,
           ),
         };
+      }
       const row = agentLiveStore.rows.get(valid.value.handle);
       return textResult(`Agent ${valid.value.handle}: ${row?.dispatchedAt === undefined ? "queued" : row.status}.`, {
         handle: valid.value.handle,
@@ -96,40 +146,54 @@ export function registerAgentSpawnTools(pi: ExtensionAPI): void {
   ) => {
     const valid = validateParams(TaskParams, params);
     if (!valid.ok) return valid.result;
-    refreshAgents(getProjectRoot(ctx));
     const background = valid.value.background ?? (ctx.mode === "tui" && agentLiveStore.retainSessions);
-    const handle = `spawn_agent:${valid.value.agent ?? "bare"}:${nextAgentRunSequence()}`;
+    const handle = `spawn_agent:${nextAgentRunSequence()}`;
     const controller = background ? new AbortController() : undefined;
     if (signal.aborted) return errorResult("Agent launch cancelled before dispatch.");
-    const run = runTaskTool(
-      pi,
-      ctx,
-      controller?.signal ?? signal,
-      background ? () => {} : update,
-      valid.value.agent,
-      valid.value.task,
-      valid.value.title,
-      valid.value.parentContext,
-      valid.value.modelRole,
-      valid.value.requireModelRole,
-      handle,
-    );
-    if (!background) return run;
+    try {
+      scheduler ??= createExecutionScheduler(loadSpawnConcurrency(getProjectRoot(ctx)));
+    } catch (error) {
+      return errorResult(errorMessage(error));
+    }
+    const launchSignal = controller?.signal ?? signal;
+    const cancelled = () =>
+      errorResult("Agent launch cancelled before dispatch.", { status: "cancelled", rowId: handle });
+    const run = scheduler.acquire(launchSignal).then(async (permit) => {
+      try {
+        if (launchSignal.aborted) return cancelled();
+        refreshAgents(getProjectRoot(ctx));
+        return await runTaskTool(
+          pi,
+          ctx,
+          launchSignal,
+          background ? () => {} : update,
+          valid.value.agent,
+          valid.value.task,
+          valid.value.title,
+          valid.value.parentContext,
+          valid.value.modelRole,
+          valid.value.requireModelRole,
+          handle,
+        );
+      } finally {
+        permit.release();
+      }
+    }, cancelled);
+    if (controller === undefined) return run;
     const terminal = trackAgentLaunch(
-      controller!,
+      controller,
       run.catch((error) => errorResult(errorMessage(error))),
     );
-    const record: { owner: string; terminal: Promise<ToolResult>; result?: ToolResult } = {
-      owner: owner(ctx),
-      terminal,
-    };
+    const record: BackgroundLaunch = { owner: owner(ctx), terminal, collected: false };
     launches.set(handle, record);
     void terminal.then((result) => {
+      if (launches.get(handle) !== record) return;
       record.result = result;
       const settled = [...launches.entries()].filter(([, value]) => value.result !== undefined);
       for (const [id] of settled.slice(0, Math.max(0, settled.length - 200))) launches.delete(id);
+      if (!launchSignal.aborted) void publishBackgroundResults(ctx);
     });
-    return textResult(`Agent queued: ${handle}. Continue working; use agent_status to check or collect the result.`, {
+    return textResult(`Agent queued: ${handle}. Use agent_status with wait: true to await the outcome.`, {
       handle,
       rowId: handle,
       status: "queued",
@@ -138,7 +202,7 @@ export function registerAgentSpawnTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "spawn_agent",
     description:
-      "Spawn one subagent to run one self-contained task in a headless child session. Omit agent for a clean session, or name a project/user catalog agent. Interactive launches return a queued handle without blocking. Use agent_status to collect; background:false or headless defaults await the child's final text.",
+      "Spawn one subagent to run one self-contained task in a headless child session. Omit agent for a clean session, or name a project/user catalog agent. Interactive launches return a queued handle without blocking. The project concurrency limit defaults to four. The main conversation receives one completion summary when the background queue drains. Use agent_status to collect the full result or wait for one child; background:false or headless defaults await the child's final text.",
     parameters: TaskParams,
     approval: "exec",
     formatApprovalDetails: taskApprovalDetails,
