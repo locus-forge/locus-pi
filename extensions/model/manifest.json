@@ -2,6 +2,7 @@
   "id": "model",
   "runtimeRequirements": [
     "Pi setModel/getThinkingLevel/setThinkingLevel APIs",
+    "Pi newSession setup and replacement session context",
     "Pi model registry with reasoning/thinkingLevelMap capability metadata",
     "Pi custom UI",
     "Selected project or user model role config",
@@ -17,11 +18,16 @@
   ],
   "provides": {
     "tools": [],
-    "commands": ["model-roles"],
+    "commands": ["model-roles", "clean"],
     "hooks": ["session_start", "input"]
   },
   "uiLifecycle": {
     "commands": [
+      {
+        "name": "clean",
+        "taxonomy": ["persistent-state"],
+        "persistent": ["Pi session model and thinking level"]
+      },
       {
         "name": "model-roles",
         "taxonomy": ["overlay-selector", "transient-widget", "persistent-state", "status"],
@@ -52,12 +58,13 @@
     "network": [],
     "browser": false,
     "models": true,
-    "ui": ["custom", "setStatus", "setWidget"]
+    "ui": ["custom", "notify", "setStatus", "setWidget"]
   },
   "risk": "medium",
   "docsPath": "extensions/model/README.md",
   "tests": [
     "tests/extensions/model/model.test.ts",
+    "tests/extensions/model/clean-session.test.ts",
     "tests/extensions/model/model-persistence.test.ts",
     "tests/contracts/extensions/runtime-registration.test.ts",
     "tests/shared/operator/operator-interaction-slot.test.ts",

@@ -48,7 +48,7 @@ describe("focused workflow catalog", () => {
     expect(harness.customRenderFrames[0]?.join("\n")).toContain("[SELECT] Workflow catalog");
     expect(harness.customRenderFrames[0]?.join("\n")).toContain("[Project 1]");
     expect(harness.customRenderFrames[0]?.join("\n")).toContain("> alpha · [P]");
-    expect(harness.widgets.get("workflows")).toBe("");
+    expect(harness.widgets.has("workflows")).toBe(false);
   });
 
   it("selects only current rows, opens inert source, then restores catalog cursor", async () => {
@@ -836,7 +836,7 @@ describe("focused workflow catalog", () => {
     harness.ctx.ui.setEditorText = setEditorText;
     harness.customInputQueue.push("escape");
     workflows(harness.pi);
-
+    await harness.commands.get("workflows")!.handler("status missing-run", harness.ctx);
     await harness.commands.get("workflows")!.handler("info alpha", harness.ctx);
 
     expect(lifecycle).toEqual(["clear", "custom"]);
@@ -878,7 +878,7 @@ describe("focused workflow catalog", () => {
 
     expect(custom).not.toHaveBeenCalled();
     expect(harness.widgetPayloads.get("workflows")).toBeUndefined();
-    expect(harness.widgets.get("workflows")).toBe("");
+    expect(harness.widgets.has("workflows")).toBe(false);
   });
 
   it("renders an honest passive fallback when TUI custom UI is missing", async () => {

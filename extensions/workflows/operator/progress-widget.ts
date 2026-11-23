@@ -28,6 +28,7 @@ import {
   type WorkflowProjectedStatus,
 } from "../runtime/workflow-outcome.js";
 import type { WorkflowResultPersistence } from "../runtime/workflow-result.js";
+import { setCommandWidget, type CommandWidgetPresentation } from "../../_shared/operator/command-ui.js";
 import { FLEET_MENU_PLACEMENT } from "../../_shared/operator/widget-render.js";
 import { clearViewerExternalRows, setViewerExternalRows } from "../../_shared/operator/viewer-geometry.js";
 import type { WorkflowJournalLine } from "../runtime/workflow-runtime.js";
@@ -78,6 +79,7 @@ const WORKFLOW_VIEWER_RESERVATION_OWNER = "workflow-live";
 const NOOP_TUI: WidgetFactoryTui = { requestRender: () => {} };
 
 export interface WorkflowProgressOptions {
+  onPublished?: (presentation: CommandWidgetPresentation) => void;
   /** Modern TUI owns passive activity in the footer; keep only actionable notices here. */
   compactActivity?: boolean;
   scope?: "fleet" | "workflow";
@@ -682,18 +684,18 @@ export function installWorkflowTextWidget(ctx: ExtensionContext, key: string, co
   const component = new WorkflowTextComponent(NOOP_TUI, coerceTheme(undefined), content);
   if (ctx.hasUI === true) {
     if (ctx.mode !== "tui") {
-      ctx.ui.setWidget(key, component.render(80), { placement: "belowEditor" });
+      setCommandWidget(ctx, key, component.render(80), { placement: "belowEditor" });
       return component;
     }
     try {
-      ctx.ui?.setWidget?.(key, (tui, theme) => {
+      setCommandWidget(ctx, key, (tui, theme) => {
         component.attachTui(tui as WidgetFactoryTui);
         component.theme = coerceTheme(theme);
         return component;
       });
     } catch {
       try {
-        ctx.ui?.setWidget?.(key, content.split(/\r?\n/));
+        setCommandWidget(ctx, key, content.split(/\r?\n/));
       } catch {
         // Best-effort display path only.
       }
@@ -714,29 +716,23 @@ export function installWorkflowProgress(
     ownsFleetProjection: !(ctx.mode === "tui" && agentLiveStore.retainSessions),
     compactActivity: ctx.mode === "tui" && agentLiveStore.retainSessions,
   });
-  if (ctx.hasUI === true) {
-    if (ctx.mode !== "tui") {
-      const requestRender = () => {
-        ctx.ui.setWidget(key, component.render(80), { placement: FLEET_MENU_PLACEMENT });
-      };
-      component.attachTui({ requestRender });
-      requestRender();
+  if (ctx.hasUI !== true) return component;
+  const publish = (content: Parameters<typeof setCommandWidget>[2]) =>
+    setCommandWidget(ctx, key, content, { placement: FLEET_MENU_PLACEMENT }, undefined, options.onPublished);
+  if (ctx.mode !== "tui") {
+    const requestRender = () => publish(component.render(80));
+    component.attachTui({ requestRender });
+    requestRender();
+    return component;
+  }
+  try {
+    publish((tui, theme) => {
+      component.attachTui(tui as WidgetFactoryTui);
+      component.theme = coerceTheme(theme);
       return component;
-    }
-    try {
-      ctx.ui?.setWidget?.(
-        key,
-        (tui, theme) => {
-          component.attachTui(tui as WidgetFactoryTui);
-          component.theme = coerceTheme(theme);
-          return component;
-        },
-        // Fleet control surface → below the editor (REQ-007; policy in widget-render.ts).
-        { placement: FLEET_MENU_PLACEMENT },
-      );
-    } catch {
-      // Host accepted UI but rejected this widget: keep the live component anyway.
-    }
+    });
+  } catch {
+    // Host accepted UI but rejected this widget: keep the live component anyway.
   }
   return component;
 }

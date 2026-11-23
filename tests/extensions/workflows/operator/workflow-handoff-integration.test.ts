@@ -8,6 +8,12 @@ import * as runner from "../../../../extensions/workflows/runtime/workflow-runne
 import { ensureWorkflowRunDir } from "../../../../extensions/workflows/runtime/workflow-run-layout.js";
 import { workflowResultFile } from "../../../../extensions/workflows/runtime/workflow-result.js";
 import workflows from "../../../../extensions/workflows/index.js";
+import {
+  WorkflowOperatorHandoffController,
+  type WorkflowHandoffPumpResult,
+} from "../../../../extensions/workflows/operator/operator-handoff-controller.js";
+import { WORKFLOW_LIVE_WIDGET_KEY } from "../../../../extensions/workflows/operator/progress-widget.js";
+import { setOperatorWidget } from "../../../../extensions/_shared/operator/widget-render.js";
 import { writeNativeHandoffRun } from "../../../fixtures/workflow-persisted-run.js";
 import { createHarness, emit } from "../../../test-harness.js";
 
@@ -132,6 +138,46 @@ describe("workflow actionable handoff integration", () => {
     // The question never reaches the model as a steered turn.
     expect(harness.waitForIdleCalls).toBeGreaterThan(0);
     expect(harness.sentUserMessages).toEqual([]);
+  });
+
+  it("clears the settled source panel after its automatic continuation rejects before start", async () => {
+    const sourceRunId = "20260725-120000-rejected-follow-up";
+    const harness = createHarness(projectWithHandoff(sourceRunId));
+    harness.ctx.hasUI = true;
+    harness.customInputQueue.push("\r");
+    let sourcePanel: unknown;
+    const runScript = vi.spyOn(runner, "runWorkflowScript").mockImplementation(async (request) => {
+      if (request.continuation !== undefined) {
+        sourcePanel = harness.widgetPayloads.get(WORKFLOW_LIVE_WIDGET_KEY);
+        throw new Error("Continuation start refused");
+      }
+      request.onRunStart?.({ runId: sourceRunId, runDir: `/tmp/${sourceRunId}` });
+      return completedResult(sourceRunId);
+    });
+    workflows(harness.pi);
+    await emit(harness, "session_start");
+    await runAlphaInSession(harness);
+
+    const rejection = expect.objectContaining({ eventKind: "workflow_rejected", code: "runner_prestart_failed" });
+    await vi.waitFor(() => expect(harness.sentMessages.at(-1)?.message.details).toEqual(rejection));
+    expect(runScript).toHaveBeenCalledTimes(2);
+    expect(runScript.mock.calls[1]?.[0].continuation?.originRunId).toBe(sourceRunId);
+    expect(sourcePanel).toBeTypeOf("function");
+    expect(harness.widgetPayloads.get(WORKFLOW_LIVE_WIDGET_KEY)).toBe(sourcePanel);
+    expect(harness.statuses.get("locus")).toContain("WF launch");
+    expect(harness.widgets.get("workflows")).toContain("Continuation start refused");
+    const writeWidget = vi.spyOn(harness.ctx.ui, "setWidget");
+
+    await emit(harness, "turn_end");
+    await emit(harness, "turn_end");
+
+    expect(harness.widgetPayloads.get(WORKFLOW_LIVE_WIDGET_KEY)).toBeUndefined();
+    expect(
+      writeWidget.mock.calls.filter(([key, content]) => key === WORKFLOW_LIVE_WIDGET_KEY && content === undefined),
+    ).toHaveLength(1);
+    expect(harness.statuses.get("locus")).toBeUndefined();
+    expect(harness.widgets.get("workflows")).toContain("Continuation start refused");
+    expect(harness.sentMessages.at(-1)?.message.details).toEqual(rejection);
   });
 
   it("starts a session without picking up an unanswered question from an earlier run", async () => {
@@ -265,13 +311,14 @@ describe("workflow actionable handoff integration", () => {
     const requests: runner.RunWorkflowScriptOptions[] = [];
     mockRuns(requests, [sourceRunId]);
     let mounted = 0;
-    harness.ctx.ui.custom = vi.fn(
+    const custom = vi.fn(
       async <T>(factory: CustomUiFactory<T>) =>
         await new Promise<T>(async () => {
           await factory({ requestRender() {} }, {}, {}, () => {});
           mounted += 1;
         }),
     ) as NonNullable<typeof harness.ctx.ui.custom>;
+    harness.ctx.ui.custom = custom;
     workflows(harness.pi);
 
     await emit(harness, "session_start");
@@ -281,7 +328,7 @@ describe("workflow actionable handoff integration", () => {
     await emit(harness, "agent_settled");
 
     expect(mounted).toBe(1);
-    expect(harness.ctx.ui.custom).toHaveBeenCalledTimes(1);
+    expect(custom).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces a rejected question pump as a warning without rejecting the lifecycle handler", async () => {
@@ -303,6 +350,60 @@ describe("workflow actionable handoff integration", () => {
 
     expect(harness.widgets.get("workflows")).toContain("question mount exploded");
     expect(harness.widgets.get("workflows")).toContain("No workflow execution was started.");
+  });
+
+  it.each([
+    ["agent_settled", "invalid"],
+    ["agent_settled", "reject"],
+    ["terminal", "invalid"],
+    ["terminal", "reject"],
+  ] as const)("ignores a revoked %s pump that settles as %s after same-UI rebind", async (origin, outcome) => {
+    const runId = "20260725-120000-source";
+    const root = projectWithHandoff(runId);
+    const resultPath = workflowResultFile(ensureWorkflowRunDir(root, runId));
+    const durable = readFileSync(resultPath, "utf8");
+    const harness = createHarness(root);
+    workflows(harness.pi);
+    await emit(harness, "session_start");
+
+    let release!: () => void;
+    const pending = new Promise<WorkflowHandoffPumpResult>((resolve, reject) => {
+      release = () => {
+        if (outcome === "invalid") resolve({ status: "invalid", message: "Late old warning" });
+        else reject(new Error("Late old pump rejection"));
+      };
+    });
+    const method = origin === "terminal" ? "pumpAfterActive" : "pump";
+    const pump = vi.spyOn(WorkflowOperatorHandoffController.prototype, method).mockReturnValueOnce(pending);
+    const ui = harness.ctx.ui;
+    const getStaleUi = vi.fn(() => ui);
+    const initiatingCtx = {
+      ...harness.ctx,
+      get ui() {
+        return getStaleUi();
+      },
+    };
+    if (origin === "terminal") {
+      mockRuns([], [runId]);
+      await harness.commands.get("workflows")!.handler("run alpha", initiatingCtx);
+    } else {
+      for (const listener of harness.handlers.get("agent_settled") ?? []) {
+        await listener({ type: "agent_settled" }, initiatingCtx);
+      }
+    }
+    await vi.waitFor(() => expect(pump).toHaveBeenCalledOnce());
+
+    await emit(harness, "session_shutdown");
+    harness.ctx.session!.id = "new-handoff-session";
+    await emit(harness, "session_start");
+    setOperatorWidget(harness.ctx, "workflows", { type: "ERROR", subject: "New session error", primary: "Keep" });
+    getStaleUi.mockClear();
+    release();
+    await flushBackground();
+
+    expect(getStaleUi).not.toHaveBeenCalled();
+    expect(harness.widgets.get("workflows")).toContain("[ERROR] New session error");
+    expect(readFileSync(resultPath, "utf8")).toBe(durable);
   });
 
   it("pumps the next handoff when a continuation is itself a run that ends awaiting an operator", async () => {

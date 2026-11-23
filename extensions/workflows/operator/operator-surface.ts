@@ -9,7 +9,7 @@
  */
 
 import type { ExtensionContext } from "../../_shared/host/pi-api.js";
-import { clearOperatorStatus, setOperatorStatus } from "../../_shared/operator/operator-status.js";
+import { prepareOperatorStatusClear, setOperatorStatus } from "../../_shared/operator/operator-status.js";
 import type { WorkflowJournalLine } from "../runtime/workflow-runtime.js";
 import { setOperatorWidget } from "../../_shared/operator/widget-render.js";
 import type { WorkflowHandoffPumpResult } from "./operator-handoff-controller.js";
@@ -18,20 +18,12 @@ import { renderMainWorkflowStatus } from "../transcript/workflow-transcript.js";
 
 const WORKFLOW_STATUS_ID = "workflow.run";
 
-export function clearWorkflowWidget(ctx: ExtensionContext, key: string): void {
-  try {
-    ctx.ui.setWidget(key, undefined);
-  } catch {
-    // Best-effort cleanup; the usage hint still goes through notify.
-  }
+export function prepareWorkflowRunStatusClear(ctx: ExtensionContext): (() => void) | undefined {
+  return prepareOperatorStatusClear(ctx, WORKFLOW_STATUS_ID);
 }
 
-export function clearWorkflowRunStatus(ctx: ExtensionContext): void {
-  clearOperatorStatus(ctx, WORKFLOW_STATUS_ID);
-}
-
-export function setWorkflowLaunchStatus(ctx: ExtensionContext, kind: string, ref: string): void {
-  setOperatorStatus(ctx, {
+export function setWorkflowLaunchStatus(ctx: ExtensionContext, kind: string, ref: string): () => void {
+  return setOperatorStatus(ctx, {
     id: WORKFLOW_STATUS_ID,
     lane: "activity",
     priority: 70,
@@ -41,10 +33,10 @@ export function setWorkflowLaunchStatus(ctx: ExtensionContext, kind: string, ref
   });
 }
 
-export function setWorkflowEventStatus(ctx: ExtensionContext, line: WorkflowJournalLine): void {
+export function setWorkflowEventStatus(ctx: ExtensionContext, line: WorkflowJournalLine): (() => void) | undefined {
   const status = renderMainWorkflowStatus(line);
   if (status === undefined) return;
-  setOperatorStatus(ctx, {
+  return setOperatorStatus(ctx, {
     id: WORKFLOW_STATUS_ID,
     lane: "activity",
     priority: 70,

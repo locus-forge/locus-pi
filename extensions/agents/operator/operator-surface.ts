@@ -13,7 +13,7 @@ import {
 } from "../../_shared/operator/operator-interaction.js";
 import { renderOperatorBlock, type OperatorBlock, type OperatorThemeLike } from "../../_shared/operator/operator-ui.js";
 import type { CustomUiComponent, ExtensionCommandContext, ExtensionContext } from "../../_shared/host/pi-api.js";
-import { setTextWidget } from "../../_shared/host/pi-api.js";
+import { setCommandWidget } from "../../_shared/operator/command-ui.js";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { ScrollableTextOverlay } from "../fleet/drill-overlay.js";
 import { AGENTS_WIDGET_FALLBACK_WIDTH } from "./operator-ui.js";
@@ -73,15 +73,15 @@ export function setAgentsWidget(
   const lines = content.split(/\r?\n/).map((line) => line.trimEnd());
   const component = new BoundedTextWidget(lines, maxLines, wrap);
   if (ctx.mode !== "tui") {
-    setTextWidget(ctx, AGENTS_WIDGET_KEY, component.render(AGENTS_WIDGET_FALLBACK_WIDTH).join("\n"), {
+    setCommandWidget(ctx, AGENTS_WIDGET_KEY, component.render(AGENTS_WIDGET_FALLBACK_WIDTH), {
       placement: "belowEditor",
     });
     return;
   }
   try {
-    ctx.ui.setWidget(AGENTS_WIDGET_KEY, () => component, { placement: "belowEditor" });
+    setCommandWidget(ctx, AGENTS_WIDGET_KEY, () => component, { placement: "belowEditor" });
   } catch {
-    setTextWidget(ctx, AGENTS_WIDGET_KEY, component.render(AGENTS_WIDGET_FALLBACK_WIDTH).join("\n"), {
+    setCommandWidget(ctx, AGENTS_WIDGET_KEY, component.render(AGENTS_WIDGET_FALLBACK_WIDTH), {
       placement: "belowEditor",
     });
   }
@@ -98,7 +98,7 @@ export function clearAgentsStatus(ctx: ExtensionContext): void {
 export function clearAgentsTransient(ctx: ExtensionContext): void {
   clearAgentsStatus(ctx);
   try {
-    ctx.ui.setWidget(AGENTS_WIDGET_KEY, undefined);
+    setCommandWidget(ctx, AGENTS_WIDGET_KEY, undefined);
   } catch {
     // Best-effort cleanup for hosts that expose a partial UI surface.
   }

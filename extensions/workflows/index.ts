@@ -10,8 +10,16 @@ import { snapshotWorkflowInput } from "./runtime/workflow-input.js";
  */
 
 import type { ExtensionAPI, ExtensionContext } from "../_shared/host/pi-api.js";
-import { getProjectRoot, getWorkingDirectory, setTextWidget } from "../_shared/host/pi-api.js";
-import { pinTransientUiKey, registerTransientUiCleanup, unpinTransientUiKey } from "../_shared/operator/command-ui.js";
+import { getProjectRoot, getWorkingDirectory } from "../_shared/host/pi-api.js";
+import {
+  pinTransientUiKey,
+  clearCommandWidgetPresentation,
+  installWarningEscapeDismissal,
+  type CommandWidgetPresentation,
+  registerTransientUiCleanup,
+  setCommandWidget,
+  unpinTransientUiKey,
+} from "../_shared/operator/command-ui.js";
 import {
   applyWorkflowJournalLineToAgentLiveStore,
   pruneCompletedWorkflowRunLiveRows,
@@ -25,8 +33,7 @@ import {
 } from "./operator/operator-handoff-controller.js";
 import { createWorkflowOperatorHandoffService } from "./operator/operator-handoff-service.js";
 import {
-  clearWorkflowRunStatus,
-  clearWorkflowWidget,
+  prepareWorkflowRunStatusClear,
   presentWorkflowHandoffPumpResult,
   setWorkflowEventStatus,
   setWorkflowLaunchStatus,
@@ -50,9 +57,21 @@ import {
 } from "./command/receipts.js";
 import { createWorkflowTranscript, registerWorkflowTranscriptRenderers } from "./transcript/workflow-transcript.js";
 
+interface WorkflowCommandSurface {
+  widget?: CommandWidgetPresentation;
+  clearStatus: () => void;
+}
+
 export default function workflows(pi: ExtensionAPI): void {
   registerWorkflowTranscriptRenderers(pi);
   const completedRunIds = new Set<string>();
+  let pendingWidget: CommandWidgetPresentation | undefined;
+  let pendingStatusClear: (() => void) | undefined;
+  const scheduleCompletedSurface = ({ widget, clearStatus }: WorkflowCommandSurface): void => {
+    // A pre-start rejection can finish without taking over the previous panel.
+    pendingWidget = widget ?? pendingWidget;
+    pendingStatusClear = clearStatus;
+  };
   /**
    * Runs THIS Pi session launched — command, tool, and continuations alike.
    *
@@ -80,15 +99,25 @@ export default function workflows(pi: ExtensionAPI): void {
     sessionPanels.clear();
   };
   let handoffController: WorkflowOperatorHandoffController;
-  const observeHandoffPump = (ctx: ExtensionContext, start: () => Promise<WorkflowHandoffPumpResult>): void => {
+  const observeHandoffPump = (
+    ctx: ExtensionContext,
+    isCurrent: () => boolean,
+    start: () => Promise<WorkflowHandoffPumpResult>,
+  ): void => {
+    const ui = ctx.ui;
+    const canPublish = (): boolean => isCurrent() && ctx.ui === ui;
     void Promise.resolve()
-      .then(start)
+      .then(() => (canPublish() ? start() : undefined))
       .then((result) => {
-        if (result.status === "invalid" || result.status === "failed" || result.status === "deferred") {
+        if (
+          (result?.status === "invalid" || result?.status === "failed" || result?.status === "deferred") &&
+          canPublish()
+        ) {
           presentWorkflowHandoffPumpResult(ctx, result);
         }
       })
       .catch((error) => {
+        if (!canPublish()) return;
         presentWorkflowHandoffPumpResult(ctx, {
           status: "invalid",
           message: `Workflow handoff pump failed: ${errorMessage(error)}`,
@@ -98,8 +127,13 @@ export default function workflows(pi: ExtensionAPI): void {
   const commandLauncher = createWorkflowCommandLauncher({
     pi,
     createObserver(request, preparation) {
-      clearWorkflowWidget(request.ctx, WORKFLOW_LIVE_WIDGET_KEY);
-      setWorkflowLaunchStatus(request.ctx, request.target?.kind ?? "script", request.target?.ref ?? request.scriptRef);
+      const surface: WorkflowCommandSurface = {
+        clearStatus: setWorkflowLaunchStatus(
+          request.ctx,
+          request.target?.kind ?? "script",
+          request.target?.ref ?? request.scriptRef,
+        ),
+      };
       if (preparation.hasUI) pinTransientUiKey(pi, WORKFLOW_LIVE_WIDGET_KEY);
       let panel: WorkflowProgressComponent | undefined;
       const cleanupPanel = (): void => {
@@ -121,6 +155,9 @@ export default function workflows(pi: ExtensionAPI): void {
           if (announcement !== undefined) announceCommandWorkflowStart(pi, request.ctx, announcement);
           if (preparation.hasUI && !panel) {
             panel = installWorkflowProgress(request.ctx, WORKFLOW_LIVE_WIDGET_KEY, request.scriptRef, runId, {
+              onPublished: (widget) => {
+                surface.widget = widget;
+              },
               scope: "workflow",
               declaredStages: preparation.declaredStages,
               ...(request.continuation === undefined
@@ -133,9 +170,9 @@ export default function workflows(pi: ExtensionAPI): void {
         onEvent(line) {
           applyWorkflowJournalLineToAgentLiveStore(line, getProjectRoot(request.ctx));
           if (preparation.hasUI) panel?.push(line);
-          else setTextWidget(request.ctx, "workflows", renderAgentLiveRowsText());
+          else setCommandWidget(request.ctx, "workflows", renderAgentLiveRowsText().split(/\r?\n/));
           transcript.event(line);
-          setWorkflowEventStatus(request.ctx, line);
+          surface.clearStatus = setWorkflowEventStatus(request.ctx, line) ?? surface.clearStatus;
         },
         async onResult(result, isCurrent) {
           completedRunIds.add(result.runId);
@@ -146,10 +183,12 @@ export default function workflows(pi: ExtensionAPI): void {
           } else {
             setOperatorWidget(request.ctx, "workflows", buildWorkflowResultBlock(result, request.ctx.mode !== "tui"));
           }
+          scheduleCompletedSurface(surface);
           const published = await persistCommandWorkflowTranscript(pi, request.ctx, transcriptCompletion, isCurrent);
           if (!published && isCurrent()) throw new Error("Workflow terminal receipt was not published.");
         },
         async onError(error, isCurrent) {
+          scheduleCompletedSurface(surface);
           cleanupPanel();
           setOperatorWidget(request.ctx, "workflows", workflowBackgroundFailureBlock(error));
           if (startedRun === undefined) {
@@ -185,8 +224,7 @@ export default function workflows(pi: ExtensionAPI): void {
       };
     },
     onTerminal(request, isCurrent) {
-      observeHandoffPump(request.ctx, async () => {
-        if (!isCurrent()) return { status: "stale" };
+      observeHandoffPump(request.ctx, isCurrent, async () => {
         try {
           await request.waitForIdle?.();
         } catch {
@@ -202,21 +240,35 @@ export default function workflows(pi: ExtensionAPI): void {
     read: handoffService.read,
     launch: handoffService.launch,
   });
-  const cleanupCompletedRuns = (_ctx: ExtensionContext): boolean => {
-    if (completedRunIds.size === 0) return false;
-    for (const runId of completedRunIds) pruneCompletedWorkflowRunLiveRows(runId);
-    completedRunIds.clear();
-    return true;
+  const cleanupCompletedRuns = (selected: readonly string[]): void => {
+    for (const runId of selected) {
+      if (completedRunIds.delete(runId)) pruneCompletedWorkflowRunLiveRows(runId);
+    }
   };
   const cleanupCompletedSurface = (ctx: ExtensionContext): void => {
-    if (commandLauncher.hasActiveCommandRun()) return;
-    if (cleanupCompletedRuns(ctx)) clearWorkflowWidget(ctx, WORKFLOW_LIVE_WIDGET_KEY);
-    clearWorkflowRunStatus(ctx);
+    if (commandLauncher.hasActiveRun()) return;
+    const widget = pendingWidget;
+    const clearStatus = pendingStatusClear;
+    cleanupCompletedRuns([...completedRunIds]);
+    if (commandLauncher.hasActiveRun()) return;
+    if (widget !== undefined && pendingWidget === widget) {
+      pendingWidget = undefined;
+      clearCommandWidgetPresentation(ctx, widget);
+    }
+    if (clearStatus !== undefined && pendingStatusClear === clearStatus && !commandLauncher.hasActiveRun()) {
+      pendingStatusClear = undefined;
+      clearStatus();
+    }
   };
-  const cleanupTransientSurface = (ctx: ExtensionContext): void => {
-    if (commandLauncher.hasActiveCommandRun()) return;
-    cleanupCompletedRuns(ctx);
-    clearWorkflowRunStatus(ctx);
+  const prepareTransientSurface = (ctx: ExtensionContext): (() => void) | undefined => {
+    if (commandLauncher.hasActiveRun()) return undefined;
+    const completed = [...completedRunIds];
+    const clearStatus = prepareWorkflowRunStatusClear(ctx);
+    return () => {
+      if (commandLauncher.hasActiveRun()) return;
+      cleanupCompletedRuns(completed);
+      clearStatus?.();
+    };
   };
   /** Explicit operator surfaces: project-wide, exactly as before. */
   const pumpCurrentHandoffs = (
@@ -230,17 +282,8 @@ export default function workflows(pi: ExtensionAPI): void {
       isCurrent: () => commandLauncher.isCurrent(lease),
     });
   };
-  /** Lifecycle surfaces: only the runs this session launched may open a question. */
-  const pumpSessionHandoffs = (ctx: ExtensionContext): Promise<WorkflowHandoffPumpResult> => {
-    const lease = commandLauncher.currentLease(ctx);
-    if (lease === undefined) return Promise.resolve({ status: "stale" });
-    return handoffController.pump(ctx, {
-      isCurrent: () => commandLauncher.isCurrent(lease),
-      originRunIds: sessionRunIds,
-    });
-  };
-  registerTransientUiCleanup(pi, "workflows", cleanupTransientSurface);
-  registerTransientUiCleanup(pi, WORKFLOW_LIVE_WIDGET_KEY, cleanupTransientSurface);
+  registerTransientUiCleanup(pi, "workflows", prepareTransientSurface);
+  registerTransientUiCleanup(pi, WORKFLOW_LIVE_WIDGET_KEY, prepareTransientSurface);
   pi.on("turn_end", (_event, ctx) => cleanupCompletedSurface(ctx));
   pi.on("input", (event) => {
     if (event.source === "extension" || typeof event.text !== "string") return;
@@ -259,7 +302,10 @@ export default function workflows(pi: ExtensionAPI): void {
     }
   });
   pi.on("agent_settled", (_event, ctx) => {
-    observeHandoffPump(ctx, () => pumpSessionHandoffs(ctx));
+    const lease = commandLauncher.currentLease(ctx);
+    if (lease === undefined) return;
+    const isCurrent = (): boolean => commandLauncher.isCurrent(lease);
+    observeHandoffPump(ctx, isCurrent, () => handoffController.pump(ctx, { isCurrent, originRunIds: sessionRunIds }));
   });
   // No handoff pump here on purpose, and the run scope resets to empty: a session
   // opens on the operator's terms. An unanswered question from an earlier session
@@ -268,9 +314,13 @@ export default function workflows(pi: ExtensionAPI): void {
   // never as a modal the new session starts with, and never on its first settled
   // turn either.
   pi.on("session_start", (_event, ctx) => {
+    installWarningEscapeDismissal(ctx, "workflows");
     resetWorkflowLiveExecutions();
     disposeSessionPanels();
     sessionRunIds.clear();
+    completedRunIds.clear();
+    pendingWidget = undefined;
+    pendingStatusClear = undefined;
     catalogLaunches.clear();
     submittedCatalogLaunches.clear();
     rememberCompletionContext(ctx);

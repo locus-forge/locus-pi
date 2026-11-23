@@ -451,7 +451,7 @@ export interface ReplacementSessionContext extends ExtensionContext {
 
 export interface NewSessionOptionsLike {
   parentSession?: string;
-  setup?: (sessionManager: unknown) => Promise<void> | void;
+  setup?: (sessionManager: { appendCustomEntry(type: string, data: unknown): string }) => Promise<void> | void;
   withSession?: (ctx: ReplacementSessionContext) => Promise<void> | void;
 }
 

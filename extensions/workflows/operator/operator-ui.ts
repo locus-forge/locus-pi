@@ -34,21 +34,23 @@ export function workflowHelpBlock(): OperatorBlock {
   return {
     type: "VIEW",
     subject: "Workflow commands",
-    primary: "Choose a workflow command directly; the interactive menu is available in a Pi TUI.",
+    primary: "The interactive menu is available in a Pi TUI.",
     body: [
-      "Dashboard: /workflows dashboard",
-      "Catalog: /workflows list [query]",
-      "Info: /workflows info [exact-name]",
+      "Dashboard: /workflows dashboard · Catalog: /workflows list [query]",
       "History: /workflows status [runId]",
       "Result: /workflows result [runId|last]",
       `Run: ${workflowRunUsage()}`,
       "Continue: /workflows continue <runId> [--answer <text>]",
       "Stop: /workflows stop [runId|last]",
-      "External agent skills: /workflows skills <sync|status|remove> [--host codex|claude|all] [--scope user|project]",
     ],
     metadata: [
-      "Emergency compatibility alias: /workflow-stop. Use /workflows <subcommand> for every other operation.",
+      "Info: /workflows info [exact-name] · Emergency alias: /workflow-stop",
       "A command starts execution only when the Pi session is provably idle.",
+    ],
+    controls: [
+      "Check external skills: /workflows doctor check",
+      "Read the last incomplete rollback: /workflows doctor recovery",
+      "/workflows doctor [check|install|remove] [--host codex|claude|all] [--scope user|project]",
     ],
   };
 }
@@ -60,7 +62,7 @@ export function workflowUnknownCommandBlock(text: string, available: string[]): 
     primary: `Unknown workflow command: ${text}`,
     body: available.length === 0 ? [] : [`Available curated Package workflows: ${available.join(", ")}`],
     controls: [
-      `Usage: /workflows | list [query] | dashboard | info [name] | status [runId] | result [runId|last] | ${workflowRunUsage("<name|path>", "run")} | continue <runId> [--answer <text>] | stop [runId|last] | skills <sync|status|remove> [--host codex|claude|all] [--scope user|project]`,
+      `Usage: /workflows | list [query] | dashboard | info [name] | status [runId] | result [runId|last] | ${workflowRunUsage("<name|path>", "run")} | continue <runId> [--answer <text>] | stop [runId|last] | doctor [check|install|remove] [--host codex|claude|all] [--scope user|project] | doctor recovery`,
     ],
   };
 }

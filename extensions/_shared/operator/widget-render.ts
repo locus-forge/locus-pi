@@ -1,5 +1,5 @@
 import type { CustomUiComponent, ExtensionContext, WidgetFactoryTui } from "../host/pi-api.js";
-import { setDismissibleView } from "./command-ui.js";
+import { setCommandWidget, setCommandWidgetPresented, type CommandWidgetPresentation } from "./command-ui.js";
 import {
   renderOperatorBlock,
   renderOperatorBlockPlain,
@@ -43,13 +43,20 @@ export function operatorBlockPlacement(block: Pick<OperatorBlock, "type">): "abo
 export interface SetOperatorWidgetOptions {
   placement?: "aboveEditor" | "belowEditor";
   fallbackWidth?: number;
+  /** Hide this presentation while another view uses its rows. Returns its restore callback if still mounted. */
+  onOverflow?: (hide: () => (() => void) | undefined) => void;
 }
 
 class OperatorBlockWidget implements CustomUiComponent {
+  private overflowReported = false;
+  private hidden = false;
+  private disposed = false;
   constructor(
     private readonly tui: WidgetFactoryTui,
     private readonly block: OperatorBlock,
     private readonly theme?: OperatorThemeLike,
+    private readonly onOverflow?: SetOperatorWidgetOptions["onOverflow"],
+    private readonly setPresented?: (presented: boolean) => boolean,
   ) {
     // Presentation asks for a normal differential paint. A forced full redraw
     // here clears and repaints the whole frame for every operator block, which
@@ -60,9 +67,37 @@ class OperatorBlockWidget implements CustomUiComponent {
   }
 
   render(width: number): string[] {
+    if (this.hidden || this.disposed) return [];
     const rows = this.tui.terminal?.rows ?? 24;
     const budget = Math.max(1, Math.min(rows - 6, 48));
-    return renderOperatorBlock(this.block, width, this.theme, { maxLines: budget });
+    if (!this.onOverflow) return renderOperatorBlock(this.block, width, this.theme, { maxLines: budget });
+    try {
+      const lines = renderOperatorBlock(this.block, width, this.theme);
+      if (lines.length <= budget) return lines;
+      this.reportOverflow();
+      return renderOperatorBlock(this.block, width, this.theme, { maxLines: budget });
+    } catch {
+      this.reportOverflow();
+      return [];
+    }
+  }
+
+  private reportOverflow(): void {
+    if (this.overflowReported || !this.onOverflow) return;
+    this.overflowReported = true;
+    queueMicrotask(() => this.onOverflow?.(() => this.hide()));
+  }
+
+  private hide(): (() => void) | undefined {
+    if (this.disposed || this.hidden || this.setPresented?.(false) === false) return undefined;
+    this.hidden = true;
+    this.tui.requestRender();
+    return () => {
+      // Pi disposes this component whenever the key is replaced or cleared.
+      if (this.disposed || !this.hidden || this.setPresented?.(true) === false) return;
+      this.hidden = false;
+      this.tui.requestRender();
+    };
   }
 
   invalidate(): void {
@@ -70,6 +105,7 @@ class OperatorBlockWidget implements CustomUiComponent {
   }
 
   dispose(): void {
+    this.disposed = true;
     // Full redraw clears cells outside a replacement/shrunk frame. A normal
     // differential render can preserve stale glyphs in terminal scrollback.
     this.tui.requestRender(true);
@@ -91,23 +127,36 @@ export function setOperatorWidget(
 
   const placement = { placement: options.placement ?? operatorBlockPlacement(block) };
   if (ctx.mode === "tui") {
-    ctx.ui.setWidget(
+    let presentation: CommandWidgetPresentation | undefined;
+    setCommandWidget(
+      ctx,
       key,
-      (tui, theme) => new OperatorBlockWidget(tui as WidgetFactoryTui, block, operatorTheme(theme) ?? ctx.ui.theme),
+      (tui, theme) =>
+        new OperatorBlockWidget(
+          tui as WidgetFactoryTui,
+          block,
+          operatorTheme(theme) ?? ctx.ui.theme,
+          options.onOverflow,
+          (presented) => presentation !== undefined && setCommandWidgetPresented(ctx, presentation, presented),
+        ),
       placement,
+      block.type,
+      (published) => {
+        presentation = published;
+      },
     );
-    setDismissibleView(ctx, key, block.type === "VIEW");
     return;
   }
 
-  ctx.ui.setWidget(
+  setCommandWidget(
+    ctx,
     key,
     renderOperatorBlockPlain(block, options.fallbackWidth ?? 80, {
       maxLines: HOST_STRING_ARRAY_WIDGET_LINES,
     }),
     placement,
+    block.type,
   );
-  setDismissibleView(ctx, key, false);
 }
 
 function operatorTheme(value: unknown): OperatorThemeLike | undefined {

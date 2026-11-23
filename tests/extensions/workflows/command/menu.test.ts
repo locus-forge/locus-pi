@@ -15,7 +15,7 @@ const ROOT_WORKFLOW_OPTIONS = [
   "run — fill the editor for a workflow launch",
   "continue — answer a pending handoff",
   "stop — stop an active run",
-  "skills — install workflow skills for external agents",
+  "doctor — check external workflow skill installations",
 ] as const;
 
 afterEach(() => {

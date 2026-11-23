@@ -83,6 +83,7 @@ export interface WorkflowCommandLauncher {
   currentLease(ctx: ExtensionContext): WorkflowSessionLease | undefined;
   isCurrent(lease: WorkflowSessionLease): boolean;
   hasActiveCommandRun(): boolean;
+  hasActiveRun(): boolean;
   launch(request: WorkflowCommandLaunchRequest): WorkflowCommandLaunchResult;
   /**
    * Resolve once the most recently launched command run has settled AND its
@@ -120,15 +121,22 @@ export function createWorkflowCommandLauncher(options: WorkflowCommandLauncherOp
     return sessionLease;
   };
 
+  const hasActiveCommandRun = (): boolean =>
+    sessionLease !== undefined &&
+    backgroundRuns.isCurrent(sessionLease) &&
+    ((callbackLease !== undefined && backgroundRuns.isCurrent(callbackLease)) ||
+      backgroundRuns.active(sessionLease) !== undefined);
+
   return {
     startSession,
     currentLease,
     isCurrent: (lease) => backgroundRuns.isCurrent(lease),
-    hasActiveCommandRun: () =>
-      sessionLease !== undefined &&
-      backgroundRuns.isCurrent(sessionLease) &&
-      ((callbackLease !== undefined && backgroundRuns.isCurrent(callbackLease)) ||
-        backgroundRuns.active(sessionLease) !== undefined),
+    hasActiveCommandRun,
+    hasActiveRun: () =>
+      hasActiveCommandRun() ||
+      (sessionLease !== undefined &&
+        backgroundRuns.isCurrent(sessionLease) &&
+        backgroundRuns.hasActiveSession(sessionLease.projectRoot, sessionLease.sessionId)),
     launch(request) {
       const inputSnapshot = snapshotWorkflowInput(request);
       request = { ...request, ...inputSnapshot };

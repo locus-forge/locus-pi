@@ -11,7 +11,7 @@ const ALPHA_CLEANUP_KEY = "fixture-alpha-cleanup";
 const ALPHA_PERSISTENT_KEY = "fixture-alpha-route";
 
 export default function commandUiAlpha(pi: ExtensionAPI): void {
-  registerTransientUiCleanup(pi, ALPHA_KEY, (ctx) => {
+  registerTransientUiCleanup(pi, ALPHA_KEY, (ctx) => () => {
     ctx.ui.setStatus(ALPHA_CLEANUP_KEY, "alpha owner cleanup ran");
   });
 

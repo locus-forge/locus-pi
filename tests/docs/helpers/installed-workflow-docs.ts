@@ -5,6 +5,7 @@ import { deadMarkdownLinks } from "../../../scripts/markdown-links.js";
 import { operateWorkflowSkillHosts, WORKFLOW_SKILL_NAMES } from "../../../extensions/workflows/command/skills.js";
 
 /** Exercise managed discovery from an unpacked real package, outside the source checkout. */
+const rows = (result: ReturnType<typeof operateWorkflowSkillHosts>) => result.groups.flatMap((group) => group.rows);
 export function verifyInstalledWorkflowDocs(packageRoot: string, temporaryRoot: string, packedFiles: string[]): void {
   expect(deadMarkdownLinks(packageRoot, { name: "the unpacked installation", files: new Set(packedFiles) })).toEqual(
     [],
@@ -33,8 +34,8 @@ export function verifyInstalledWorkflowDocs(packageRoot: string, temporaryRoot: 
   for (const scope of ["project", "user"] as const) {
     const scoped = { ...operation, scope };
     const synced = operateWorkflowSkillHosts({ ...scoped, action: "sync" });
-    expect(synced.rows.filter((row) => !row.legacy && row.changed === "created")).toHaveLength(8);
-    expect(operateWorkflowSkillHosts({ ...scoped, action: "sync" }).rows.every((row) => row.changed === "none")).toBe(
+    expect(rows(synced).filter((row) => !row.legacy && row.changed === "created")).toHaveLength(8);
+    expect(rows(operateWorkflowSkillHosts({ ...scoped, action: "sync" })).every((row) => row.changed === "none")).toBe(
       true,
     );
   }

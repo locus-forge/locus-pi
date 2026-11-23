@@ -2,10 +2,9 @@
  * extensions/workflows/command/command-router.ts — The `/workflows` command surface.
  *
  * Parses the command text, routes it to one operator surface (help, catalog,
- * info, dashboard, status, result, skills, stop, continue, run), and registers the
- * the emergency `/workflow-stop` alias into the same grammar. Everything
- * it needs from the session — the launcher, the handoff pump, the completion
- * context — arrives as injected dependencies, never as module state.
+ * info, dashboard, status, result, doctor, stop, continue, run), and registers the
+ * emergency `/workflow-stop` alias into the same grammar. The launcher, handoff pump and completion
+ * context arrive as injected dependencies, never as module state.
  */
 
 import type { CommandArgs, ExtensionAPI, ExtensionCommandContext } from "../../_shared/host/pi-api.js";
@@ -22,7 +21,7 @@ import { WorkflowCatalogViewer, WorkflowInfoViewer } from "../catalog/catalog-vi
 import { workflowArgumentCompletions, workflowFlatCommandCompletions } from "../launch/command-completions.js";
 import { formatWorkflowCommandToken, parseContinueCommand, parseWorkflowCommandToken } from "./command-parser.js";
 import type { WorkflowHandoffPumpResult } from "../operator/operator-handoff-controller.js";
-import { clearWorkflowWidget, presentWorkflowHandoffPumpResult } from "../operator/operator-surface.js";
+import { presentWorkflowHandoffPumpResult } from "../operator/operator-surface.js";
 import {
   ambiguousWorkflowRunBlock,
   assertNever,
@@ -52,7 +51,7 @@ import {
 } from "../catalog/workflow-catalog.js";
 import type { WorkflowCommandLauncher } from "../launch/workflow-command-launcher.js";
 import { handleWorkflowRunCommand } from "./run.js";
-import { presentWorkflowSkillHostCommand } from "./skills.js";
+import { createWorkflowDoctor } from "./skill-doctor/doctor.js";
 import { fillWorkflowEditor, prepareWorkflowEditorHandoff } from "./workflow-editor-handoff.js";
 
 /** Canonical ordered root menu data for the `/workflows` command. */
@@ -65,7 +64,7 @@ const WORKFLOW_MENU_DESCRIPTIONS = {
   run: "fill the editor for a workflow launch",
   continue: "answer a pending handoff",
   stop: "stop an active run",
-  skills: "install workflow skills for external agents",
+  doctor: "check external workflow skill installations",
 } as const;
 
 type WorkflowMenuCommand = keyof typeof WORKFLOW_MENU_DESCRIPTIONS;
@@ -106,6 +105,7 @@ export interface WorkflowCommandRouterDependencies {
 export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommandRouterDependencies): void {
   const { commandLauncher, pumpCurrentHandoffs, rememberCompletionContext, rememberCatalogLaunchSelection } = deps;
 
+  const doctor = createWorkflowDoctor(pi);
   const handleWorkflowCommand = async (args: CommandArgs, ctx: ExtensionCommandContext): Promise<void> => {
     const rawText = getCommandText(args);
     const text = rawText.trim();
@@ -115,7 +115,6 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
     // Bare `/workflows` is the interactive command chooser. Noninteractive
     // hosts receive the same grammar as a read-only block instead of a prompt.
     if (text === "") {
-      clearWorkflowWidget(ctx, WORKFLOW_LIVE_WIDGET_KEY);
       if (workflowMenuAvailable(ctx)) {
         await openWorkflowCommandMenu(
           ctx,
@@ -155,7 +154,6 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
       const workingDirectory = getWorkingDirectory(ctx);
       const catalog = buildWorkflowCatalogModel(projectRoot, workingDirectory, query === "" ? undefined : query);
       if (ctx.mode === "tui" && ctx.hasUI !== false && ctx.ui.custom !== undefined) {
-        clearWorkflowWidget(ctx, "workflows");
         let intent: WorkflowBrowserIntent | undefined;
         try {
           intent = await requestInlineOperatorInteraction<WorkflowBrowserIntent | undefined>(
@@ -322,7 +320,7 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
       return;
     }
 
-    if (text === "skills" || text.startsWith("skills ")) return presentWorkflowSkillHostCommand(text, ctx, projectRoot);
+    if (/^(?:doctor|skills)(?:\s|$)/u.test(text)) return doctor(text, ctx, projectRoot);
 
     const stopMatch = /^stop(?:\s+(\S+))?$/.exec(text);
     if (stopMatch !== null) {
@@ -395,7 +393,7 @@ export function registerWorkflowCommands(pi: ExtensionAPI, deps: WorkflowCommand
       command: "workflows",
       group: "workflows",
       surfaces: ["transient-widget", "status", "artifact-write", "no-ui"],
-      transientWidgets: ["workflows", WORKFLOW_LIVE_WIDGET_KEY],
+      acceptedCommandWidgets: ["workflows", WORKFLOW_LIVE_WIDGET_KEY],
     },
     {
       // The palette shows this next to every other command, so it says what the
@@ -452,8 +450,8 @@ async function openWorkflowCommandMenu(
     case "dashboard":
     case "list":
     case "status":
-    case "skills":
-      await route(command === "skills" ? "skills status" : command);
+    case "doctor":
+      await route(command);
       return;
     case "info": {
       const selected = await selectWorkflowTarget(ctx, projectRoot, workingDirectory, "info");
@@ -689,7 +687,7 @@ function registerWorkflowCommandAliases(
         command: commandName,
         group: "workflows",
         surfaces: ["transient-widget", "status", "artifact-write", "no-ui"],
-        transientWidgets: ["workflows", WORKFLOW_LIVE_WIDGET_KEY],
+        acceptedCommandWidgets: ["workflows", WORKFLOW_LIVE_WIDGET_KEY],
       },
       {
         description: flatWorkflowCommandDescription(command),
@@ -753,7 +751,6 @@ async function presentWorkflowRunResultText(
   }
   const title = `workflow result · run ${read.runId}`;
   if (ctx.mode === "tui" && ctx.hasUI !== false && ctx.ui.custom !== undefined) {
-    clearWorkflowWidget(ctx, "workflows");
     try {
       await requestInlineOperatorInteraction<void>(
         ctx,
@@ -792,7 +789,6 @@ async function openWorkflowRunViewer(
   runId?: string,
 ): Promise<boolean> {
   if (ctx.mode !== "tui" || ctx.hasUI === false || ctx.ui.custom === undefined) return false;
-  clearWorkflowWidget(ctx, "workflows");
   try {
     await requestInlineOperatorInteraction<void>(
       ctx,
