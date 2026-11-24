@@ -8,6 +8,11 @@
  * pump outcome gets. Pure block construction stays in `operator-ui.ts`.
  */
 
+import { setViewerExternalRows } from "../../_shared/operator/viewer-geometry.js";
+import { coerceTheme } from "../../_shared/host/render-profile.js";
+import { truncateToWidth } from "@earendil-works/pi-tui";
+import { setCommandWidget } from "../../_shared/operator/command-ui.js";
+import { shortWorkflowRunId } from "../command/completion-presentation.js";
 import type { ExtensionContext } from "../../_shared/host/pi-api.js";
 import { prepareOperatorStatusClear, setOperatorStatus } from "../../_shared/operator/operator-status.js";
 import type { WorkflowJournalLine } from "../runtime/workflow-runtime.js";
@@ -17,6 +22,64 @@ import { assertNever, workflowWarningBlock } from "./operator-ui.js";
 import { renderMainWorkflowStatus } from "../transcript/workflow-transcript.js";
 
 const WORKFLOW_STATUS_ID = "workflow.run";
+
+/** Failures survive transient command cleanup until their own result is inspected. */
+export class WorkflowFailureNotices {
+  readonly #runs = new Map<string, string>();
+  #ctx: ExtensionContext | undefined;
+
+  publish(ctx: ExtensionContext, runId: string, reason: string): void {
+    if (ctx.mode !== "tui" || !ctx.hasUI) return;
+    this.#ctx = ctx;
+    this.#runs.set(runId, reason);
+    this.#refresh();
+  }
+
+  reason(runId: string): string | undefined {
+    return this.#runs.get(runId);
+  }
+
+  acknowledge(runId: string): void {
+    if (this.#runs.delete(runId)) this.#refresh();
+  }
+
+  reset(): void {
+    this.#runs.clear();
+    this.#refresh();
+    this.#ctx = undefined;
+  }
+
+  #refresh(): void {
+    if (!this.#ctx) return;
+    const runId = this.#runs.keys().next().value;
+    const pending = this.#runs.size > 1 ? ` (+${this.#runs.size - 1})` : "";
+    try {
+      setCommandWidget(
+        this.#ctx,
+        "workflows-failure-notice",
+        runId === undefined
+          ? undefined
+          : (_tui, theme) => ({
+              invalidate() {},
+              render(width: number) {
+                const label = `✗ FAILED · #${shortWorkflowRunId(runId)}${pending}`;
+                return [
+                  truncateToWidth(
+                    `${coerceTheme(theme).fg?.("error", label) ?? label} · /workflows status ${runId}`,
+                    Math.max(1, width),
+                  ),
+                ];
+              },
+            }),
+        { placement: "belowEditor" },
+      );
+      setViewerExternalRows("workflows-failure-notice", runId === undefined ? 0 : 1);
+    } catch {
+      setViewerExternalRows("workflows-failure-notice", 0);
+      // A host that rejects the optional widget must still receive the durable receipt.
+    }
+  }
+}
 
 export function prepareWorkflowRunStatusClear(ctx: ExtensionContext): (() => void) | undefined {
   return prepareOperatorStatusClear(ctx, WORKFLOW_STATUS_ID);

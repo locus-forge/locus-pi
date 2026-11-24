@@ -1,21 +1,15 @@
+import { stripVTControlCharacters } from "node:util";
 import { highlightCode } from "@earendil-works/pi-coding-agent";
-import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { matchesKey, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { CustomUiComponent, CustomUiTui } from "../../_shared/host/pi-api.js";
-import {
-  readWorkflowArtifactIndex,
-  readWorkflowArtifactRecord,
-  type WorkflowArtifactRecord,
-} from "../runtime/workflow-artifacts.js";
+import { readWorkflowArtifactRecord, type WorkflowArtifactRecord } from "../runtime/workflow-artifacts.js";
 import {
   listWorkflowRuns,
   readWorkflowRunJournalState,
-  readWorkflowRunResult,
   readWorkflowRunSummary,
-  workflowPersistedResultInvalidity,
-  type WorkflowJournalDiagnostic,
   type WorkflowRunStatus,
 } from "../runtime/workflow-journal.js";
-import { resolveWorkflowRunDir } from "../runtime/workflow-run-layout.js";
+import { loadRunEvidence, type RunEvidenceModel, type StageRow, type EvidenceRow } from "./run-evidence.js";
 import type { WorkflowJournalLine } from "../runtime/workflow-runtime.js";
 import { errorMessage } from "../../_shared/host/error-text.js";
 import { clamp, clipLines, fitLine, viewerRows as sharedViewerRows } from "../../_shared/operator/viewer-geometry.js";
@@ -46,26 +40,6 @@ interface RunRow {
   journalDiagnostics: number;
 }
 
-interface RunEvidenceModel {
-  runId: string;
-  status: WorkflowRunStatus;
-  stages: StageRow[];
-  runProblem?: string;
-  artifactProblem?: string;
-  journalProblem?: string;
-}
-
-interface StageRow {
-  key: string;
-  label: string;
-  evidence: EvidenceRow[];
-}
-
-type EvidenceRow =
-  | { kind: "artifact"; record: WorkflowArtifactRecord }
-  | { kind: "log"; stage: string; lines: WorkflowJournalLine[] }
-  | { kind: "problem"; message: string };
-
 type ViewerScreen =
   | { kind: "runs" }
   | { kind: "stages"; run: RunEvidenceModel }
@@ -83,6 +57,7 @@ type ContentState =
  */
 export class WorkflowRunViewer implements CustomUiComponent {
   #screen: ViewerScreen = { kind: "runs" };
+  #failureView: WorkflowResultViewer | undefined;
   #runIndex = 0;
   #stageIndex = 0;
   #evidenceIndex = 0;
@@ -99,6 +74,8 @@ export class WorkflowRunViewer implements CustomUiComponent {
     private readonly projectRoot: string,
     done: () => void,
     initialRunId?: string,
+    private readonly notices?: { reason(runId: string): string | undefined; acknowledge(runId: string): void },
+    private readonly explain?: (runId: string) => void,
   ) {
     this.#theme = asTheme(theme);
     this.#done = done;
@@ -106,13 +83,46 @@ export class WorkflowRunViewer implements CustomUiComponent {
     if (initialRunId !== undefined) {
       const index = this.#runs.findIndex((run) => run.runId === initialRunId);
       if (index >= 0) this.#runIndex = index;
-      this.#screen = { kind: "stages", run: loadRunEvidence(projectRoot, initialRunId) };
+      this.#openRun(initialRunId);
     }
+  }
+
+  #openRun(runId: string): void {
+    const run = loadRunEvidence(this.projectRoot, runId);
+    this.#screen = { kind: "stages", run };
+    const observed = this.notices?.reason(runId);
+    const legacy =
+      run.legacyFailure === undefined ? undefined : `Legacy result (run ID not recorded):\n${run.legacyFailure}`;
+    const fallback =
+      observed === undefined
+        ? legacy
+        : [`Saved result unavailable. Observed in this session:\n${observed}`, legacy].filter(Boolean).join("\n\n");
+    const reason = run.recordedFailure?.text ?? fallback;
+    if (reason === undefined) return;
+    this.#failureView = new WorkflowResultViewer(
+      this.tui,
+      this.#theme,
+      this.keybindings,
+      `${runId} · failed · ${run.recordedFailure?.title ?? (observed !== undefined ? "session observation" : "legacy result")}`,
+      stripVTControlCharacters(reason),
+      () => {
+        this.#failureView = undefined;
+        if (run.recordedFailure !== undefined) this.notices?.acknowledge(runId);
+        this.tui.requestRender();
+      },
+      [
+        "↑/↓ scroll",
+        ...(this.explain ? ["E explain in chat"] : []),
+        ...(observed !== undefined && run.recordedFailure === undefined ? ["D dismiss notice"] : []),
+      ].join(" · "),
+      "Esc stages",
+    );
   }
 
   render(width: number): string[] {
     const safeWidth = normalizeWidth(width);
     this.#lastWidth = safeWidth;
+    if (this.#failureView) return this.#failureView.render(safeWidth);
     switch (this.#screen.kind) {
       case "runs":
         return this.#renderRuns(safeWidth);
@@ -126,6 +136,22 @@ export class WorkflowRunViewer implements CustomUiComponent {
   }
 
   handleInput(data: string): void {
+    if (this.#failureView) {
+      if ((matchesKey(data, "e") || matchesKey(data, "shift+e")) && this.explain && this.#screen.kind === "stages") {
+        if (this.#screen.run.recordedFailure !== undefined) this.notices?.acknowledge(this.#screen.run.runId);
+        this.explain(this.#screen.run.runId);
+      } else if (
+        (matchesKey(data, "d") || matchesKey(data, "shift+d")) &&
+        this.#screen.kind === "stages" &&
+        this.#screen.run.recordedFailure === undefined &&
+        this.notices?.reason(this.#screen.run.runId) !== undefined
+      ) {
+        this.notices?.acknowledge(this.#screen.run.runId);
+        this.#failureView = undefined;
+        this.tui.requestRender();
+      } else this.#failureView.handleInput(data);
+      return;
+    }
     if (this.#screen.kind === "runs") this.#handleRuns(data);
     else if (this.#screen.kind === "stages") this.#handleStages(data);
     else if (this.#screen.kind === "evidence") this.#handleEvidence(data);
@@ -139,7 +165,7 @@ export class WorkflowRunViewer implements CustomUiComponent {
   }
 
   get screenKind(): ViewerScreen["kind"] {
-    return this.#screen.kind;
+    return this.#failureView ? "content" : this.#screen.kind;
   }
 
   #handleRuns(data: string): void {
@@ -154,7 +180,7 @@ export class WorkflowRunViewer implements CustomUiComponent {
       const selected = this.#runs[this.#runIndex];
       if (selected === undefined) return;
       this.#stageIndex = 0;
-      this.#screen = { kind: "stages", run: loadRunEvidence(this.projectRoot, selected.runId) };
+      this.#openRun(selected.runId);
     } else return;
     this.tui.requestRender();
   }
@@ -262,8 +288,9 @@ export class WorkflowRunViewer implements CustomUiComponent {
       fitLine(`[VIEW] ${screen.run.runId} · ${screen.run.status} · stages`, width),
     );
     if (height === 1) return [header];
-    const footer = listFooter("Enter evidence", height);
-    const bodyHeight = Math.max(0, height - 1 - footer.length);
+    const footer = listFooter("Enter evidence", screen.run.runProblem ? height - 1 : height);
+    const warning = screen.run.runProblem ? [fitLine(screen.run.runProblem, width)] : [];
+    const bodyHeight = Math.max(0, height - 1 - footer.length - warning.length);
     const body =
       screen.run.stages.length === 0
         ? [screen.run.runProblem ?? screen.run.artifactProblem ?? "No persisted stages or evidence."]
@@ -275,7 +302,12 @@ export class WorkflowRunViewer implements CustomUiComponent {
             this.#theme,
             (stage) => `${stage.label} · ${stage.evidence.length} evidence item(s)`,
           );
-    return [header, ...clipLines(body, bodyHeight, width), ...footer.map((line) => fitLine(line, width))];
+    return [
+      header,
+      ...warning.slice(0, height - 1),
+      ...clipLines(body, bodyHeight, width),
+      ...footer.map((line) => fitLine(line, width)),
+    ];
   }
 
   #renderEvidence(screen: Extract<ViewerScreen, { kind: "evidence" }>, width: number): string[] {
@@ -352,6 +384,8 @@ export class WorkflowResultViewer implements CustomUiComponent {
     private readonly title: string,
     text: string,
     done: () => void,
+    private readonly controls = "↑/↓ scroll",
+    private readonly cancelHint = "Esc back",
   ) {
     this.#theme = asTheme(theme);
     this.#done = done;
@@ -363,7 +397,7 @@ export class WorkflowResultViewer implements CustomUiComponent {
     const height = viewerRows(this.tui);
     const header = style(this.#theme, "accent", fitLine(`[VIEW] ${this.title}`, safeWidth));
     if (height === 1) return [header];
-    const footer = listFooter("↑/↓ scroll", height);
+    const footer = listFooter(this.controls, height, this.cancelHint);
     const bodyHeight = Math.max(0, height - 1 - footer.length);
     const lines = this.#lines.flatMap((line) => wrapTextWithAnsi(line, safeWidth));
     const maxScroll = Math.max(0, lines.length - bodyHeight);
@@ -418,102 +452,6 @@ function runRow(projectRoot: string, runId: string, runDir: string): RunRow {
     agents: `${summary.agentsEnded}/${summary.agentsStarted}`,
     journalDiagnostics: journal.diagnostics.length,
   };
-}
-
-function loadRunEvidence(projectRoot: string, runId: string): RunEvidenceModel {
-  let runDir: string;
-  try {
-    runDir = resolveWorkflowRunDir(projectRoot, runId);
-  } catch (error) {
-    return {
-      runId,
-      status: "unknown",
-      artifactProblem: `${errorMessage(error)}.`,
-      stages: [
-        {
-          key: "run",
-          label: "run",
-          evidence: [{ kind: "problem", message: "Run id refused before filesystem access." }],
-        },
-      ],
-    };
-  }
-  const { lines: journal, diagnostics: journalDiagnostics } = readWorkflowRunJournalState(projectRoot, runId, runDir);
-  const summary = readWorkflowRunSummary(projectRoot, runId, runDir);
-  const persistedInvalidity = workflowPersistedResultInvalidity(readWorkflowRunResult(projectRoot, runId, runDir));
-  const artifactState = readWorkflowArtifactIndex(projectRoot, runId, runDir);
-  const records = artifactState.status === "ready" ? artifactState.index.artifacts : [];
-  const stageKeys: string[] = [];
-  const addStage = (value: string | undefined): void => {
-    const key = stageKey(value);
-    if (!stageKeys.includes(key)) stageKeys.push(key);
-  };
-  for (const line of journal) addStage(line.phase);
-  for (const record of records) addStage(record.stage);
-  if (stageKeys.length === 0) stageKeys.push("run");
-
-  const artifactProblem = artifactState.status === "ready" ? undefined : artifactState.message;
-  const journalProblem = formatJournalProblem(journalDiagnostics);
-  const stages = stageKeys.map((key, stageIndex): StageRow => {
-    const artifacts = records
-      .filter((record) => stageKey(record.stage) === key)
-      .sort(compareArtifactRecords)
-      .map((record): EvidenceRow => ({ kind: "artifact", record }));
-    const logs = journal.filter((line) => stageKey(line.phase) === key);
-    const evidence: EvidenceRow[] = [...artifacts];
-    if (logs.length > 0) evidence.push({ kind: "log", stage: key, lines: logs });
-    if (persistedInvalidity !== undefined && stageIndex === 0) {
-      evidence.push({ kind: "problem", message: `Malformed persisted metadata (${persistedInvalidity}).` });
-    }
-    if (artifactProblem !== undefined && stageIndex === 0) evidence.push({ kind: "problem", message: artifactProblem });
-    return { key, label: key, evidence };
-  });
-  if (journalProblem !== undefined) {
-    stages.unshift({
-      key: "__journal-corruption__",
-      label: `journal corruption (${journalDiagnostics.length})`,
-      evidence: [{ kind: "problem", message: journalProblem }],
-    });
-  }
-  return {
-    runId,
-    status: summary.status,
-    stages,
-    ...(persistedInvalidity === undefined
-      ? {}
-      : { runProblem: `Malformed persisted metadata (${persistedInvalidity}).` }),
-    ...(artifactProblem !== undefined ? { artifactProblem } : {}),
-    ...(journalProblem !== undefined ? { journalProblem } : {}),
-  };
-}
-
-function compareArtifactRecords(left: WorkflowArtifactRecord, right: WorkflowArtifactRecord): number {
-  const leftCall = left.callId ?? "~";
-  const rightCall = right.callId ?? "~";
-  return (
-    leftCall.localeCompare(rightCall) ||
-    artifactKindOrder(left.kind) - artifactKindOrder(right.kind) ||
-    left.artifactId.localeCompare(right.artifactId)
-  );
-}
-
-function artifactKindOrder(kind: WorkflowArtifactRecord["kind"]): number {
-  switch (kind) {
-    case "answer":
-      return 0;
-    case "transcript":
-      return 1;
-    case "result":
-      return 2;
-    case "published":
-      return 3;
-    case "primary":
-      return 4;
-    case "input":
-      return 5;
-    case "operator-ask":
-      return 6;
-  }
 }
 
 function loadEvidenceContent(projectRoot: string, runId: string, evidence: EvidenceRow): ContentState {
@@ -591,20 +529,6 @@ function sameArtifactRef(left: WorkflowArtifactRecord["source"], right: Workflow
   );
 }
 
-function formatJournalProblem(diagnostics: readonly WorkflowJournalDiagnostic[]): string | undefined {
-  if (diagnostics.length === 0) return undefined;
-  const shown = diagnostics.slice(0, 8).map((diagnostic) => {
-    const location = diagnostic.lineNumber === null ? "journal" : `line ${diagnostic.lineNumber}`;
-    return `${location}: ${diagnostic.message}`;
-  });
-  const omitted = diagnostics.length - shown.length;
-  return [
-    `Journal corruption detected: ${diagnostics.length} malformed or unreadable row(s).`,
-    ...shown,
-    ...(omitted > 0 ? [`${omitted} additional diagnostic(s) omitted from this bounded view.`] : []),
-  ].join("\n");
-}
-
 function formatJsonEvidence(text: string, ndjson: boolean): string {
   if (!ndjson) return JSON.stringify(JSON.parse(text) as unknown, null, 2);
   const rows = text.split(/\r?\n/u).filter((row) => row.trim() !== "");
@@ -637,10 +561,6 @@ function evidenceLabel(evidence: EvidenceRow): string {
   return `${record.kind} · ${call} · ${record.name} · ${record.provenance} · ${record.size} B`;
 }
 
-function stageKey(value: string | undefined): string {
-  return value === undefined || value.trim() === "" ? "run" : value;
-}
-
 function selectableWindow<T>(
   values: readonly T[],
   selected: number,
@@ -657,9 +577,11 @@ function selectableWindow<T>(
   });
 }
 
-function listFooter(action: string, height: number): string[] {
+function listFooter(action: string, height: number, cancelHint = "Esc back"): string[] {
   if (height <= 1) return [];
-  const lines = [`${action} · Esc back`, "↑/↓ select · persisted files only"];
+  const lines = action.includes("scroll")
+    ? [`${action} · ${cancelHint}`]
+    : [`${action} · ${cancelHint}`, "↑/↓ select · persisted files only"];
   return lines.slice(0, Math.min(VIEWER_FOOTER_ROWS, height - 1));
 }
 

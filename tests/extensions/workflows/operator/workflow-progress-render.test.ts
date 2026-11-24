@@ -224,7 +224,7 @@ describe("workflow progress rendering and viewport", () => {
     const text = rendered.join("\n");
 
     expect(rendered.length).toBeLessThanOrEqual(Math.max(6, Math.min(30 - 6, 24)));
-    expect(text).toContain("◆ live-smoke │ tok 15 │ 1/2 smoke · ● RUNNING");
+    expect(text).toContain("◆ ● RUNNING · live-smoke │ tok 15 │ 1/2 smoke");
     expect(text).not.toContain(" active");
     // The roster shows the whole run: settled agents keep their outcome marker and
     // duration, and a declared stage the run has not reached yet stays visible as
@@ -714,7 +714,7 @@ describe("workflow progress rendering and viewport", () => {
     stage(1, true);
     stage(2, true);
     stage(3, false);
-    expect(component.render(120).join("\n")).toContain("◆ WORKFLOW · stages │ tok — │ stage — · ● RUNNING");
+    expect(component.render(120).join("\n")).toContain("◆ WORKFLOW · ● RUNNING · stages │ tok — │ stage —");
     expect(component.render(120).join("\n")).toContain("replayed 2");
 
     agentLiveStore.reset();
@@ -733,7 +733,7 @@ describe("workflow progress rendering and viewport", () => {
       }),
     );
     const freshText = fresh.render(120).join("\n");
-    expect(freshText).toContain("◆ WORKFLOW · stages │ tok — │ stage — · ● RUNNING");
+    expect(freshText).toContain("◆ WORKFLOW · ● RUNNING · stages │ tok — │ stage —");
     expect(freshText).not.toContain("replayed=");
   });
 
@@ -757,7 +757,7 @@ describe("workflow progress rendering and viewport", () => {
     const packageRef = new WorkflowProgressComponent(tui, {}, "airflow-dag-builder/plan", "pkg-r1", {
       scope: "workflow",
     });
-    expect(packageRef.render(170)[0] ?? "").toContain("◆ WORKFLOW · airflow-dag-builder/plan");
+    expect(packageRef.render(170)[0] ?? "").toContain("◆ WORKFLOW · ● RUNNING · airflow-dag-builder/plan");
     component.dispose();
     packageRef.dispose();
   });
@@ -807,7 +807,7 @@ describe("workflow progress rendering and viewport", () => {
       component.finish({ ok: true, result: { summary: "child status reviewer cancelled" } });
 
       const text = component.render(120).join("\n");
-      expect(text).toContain("◆ WORKFLOW · cancel-smoke │ tok — │ stage — · ✓ OK");
+      expect(text).toContain("◆ WORKFLOW · ✓ OK · cancel-smoke │ tok — │ stage —");
       expect(text).toContain("⊘");
       expect(text).toContain("sleep 60");
       expect(text).toContain("✓ child status reviewer cancelled");
@@ -1101,7 +1101,7 @@ describe("workflow progress rendering and viewport", () => {
     pushProgress(component, line({ kind: "phase", phase: "dynamic-check", ts: 3, runId: "stage-r1" }));
 
     const rail = component.render(160)[0];
-    expect(rail).toContain("stage 5/5 · dynamic-check · ● RUNNING");
+    expect(rail).toContain("stage 5/5 · dynamic-check");
     expect(rail).not.toMatch(/completed|failed|✓|✗/u);
     expect(component.render(50)[0]).toContain("dynamic-check");
     component.dispose();
@@ -1132,7 +1132,7 @@ describe("workflow progress rendering and viewport", () => {
     pushProgress(component, line({ kind: "phase", phase: " verify ", ts: 4, runId: "normalized-r1" }));
     pushProgress(component, line({ kind: "phase", phase: "", ts: 5, runId: "normalized-r1" }));
 
-    expect(component.render(160)[0]).toContain("stage 2/2 · verify · ● RUNNING");
+    expect(component.render(160)[0]).toContain("stage 2/2 · verify");
     component.dispose();
   });
 

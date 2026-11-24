@@ -82,6 +82,7 @@ export interface WorkflowProgressOptions {
   onPublished?: (presentation: CommandWidgetPresentation) => void;
   /** Modern TUI owns passive activity in the footer; keep only actionable notices here. */
   compactActivity?: boolean;
+  separateFailureNotice?: boolean;
   scope?: "fleet" | "workflow";
   /** Statically declared stages (`meta.phases`): titles plus their planned detail. */
   declaredStages?: readonly WorkflowDeclaredStage[];
@@ -240,6 +241,10 @@ export class WorkflowProgressComponent implements CustomUiComponent {
 
   /** Pull-based projection. Never serves a cached frame — the cache is only a comparison baseline. */
   #project(width: number): string[] {
+    if (this.done?.status === "failed" && this.options.separateFailureNotice) {
+      setViewerExternalRows(WORKFLOW_VIEWER_RESERVATION_OWNER, 0);
+      return [];
+    }
     if (this.options.compactActivity) {
       const actionable = this.done !== undefined && this.done.status !== "completed";
       const lines = actionable
@@ -311,9 +316,6 @@ export class WorkflowProgressComponent implements CustomUiComponent {
       )
       .slice(-2)
       .map((line) => truncate(formatProgressTailLine(line), width));
-    // One workflow rail owns workflow identity, stage, counters, tokens, and
-    // commands. Agent rows begin immediately beneath it; no detached hint/stage
-    // rows can be mistaken for another footer.
     const fixedCount = 1 + doneLines.length + passiveDiagnostics.length;
     const rowLines = this.renderRoster(liveRows, width, Math.max(1, budget - fixedCount));
     const body = [header, ...rowLines, ...doneLines];
@@ -417,9 +419,9 @@ export class WorkflowProgressComponent implements CustomUiComponent {
     // absolute path otherwise spends the whole line on a directory prefix, every
     // projection overflows, and the right-hand commands vanish instead of degrading.
     const ref = workflowRailRef(this.scriptRef);
-    const full = `◆ WORKFLOW · ${ref}${continuationText} │ ${tokenText} │ ${stage} · ${state} │ ${progressText}`;
-    const medium = `◆ WF ${ref}${continuationText} │ ${tokenText} │ ${stageIndex}/${frontier.length || "—"} ${current?.title ?? "waiting"} · ${state} │ ${progressText}`;
-    const compact = `◆ ${ref}${continuationText} │ ${tokenText} │ ${stageIndex}/${frontier.length || "—"} ${current?.title ?? "waiting"} · ${state}`;
+    const full = `◆ WORKFLOW · ${state} · ${ref}${continuationText} │ ${tokenText} │ ${stage} │ ${progressText}`;
+    const medium = `◆ WF ${state} · ${ref}${continuationText} │ ${tokenText} │ ${stageIndex}/${frontier.length || "—"} ${current?.title ?? "waiting"} │ ${progressText}`;
+    const compact = `◆ ${state} · ${ref}${continuationText} │ ${tokenText} │ ${stageIndex}/${frontier.length || "—"} ${current?.title ?? "waiting"}`;
     const projections: ReadonlyArray<readonly [string, string]> = [
       [full, fullCommands],
       [full, mediumCommands],
@@ -585,8 +587,6 @@ export class WorkflowProgressComponent implements CustomUiComponent {
     if (this.done.resultPersistence?.ok === false) {
       lines.push(this.#fg("warning", truncate(`persistence: ${this.done.resultPersistence.code}`, width)));
     }
-    // A failed run says WHERE it broke and WHAT to hand a repairing agent; the
-    // `copy:` line is one selectable line, never wrapped or abbreviated.
     if (this.done.failureDiagnostic !== undefined) {
       for (const line of formatWorkflowFailureDiagnosticLines(this.done.failureDiagnostic)) {
         lines.push(this.#fg("dim", truncate(line, width)));
