@@ -232,12 +232,14 @@ export function parseRunCommand(text: string): ParsedRunCommand | null {
       ...(force ? { force: true as const } : {}),
       ...(noOperator === undefined ? {} : { noOperator }),
     };
+    const json = rest.slice("--input-json".length).trimStart();
     try {
-      return { ...fields, inputValue: JSON.parse(rest.slice("--input-json".length).trimStart()) as WorkflowInputValue };
+      return { ...fields, inputValue: JSON.parse(json) as WorkflowInputValue };
     } catch {
+      const hint = json.startsWith("'") ? ". Pass raw JSON directly in Pi; remove the outer single quotes." : "";
       return {
         ...fields,
-        inputJSONError: "--input-json requires one complete JSON value as the entire remaining tail",
+        inputJSONError: `--input-json requires one complete JSON value as the entire remaining tail${hint}`,
       };
     }
   }
