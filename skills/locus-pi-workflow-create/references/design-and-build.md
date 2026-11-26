@@ -82,12 +82,34 @@ only when they differ from authorized defaults. No default-value checklist is ne
 For budgets, launch defaults apply; every other undeclared workflow budget axis is unbounded.
 An author-selected budget axis needs a consumer and a one-line reason, not a copied sample number.
 
-Use the already selected pattern, without a mandatory planner or arbiter.
-Known work can use one implement → review → bounded correction → fresh review loop,
-including substantive implementation. Split stages only for real dependencies,
-separate ownership or evidence that changes remaining work; keep integration QA when required.
-Count orchestration machinery, not agents. A coherent additional subtask is not a defect.
-Pattern-specific decisions below apply only when that mechanism is used.
+Use the selected pattern. Split stages for real dependencies, separate ownership or
+evidence that changes remaining work. Keep integration QA when required.
+
+## Plan the product work
+
+The workflow design defines the stages, owners and handoffs. The product plan
+chooses how to meet the Task in the actual checkout. Establish the plan before
+the first product write. Reuse a supplied plan after checking that it still fits.
+
+- **Settled approach.** Let the implementer inspect the relevant state and state
+  the approach, work order and checks before editing. Keep that short plan with
+  the implementation handoff. Review every correction on the changed result.
+- **Open decisions.** Add planning before implementation when decisions about
+  interfaces, data formats, dependencies or verification affect later work.
+  Assign an exact plan path, such as `plan.md`, with the planner as writer and
+  the implementer and reviewer as readers. Give the planner read access to the
+  Task and actual state, and write access to the plan. The planner records the
+  chosen approach, ordered deliverables, constraints, open prerequisites and
+  checks that can distinguish success from failure. For example, a new grid
+  format needs an explicit rule for a leading wall character and a round-trip
+  check that exercises it.
+- **Handoff.** Pass the complete Task and assigned plan to implementation and
+  review. Have the implementer reopen the plan and verify its prerequisites
+  before product writes. A missing plan or unavailable prerequisite stops that
+  step with explicit non-success. Review the product against the original Task and use the plan to track
+  decisions and intended checks. Replan when new evidence changes the remaining
+  work. The [planning approach](agentic-approaches.md#plan-and-executereplan)
+  describes that branch.
 
 ## Choose style, detail, size and executors separately
 
@@ -151,14 +173,14 @@ information; do not turn workflow bookkeeping into product requirements.
 Assign exact paths and writers/readers to shared handoffs and Task-required outputs.
 Delegate product internals within the product root, respecting narrower Task bounds such as
 an `index.html`-only product and preserving unrelated work. A product-read-only
-reviewer may write its assigned report, not product files. The reviewer inspects the full
-current diff with its own tools, including uncommitted work and every in-scope path;
+reviewer may write its assigned report and scratch files. It inspects the full diff with its own
+tools, including uncommitted work and every in-scope path, and leaves the original unchanged;
 the producer need not rebuild the change as an evidence bundle. Commit only when authorized.
 
 A choice belongs only at a real routing edge; narrative travels whole without an invented
 length cap. No brief requests a character, word, line or item count without a consumer
-requirement. The [120-column readability rule](#text-readability)
-wraps new author-owned prose; it never caps an answer or changes protected payload bytes.
+requirement. The [readability pass](#text-readability) wraps new author-owned prose after the first
+source checks. It keeps protected payload bytes intact.
 Create SVG only on explicit request. The [optional diagram appendix](../../../docs/workflows/authoring.md#workflow-diagram-contract)
 owns its artifact and visual checks; ordinary Build does not require a diagram.
 
@@ -191,11 +213,13 @@ Product root: /work/widget (preserve unrelated files and narrower Task restricti
 Orchestration/evidence folder: /work/widget/.tasks/widget-fix/orchestration
 implementation.md: /work/widget/.tasks/widget-fix/orchestration/implementation.md (developer writes; reviewer reads)
 findings.md: /work/widget/.tasks/widget-fix/orchestration/findings.md (reviewer writes; developer reads on correction)
+Scratch: /work/widget/.tasks/widget-fix/orchestration/checks/ (reviewer creates and cleans its own copies)
 ```
 
 The developer may choose internal product files. It writes its full result and actual check evidence to
 `implementation.md`, then returns a short status and exact path. The reviewer reopens that file and
-actual changes, writes only `findings.md`, then returns its declared `choice`. No source-side file parsing,
+actual changes, uses assigned scratch for checks that write, writes `findings.md`, then returns its declared `choice`.
+No source-side file parsing,
 second JSON protocol, cumulative review transcript or duplicate solution is needed. Missing/ambiguous
 assignments fail closed. Readers never reconstruct a missing artifact from the returned status.
 
@@ -210,10 +234,11 @@ consumers reopen the same files after dependencies finish. See [runtime inputs](
 
 ## Text readability
 
-Write new author-owned design, Task, ContextRules and workflow text blocks with physical
-lines of at most 120 Unicode code points, including indentation. Wrap prose at word boundaries;
-preserve paragraphs, lists, code fences and meaningful Markdown hard breaks. ContextRules is
-ordinary prompt prose, not a new runtime field. This is formatting, not a cap on answer length.
+Check the first complete source before formatting its prose. On final read-back, aim for physical
+lines of at most 120 Unicode code points, including indentation, in new author-owned text. Wrap at
+word boundaries and preserve Markdown structure. Use short design rows or a list when a table
+would force repeated wrapping. ContextRules is ordinary prompt prose. Line width is a readability
+target and never a source-admission check. Rerun both source checks after source edits.
 
 Do not reflow the original Task, opaque inputs/results, frozen evaluation inputs or reviewed
 prompt bytes. A newly authored Task may be wrapped before approval and freezing; later changes
@@ -375,7 +400,8 @@ Missing or invalid source, failed review and exhaustion forbid execution. Native
 prose does not attest file delivery. This handoff requires no stored source digest; runtime-owned
 snapshot integrity and launch-confirmation identity remain separate contracts.
 
-A successful Build returns `/workflows run <name>` (or the qualified child ref).
+A successful Build returns `/workflows run <name> -- <execution input>` (use the qualified child ref when needed).
+For a different declared input form, return its corresponding invocation.
 Create-only stops there. Create-and-run continues through
 [locus-pi-workflow-run](../../locus-pi-workflow-run/SKILL.md) with existing scoped
 authorization and evaluates the actual terminal artifact. Keep specification

@@ -276,8 +276,10 @@ ${authoring[0] ?? ""}
     }
     const design = source("skills/locus-pi-workflow-create/references/design-and-build.md");
     expect(design).toContain("an `index.html`-only product");
-    expect(design).toContain("reviewer may write its assigned report, not product files");
-    expect(design).toContain("without a mandatory planner");
+    expect(design).toContain("reviewer may write its assigned report and scratch files");
+    expect(design).toContain("leaves the original unchanged");
+    expect(design).toContain("Establish the plan before\nthe first product write");
+    expect(design).toContain("the implementer and reviewer as readers");
     expect(design).toContain("bookkeeping into product requirements");
     expect(design).toContain("not repeated task");
     expect(design).toContain("or cumulative handoff history");

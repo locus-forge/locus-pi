@@ -42,6 +42,32 @@ function checkSource(text: string): void {
 }
 
 describe("authoring readability without changing prompt or input values", () => {
+  it.each(["locus-pi-workflow-create", "locus-pi-workflow-create-detailed"])(
+    "shows the file handoffs and the reading order before the example in %s",
+    (lesson) => {
+      const text = source(`skills/${lesson}/SKILL.md`);
+      const files = text.indexOf("## Files and ownership");
+      const map = text.indexOf("## Reading map");
+      const example = text.indexOf("## Example");
+      expect(files).toBeGreaterThan(0);
+      expect(map).toBeGreaterThan(files);
+      expect(example).toBeGreaterThan(map);
+      const inventory = text.slice(files, map);
+      for (const file of ["<name>.design.md", "<name>.workflow.mjs", "plan.md", "implementation.md", "findings.md"])
+        expect(inventory).toContain(file);
+      const reading = text.slice(map, example);
+      for (const file of [
+        "design-and-build.md",
+        "dsl.md",
+        "source-boundary.md",
+        "agentic-approaches.md",
+        "repair-and-continue.md",
+      ])
+        expect(reading).toContain(file);
+      expect(text).toContain("/workflows run <name> -- <execution input>");
+    },
+  );
+
   it("ships six responsibility-owned files with complete execution sections and checked result examples", () => {
     const base = "skills/locus-pi-workflow-create/references";
     const approachPath = `${base}/agentic-approaches.md`;
@@ -184,7 +210,8 @@ describe("authoring readability without changing prompt or input values", () => 
     const styles = source("skills/locus-pi-workflow-create/references/design-and-build.md").replace(/\s+/gu, " ");
     for (const requirement of [
       "120 Unicode code points, including indentation",
-      "not a cap on answer length",
+      "Check the first complete source before formatting its prose",
+      "never a source-admission check",
       "Do not reflow the original Task, opaque inputs/results, frozen evaluation inputs or reviewed prompt bytes",
       "Never truncate content or normalize input at runtime",
       "keep the bytes and record that specific exception",
@@ -279,7 +306,7 @@ describe("authoring readability without changing prompt or input values", () => 
     }
   });
 
-  it("preserves complete implementation/review prompt bytes and a long unchanged Task through correction", async () => {
+  it("passes the complete execution input and role handoffs through correction", async () => {
     checkSource(source(starterPath));
     const task =
       '  Original Task: preserve π 日本 😀, "quotes", \\paths, `backticks` and ${input}.\r\n' +
@@ -287,11 +314,6 @@ describe("authoring readability without changing prompt or input values", () => 
       "\r\n\tPreserve leading and trailing whitespace.  \r\n  ";
     expect(task.split("\r\n").some((line) => [...line].length > 120)).toBe(true);
     const work = ["  Complete first report.\r\n", "  Complete corrected report.\r\n"];
-    const context = [
-      "Use injected pwd/project root for execution context; verify the requested checkout and branch.",
-      "The input supplies the original Task, sources, product root and exact orchestration file paths.",
-      "Read those sources; missing or conflicting context/paths means blocked. Do not guess destinations.",
-    ].join("\n");
     const got = await runStarter(
       "evaluator-optimizer",
       { implement: work, review: ["revise", "accept"] },
@@ -317,34 +339,25 @@ describe("authoring readability without changing prompt or input values", () => 
           "Exact file destinations:",
           ...names.map((name) => `${name}: ${path.join(folder, name)}`),
         ].join("\n");
-        // These expected values pin the original prompt bytes, independently of the source literal layout.
-        const duty =
-          request.label === "implement"
-            ? [
-                "Implement the Task in its assigned product root; choose internal files within its bounds.",
-                "Preserve unrelated work; do not commit. On correction, read the assigned findings.md and implementation.md.",
-                "Write the complete result, changed paths, actual checks and remaining work to assigned implementation.md;",
-                `read it back. Return only a short status and its exact path. This is pass ${occurrence + 1}.`,
-              ]
-            : [
-                "Read assigned implementation.md, then inspect the complete actual diff and required evidence.",
-                "Verify each Task requirement; equal outputs do not prove reuse or state transitions.",
-                "Do not edit product source. Write only assigned findings.md: verified/unmet/unverified requirements, defects,",
-                "checks, prior finding dispositions and next action, keep optional checks separate. Read it back.",
-                "Accept only verified requirements; revise correctable defects;",
-                "block on missing required prerequisites or handoff files. Worker status:",
-                work[occurrence]!,
-              ];
-        const authored = [context, "Original Task and working context:", wholeInput, ...duty].join("\n");
-        const expected =
-          request.label === "review"
-            ? `${authored}\n\n${workflowReturnInstructions(
-                normalizeWorkflowReturnContract({ choices: ["accept", "revise", "blocked"] }),
-              )}`
-            : authored;
-        expect(Buffer.from(request.prompt)).toEqual(Buffer.from(expected));
-        const taskOffset = `${context}\nOriginal Task and working context:\n`.length;
-        expect(Buffer.from(request.prompt.slice(taskOffset, taskOffset + task.length))).toEqual(Buffer.from(task));
+        const prefix = "Task and assigned paths:\n";
+        expect(request.prompt.startsWith(prefix)).toBe(true);
+        expect(request.prompt.slice(prefix.length, prefix.length + wholeInput.length)).toBe(wholeInput);
+        const duty = request.prompt.slice(prefix.length + wholeInput.length);
+        expect(duty).toContain("Verify checkout, branch, product root and assigned paths. Read assigned Task sources.");
+        if (request.label === "implement") {
+          expect(duty).toContain(`Round ${occurrence + 1}`);
+          expect(duty).toContain("On correction, first read assigned findings.md and implementation.md.");
+          expect(duty).toContain("State the approach, work order and checks before edits.");
+          expect(duty).toContain("Replace assigned implementation.md");
+        } else {
+          expect(duty).toContain("Read assigned implementation.md");
+          expect(duty).toContain("Write and reread assigned findings.md");
+          expect(duty).toContain(`Worker status:\n${work[occurrence]}`);
+          const returnInstructions = workflowReturnInstructions(
+            normalizeWorkflowReturnContract({ choices: ["accept", "revise", "blocked"] }),
+          );
+          expect(duty.endsWith(returnInstructions)).toBe(true);
+        }
       },
       [],
       task,

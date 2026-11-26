@@ -129,9 +129,10 @@ opportunities illustrate a finite allowance. Exhaustion preserves the plan,
 next step and latest result as incomplete; a concrete unavailable required
 prerequisite is blocked. Add any required independent review as a planned step.
 
-Omit the planner when the sequence is already known. Combine planning with an
-existing decision owner when it already inspects results and owns remaining
-work. For reviewed implementation slices and richer final verification use the
+For a settled sequence, the implementer can state a short plan before changes.
+When later roles depend on decisions that remain open, use the
+[product plan handoff](design-and-build.md#plan-the-product-work). An existing
+decision owner can replan if it already inspects results and owns remaining work. For reviewed implementation slices and richer final verification use the
 [full adaptive card](#adaptive-slices). Discovered units in an agent-written
 file can guide later agents sequentially. They cannot become a source-parsed
 parallel worker list; caller-owned units use `items()` instead.

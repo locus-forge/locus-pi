@@ -24,8 +24,8 @@ not compulsory templates or runnable names in the Package catalog.
 
 The primary loop uses the [shared working context](../../../../../skills/locus-pi-workflow-create/references/design-and-build.md#folder-level-context):
 original Task, verified checkout/branch, delegated product root, and an explicit orchestration/evidence folder.
-Only the developer changes product files. It writes `implementation.md`; the reviewer reads it and writes
-only `findings.md`, then returns the actual DSL choice. Corrections reopen the files; source passes short
+The developer writes product files and `implementation.md`. The reviewer reads it, uses assigned scratch
+for checks that write, saves `findings.md` and returns the DSL choice. Corrections reopen the files; source passes short
 statuses, never full review transcripts. Each correction requires fresh review, including the final allowed one.
 
 Project tour is secondary. It uses author-known README/package sources, separate assigned `purpose.md`
