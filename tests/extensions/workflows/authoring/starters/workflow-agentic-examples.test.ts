@@ -245,6 +245,7 @@ describe("small agentic starters with real runtime and scripted children", () =>
           expect(request.prompt).toContain(task);
           expect(request.prompt).toContain(`Orchestration/evidence folder: ${folder}`);
           if (request.label === "implement") {
+            expect(request.prompt).toContain("Commit required files only with authorization for that repository.");
             if (occurrence > 0) {
               expect(readFileSync(reviewPath, "utf8")).toBe(fullReviews[occurrence - 1]);
               expect(readFileSync(handoffPath, "utf8")).toContain("Revision: 1");
@@ -259,8 +260,9 @@ describe("small agentic starters with real runtime and scripted children", () =>
             expect(readFileSync(handoffPath, "utf8")).toContain(internal);
             answers.implement[occurrence] = `Implemented pass ${occurrence + 1}; result: ${handoffPath}`;
           } else {
-            expect(request.prompt).toContain("Do not edit product source");
-            expect(request.prompt).toContain("Write only assigned findings.md");
+            expect(request.prompt).toContain("Leave the product unchanged");
+            expect(request.prompt).toContain("Use assigned scratch for checks that write");
+            expect(request.prompt).toContain("Write and reread assigned findings.md");
             expect(request.prompt).toContain(answers.implement[occurrence]);
             const result = readFileSync(handoffPath, "utf8");
             expect(request.prompt).not.toContain(result);
@@ -304,8 +306,8 @@ describe("small agentic starters with real runtime and scripted children", () =>
       if (request.label !== "review") return;
       const prompt = request.prompt.replace(/\s+/gu, " ");
       expect(prompt).toContain("Verify each Task requirement");
-      expect(prompt).toContain("equal outputs do not prove reuse or state transitions");
-      expect(prompt).toContain("verified/unmet/unverified requirements");
+      expect(prompt).toContain("Check required state changes or reuse directly");
+      expect(prompt).toContain("Mark requirements verified, unmet or unverified");
     });
   });
 
@@ -316,7 +318,7 @@ describe("small agentic starters with real runtime and scripted children", () =>
       (request, _, folder) => {
         if (request.label === "review") {
           expect(existsSync(path.join(folder, "implementation.md"))).toBe(false);
-          expect(request.prompt).toContain("block on missing required prerequisites or handoff files");
+          expect(request.prompt).toContain("block on missing or conflicting prerequisites or handoffs");
           writeFileSync(path.join(folder, "findings.md"), "Blocked: assigned result file is missing.");
         }
       },

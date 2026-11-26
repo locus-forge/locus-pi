@@ -5,19 +5,54 @@ description: Detailed Pi authoring and repair with exact-source checks. Use for 
 
 # Create a Pi workflow step by step
 
-Do not load ordinary first. [Route selection](../../docs/workflows/create.md#choose-an-authoring-route)
-owns invocation precedence. Detail changes explanation, not graph, child autonomy, routing or authorization.
-Resolve this `SKILL.md` to its physical file before following relative links; the
-[workflow manual](../../docs/workflows/index.md) belongs to that package, never the caller cwd.
+Resolve this `SKILL.md` to its physical file in Locus Pi. Follow links from there.
 
-## Shape the task and its first module
+## Author in order
 
-Inspect the actual task sources. Name deliverables, required evidence and allowed effects; scout unknowns.
-Workflow design is separate, and a proposal alone does not authorize implementation.
-Before source, read [Design → review → Build](../locus-pi-workflow-create/references/design-and-build.md).
-Write/review `.locus-pi/workflows/<name>/<name>.design.md`; build exactly its `Entries`, not an implicit root.
-The first example implements a Task, reviews it and allows one correction followed by fresh review.
-Read [working context](../locus-pi-workflow-create/references/design-and-build.md#folder-level-context) first:
+1. **Read the Task.** Confirm the checkout, product root, outputs and allowed effects.
+2. **Design.** Write and review the `.design.md`. List modules in `Entries`. Record each role, handoff, branch and exit.
+3. **Plan the product.** With a settled approach, the implementer plans before edits. Add a planning step and plan handoff for unresolved interfaces, data or checks.
+4. **Build and check.** Match the design. Give each call a unique literal `label` and useful `title`. Pass the original Task and paths whole. Keep the Task authoritative.
+
+## Files and ownership
+
+The first two paths are defaults relative to the project root.
+
+- `.locus-pi/workflows/<name>/<name>.design.md` — author writes; design reviewer and author read before Build.
+- `.locus-pi/workflows/<name>/<name>.workflow.mjs` — author writes; checker and launcher read. A group-only design has no root module.
+- `plan.md` — a separate planner writes before product edits; implementer and reviewer read.
+- `implementation.md` — implementer writes each round; reviewer and corrector read.
+- `findings.md` — reviewer writes each round; corrector and fresh reviewer read.
+- Review scratch — reviewer uses a fresh copy when checks write.
+
+Put exact paths for each shared handoff and Task-required output in `input`, with the Task, expected checkout, product root and write scope.
+Choose internal files within narrower Task bounds. Verify the Git root before authorized Git writes.
+
+## Reading map
+
+1. [design-and-build.md](../locus-pi-workflow-create/references/design-and-build.md#design-contract) — Design the graph.
+2. [worked-decisions.md](references/worked-decisions.md) — Choose the worked case.
+3. [DSL/API reference](../locus-pi-workflow-create/references/dsl.md#dsl-surface-v0) (`dsl.md`) — Methods used in Build.
+4. [source-boundary.md](../locus-pi-workflow-create/references/source-boundary.md) — Source and handoff limits before Build.
+
+- [design-and-build.md](../locus-pi-workflow-create/references/design-and-build.md#folder-level-context) — Assign execution paths.
+- [design-and-build.md](../locus-pi-workflow-create/references/design-and-build.md#plan-the-product-work) — Later roles need a plan.
+- [design-and-build.md](../locus-pi-workflow-create/references/design-and-build.md#review-decisions-and-completion) — Acceptance evidence.
+- [agentic-approaches.md](../locus-pi-workflow-create/references/agentic-approaches.md#choose-an-approach) — Choose a different graph.
+- [worked-decisions.md](references/worked-decisions.md#brief-detail-with-a-real-dependency) — A tool dependency dictates order.
+- [source-boundary.md](../locus-pi-workflow-create/references/source-boundary.md#structured-results) — Branch on a result.
+- [source-shape.md](../../docs/workflows/source-shape.md#machine-enforced-standard-source-shape) — Explain a rejected source shape.
+- [models.md](../../docs/workflows/models.md) — Verify an authorized route override.
+- [budgets.md](../../docs/workflows/budgets.md#run-budget) — Set a run bound.
+- [repair-and-continue.md](../locus-pi-workflow-create/references/repair-and-continue.md) — Repair a stopped run.
+- [error-diagnostics.md](../../docs/workflows/error-diagnostics.md) — Identify a run failure.
+- [locus-pi-workflow-run/SKILL.md](../locus-pi-workflow-run/SKILL.md) — Run or continue checked source.
+- [create.md](../../docs/workflows/create.md#choose-an-authoring-route) — Select a lesson.
+- [workflow manual](../../docs/workflows/index.md) (`docs/workflows/index.md`) — Browse package docs.
+
+## Example for a settled approach
+
+[More runnable examples](../../extensions/workflows/references/examples/starters/README.md). Comments explain the graph. Prompts assign work.
 
 ```js
 export const meta = {
@@ -27,27 +62,31 @@ export const meta = {
 };
 
 export default async function run({ agent }, input) {
-  const context = `Use injected pwd/project root for execution context; verify the requested checkout and branch.
-The input supplies the original Task, sources, product root and exact orchestration file paths.
-Read those sources; missing or conflicting context/paths means blocked. Do not guess destinations.`;
-  // Teaching bound: initial implementation plus one correction, both independently reviewed.
+  // Keep the caller's Task, constraints and assigned paths whole for each clean child.
+  // One correction is available. Every change gets a fresh review.
   for (let round = 0; round < 2; round += 1) {
+    // The worker owns the plan, product edits and implementation handoff.
     const work = await agent(
-      `${context}\nOriginal Task and working context:\n${input}
-Implement the Task in its assigned product root; choose internal files within its bounds.
-Preserve unrelated work; do not commit. On correction, read the assigned findings.md and implementation.md.
-Write the complete result, changed paths, actual checks and remaining work to assigned implementation.md;
-read it back. Return only a short status and its exact path. This is pass ${round + 1}.`,
+      `Task and assigned paths:\n${input}
+Verify checkout, branch, product root and assigned paths. Read assigned Task sources.
+Stop on missing or conflicting prerequisites.
+Round ${round + 1}. On correction, first read assigned findings.md and implementation.md.
+State the approach, work order and checks before edits. Implement in the assigned product root.
+Preserve unrelated work. Commit required files only with authorization for that repository.
+Replace assigned implementation.md with the plan, changes, checks and remaining work. Reread it.
+Return a short status and its exact path.`,
       { label: "implement", title: "Implement or correct the task" },
     );
+    // The reviewer opens the real files. The workflow routes on its choice.
     const decision = await agent(
-      `${context}\nOriginal Task and working context:\n${input}
-Read assigned implementation.md, then inspect the complete actual diff and required evidence.
-Verify each Task requirement; equal outputs do not prove reuse or state transitions.
-Do not edit product source. Write only assigned findings.md: verified/unmet/unverified requirements, defects,
-checks, prior finding dispositions and next action, keep optional checks separate. Read it back.
-Accept only verified requirements; revise correctable defects;
-block on missing required prerequisites or handoff files. Worker status:\n${work}`,
+      `Task and assigned paths:\n${input}
+Verify checkout, branch, product root and assigned paths. Read assigned Task sources.
+Read assigned implementation.md and inspect the product, including uncommitted changes.
+Verify each Task requirement. Check required state changes or reuse directly.
+Leave the product unchanged. Use assigned scratch for checks that write.
+Write and reread assigned findings.md with checks, coverage, actionable defects and prior dispositions.
+Mark requirements verified, unmet or unverified. Accept only on evidence, revise fixable defects,
+or block on missing or conflicting prerequisites or handoffs. Worker status:\n${work}`,
       { label: "review", title: "Review the change", choice: ["accept", "revise", "blocked"] },
     );
     if (decision === "accept") return { ok: true, status: "accepted", handoff: work };
@@ -59,58 +98,22 @@ block on missing required prerequisites or handoff files. Worker status:\n${work
 }
 ```
 
-The developer writes product files/result; the reviewer writes only its review artifact.
-Both reopen exact files. Source routes `choice`, never report text.
-[Optional starters](../../extensions/workflows/references/examples/starters/README.md); SVG only on explicit request.
-
-## Read handoffs before adding control
-
-`agent()` returns whole text; reviewers/planners can own `choice`. Each child needs the original Task and evidence.
-Keep the Task authoritative; avoid changed paraphrases. Parent context is absent.
-Assign exact shared handoff and Task-required output paths; reuse them for reads. Implementation actors choose internal files in assigned product roots, subject to narrower Task bounds.
-Children use tools; source never parses files, JSON or prose.
-Read [structured results](../locus-pi-workflow-create/references/source-boundary.md#structured-results).
-Before source, read the installed [DSL/API reference](../locus-pi-workflow-create/references/dsl.md#dsl-surface-v0):
-Read selected method signatures/options and availability; runtime support is not source permission.
-
 ## Work through the task's choices
 
-Read the matching [worked case](references/worked-decisions.md) for dependencies, evidence and exits.
-Known work uses implementation → review → correction → fresh recheck. Replan when observed results
-change remaining work; reassess even after the last step. Editorial critique alone is not acceptance.
-Independent per-item inspect → verify uses `pipeline(items(), ...)`; structured caller items are required.
-Cross-source synthesis waits for all reports, with separate writer paths and one merge owner.
-For reuse read DSL `workflow()` versus saved `invokeWorkflow()`; saved grandchildren are refused.
-Read only the relevant semantic and execution sections in
-[the approach guide](../locus-pi-workflow-create/references/agentic-approaches.md#choose-an-approach). Leave methods to children;
-read the [procedural case](references/worked-decisions.md#brief-detail-with-a-real-dependency) only for a real dependency.
+Use `parallel()` for independent writers with separate files and a merge owner. Replan when evidence changes remaining work.
+Children open files. Source forwards whole text and routes on `choice` or schema fields. Preserve model and effort routing.
+Use caller-supplied items for `pipeline()`. Check the DSL before saved child reuse. SVG requires an explicit request.
 
-## Review, Build and report honestly
+## Source checks and delivery
 
-Preserve model/effort routing; omit unauthorized selectors. Verify essential overrides via
-[models](../../docs/workflows/models.md): provider, adapter and authentication. Never substitute a paid API.
-Read
-[source boundary](../locus-pi-workflow-create/references/source-boundary.md) before Build and the
-[source rules](../../docs/workflows/source-shape.md#machine-enforced-standard-source-shape) for diagnostics.
-Match `Entries`, filenames and logical identities; calls need unique literal `label` and useful `title`.
-Re-review material algorithm changes. Check every exact file with `workflow_check_source`,
-`mode: "orchestration-only"`, and `node --check <exact-path>`; without the native tool, use
-`npm run check:workflow-source -- --mode orchestration-only <exact-path>`. Never import unchecked source.
-An unavailable or failed gate means Build failed; never report success after skipping it.
-Review the full diff, including uncommitted work; keep findings and failed/missing/skipped checks.
-Required evidence stays binding; note optional gaps. Corrections require fresh review.
-Do not repeat full review of accepted unchanged work and evidence. Expand checks only for a named requirement/risk.
-Exhaustion keeps latest reviewed work, unmet criteria and next action as `{ ok: false, status }`.
-Errors propagate; [budgets](../../docs/workflows/budgets.md#run-budget)
-own launch defaults. The design justifies task-specific allowances rather than inheriting sample numbers.
-Return checked targets, exact checks and `/workflows run <name>`; create-only states execution did not start.
-Authorized create-and-run uses the [run skill](../locus-pi-workflow-run/SKILL.md) without repeat approval.
-Design-only pauses; `Build design: <path>` and `Build approved design: <path>` remain Build-only requests.
-
-## Repair and continue from evidence
-
-Stopped source reads [Repair + Continue](../locus-pi-workflow-create/references/repair-and-continue.md) first,
-follows exact [error evidence](../../docs/workflows/error-diagnostics.md), and preserves the confirmed prefix.
-Replay reuses answers, not files or current observations; changed prerequisites need fresh checks.
-After validation use the run skill: resume, interrupted recovery and operator continuation have separate
-contracts. Detailed authoring adds no approval event.
+1. Run `node --check <exact-path>` and `workflow_check_source` with a project-relative path and `mode: "orchestration-only"`.
+   If unavailable, run the same non-executing gate from the package checkout.
+   `npm run check:workflow-source -- --mode orchestration-only <exact-path>`
+2. Check before final formatting. Keep failed versions and diagnostics. Fix the cause and rerun both checks.
+   Never import unchecked source. An unavailable or failed gate means Build failed; never report success after skipping it.
+3. Required evidence stays binding. Corrections require fresh review.
+   Do not repeat full review of accepted unchanged work and evidence. Expand checks only for a named requirement/risk.
+4. Return exact checked files, check results and `/workflows run <name> -- <execution input>`.
+   Create-only stops here. Authorized create-and-run uses the run skill without repeat approval.
+   Pause after design only when asked. `Build design:` and `Build approved design:` use the supplied design.
+   Repair keeps the confirmed prefix and rechecks the new source. Replay reuses answers; reopen required files.

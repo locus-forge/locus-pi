@@ -5,27 +5,31 @@ export const meta = {
 };
 
 export default async function run({ agent }, input) {
-  const context = `Use injected pwd/project root for execution context; verify the requested checkout and branch.
-The input supplies the original Task, sources, product root and exact orchestration file paths.
-Read those sources; missing or conflicting context/paths means blocked. Do not guess destinations.`;
-  // Teaching bound: initial implementation plus one correction, both independently reviewed.
+  // Keep the caller's Task, constraints and assigned paths whole for each clean child.
+  // One correction is available. Every change gets a fresh review.
   for (let round = 0; round < 2; round += 1) {
+    // The worker owns the plan, product edits and implementation handoff.
     const work = await agent(
-      `${context}\nOriginal Task and working context:\n${input}
-Implement the Task in its assigned product root; choose internal files within its bounds.
-Preserve unrelated work; do not commit. On correction, read the assigned findings.md and implementation.md.
-Write the complete result, changed paths, actual checks and remaining work to assigned implementation.md;
-read it back. Return only a short status and its exact path. This is pass ${round + 1}.`,
+      `Task and assigned paths:\n${input}
+Verify checkout, branch, product root and assigned paths. Read assigned Task sources.
+Stop on missing or conflicting prerequisites.
+Round ${round + 1}. On correction, first read assigned findings.md and implementation.md.
+State the approach, work order and checks before edits. Implement in the assigned product root.
+Preserve unrelated work. Commit required files only with authorization for that repository.
+Replace assigned implementation.md with the plan, changes, checks and remaining work. Reread it.
+Return a short status and its exact path.`,
       { label: "implement", title: "Implement or correct the task" },
     );
+    // The reviewer opens the real files. The workflow routes on its choice.
     const decision = await agent(
-      `${context}\nOriginal Task and working context:\n${input}
-Read assigned implementation.md, then inspect the complete actual diff and required evidence.
-Verify each Task requirement; equal outputs do not prove reuse or state transitions.
-Do not edit product source. Write only assigned findings.md: verified/unmet/unverified requirements, defects,
-checks, prior finding dispositions and next action, keep optional checks separate. Read it back.
-Accept only verified requirements; revise correctable defects;
-block on missing required prerequisites or handoff files. Worker status:\n${work}`,
+      `Task and assigned paths:\n${input}
+Verify checkout, branch, product root and assigned paths. Read assigned Task sources.
+Read assigned implementation.md and inspect the product, including uncommitted changes.
+Verify each Task requirement. Check required state changes or reuse directly.
+Leave the product unchanged. Use assigned scratch for checks that write.
+Write and reread assigned findings.md with checks, coverage, actionable defects and prior dispositions.
+Mark requirements verified, unmet or unverified. Accept only on evidence, revise fixable defects,
+or block on missing or conflicting prerequisites or handoffs. Worker status:\n${work}`,
       { label: "review", title: "Review the change", choice: ["accept", "revise", "blocked"] },
     );
     if (decision === "accept") return { ok: true, status: "accepted", handoff: work };
